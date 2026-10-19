@@ -1,0 +1,1470 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Оптомстрой POS — Сравнение палитр: A «Синий», B «Оранжевый», итог A+ (D-16)</title>
+<meta name="description" content="Wireframe / структурная схема для ТЗ: сравнение двух вариантов цветовой палитры POS-системы «Оптомстрой» и итоговой схемы A+ (D-16, Q-006). Не финальный интерфейс.">
+<style>
+/* ==========================================================================
+   0. Служебные стили страницы-документа (не относятся к дизайн-системе продукта)
+   ========================================================================== */
+:root{
+  --doc-bg:#FAFAFA; --doc-fg:#1B1F2A; --doc-muted:#5A6373; --doc-line:#D9DEE6;
+  --doc-card:#FFFFFF; --doc-note:#FFF7E6; --doc-note-line:#F5C87A; --doc-mark:#B45309;
+  --doc-ok:#15803D; --doc-ok-bg:#DCFCE7; --doc-fail:#C62828; --doc-fail-bg:#FDE2E2;
+  --doc-aaa:#0E6A8E; --doc-aaa-bg:#E0F2FE; --doc-ex:#5A6373; --doc-ex-bg:#EEF1F5;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--doc-bg);color:var(--doc-fg);
+  font-family:Inter,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-size:14px;line-height:1.5}
+main{max-width:1440px;margin:0 auto;padding:16px 16px 64px}
+h1{font-size:28px;line-height:36px;margin:8px 0 4px}
+h2{font-size:22px;line-height:30px;margin:48px 0 12px;padding-top:16px;border-top:2px solid var(--doc-line)}
+h3{font-size:17px;line-height:24px;margin:28px 0 8px}
+h4{font-size:14px;line-height:20px;margin:16px 0 6px;color:var(--doc-muted);text-transform:uppercase;letter-spacing:.04em}
+p{margin:6px 0 10px;max-width:1100px}
+a{color:#0053FA}
+code,kbd{font-family:"JetBrains Mono",Consolas,"Courier New",monospace;font-size:12.5px;background:#EEF1F5;padding:1px 5px;border-radius:4px}
+small{color:var(--doc-muted)}
+.wf-banner{background:#1B1F2A;color:#FFFFFF;border-radius:12px;padding:14px 18px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.wf-banner strong{font-size:18px;letter-spacing:.02em}
+.wf-banner span{opacity:.85}
+.wf-tag{display:inline-block;background:#FF8700;color:#1B1F2A;font-weight:700;border-radius:999px;padding:3px 12px;font-size:13px}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;color:var(--doc-muted);font-size:13px;margin:8px 0 16px}
+.meta b{color:var(--doc-fg)}
+.card{background:var(--doc-card);border:1px solid var(--doc-line);border-radius:12px;padding:16px 18px;margin:12px 0}
+.note{background:var(--doc-note);border:1px solid var(--doc-note-line);border-radius:8px;padding:10px 14px;margin:10px 0;max-width:1100px}
+.note b{color:var(--doc-mark)}
+.grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
+.grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+table{border-collapse:collapse;width:100%;background:var(--doc-card);font-size:13px;margin:8px 0 16px}
+th,td{border:1px solid var(--doc-line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:#EEF1F5;font-weight:600;position:sticky;top:0;z-index:1}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.hl td{background:#FFF7E6}
+.sw{display:inline-block;width:28px;height:20px;border-radius:4px;border:1px solid rgba(27,31,42,.18);vertical-align:middle;margin-right:6px}
+.tok{font-family:Consolas,"Courier New",monospace;font-size:12.5px;white-space:nowrap}
+.hex{font-family:Consolas,"Courier New",monospace;font-size:12.5px;white-space:nowrap;text-transform:uppercase}
+.tag{display:inline-block;border-radius:4px;padding:1px 7px;font-size:12px;font-weight:600;white-space:nowrap}
+.tag-aaa{background:var(--doc-aaa-bg);color:var(--doc-aaa)}
+.tag-aa{background:var(--doc-ok-bg);color:var(--doc-ok)}
+.tag-fail{background:var(--doc-fail-bg);color:var(--doc-fail)}
+.tag-ex{background:var(--doc-ex-bg);color:var(--doc-ex)}
+.tag-yes{background:var(--doc-ok-bg);color:var(--doc-ok)}
+.tag-no{background:var(--doc-fail-bg);color:var(--doc-fail)}
+.status{display:inline-block;border-radius:4px;padding:1px 7px;font-size:12px;font-weight:600;background:#E5EEFF;color:#0047DB;white-space:nowrap}
+.status-q{background:#FEF3C7;color:#B45309}
+.status-d{background:#DCFCE7;color:#15803D}
+.status-t{background:#EEF1F5;color:#5A6373}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:13px}
+.legend .item{display:inline-flex;align-items:center;gap:6px}
+.ref{font-size:12px;color:var(--doc-muted)}
+.ref code{font-size:11.5px}
+.toc{columns:3;column-gap:24px;font-size:13px}
+.toc a{text-decoration:none}
+.toc li{margin:2px 0;break-inside:avoid}
+.palette-strip{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}
+.palette-strip .chip{width:112px;border:1px solid var(--doc-line);border-radius:8px;overflow:hidden;background:#fff}
+.palette-strip .chip .c{height:52px}
+.palette-strip .chip .t{padding:5px 7px;font-size:11px;line-height:14px}
+.palette-strip .chip .t b{display:block;font-family:Consolas,monospace;font-size:11px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+@media (max-width:1000px){.two-col{grid-template-columns:1fr}.toc{columns:2}}
+@media (max-width:640px){.toc{columns:1}}
+.variant-head{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+.variant-head .dot{width:16px;height:16px;border-radius:50%}
+.variant-head h3{margin:0}
+.var-a-color{background:#0053FA}.var-b-color{background:#FF8700}
+.footer{margin-top:48px;padding-top:16px;border-top:2px solid var(--doc-line);font-size:12px;color:var(--doc-muted)}
+
+/* ==========================================================================
+   1. Переключатели (чистый CSS, без JS): показ колонок A/B и симуляция дальтонизма
+   ========================================================================== */
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.switch{display:inline-flex;border:1px solid var(--doc-line);border-radius:8px;overflow:hidden;background:#fff}
+.switch label{padding:7px 14px;cursor:pointer;font-size:13px;font-weight:500;border-right:1px solid var(--doc-line);user-select:none}
+.switch label:last-child{border-right:0}
+#show-a:checked ~ main .col-b{display:none}
+#show-b:checked ~ main .col-a{display:none}
+#show-a:checked ~ main .two-col,#show-b:checked ~ main .two-col{grid-template-columns:1fr}
+#show-both:checked ~ main label[for=show-both],
+#show-a:checked ~ main label[for=show-a],
+#show-b:checked ~ main label[for=show-b],
+#cb-none:checked ~ main label[for=cb-none],
+#cb-protan:checked ~ main label[for=cb-protan],
+#cb-deutan:checked ~ main label[for=cb-deutan],
+#cb-tritan:checked ~ main label[for=cb-tritan]{background:#1B1F2A;color:#fff}
+#cb-protan:checked ~ main .cb-target{filter:url(#f-protan)}
+#cb-deutan:checked ~ main .cb-target{filter:url(#f-deutan)}
+#cb-tritan:checked ~ main .cb-target{filter:url(#f-tritan)}
+#cb-protan:checked ~ main .cb-label::after{content:" — симуляция: протанопия"}
+#cb-deutan:checked ~ main .cb-label::after{content:" — симуляция: дейтеранопия"}
+#cb-tritan:checked ~ main .cb-label::after{content:" — симуляция: тританопия"}
+
+/* ==========================================================================
+   2. Токены дизайн-системы (имена ядра R0 §8.1, ds.color.* -> --ds-color-*)
+   ========================================================================== */
+/* --- Вариант A «Синий» / схема A+ (ядро §8.1, R4 §3.2) --- */
+:root, .theme-a{
+  --ds-color-background:#F4F5F7;
+  --ds-color-surface:#FFFFFF;
+  --ds-color-surfaceVariant:#EEF1F5;
+  --ds-color-surfaceHover:#F8FAFC;
+  --ds-color-surfacePressed:#EEF1F5;
+  --ds-color-primary:#0053FA;
+  --ds-color-primaryHover:#0047DB;
+  --ds-color-primaryPressed:#003BB8;
+  --ds-color-primaryContainer:#E5EEFF;
+  --ds-color-primaryContainerPressed:#D6E3FF;
+  --ds-color-onPrimary:#FFFFFF;
+  --ds-color-primaryText:#0053FA;          /* служебный alias документа, не токен ядра §8.1: в A = primary (5.80:1 на surface); токен primaryText существует только в B (R4 §3.3) */
+  --ds-color-textPrimary:#1B1F2A;
+  --ds-color-textSecondary:#5A6373;
+  --ds-color-textTertiary:#6B7484;
+  --ds-color-border:#D9DEE6;
+  --ds-color-borderStrong:#7D8797;
+  --ds-color-success:#15803D;
+  --ds-color-successContainer:#DCFCE7;
+  --ds-color-warning:#B45309;
+  --ds-color-warningContainer:#FEF3C7;
+  --ds-color-error:#C62828;
+  --ds-color-errorContainer:#FDE2E2;
+  --ds-color-info:#0E6A8E;
+  --ds-color-infoContainer:#E0F2FE;
+  --ds-color-focus:#0053FA;
+  --ds-color-disabledBg:#E5E7EB;
+  --ds-color-disabledText:#9CA3AF;
+  --ds-color-favorite:#FEC50A;
+  --pc-favorite-outline:#B45309;           /* служебная переменная документа, не токен ядра: обводка звезды «выкл.» = warning (ядро §8.1 favorite) */
+  --ds-color-brandAccent:#FF8700;
+  --ds-color-skeletonBase:#EEF1F5;
+  --ds-color-skeletonHighlight:#E4E7EC;
+  --ds-color-overlay:rgba(27,31,42,0.48);
+  --ds-color-iconButtonPressed:#E2E6EC;    /* R4 §3.2; токен добавлен ядром v1.2 — [РЕШЕНИЕ: ядро §17.5] */
+  --ds-color-onSuccess:#FFFFFF;            /* [РЕШЕНИЕ: ядро §17.5] */
+  --ds-color-onError:#FFFFFF;              /* [РЕШЕНИЕ: ядро §17.5] */
+  --ds-color-onBrandAccent:#1B1F2A;        /* [РЕШЕНИЕ: ядро §17.5] */
+  --ds-color-inverseSurface:#1B1F2A;       /* снэкбар, тултип — [РЕШЕНИЕ: ядро §18.2 п.15] */
+  --ds-color-onInverseSurface:#FFFFFF;     /* [РЕШЕНИЕ: ядро §18.2 п.15] */
+  --pc-selected-bar:#0053FA;               /* служебная переменная документа, не токен ядра: полоса 3 px у выбранной строки = primary */
+  --pc-success-fill:#15803D;               /* служебная переменная документа, не токен ядра: fill-кнопка success = success (R4 §3.2: белый текст 5.02:1) */
+}
+/* --- Вариант B «Оранжевый» (R4 §3.3, те же имена токенов; альтернатива по Q-006) --- */
+.theme-b{
+  --ds-color-background:#F5F5F4;
+  --ds-color-surface:#FFFFFF;
+  --ds-color-surfaceVariant:#EFEEEC;
+  --ds-color-surfaceHover:#F7F6F4;
+  --ds-color-surfacePressed:#EFEEEC;
+  --ds-color-primary:#FF8700;
+  --ds-color-primaryHover:#F07A00;
+  --ds-color-primaryPressed:#D96A00;
+  --ds-color-primaryContainer:#FFEFD9;
+  --ds-color-primaryContainerPressed:#FFEAD1;
+  --ds-color-onPrimary:#1B1F2A;            /* ТОЛЬКО тёмный текст: белый на #FF8700 = 2.41:1 FAIL */
+  --ds-color-primaryText:#B04E00;          /* «текстовый» бренд-цвет: ссылки, иконки, цены (5.34:1) */
+  --ds-color-textPrimary:#1B1F2A;
+  --ds-color-textSecondary:#5A6373;
+  --ds-color-textTertiary:#6B7484;
+  --ds-color-border:#DAD8D4;
+  --ds-color-borderStrong:#7D8797;
+  --ds-color-success:#15803D;
+  --ds-color-successContainer:#DCFCE7;
+  --ds-color-warning:#8A6A00;
+  --ds-color-warningContainer:#FEF9C3;
+  --ds-color-error:#C62828;
+  --ds-color-errorContainer:#FDE2E2;
+  --ds-color-info:#1F5FA8;
+  --ds-color-infoContainer:#E0ECFB;
+  --ds-color-focus:#1F5FA8;                /* синий фокус-ринг — контрастен к оранжевому */
+  --ds-color-disabledBg:#E5E7EB;
+  --ds-color-disabledText:#9CA3AF;
+  --ds-color-favorite:#FEC50A;             /* в R4 §3.3 не задан — как в A [ТИПОВО] */
+  --pc-favorite-outline:#8A6A00;           /* служебная переменная документа, не токен ядра: = warning B [ТИПОВО] */
+  --ds-color-brandAccent:#FF8700;          /* = primary */
+  --ds-color-skeletonBase:#EFEEEC;
+  --ds-color-skeletonHighlight:#E6E4E1;
+  --ds-color-overlay:rgba(27,31,42,0.48);
+  --ds-color-iconButtonPressed:#E6E4E1;
+  --pc-selected-bar:#B04E00;               /* служебная переменная документа, не токен ядра: = primaryText (полоса #FF8700 даёт 2.41:1 и не проходит 1.4.11) */
+  --pc-success-fill:#15803D;               /* служебная переменная документа, не токен ядра: = success */
+}
+
+/* ==========================================================================
+   3. Образцы компонентов (чистый HTML/CSS; имена из ядра §8.5)
+   ========================================================================== */
+.theme{background:var(--ds-color-background);color:var(--ds-color-textPrimary);border:1px solid var(--doc-line);
+  border-radius:12px;padding:16px;font-family:Inter,"Segoe UI",Roboto,Arial,sans-serif}
+.theme h4{color:var(--ds-color-textSecondary);margin:18px 0 8px}
+.theme h4:first-child{margin-top:0}
+.theme .comp-ref{font-size:11px;color:var(--ds-color-textTertiary);margin:-6px 0 8px;font-family:Consolas,monospace}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.row.vt{align-items:flex-start}
+.stack{display:flex;flex-direction:column;gap:10px}
+.lbl{font-size:11px;color:var(--ds-color-textTertiary);display:block;margin-bottom:4px;text-align:center}
+.state{display:inline-flex;flex-direction:column;align-items:center}
+.tnum{font-variant-numeric:tabular-nums}
+.surface{background:var(--ds-color-surface);border:1px solid var(--ds-color-border);border-radius:12px;padding:12px}
+
+/* AppButton */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:44px;padding:0 16px;border-radius:8px;
+  font-size:14px;font-weight:600;line-height:1;border:1.5px solid transparent;white-space:nowrap;cursor:default;
+  transition:background .15s,transform .15s}
+.btn.s{height:36px;padding:0 12px;font-size:13px}
+.btn.l{height:52px;padding:0 24px;font-size:16px}
+.btn svg{width:18px;height:18px;fill:currentColor}
+.btn-primary{background:var(--ds-color-primary);color:var(--ds-color-onPrimary)}
+.btn-primary.is-hover,.btn-primary:hover{background:var(--ds-color-primaryHover)}
+.btn-primary.is-pressed,.btn-primary:active{background:var(--ds-color-primaryPressed);transform:scale(.98)}
+/* .btn-secondary = вариант AppButton «tonal» (заливка primaryContainer); вариант «secondary» ядра §8.5 в документе не отрисован */
+.btn-secondary{background:var(--ds-color-primaryContainer);color:var(--ds-color-primaryText)}
+.btn-secondary.is-hover,.btn-secondary:hover{background:var(--ds-color-primaryContainerPressed)}
+.btn-secondary.is-pressed,.btn-secondary:active{background:var(--ds-color-primaryContainerPressed);transform:scale(.98);box-shadow:inset 0 0 0 1px var(--ds-color-primaryText)}
+.btn-outlined{background:var(--ds-color-surface);color:var(--ds-color-primaryText);border-color:var(--ds-color-primaryText)}
+.btn-outlined.is-hover,.btn-outlined:hover{background:var(--ds-color-primaryContainer)}
+.btn-outlined.is-pressed,.btn-outlined:active{background:var(--ds-color-primaryContainerPressed);transform:scale(.98)}
+.btn-danger{background:var(--ds-color-error);color:#FFFFFF}
+.btn-danger.is-hover,.btn-danger:hover{background-image:linear-gradient(rgba(27,31,42,.08),rgba(27,31,42,.08))}
+.btn-danger.is-pressed,.btn-danger:active{background-image:linear-gradient(rgba(27,31,42,.16),rgba(27,31,42,.16));transform:scale(.98)}
+.btn-success{background:var(--pc-success-fill);color:#FFFFFF}
+.btn.is-disabled{background:var(--ds-color-disabledBg)!important;color:var(--ds-color-disabledText)!important;border-color:transparent!important;background-image:none!important;transform:none!important}
+.btn-outlined.is-disabled{background:var(--ds-color-surface)!important;border-color:var(--ds-color-disabledBg)!important}
+.btn.is-focus{box-shadow:0 0 0 2px var(--ds-color-surface),0 0 0 4px var(--ds-color-focus)}
+.btn-text{background:transparent;color:var(--ds-color-primaryText);padding:0 8px}
+.btn-text.is-hover{text-decoration:underline}
+
+/* AppTextField */
+.field{display:block;max-width:300px}
+.field .flabel{font-size:13px;font-weight:500;color:var(--ds-color-textSecondary);margin-bottom:4px;display:block}
+.field .fbox{display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;border-radius:8px;background:var(--ds-color-surface);
+  border:1px solid var(--ds-color-borderStrong);color:var(--ds-color-textPrimary);font-size:16px}
+.field .fbox .ph{color:var(--ds-color-textTertiary)}
+.field.is-focus .fbox{border:2px solid var(--ds-color-focus);padding:0 11px}
+.field.is-error .fbox{border:2px solid var(--ds-color-error);padding:0 11px}
+.field.is-error .fhelp{color:var(--ds-color-error)}
+.field .fhelp{font-size:12px;margin-top:4px;color:var(--ds-color-textSecondary);display:flex;gap:4px;align-items:center}
+.field .fhelp svg{width:14px;height:14px;fill:currentColor}
+.field.is-disabled .fbox{background:var(--ds-color-disabledBg);color:var(--ds-color-disabledText);border-color:var(--ds-color-disabledBg)}
+
+/* CategoryChip / FilterChip */
+.chip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;font-size:13px;font-weight:500;
+  background:var(--ds-color-surface);border:1px solid var(--ds-color-border);color:var(--ds-color-textPrimary)}
+.chip.is-hover{background:var(--ds-color-surfaceVariant)}
+.chip.is-selected{background:var(--ds-color-primaryContainer);color:var(--ds-color-primaryText);border-color:var(--ds-color-primaryContainer)}
+.chip.is-disabled{color:var(--ds-color-disabledText);border-color:var(--ds-color-disabledBg)}
+.chip svg{width:14px;height:14px;fill:currentColor}
+
+/* StockBadge / StatusChip / ReceivableBadge */
+.badge{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:4px;font-size:12px;font-weight:600;white-space:nowrap}
+.badge svg{width:13px;height:13px;fill:currentColor}
+.badge-ok{background:var(--ds-color-successContainer);color:var(--ds-color-success)}
+.badge-low{background:var(--ds-color-warningContainer);color:var(--ds-color-warning)}
+.badge-out{background:var(--ds-color-errorContainer);color:var(--ds-color-error)}
+.badge-info{background:var(--ds-color-infoContainer);color:var(--ds-color-info)}
+.badge-neutral{background:var(--ds-color-surfaceVariant);color:var(--ds-color-textSecondary)}
+.debt{display:inline-flex;align-items:center;gap:5px;font-weight:600;font-size:13px}
+.debt svg{width:15px;height:15px;fill:currentColor}
+.debt-zero{color:var(--ds-color-success)}
+.debt-due{color:var(--ds-color-warning)}
+.debt-over{color:var(--ds-color-error)}
+.debt .pill{border-radius:999px;padding:1px 8px;font-size:12px}
+.debt-over .pill{background:var(--ds-color-errorContainer)}
+.debt-due .pill{background:var(--ds-color-warningContainer)}
+.debt-zero .pill{background:var(--ds-color-successContainer)}
+.nbadge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;
+  background:var(--ds-color-error);color:#fff;font-size:11px;font-weight:600;line-height:1}
+
+/* CartLine */
+.cart-line{display:grid;grid-template-columns:44px 1fr auto auto 24px;gap:10px;align-items:center;background:var(--ds-color-surface);
+  border:1px solid var(--ds-color-border);border-radius:12px;padding:10px 12px;max-width:420px}
+.cart-line .thumb{width:44px;height:44px;border-radius:8px;background:var(--ds-color-surfaceVariant);display:flex;align-items:center;justify-content:center}
+.cart-line .thumb svg{width:26px;height:26px;fill:var(--ds-color-textTertiary)}
+.cart-line .name{font-size:13px;line-height:17px}
+.cart-line .name small{display:block;color:var(--ds-color-textSecondary);font-size:12px}
+.cart-line .price{font-weight:700;font-size:16px;color:var(--ds-color-primaryText)}
+.cart-line .x{color:var(--ds-color-textSecondary);text-align:center;font-size:16px}
+.cart-line.is-warn{border-color:var(--ds-color-warning)}
+.cart-line .warn{grid-column:1/-1;font-size:12px;color:var(--ds-color-warning);display:flex;gap:4px;align-items:center}
+.cart-line .warn svg{width:14px;height:14px;fill:currentColor}
+.stepper{display:inline-flex;align-items:center;border:1px solid var(--ds-color-borderStrong);border-radius:8px;overflow:hidden;background:var(--ds-color-surface)}
+.stepper span{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;font-weight:600}
+.stepper .v{width:40px;border-left:1px solid var(--ds-color-border);border-right:1px solid var(--ds-color-border)}
+.stepper.s span{width:30px;height:30px}
+.stepper .dis{color:var(--ds-color-disabledText)}
+
+/* ProductCardGrid */
+.pcard{width:176px;background:var(--ds-color-surface);border:1px solid var(--ds-color-border);border-radius:12px;padding:12px;position:relative}
+.pcard .img{height:110px;border-radius:8px;background:var(--ds-color-surfaceVariant);display:flex;align-items:center;justify-content:center}
+.pcard .img svg{width:48px;height:48px;fill:var(--ds-color-textTertiary)}
+.pcard .star{position:absolute;top:16px;right:16px;width:22px;height:22px}
+/* FavoriteToggle (ядро §8.1 favorite): «вкл.» — заливка favorite без обводки; «выкл.» — контур #B45309 (обводка только в состоянии «выкл.») */
+.pcard .star.on{fill:var(--ds-color-favorite);stroke:none}
+.pcard .star.off{fill:none;stroke:var(--pc-favorite-outline);stroke-width:1.6}
+.pcard .pname{font-size:13px;line-height:17px;height:34px;overflow:hidden;margin-top:8px}
+.pcard .sku{font-size:12px;color:var(--ds-color-textSecondary);margin:2px 0 4px}
+.pcard .pprice{font-size:18px;font-weight:700;color:var(--ds-color-primaryText);margin:2px 0 6px}
+.pcard .btn{width:100%;margin-top:8px}
+.pcard.is-out .img{opacity:.6}
+
+/* CategorySidebarItem */
+.cat{display:flex;align-items:center;gap:10px;height:48px;padding:0 12px;border-radius:8px;background:var(--ds-color-surface);
+  border:1px solid var(--ds-color-border);width:240px;font-weight:500;position:relative}
+.cat .cnt{margin-left:auto;font-size:13px;color:var(--ds-color-textSecondary);font-variant-numeric:tabular-nums}
+.cat.is-hover{background:var(--ds-color-surfaceHover)}
+.cat.is-selected{background:var(--ds-color-primaryContainer);border-color:var(--ds-color-primaryContainer);color:var(--ds-color-textPrimary)}
+.cat.is-selected::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:2px;background:var(--pc-selected-bar)}
+.cat.is-selected .cnt{color:var(--ds-color-primaryText);font-weight:600}
+.cat svg{width:20px;height:20px;fill:currentColor}
+.cat.is-mockup{background:var(--ds-color-primary);color:var(--ds-color-onPrimary);border-color:var(--ds-color-primary)}
+.cat.is-mockup .cnt{color:var(--ds-color-onPrimary)}
+
+/* SyncIndicator */
+.sync{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:500;
+  background:var(--ds-color-surface);border:1px solid var(--ds-color-border)}
+.sync svg{width:16px;height:16px;fill:currentColor}
+.sync-ok{color:var(--ds-color-info)}
+.sync-run{color:var(--ds-color-info)}
+.sync-run svg{animation:spin 1s linear infinite}
+.sync-stale{color:var(--ds-color-warning);background:var(--ds-color-warningContainer);border-color:var(--ds-color-warningContainer)}
+.sync-err{color:var(--ds-color-error);background:var(--ds-color-errorContainer);border-color:var(--ds-color-errorContainer)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.sync-run svg{animation:none}}
+
+/* AppSnackbar (toast) */
+.toast{display:flex;align-items:center;gap:10px;max-width:380px;padding:10px 14px;border-radius:12px;background:var(--ds-color-surface);
+  box-shadow:0 2px 8px rgba(27,31,42,.08),0 0 0 1px var(--ds-color-border);font-size:13px}
+.toast svg{width:20px;height:20px;flex:none;fill:currentColor}
+.toast .act{margin-left:auto;font-weight:600;color:var(--ds-color-primaryText);white-space:nowrap}
+.toast-ok{border-left:4px solid var(--ds-color-success)}
+.toast-ok svg{color:var(--ds-color-success)}
+.toast-err{border-left:4px solid var(--ds-color-error)}
+.toast-err svg{color:var(--ds-color-error)}
+
+/* Option tile / checkout step (selected via primary) */
+.tile{display:inline-flex;flex-direction:column;gap:2px;width:160px;height:64px;padding:10px 12px;border-radius:12px;background:var(--ds-color-surface);
+  border:1px solid var(--ds-color-border);font-size:13px;font-weight:600;justify-content:center}
+.tile small{font-weight:400;color:var(--ds-color-textSecondary);font-size:11px}
+.tile.is-selected{border:2px solid var(--ds-color-primaryText);background:var(--ds-color-primaryContainer);padding:9px 11px}
+.tile.is-selected-only-orange{border:2px solid #FF8700}
+
+/* OfflineBanner */
+.offline{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--ds-color-warningContainer);color:var(--ds-color-warning);font-size:13px;font-weight:500;max-width:420px}
+.offline svg{width:16px;height:16px;fill:currentColor}
+
+/* Summary / price */
+.sum{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;font-size:13px}
+.sum.total{font-size:20px;font-weight:700}
+.sum.total .v{color:var(--ds-color-primaryText);font-size:24px}
+.sum .v{font-variant-numeric:tabular-nums}
+
+/* Skeleton */
+.skel{height:14px;border-radius:4px;background:linear-gradient(90deg,var(--ds-color-skeletonBase) 0%,var(--ds-color-skeletonHighlight) 50%,var(--ds-color-skeletonBase) 100%)}
+
+/* Brand accent demo */
+.brand-logo{display:inline-flex;align-items:center;gap:8px;font-weight:800;font-size:18px;letter-spacing:-.01em}
+.brand-logo svg{width:28px;height:28px}
+.tabbar{display:flex;gap:4px;border-bottom:1px solid var(--ds-color-border)}
+.tabbar span{padding:8px 12px;font-size:14px;font-weight:500;color:var(--ds-color-textSecondary);border-bottom:2px solid transparent}
+.tabbar span.on{color:var(--ds-color-textPrimary);font-weight:600;border-bottom-color:var(--ds-color-primary)}
+.tabbar span.on-accent{color:var(--ds-color-textPrimary);font-weight:600;border-bottom-color:var(--ds-color-brandAccent)}
+.empty{text-align:center;padding:16px;background:var(--ds-color-surface);border:1px dashed var(--ds-color-border);border-radius:12px;max-width:300px}
+.empty svg{width:56px;height:56px}
+.empty b{display:block;margin-top:6px}
+.empty small{display:block;color:var(--ds-color-textSecondary);margin-bottom:8px}
+
+/* Дальтонизм: сетка статусных образцов */
+.cb-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.cb-cell{border-radius:8px;padding:8px;background:var(--ds-color-surface);border:1px solid var(--ds-color-border);font-size:12px}
+.cb-cell .big{height:40px;border-radius:6px;margin-bottom:6px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.cb-cell .txt{font-weight:600}
+.dont{opacity:.95;border:2px dashed var(--doc-fail);border-radius:8px;padding:8px;position:relative}
+.dont::before{content:"НЕЛЬЗЯ";position:absolute;top:-9px;left:10px;background:var(--doc-fail);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px}
+.do{border:2px dashed var(--doc-ok);border-radius:8px;padding:8px;position:relative}
+.do::before{content:"МОЖНО";position:absolute;top:-9px;left:10px;background:var(--doc-ok);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px}
+@media print{.switch{display:none}.wf-banner{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+</head>
+<body>
+<!-- Переключатели: должны идти ДО <main>, чтобы работали селекторы «input:checked ~ main …» -->
+<input class="sr" type="radio" name="show" id="show-both" checked>
+<input class="sr" type="radio" name="show" id="show-a">
+<input class="sr" type="radio" name="show" id="show-b">
+<input class="sr" type="radio" name="cb" id="cb-none" checked>
+<input class="sr" type="radio" name="cb" id="cb-protan">
+<input class="sr" type="radio" name="cb" id="cb-deutan">
+<input class="sr" type="radio" name="cb" id="cb-tritan">
+
+<!-- SVG-фильтры симуляции дальтонизма: матрицы Machado, Oliveira, Fernandes (2009), severity 1.0, линейное RGB.
+     Приближение [ТИПОВО]; совпадает с моделью, которой в R4 §3.4 считались ΔE. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="f-protan" color-interpolation-filters="linearRGB">
+      <feColorMatrix type="matrix" values="0.152286 1.052583 -0.204868 0 0  0.114503 0.786281 0.099216 0 0  -0.003882 -0.048116 1.051998 0 0  0 0 0 1 0"/>
+    </filter>
+    <filter id="f-deutan" color-interpolation-filters="linearRGB">
+      <feColorMatrix type="matrix" values="0.367322 0.860646 -0.227968 0 0  0.280085 0.672501 0.047413 0 0  -0.011820 0.042940 0.968881 0 0  0 0 0 1 0"/>
+    </filter>
+    <filter id="f-tritan" color-interpolation-filters="linearRGB">
+      <feColorMatrix type="matrix" values="1.255528 -0.076749 -0.178779 0 0  -0.078411 0.930809 0.147602 0 0  0.004733 0.691367 0.303900 0 0  0 0 0 1 0"/>
+    </filter>
+    <!-- Иконки (символы) -->
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4l5.6 5.6L5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6z"/></symbol>
+    <symbol id="i-err" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></symbol>
+    <symbol id="i-sync" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6a6 6 0 0 1 5.65 8.05l1.46 1.46A8 8 0 0 0 12 4zm0 14a6 6 0 0 1-5.65-8.05L4.89 8.49A8 8 0 0 0 12 20v3l4-4-4-4v3z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></symbol>
+    <symbol id="i-tap" viewBox="0 0 24 24"><path d="M11 3h2v3h3a4 4 0 0 1 4 4v1h-2v-1a2 2 0 0 0-2-2h-3v2h2v2h-2v9h-2v-9H9v-2h2V8H8a2 2 0 0 0-2 2v1H4v-1a4 4 0 0 1 4-4h3V3z"/></symbol>
+    <symbol id="i-cloud-off" viewBox="0 0 24 24"><path d="M19.35 10.04A7.49 7.49 0 0 0 12 4c-1.48 0-2.85.43-4.01 1.17l1.46 1.46A5.5 5.5 0 0 1 17.5 11.5h1a3 3 0 0 1 2.1 5.13l1.42 1.42A5 5 0 0 0 19.35 10.04zM3 5.27l2.75 2.74A6 6 0 0 0 6 20h11.73l2 2L21 20.73 4.27 4 3 5.27z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><path d="M18 8h-1V6a5 5 0 0 0-10 0v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zM9 6a3 3 0 0 1 6 0v2H9V6z"/></symbol>
+    <symbol id="i-money" viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></symbol>
+    <symbol id="i-cat" viewBox="0 0 24 24"><path d="M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z"/></symbol>
+  </defs>
+</svg>
+
+<main>
+
+<!-- ======================= ШАПКА ======================= -->
+<div class="wf-banner" role="note">
+  <span class="wf-tag">WIREFRAME</span>
+  <strong>Wireframe / структурная схема для ТЗ — не финальный интерфейс</strong>
+  <span>Документ сравнения палитр. Все элементы ниже — иллюстрации токенов и правил, а не экраны продукта.</span>
+</div>
+
+<h1>Сравнение палитр: A «Синий» · B «Оранжевый» · итоговая схема A+</h1>
+<div class="meta">
+  <span>Проект: <b>«Оптомстрой POS»</b> (ЭТАП 1 — ТЗ)</span>
+  <span>Файл: <b>docs/specification/visual/palette-comparison.html</b></span>
+  <span>Версия <b>1.0</b> · Дата <b>2026-10-18</b></span>
+  <span>Статус: <span class="status status-q">черновик для утверждения заказчиком</span></span>
+  <span>Решение ядра: <span class="status status-d">D-16 — схема A+</span></span>
+  <span>Открытый вопрос: <span class="status status-q">Q-006 — логотип и допустимость синего</span></span>
+</div>
+<p class="ref">Источники: ядро решений <code>R0_DECISION_KERNEL.md</code> §2 (D-16, D-17, D-43), §8.1 (токены A+), §8.5 (компоненты), §12 (Q-006), §14 (факты о макетах); отчёт <code>R4_UX_RESEARCH.md</code> §1.5 (измеренные цвета), §3.1–3.6 (палитры, контраст, дальтонизм, сравнение, рекомендация), §6 (состояния компонентов). Все HEX-значения и коэффициенты контраста скопированы из этих источников; собственных измерений документ не содержит.</p>
+
+<div class="card">
+  <h4 style="margin-top:0">Легенда</h4>
+  <div class="legend">
+    <span class="item"><span class="tag tag-aaa">AAA</span> контраст ≥ 7:1 (обычный) / ≥ 4.5:1 (крупный)</span>
+    <span class="item"><span class="tag tag-aa">AA</span> ≥ 4.5:1 / ≥ 3:1</span>
+    <span class="item"><span class="tag tag-fail">FAIL</span> ниже порога</span>
+    <span class="item"><span class="tag tag-ex">искл.</span> исключение WCAG 1.4.3 (неактивные элементы, декоративное)</span>
+    <span class="item"><span class="status">SCR-xx</span> экран из ядра §9</span>
+    <span class="item"><code>AppButton</code> компонент из ядра §8.5</span>
+    <span class="item"><code class="tok">--ds-color-primary</code> CSS-переменная = токен ядра <code>ds.color.primary</code></span>
+    <span class="item"><span class="status status-d">РЕШЕНИЕ</span> зафиксировано в ядре</span>
+    <span class="item"><span class="status status-q">Q-xxx</span> требует решения заказчика</span>
+    <span class="item"><span class="status status-t">ТИПОВО</span> требует проверки</span>
+  </div>
+  <p class="ref" style="margin-top:10px">Переключатели ниже реализованы чистым CSS (<code>:checked</code>), скриптов на странице нет. Страница самодостаточна: внешних шрифтов, стилей и изображений не загружает; при отсутствии шрифта Inter используется системный.</p>
+</div>
+
+<div class="card">
+  <h4 style="margin-top:0">Содержание</h4>
+  <ol class="toc">
+    <li><a href="#s0">0. Что сравниваем и почему (логотип vs макеты, Q-006)</a></li>
+    <li><a href="#s1">1. Вариант A «Синий» — таблица токенов и свотчи</a></li>
+    <li><a href="#s2">2. Вариант B «Оранжевый» — таблица токенов и свотчи</a></li>
+    <li><a href="#s3">3. Контраст WCAG 2.2 (данные R4 §3.4)</a></li>
+    <li><a href="#s4">4. Образцы компонентов в обоих вариантах</a></li>
+    <li><a href="#s5">5. Симуляция дальтонизма для статусных цветов</a></li>
+    <li><a href="#s6">6. Сравнительная таблица по критериям (R4 §3.5)</a></li>
+    <li><a href="#s7">7. Итоговая схема A+ и правила brandAccent #FF8700</a></li>
+    <li><a href="#s8">8. Статус, открытые вопросы, трассировка</a></li>
+    <li><a href="#s9">9. Журнал сверки с ядром</a></li>
+  </ol>
+</div>
+
+<!-- ======================= 0. ЧТО СРАВНИВАЕМ ======================= -->
+<h2 id="s0">0. Что сравниваем и почему</h2>
+<p>В исходных материалах заказчика два несовместимых источника цвета бренда (R0 §14, R4 §1.6): <b>три цифровых макета</b> экранов (каталог, подтверждение заказа, вход) построены на насыщенном синем, а <b>файл логотипа</b> <code>Logo Orange.png</code> — однотонный оранжевый знак другой формы. Какой логотип актуален и допустим ли синий как интерактивный цвет — открытый вопрос <span class="status status-q">Q-006</span>. Поэтому в R4 §3 проработаны два полных варианта палитры, а ядро решений (<span class="status status-d">D-16</span>) принимает комбинированную схему <b>A+</b> с оранжевым только как брендовым акцентом.</p>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="variant-head"><span class="dot var-a-color"></span><h3>Источник A — три макета</h3></div>
+    <div class="row vt" style="gap:16px">
+      <svg width="120" height="120" viewBox="0 0 120 120" aria-label="Схематичное изображение синего логотипа макетов: шестиугольник с домом и краном">
+        <polygon points="60,6 108,33 108,87 60,114 12,87 12,33" fill="#0053FA"/>
+        <path d="M36 62 L60 42 L84 62 V88 H36 Z" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round"/>
+        <path d="M58 70 H70 a6 6 0 0 1 6 6 v6" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+        <rect x="50" y="64" width="12" height="8" rx="2" fill="#FFFFFF"/>
+        <circle cx="76" cy="92" r="3" fill="#FFFFFF"/>
+      </svg>
+      <div style="flex:1;min-width:220px">
+        <p style="margin-top:0"><b>Файлы:</b> <code>image_2026-06-25_23-36-31.png</code> (каталог «Смесители», SCR-10/SCR-20), <code>IMG_7090.PNG</code> (модалка «Подтверждение заказа», SCR-21), <code>photo_2026-10-18_16-03-36.jpg</code> (вход, расходится с D-09).</p>
+        <p><b>Знак:</b> синий шестиугольник «дом с краном» + wordmark «Optom<span style="color:#0053FA;font-weight:700">Stroy</span>» (латиница), «© 2024 OptomStroy».</p>
+        <p><b>Измерено (R4 §1.5):</b> основной синий — мода <span class="hex">#0053FA</span> (кнопки, активная категория, цены, итог); фон <span class="hex">#F4F5F7</span>; зелёная CTA <span class="hex">#0D9E48</span>; красный бейдж ≈ <span class="hex">#E8202A</span>; звезда <span class="hex">#FEC50A</span>; вторичный текст ≈ <span class="hex">#8B8FA0</span>.</p>
+        <p class="ref">Схема знака выше — условная перерисовка для документа, не воспроизведение файла.</p>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="variant-head"><span class="dot var-b-color"></span><h3>Источник B — Logo Orange.png</h3></div>
+    <div class="row vt" style="gap:16px">
+      <svg width="120" height="120" viewBox="0 0 120 120" aria-label="Схематичное изображение оранжевого логотипа: кольцо C с шестиугольником и стрелкой">
+        <path d="M98 36 A44 44 0 1 0 98 84" fill="none" stroke="#FF8700" stroke-width="13" stroke-linecap="butt"/>
+        <polygon points="60,34 82,47 82,73 60,86 38,73 38,47" fill="#FF8700"/>
+        <path d="M50 76 L72 46" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+        <polygon points="74,42 66,46 73,52" fill="#FFFFFF"/>
+      </svg>
+      <div style="flex:1;min-width:220px">
+        <p style="margin-top:0"><b>Файл:</b> <code>Logo Orange.png</code>, 8334×8334 px, RGBA, прозрачный фон.</p>
+        <p><b>Знак:</b> оранжевое кольцо-«C» + шестиугольник + белая стрелка вверх. Общий с макетами элемент — только шестиугольник; wordmark отсутствует.</p>
+        <p><b>Измерено (R4 §1.5):</b> ровный однотонный <span class="hex">#FF8700</span> (RGB 255,135,0) — 96 % насыщенных пикселей; белые элементы — чистый <span class="hex">#FFFFFF</span>. <span class="status status-d">ПОДТВЕРЖДЕНО</span></p>
+        <p class="ref">Схема знака — условная перерисовка. Наличие векторного оригинала — часть открытого вопроса Q-006 (ответ заказчика не получен).</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Почему нельзя просто «взять цвет логотипа»</h3>
+  <ul>
+    <li><b>Контраст.</b> Белый текст на #FF8700 даёт <b>2.41:1</b> (R4 §3.4) — ниже AA (4.5) и даже ниже порога крупного текста (3.0). Оранжевый как цвет текста/цены на белом — те же 2.41:1. Для варианта B приходится вводить отдельный «текстовый» оранжевый <span class="hex">#B04E00</span> и CTA с тёмным текстом.</li>
+    <li><b>Семантика.</b> Оранжевый (hue ≈ 32°) почти совпадает с цветом предупреждения; в POS статусы «мало», «просрочено», «данные устарели» должны быть отделены от бренда (R4 §3.3).</li>
+    <li><b>Дальтонизм.</b> При протан/дейтеранопии «текстовый» оранжевый #B04E00 сливается с warning и error (ΔE 7/3 и 21/9, R4 §3.4).</li>
+    <li><b>Утомляемость.</b> Большие светлые насыщенные поверхности при 8–10-часовой смене и ярком освещении зала утомляют сильнее тёмно-синих <span class="status status-t">ТИПОВО</span>.</li>
+  </ul>
+  <p>Отсюда решение <span class="status status-d">D-16</span>: рабочий интерактивный цвет — синий #0053FA (из макетов), оранжевый #FF8700 — брендовый акцент в заранее перечисленных местах (раздел 7). Вариант B описан полностью как запасной на случай, если заказчик по Q-006 подтвердит: «актуален только оранжевый логотип, синий недопустим».</p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Что в этом документе</h3>
+  <table>
+    <tr><th>Раздел</th><th>Вариант A «Синий»</th><th>Вариант B «Оранжевый»</th><th>Схема A+ (итог)</th></tr>
+    <tr><td>Полная таблица токенов</td><td>§1 — ядро §8.1 / R4 §3.2</td><td>§2 — R4 §3.3</td><td>= A + правила <code>brandAccent</code> (§7)</td></tr>
+    <tr><td>Контраст WCAG</td><td>§3.1 (42 пары)</td><td>§3.2 (43 пары)</td><td>§3.3 нетекстовый, §3.4 итог</td></tr>
+    <tr><td>Образцы компонентов</td><td colspan="2">§4 — один и тот же набор в двух колонках (переключатель «оба / A / B»)</td><td>§7 — примеры допустимого акцента</td></tr>
+    <tr><td>Дальтонизм</td><td colspan="2">§5 — таблица ΔE из R4 §3.4 + CSS-фильтры (приближение)</td><td>§5 — выводы для правил статусов</td></tr>
+    <tr><td>Сравнение и рекомендация</td><td colspan="3">§6 (критерии R4 §3.5), §7 (рекомендация R4 §3.6 = D-16)</td></tr>
+  </table>
+</div>
+
+<!-- ======================= 1. ВАРИАНТ A ======================= -->
+<h2 id="s1">1. Вариант A «Синий» — таблица токенов</h2>
+<div class="variant-head"><span class="dot var-a-color"></span><h3 style="margin:0">Основа: макеты заказчика · статус: <span class="status status-d">РЕШЕНИЕ D-16</span> (как база схемы A+)</h3></div>
+<p>Имена токенов — ровно из ядра §8.1 (<code>ds.color.*</code>, в CSS этого файла — <code class="tok">--ds-color-*</code>). HEX — из ядра §8.1; примечания и значения состояний — из R4 §3.2. Отличия от макетов, обоснованные измерениями: вторичный текст ≈ #8B8FA0 (≈ 3.2–3.8:1, FAIL) → <b>#5A6373</b> (6.06:1); зелёная CTA #0D9E48 с белым (3.50:1) → <b>#15803D</b> (5.02:1); сплошная синяя заливка активной категории → светлая <code>primaryContainer</code> + полоса 3 px <code>primary</code>.</p>
+
+<h4>Палитра-свотчи A</h4>
+<div class="palette-strip theme-a">
+  <div class="chip"><div class="c" style="background:#F4F5F7"></div><div class="t">background<b>#F4F5F7</b></div></div>
+  <div class="chip"><div class="c" style="background:#FFFFFF"></div><div class="t">surface<b>#FFFFFF</b></div></div>
+  <div class="chip"><div class="c" style="background:#EEF1F5"></div><div class="t">surfaceVariant<b>#EEF1F5</b></div></div>
+  <div class="chip"><div class="c" style="background:#0053FA"></div><div class="t">primary<b>#0053FA</b></div></div>
+  <div class="chip"><div class="c" style="background:#0047DB"></div><div class="t">primaryHover<b>#0047DB</b></div></div>
+  <div class="chip"><div class="c" style="background:#003BB8"></div><div class="t">primaryPressed<b>#003BB8</b></div></div>
+  <div class="chip"><div class="c" style="background:#E5EEFF"></div><div class="t">primaryContainer<b>#E5EEFF</b></div></div>
+  <div class="chip"><div class="c" style="background:#D6E3FF"></div><div class="t">primaryContainerPressed<b>#D6E3FF</b></div></div>
+  <div class="chip"><div class="c" style="background:#1B1F2A"></div><div class="t">textPrimary<b>#1B1F2A</b></div></div>
+  <div class="chip"><div class="c" style="background:#5A6373"></div><div class="t">textSecondary<b>#5A6373</b></div></div>
+  <div class="chip"><div class="c" style="background:#6B7484"></div><div class="t">textTertiary<b>#6B7484</b></div></div>
+  <div class="chip"><div class="c" style="background:#D9DEE6"></div><div class="t">border<b>#D9DEE6</b></div></div>
+  <div class="chip"><div class="c" style="background:#7D8797"></div><div class="t">borderStrong<b>#7D8797</b></div></div>
+  <div class="chip"><div class="c" style="background:#15803D"></div><div class="t">success<b>#15803D</b></div></div>
+  <div class="chip"><div class="c" style="background:#DCFCE7"></div><div class="t">successContainer<b>#DCFCE7</b></div></div>
+  <div class="chip"><div class="c" style="background:#B45309"></div><div class="t">warning<b>#B45309</b></div></div>
+  <div class="chip"><div class="c" style="background:#FEF3C7"></div><div class="t">warningContainer<b>#FEF3C7</b></div></div>
+  <div class="chip"><div class="c" style="background:#C62828"></div><div class="t">error<b>#C62828</b></div></div>
+  <div class="chip"><div class="c" style="background:#FDE2E2"></div><div class="t">errorContainer<b>#FDE2E2</b></div></div>
+  <div class="chip"><div class="c" style="background:#0E6A8E"></div><div class="t">info<b>#0E6A8E</b></div></div>
+  <div class="chip"><div class="c" style="background:#E0F2FE"></div><div class="t">infoContainer<b>#E0F2FE</b></div></div>
+  <div class="chip"><div class="c" style="background:#E5E7EB"></div><div class="t">disabledBg<b>#E5E7EB</b></div></div>
+  <div class="chip"><div class="c" style="background:#9CA3AF"></div><div class="t">disabledText<b>#9CA3AF</b></div></div>
+  <div class="chip"><div class="c" style="background:#FEC50A"></div><div class="t">favorite<b>#FEC50A</b></div></div>
+  <div class="chip"><div class="c" style="background:#FF8700"></div><div class="t">brandAccent<b>#FF8700</b></div></div>
+</div>
+
+<h4>Полная таблица токенов A (ядро §8.1)</h4>
+<table>
+  <thead><tr><th>Имя токена</th><th>HEX</th><th>Образец</th><th>Назначение / примечание</th></tr></thead>
+  <tbody>
+    <tr><td class="tok">background</td><td class="hex">#F4F5F7</td><td><span class="sw" style="background:#F4F5F7"></span></td><td>Фон экрана; измерен на макете «заказ» (панель корзины, модалка). Не чисто белый — снижает блеск при 8–10 ч смене</td></tr>
+    <tr><td class="tok">surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF"></span></td><td>Карточки, панели, поля ввода, диалоги</td></tr>
+    <tr><td class="tok">surfaceVariant</td><td class="hex">#EEF1F5</td><td><span class="sw" style="background:#EEF1F5"></span></td><td>Заголовки таблиц, вторичные панели, фон SearchBar, сегментированного контрола</td></tr>
+    <tr><td class="tok">surfaceHover</td><td class="hex">#F8FAFC</td><td><span class="sw" style="background:#F8FAFC"></span></td><td>Фон строки/карточки под указателем; textTertiary на нём 4.50:1 (граница AA)</td></tr>
+    <tr><td class="tok">surfacePressed</td><td class="hex">#EEF1F5</td><td><span class="sw" style="background:#EEF1F5"></span></td><td>= surfaceVariant; фон строки при нажатии</td></tr>
+    <tr><td class="tok">primary</td><td class="hex">#0053FA</td><td><span class="sw" style="background:#0053FA"></span></td><td>Интерактивный цвет: CTA (<code>AppButton</code> primary), ссылки, цены (<code>PriceText</code>), выбранные элементы, иконки активной навигации. Мода синего макета каталога</td></tr>
+    <tr><td class="tok">primaryHover</td><td class="hex">#0047DB</td><td><span class="sw" style="background:#0047DB"></span></td><td>−10 % яркости; hover заливки primary</td></tr>
+    <tr><td class="tok">primaryPressed</td><td class="hex">#003BB8</td><td><span class="sw" style="background:#003BB8"></span></td><td>−20 %; pressed заливки primary (+ scale .98)</td></tr>
+    <tr><td class="tok">primaryContainer</td><td class="hex">#E5EEFF</td><td><span class="sw" style="background:#E5EEFF"></span></td><td>Выбранная категория (<code>CategorySidebarItem</code>), выбранная плитка (<code>PaymentMethodCard</code>), фон чипа, hover outlined/tonal кнопок, фон <code>AppAvatar</code></td></tr>
+    <tr><td class="tok">primaryContainerPressed</td><td class="hex">#D6E3FF</td><td><span class="sw" style="background:#D6E3FF"></span></td><td>Pressed-фон outlined/tonal кнопок; primary на нём 4.50:1 (граница AA)</td></tr>
+    <tr><td class="tok">onPrimary</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF"></span></td><td>Текст/иконка на primary (5.80:1 AA; на hover/pressed — AAA)</td></tr>
+    <tr><td class="tok">textPrimary</td><td class="hex">#1B1F2A</td><td><span class="sw" style="background:#1B1F2A"></span></td><td>Основной текст; не чисто чёрный</td></tr>
+    <tr><td class="tok">textSecondary</td><td class="hex">#5A6373</td><td><span class="sw" style="background:#5A6373"></span></td><td>Подписи, счётчики категорий, артикул; замена вторичного текста макета ≈ #8B8FA0 (FAIL)</td></tr>
+    <tr><td class="tok">textTertiary</td><td class="hex">#6B7484</td><td><span class="sw" style="background:#6B7484"></span></td><td>Плейсхолдеры/метаданные — только на surface (#FFFFFF) и ≥ 13 px; на background только крупный/полужирный</td></tr>
+    <tr><td class="tok">border</td><td class="hex">#D9DEE6</td><td><span class="sw" style="background:#D9DEE6"></span></td><td>Декоративные разделители, границы карточек (1.35:1 — допустимо только как декор, не для полей)</td></tr>
+    <tr><td class="tok">borderStrong</td><td class="hex">#7D8797</td><td><span class="sw" style="background:#7D8797"></span></td><td>Границы полей ввода, чекбоксов, степпера — 3.63:1 на surface, проходит 1.4.11</td></tr>
+    <tr><td class="tok">success</td><td class="hex">#15803D</td><td><span class="sw" style="background:#15803D"></span></td><td>Текст/иконка: «в наличии», «оплачен», шаг выполнен; fill-кнопка success с белым текстом (5.02:1)</td></tr>
+    <tr><td class="tok">successContainer</td><td class="hex">#DCFCE7</td><td><span class="sw" style="background:#DCFCE7"></span></td><td>Фон <code>StockBadge</code> in-stock, <code>StatusChip</code> approved/paid, баннер-подсказка</td></tr>
+    <tr><td class="tok">warning</td><td class="hex">#B45309</td><td><span class="sw" style="background:#B45309"></span></td><td>Текст/иконка: «мало», «цена изменилась», долг к сроку, устаревшие данные синхронизации</td></tr>
+    <tr><td class="tok">warningContainer</td><td class="hex">#FEF3C7</td><td><span class="sw" style="background:#FEF3C7"></span></td><td>Фон <code>StockBadge</code> low, <code>OfflineBanner</code>, баннера «Цены/остатки изменились»</td></tr>
+    <tr><td class="tok">error</td><td class="hex">#C62828</td><td><span class="sw" style="background:#C62828"></span></td><td>Текст/иконка/бейдж долга (<code>ReceivableBadge</code> overdue), «нет в наличии», ошибка поля, danger-кнопка, счётчик <code>NotificationBell</code></td></tr>
+    <tr><td class="tok">errorContainer</td><td class="hex">#FDE2E2</td><td><span class="sw" style="background:#FDE2E2"></span></td><td>Фон <code>StockBadge</code> out, <code>ErrorState</code>, inline-ошибки</td></tr>
+    <tr><td class="tok">info</td><td class="hex">#0E6A8E</td><td><span class="sw" style="background:#0E6A8E"></span></td><td>Статус синхронизации (<code>SyncIndicator</code>), <code>StatusChip</code> pending, подсказки; тёмно-бирюзовый, отделён от primary</td></tr>
+    <tr><td class="tok">infoContainer</td><td class="hex">#E0F2FE</td><td><span class="sw" style="background:#E0F2FE"></span></td><td>Фон информационных бейджей и баннеров</td></tr>
+    <tr><td class="tok">focus</td><td class="hex">#0053FA</td><td><span class="sw" style="background:#0053FA"></span></td><td>Кольцо фокуса 2 px + 2 px отступ (клавиатура, HID-сканер)</td></tr>
+    <tr><td class="tok">disabledBg</td><td class="hex">#E5E7EB</td><td><span class="sw" style="background:#E5E7EB"></span></td><td>Фон неактивных кнопок/полей; исключение WCAG 1.4.3</td></tr>
+    <tr><td class="tok">disabledText</td><td class="hex">#9CA3AF</td><td><span class="sw" style="background:#9CA3AF"></span></td><td>Текст неактивных элементов (2.05:1 на disabledBg — исключение WCAG)</td></tr>
+    <tr><td class="tok">favorite</td><td class="hex">#FEC50A</td><td><span class="sw" style="background:#FEC50A"></span></td><td>Звезда «избранное» (<code>FavoriteToggle</code>) — только как иконка на белом, с обводкой #B45309 в состоянии «выкл.» / контуром</td></tr>
+    <tr><td class="tok">brandAccent</td><td class="hex">#FF8700</td><td><span class="sw" style="background:#FF8700"></span></td><td><b>Только акцент</b>: логотип, splash, персонаж, иллюстрации пустых состояний (правила — раздел 7). Никогда как статус, цена, единственная обводка</td></tr>
+    <tr><td class="tok">skeletonBase</td><td class="hex">#EEF1F5</td><td><span class="sw" style="background:#EEF1F5"></span></td><td>База шиммера <code>SkeletonBox</code></td></tr>
+    <tr><td class="tok">skeletonHighlight</td><td class="hex">#E4E7EC</td><td><span class="sw" style="background:#E4E7EC"></span></td><td>Блик шиммера (декоративный, 1.09:1 — контраст не требуется)</td></tr>
+    <tr><td class="tok">overlay</td><td class="hex">rgba(27,31,42,0.48)</td><td><span class="sw" style="background:rgba(27,31,42,0.48)"></span></td><td>Затемнение под модальными диалогами и bottom sheet</td></tr>
+    <tr><td class="tok">iconButtonPressed <span class="status status-d">РЕШЕНИЕ: ядро §17.5</span></td><td class="hex">#E2E6EC</td><td><span class="sw" style="background:#E2E6EC"></span></td><td>Pressed-фон <code>AppIconButton</code> (R4 §3.2; токен добавлен ядром v1.2 §17.5)</td></tr>
+    <tr><td class="tok">onSuccess <span class="status status-d">РЕШЕНИЕ: ядро §17.5</span></td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF"></span></td><td>Текст/иконка на заливке success (fill-кнопка success, 5.02:1 — R4 §3.2)</td></tr>
+    <tr><td class="tok">onError <span class="status status-d">РЕШЕНИЕ: ядро §17.5</span></td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF"></span></td><td>Текст/иконка на заливке error (danger-кнопка, счётчик <code>NotificationBell</code>)</td></tr>
+    <tr><td class="tok">onBrandAccent <span class="status status-d">РЕШЕНИЕ: ядро §17.5</span></td><td class="hex">#1B1F2A</td><td><span class="sw" style="background:#1B1F2A"></span></td><td>Текст/иконка на заливке brandAccent #FF8700 (тёмный текст 6.83:1; белый — 2.41:1, FAIL)</td></tr>
+    <tr><td class="tok">inverseSurface <span class="status status-d">РЕШЕНИЕ: ядро §18.2 п.15</span></td><td class="hex">#1B1F2A</td><td><span class="sw" style="background:#1B1F2A"></span></td><td>Фон снэкбара и тултипа (<code>AppTooltip</code>)</td></tr>
+    <tr><td class="tok">onInverseSurface <span class="status status-d">РЕШЕНИЕ: ядро §18.2 п.15</span></td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF"></span></td><td>Текст/иконка на inverseSurface (16.46:1)</td></tr>
+  </tbody>
+</table>
+<p class="ref">Состояния (R4 §3.2): hover — surface → surfaceHover; pressed — surface → surfacePressed; selected — primaryContainer + левая полоса 3 px primary (5.80:1 к surface).</p>
+
+<!-- ======================= 2. ВАРИАНТ B ======================= -->
+<h2 id="s2">2. Вариант B «Оранжевый» — таблица токенов</h2>
+<div class="variant-head"><span class="dot var-b-color"></span><h3 style="margin:0">Основа: Logo Orange.png · статус: <span class="status status-q">альтернатива по Q-006</span> (описана полностью, не принята в ядре)</h3></div>
+<p>Токены — из R4 §3.3 с теми же именами, что в ядре §8.1 (ядро §8.1: «Вариант B — токены из R4 §3.3 с теми же именами»). Ключевые ограничения B: (1) на <code>primary</code> #FF8700 допустим только тёмный текст <code>onPrimary</code> #1B1F2A; (2) для текста, ссылок, иконок, цен и обводок вводится отдельный токен <code class="tok">primaryText</code> #B04E00; (3) warning смещён в жёлто-охристый, чтобы отойти от бренда; (4) фокус-ринг и info — синие.</p>
+
+<h4>Палитра-свотчи B</h4>
+<div class="palette-strip">
+  <div class="chip"><div class="c" style="background:#F5F5F4"></div><div class="t">background<b>#F5F5F4</b></div></div>
+  <div class="chip"><div class="c" style="background:#FFFFFF"></div><div class="t">surface<b>#FFFFFF</b></div></div>
+  <div class="chip"><div class="c" style="background:#EFEEEC"></div><div class="t">surfaceVariant<b>#EFEEEC</b></div></div>
+  <div class="chip"><div class="c" style="background:#FF8700"></div><div class="t">primary<b>#FF8700</b></div></div>
+  <div class="chip"><div class="c" style="background:#F07A00"></div><div class="t">primaryHover<b>#F07A00</b></div></div>
+  <div class="chip"><div class="c" style="background:#D96A00"></div><div class="t">primaryPressed<b>#D96A00</b></div></div>
+  <div class="chip"><div class="c" style="background:#B04E00"></div><div class="t">primaryText<b>#B04E00</b></div></div>
+  <div class="chip"><div class="c" style="background:#FFEFD9"></div><div class="t">primaryContainer<b>#FFEFD9</b></div></div>
+  <div class="chip"><div class="c" style="background:#FFEAD1"></div><div class="t">primaryContainerPressed<b>#FFEAD1</b></div></div>
+  <div class="chip"><div class="c" style="background:#1B1F2A"></div><div class="t">textPrimary / onPrimary<b>#1B1F2A</b></div></div>
+  <div class="chip"><div class="c" style="background:#5A6373"></div><div class="t">textSecondary<b>#5A6373</b></div></div>
+  <div class="chip"><div class="c" style="background:#6B7484"></div><div class="t">textTertiary<b>#6B7484</b></div></div>
+  <div class="chip"><div class="c" style="background:#DAD8D4"></div><div class="t">border<b>#DAD8D4</b></div></div>
+  <div class="chip"><div class="c" style="background:#7D8797"></div><div class="t">borderStrong<b>#7D8797</b></div></div>
+  <div class="chip"><div class="c" style="background:#15803D"></div><div class="t">success<b>#15803D</b></div></div>
+  <div class="chip"><div class="c" style="background:#DCFCE7"></div><div class="t">successContainer<b>#DCFCE7</b></div></div>
+  <div class="chip"><div class="c" style="background:#8A6A00"></div><div class="t">warning<b>#8A6A00</b></div></div>
+  <div class="chip"><div class="c" style="background:#FEF9C3"></div><div class="t">warningContainer<b>#FEF9C3</b></div></div>
+  <div class="chip"><div class="c" style="background:#C62828"></div><div class="t">error<b>#C62828</b></div></div>
+  <div class="chip"><div class="c" style="background:#FDE2E2"></div><div class="t">errorContainer<b>#FDE2E2</b></div></div>
+  <div class="chip"><div class="c" style="background:#1F5FA8"></div><div class="t">info / focus<b>#1F5FA8</b></div></div>
+  <div class="chip"><div class="c" style="background:#E0ECFB"></div><div class="t">infoContainer<b>#E0ECFB</b></div></div>
+  <div class="chip"><div class="c" style="background:#E5E7EB"></div><div class="t">disabledBg<b>#E5E7EB</b></div></div>
+  <div class="chip"><div class="c" style="background:#9CA3AF"></div><div class="t">disabledText<b>#9CA3AF</b></div></div>
+  <div class="chip"><div class="c" style="background:#E6E4E1"></div><div class="t">skeletonHighlight<b>#E6E4E1</b></div></div>
+</div>
+
+<h4>Полная таблица токенов B (R4 §3.3)</h4>
+<table>
+  <thead><tr><th>Имя токена</th><th>HEX</th><th>Образец</th><th>Назначение / примечание</th></tr></thead>
+  <tbody>
+    <tr><td class="tok">background</td><td class="hex">#F5F5F4</td><td><span class="sw" style="background:#F5F5F4"></span></td><td>Тёплый нейтральный фон экрана</td></tr>
+    <tr><td class="tok">surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF"></span></td><td>Карточки, панели, поля</td></tr>
+    <tr><td class="tok">surfaceVariant</td><td class="hex">#EFEEEC</td><td><span class="sw" style="background:#EFEEEC"></span></td><td>Заголовки таблиц, вторичные панели (тёплая нейтраль)</td></tr>
+    <tr><td class="tok">surfaceHover</td><td class="hex">#F7F6F4</td><td><span class="sw" style="background:#F7F6F4"></span></td><td>Фон под указателем; textTertiary на нём 4.36:1 — только крупный/полужирный текст</td></tr>
+    <tr><td class="tok">surfacePressed</td><td class="hex">#EFEEEC</td><td><span class="sw" style="background:#EFEEEC"></span></td><td>= surfaceVariant</td></tr>
+    <tr class="hl"><td class="tok">primary</td><td class="hex">#FF8700</td><td><span class="sw" style="background:#FF8700"></span></td><td><b>Brand fill, только с тёмным текстом</b> onPrimary #1B1F2A (6.83:1); белый текст на нём — 2.41:1, запрещён. Применение ограничено: логотип, главная CTA, активный пункт навигации, прогресс</td></tr>
+    <tr><td class="tok">primaryHover</td><td class="hex">#F07A00</td><td><span class="sw" style="background:#F07A00"></span></td><td>С тёмным текстом 5.87:1</td></tr>
+    <tr><td class="tok">primaryPressed</td><td class="hex">#D96A00</td><td><span class="sw" style="background:#D96A00"></span></td><td>С тёмным текстом 4.71:1</td></tr>
+    <tr class="hl"><td class="tok">primaryText</td><td class="hex">#B04E00</td><td><span class="sw" style="background:#B04E00"></span></td><td><b>Дополнительный токен варианта B</b>: ссылки, иконки, цены на белом, обводки outlined-кнопок, полоса выбранной строки — 5.34:1. В A не нужен (primary сам проходит AA)</td></tr>
+    <tr><td class="tok">primaryContainer</td><td class="hex">#FFEFD9</td><td><span class="sw" style="background:#FFEFD9"></span></td><td>Выбранная категория/плитка, фон чипа (selected-bg)</td></tr>
+    <tr><td class="tok">primaryContainerPressed</td><td class="hex">#FFEAD1</td><td><span class="sw" style="background:#FFEAD1"></span></td><td>Pressed-фон outlined/tonal кнопок; primaryText на нём 4.56:1</td></tr>
+    <tr class="hl"><td class="tok">onPrimary</td><td class="hex">#1B1F2A</td><td><span class="sw" style="background:#1B1F2A"></span></td><td><b>Тёмный</b> текст на оранжевой заливке (6.83:1 AA). Нетипично для POS-CTA, но единственный доступный вариант</td></tr>
+    <tr><td class="tok">textPrimary</td><td class="hex">#1B1F2A</td><td><span class="sw" style="background:#1B1F2A"></span></td><td>Как в A</td></tr>
+    <tr><td class="tok">textSecondary</td><td class="hex">#5A6373</td><td><span class="sw" style="background:#5A6373"></span></td><td>Как в A</td></tr>
+    <tr><td class="tok">textTertiary</td><td class="hex">#6B7484</td><td><span class="sw" style="background:#6B7484"></span></td><td>Как в A</td></tr>
+    <tr><td class="tok">border</td><td class="hex">#DAD8D4</td><td><span class="sw" style="background:#DAD8D4"></span></td><td>Декоративные границы (тёплая нейтраль)</td></tr>
+    <tr><td class="tok">borderStrong</td><td class="hex">#7D8797</td><td><span class="sw" style="background:#7D8797"></span></td><td>Границы полей ввода — 3.63 / 3.33:1, проходит 1.4.11</td></tr>
+    <tr><td class="tok">success</td><td class="hex">#15803D</td><td><span class="sw" style="background:#15803D"></span></td><td>Как в A</td></tr>
+    <tr><td class="tok">successContainer</td><td class="hex">#DCFCE7</td><td><span class="sw" style="background:#DCFCE7"></span></td><td>Как в A</td></tr>
+    <tr class="hl"><td class="tok">warning</td><td class="hex">#8A6A00</td><td><span class="sw" style="background:#8A6A00"></span></td><td><b>Смещён в жёлтый</b> (hue ≈ 46°), чтобы отойти от бренда (hue ≈ 32°); всегда с иконкой «треугольник !» и текстом</td></tr>
+    <tr class="hl"><td class="tok">warningContainer</td><td class="hex">#FEF9C3</td><td><span class="sw" style="background:#FEF9C3"></span></td><td>Фон бейджей «мало» (вместо оранжевой заливки)</td></tr>
+    <tr><td class="tok">error</td><td class="hex">#C62828</td><td><span class="sw" style="background:#C62828"></span></td><td>Как в A</td></tr>
+    <tr><td class="tok">errorContainer</td><td class="hex">#FDE2E2</td><td><span class="sw" style="background:#FDE2E2"></span></td><td>Как в A</td></tr>
+    <tr><td class="tok">info</td><td class="hex">#1F5FA8</td><td><span class="sw" style="background:#1F5FA8"></span></td><td>Синий info — контрастен к оранжевому</td></tr>
+    <tr><td class="tok">infoContainer</td><td class="hex">#E0ECFB</td><td><span class="sw" style="background:#E0ECFB"></span></td><td>Фон информационных бейджей</td></tr>
+    <tr class="hl"><td class="tok">focus</td><td class="hex">#1F5FA8</td><td><span class="sw" style="background:#1F5FA8"></span></td><td><b>Синий</b> фокус-ринг (6.44:1) — оранжевое кольцо на белом 2.41:1 не прошло бы 1.4.11</td></tr>
+    <tr><td class="tok">disabledBg</td><td class="hex">#E5E7EB</td><td><span class="sw" style="background:#E5E7EB"></span></td><td>Как в A</td></tr>
+    <tr><td class="tok">disabledText</td><td class="hex">#9CA3AF</td><td><span class="sw" style="background:#9CA3AF"></span></td><td>Как в A</td></tr>
+    <tr><td class="tok">favorite</td><td class="hex">#FEC50A</td><td><span class="sw" style="background:#FEC50A"></span></td><td>В R4 §3.3 не задан; принят как в A <span class="status status-t">ТИПОВО</span>. Жёлтая звезда рядом с оранжевым primary различается слабо — требует проверки</td></tr>
+    <tr><td class="tok">brandAccent</td><td class="hex">#FF8700</td><td><span class="sw" style="background:#FF8700"></span></td><td>= primary (в B бренд и интерактивный цвет совпадают)</td></tr>
+    <tr><td class="tok">skeletonBase</td><td class="hex">#EFEEEC</td><td><span class="sw" style="background:#EFEEEC"></span></td><td>= surfaceVariant</td></tr>
+    <tr><td class="tok">skeletonHighlight</td><td class="hex">#E6E4E1</td><td><span class="sw" style="background:#E6E4E1"></span></td><td>Блик шиммера (декоративный)</td></tr>
+    <tr><td class="tok">overlay</td><td class="hex">rgba(27,31,42,0.48)</td><td><span class="sw" style="background:rgba(27,31,42,0.48)"></span></td><td>Как в A</td></tr>
+    <tr><td class="tok">iconButtonPressed <span class="status status-d">РЕШЕНИЕ: ядро §17.5</span></td><td class="hex">#E6E4E1</td><td><span class="sw" style="background:#E6E4E1"></span></td><td>Pressed-фон <code>AppIconButton</code> (R4 §3.3)</td></tr>
+  </tbody>
+</table>
+<p class="ref">Состояния (R4 §3.3): hover — surface → surfaceHover #F7F6F4; pressed — → surfacePressed #EFEEEC; selected — primaryContainer #FFEFD9 + левая полоса 3 px <b>primaryText #B04E00</b> (5.34:1; полоса #FF8700 даёт 2.41:1 и не проходит 1.4.11).</p>
+
+<div class="note"><b>Конфликт «оранжевый бренд vs warning» и его решение в B (R4 §3.3):</b> (1) бренд-оранжевый никогда не используется как цвет статуса; (2) warning переводится в жёлто-охристый (#8A6A00 / #FEF9C3) и всегда сопровождается иконкой и текстом; (3) бейджи «мало» используют warningContainer + текст, а не оранжевую заливку; (4) primary-оранжевый ограничен логотипом, главной CTA, активным пунктом навигации и прогрессом. При протан/дейтеранопии primaryText #B04E00 и warning #8A6A00 сливаются (ΔE 7/3) — дополнительный аргумент против оранжевого как интерактивного цвета.</div>
+
+<!-- ======================= 3. КОНТРАСТ WCAG ======================= -->
+<h2 id="s3">3. Контраст WCAG 2.2 — данные из R4 §3.4</h2>
+<p>Все коэффициенты ниже <b>скопированы</b> из таблиц R4 §3.4 (вывод скрипта <code>contrast.py</code>, формула относительной яркости WCAG 2.x; <span class="status status-d">ПОДТВЕРЖДЕНО: python -I contrast.py</span>). Пороги (W3C, SC 1.4.3 / 1.4.6 / 1.4.11): обычный текст — AA 4.5 / AAA 7; крупный текст (≥ 24 px или ≥ 18.67 px bold, округлять до 19 px) — AA 3 / AAA 4.5; нетекстовые элементы — 3:1. Неактивные элементы и декоративные границы исключены из требований (1.4.3). Колонки «Образец» добавлены для наглядности и воспроизводят соответствующую пару цветов.</p>
+
+<h3 id="s3-1">3.1. Вариант A «Синий» — пары текст/фон</h3>
+<table>
+  <thead><tr><th>Текст (роль)</th><th>HEX</th><th>Фон (роль)</th><th>HEX</th><th>Образец</th><th class="num">Коэф.</th><th>Обычный текст (AA 4.5 / AAA 7)</th><th>Крупный текст (AA 3 / AAA 4.5)</th></tr></thead>
+  <tbody>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">16.46:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>background</td><td class="hex">#F4F5F7</td><td><span class="sw" style="background:#F4F5F7;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">15.09:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>surface-variant</td><td class="hex">#EEF1F5</td><td><span class="sw" style="background:#EEF1F5;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">14.53:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>primary-container</td><td class="hex">#E5EEFF</td><td><span class="sw" style="background:#E5EEFF;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">14.11:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#5A6373;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">6.06:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>background</td><td class="hex">#F4F5F7</td><td><span class="sw" style="background:#F4F5F7;color:#5A6373;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">5.55:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>surface-variant</td><td class="hex">#EEF1F5</td><td><span class="sw" style="background:#EEF1F5;color:#5A6373;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">5.35:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-tertiary</td><td class="hex">#6B7484</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#6B7484;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">4.71:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-tertiary</td><td class="hex">#6B7484</td><td>background</td><td class="hex">#F4F5F7</td><td><span class="sw" style="background:#F4F5F7;color:#6B7484;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">4.32:1</td><td><span class="tag tag-fail">FAIL</span> (только крупный/полужирный)</td><td><span class="tag tag-aa">AA</span></td></tr>
+    <tr><td>primary</td><td class="hex">#0053FA</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#0053FA;width:auto;padding:0 6px;font-weight:700">2 350 сом</span></td><td class="num">5.80:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>primary</td><td class="hex">#0053FA</td><td>background</td><td class="hex">#F4F5F7</td><td><span class="sw" style="background:#F4F5F7;color:#0053FA;width:auto;padding:0 6px;font-weight:700">2 350 сом</span></td><td class="num">5.32:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>primary</td><td class="hex">#0053FA</td><td>primary-container</td><td class="hex">#E5EEFF</td><td><span class="sw" style="background:#E5EEFF;color:#0053FA;width:auto;padding:0 6px;font-weight:700">2 350 сом</span></td><td class="num">4.98:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>on-primary</td><td class="hex">#FFFFFF</td><td>primary</td><td class="hex">#0053FA</td><td><span class="sw" style="background:#0053FA;color:#FFFFFF;width:auto;padding:0 6px;font-weight:600">+ Добавить</span></td><td class="num">5.80:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>on-primary</td><td class="hex">#FFFFFF</td><td>primary-hover</td><td class="hex">#0047DB</td><td><span class="sw" style="background:#0047DB;color:#FFFFFF;width:auto;padding:0 6px;font-weight:600">+ Добавить</span></td><td class="num">7.18:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>on-primary</td><td class="hex">#FFFFFF</td><td>primary-pressed</td><td class="hex">#003BB8</td><td><span class="sw" style="background:#003BB8;color:#FFFFFF;width:auto;padding:0 6px;font-weight:600">+ Добавить</span></td><td class="num">9.06:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>success</td><td class="hex">#15803D</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#15803D;width:auto;padding:0 6px;font-weight:600">В наличии</span></td><td class="num">5.02:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>success</td><td class="hex">#15803D</td><td>success-container</td><td class="hex">#DCFCE7</td><td><span class="sw" style="background:#DCFCE7;color:#15803D;width:auto;padding:0 6px;font-weight:600">В наличии</span></td><td class="num">4.57:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>warning</td><td class="hex">#B45309</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#B45309;width:auto;padding:0 6px;font-weight:600">Мало</span></td><td class="num">5.02:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>warning</td><td class="hex">#B45309</td><td>warning-container</td><td class="hex">#FEF3C7</td><td><span class="sw" style="background:#FEF3C7;color:#B45309;width:auto;padding:0 6px;font-weight:600">Мало</span></td><td class="num">4.51:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>error</td><td class="hex">#C62828</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#C62828;width:auto;padding:0 6px;font-weight:600">Нет</span></td><td class="num">5.62:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>error</td><td class="hex">#C62828</td><td>error-container</td><td class="hex">#FDE2E2</td><td><span class="sw" style="background:#FDE2E2;color:#C62828;width:auto;padding:0 6px;font-weight:600">Нет</span></td><td class="num">4.59:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>info</td><td class="hex">#0E6A8E</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#0E6A8E;width:auto;padding:0 6px;font-weight:600">обновлено</span></td><td class="num">6.05:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>info</td><td class="hex">#0E6A8E</td><td>info-container</td><td class="hex">#E0F2FE</td><td><span class="sw" style="background:#E0F2FE;color:#0E6A8E;width:auto;padding:0 6px;font-weight:600">обновлено</span></td><td class="num">5.27:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>disabled-text</td><td class="hex">#9CA3AF</td><td>disabled-bg</td><td class="hex">#E5E7EB</td><td><span class="sw" style="background:#E5E7EB;color:#9CA3AF;width:auto;padding:0 6px;font-weight:600">Неактивно</span></td><td class="num">2.05:1</td><td><span class="tag tag-fail">FAIL</span> <span class="tag tag-ex">исключение WCAG</span></td><td><span class="tag tag-fail">FAIL</span></td></tr>
+    <tr><td>disabled-text</td><td class="hex">#9CA3AF</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#9CA3AF;width:auto;padding:0 6px;font-weight:600">Неактивно</span></td><td class="num">2.54:1</td><td><span class="tag tag-fail">FAIL</span> <span class="tag tag-ex">исключение WCAG</span></td><td><span class="tag tag-fail">FAIL</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>selected-bg</td><td class="hex">#E5EEFF</td><td><span class="sw" style="background:#E5EEFF;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Смесители</span></td><td class="num">14.11:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>selected-bg</td><td class="hex">#E5EEFF</td><td><span class="sw" style="background:#E5EEFF;color:#5A6373;width:auto;padding:0 6px;font-weight:600">124</span></td><td class="num">5.19:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>surface-hover</td><td class="hex">#F8FAFC</td><td><span class="sw" style="background:#F8FAFC;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">15.73:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>surface-hover</td><td class="hex">#F8FAFC</td><td><span class="sw" style="background:#F8FAFC;color:#5A6373;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">5.79:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-tertiary</td><td class="hex">#6B7484</td><td>surface-hover</td><td class="hex">#F8FAFC</td><td><span class="sw" style="background:#F8FAFC;color:#6B7484;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">4.50:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>surface-pressed</td><td class="hex">#EEF1F5</td><td><span class="sw" style="background:#EEF1F5;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">14.53:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>surface-pressed</td><td class="hex">#EEF1F5</td><td><span class="sw" style="background:#EEF1F5;color:#5A6373;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">5.35:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>primary-container-pressed</td><td class="hex">#D6E3FF</td><td><span class="sw" style="background:#D6E3FF;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">12.77:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>primary-container-pressed</td><td class="hex">#D6E3FF</td><td><span class="sw" style="background:#D6E3FF;color:#5A6373;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">4.70:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>icon-button-pressed</td><td class="hex">#E2E6EC</td><td><span class="sw" style="background:#E2E6EC;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">13.14:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>icon-button-pressed</td><td class="hex">#E2E6EC</td><td><span class="sw" style="background:#E2E6EC;color:#5A6373;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">4.84:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>primary</td><td class="hex">#0053FA</td><td>surface-hover</td><td class="hex">#F8FAFC</td><td><span class="sw" style="background:#F8FAFC;color:#0053FA;width:auto;padding:0 6px;font-weight:700">Aa</span></td><td class="num">5.55:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>primary</td><td class="hex">#0053FA</td><td>primary-container-pressed</td><td class="hex">#D6E3FF</td><td><span class="sw" style="background:#D6E3FF;color:#0053FA;width:auto;padding:0 6px;font-weight:700">Aa</span></td><td class="num">4.50:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>primary</td><td class="hex">#0053FA</td><td>icon-button-pressed</td><td class="hex">#E2E6EC</td><td><span class="sw" style="background:#E2E6EC;color:#0053FA;width:auto;padding:0 6px;font-weight:700">Aa</span></td><td class="num">4.63:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr class="hl"><td><b>вторичный текст макета</b> (оценка, R4 §1.5)</td><td class="hex">≈ #8B8FA0</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#8B8FA0;width:auto;padding:0 6px;font-weight:500">Найдено: 124</span></td><td class="num"><b>3.21:1</b> (диапазон выборки #7F85A4–#9495A0: 2.97–3.62)</td><td><span class="tag tag-fail">FAIL</span></td><td><span class="tag tag-aa">AA</span></td></tr>
+    <tr class="hl"><td><b>белый на зелёной кнопке макета</b></td><td class="hex">#FFFFFF</td><td>—</td><td class="hex">#0D9E48</td><td><span class="sw" style="background:#0D9E48;color:#FFFFFF;width:auto;padding:0 6px;font-weight:600">✓ Создать заказ</span></td><td class="num"><b>3.50:1</b></td><td><span class="tag tag-fail">FAIL</span></td><td><span class="tag tag-aa">AA</span></td></tr>
+    <tr class="hl"><td>белый на красном бейдже макета</td><td class="hex">#FFFFFF</td><td>—</td><td class="hex">#E31F1D</td><td><span class="sw" style="background:#E31F1D;color:#FFFFFF;width:auto;padding:0 6px;font-weight:600">3</span></td><td class="num">4.69:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+  </tbody>
+</table>
+<p class="ref">Из R4 §3.4: первая итерация text-tertiary #7C8594 давала 3.72:1 на surface / 3.41:1 на background (FAIL) и заменена на #6B7484 — 4.71:1 на surface (AA), 4.32:1 на background (только крупный/полужирный текст); border-strong #7D8797 — 3.63:1 на белом, 3.33:1 на background (проходит 1.4.11). Строки, выделенные цветом, — измеренные цвета макетов заказчика, которые в палитру не вошли.</p>
+
+<h3 id="s3-2">3.2. Вариант B «Оранжевый» — пары текст/фон</h3>
+<table>
+  <thead><tr><th>Текст (роль)</th><th>HEX</th><th>Фон (роль)</th><th>HEX</th><th>Образец</th><th class="num">Коэф.</th><th>Обычный текст</th><th>Крупный текст</th></tr></thead>
+  <tbody>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">16.46:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>background</td><td class="hex">#F5F5F4</td><td><span class="sw" style="background:#F5F5F4;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">15.09:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>surface-variant</td><td class="hex">#EFEEEC</td><td><span class="sw" style="background:#EFEEEC;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">14.19:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>primary-container</td><td class="hex">#FFEFD9</td><td><span class="sw" style="background:#FFEFD9;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">14.58:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#5A6373;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">6.06:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>background</td><td class="hex">#F5F5F4</td><td><span class="sw" style="background:#F5F5F4;color:#5A6373;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">5.55:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>surface-variant</td><td class="hex">#EFEEEC</td><td><span class="sw" style="background:#EFEEEC;color:#5A6373;width:auto;padding:0 6px;font-weight:600">Aa 16 007,50</span></td><td class="num">5.22:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr class="hl"><td><b>primary (как текст)</b></td><td class="hex">#FF8700</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#FF8700;width:auto;padding:0 6px;font-weight:700">2 350 сом</span></td><td class="num"><b>2.41:1</b></td><td><span class="tag tag-fail">FAIL</span></td><td><span class="tag tag-fail">FAIL</span></td></tr>
+    <tr class="hl"><td>primary (как текст)</td><td class="hex">#FF8700</td><td>background</td><td class="hex">#F5F5F4</td><td><span class="sw" style="background:#F5F5F4;color:#FF8700;width:auto;padding:0 6px;font-weight:700">2 350 сом</span></td><td class="num">2.21:1</td><td><span class="tag tag-fail">FAIL</span></td><td><span class="tag tag-fail">FAIL</span></td></tr>
+    <tr class="hl"><td>primary (как текст)</td><td class="hex">#FF8700</td><td>primary-container</td><td class="hex">#FFEFD9</td><td><span class="sw" style="background:#FFEFD9;color:#FF8700;width:auto;padding:0 6px;font-weight:700">2 350 сом</span></td><td class="num">2.13:1</td><td><span class="tag tag-fail">FAIL</span></td><td><span class="tag tag-fail">FAIL</span></td></tr>
+    <tr><td>on-primary (тёмный)</td><td class="hex">#1B1F2A</td><td>primary</td><td class="hex">#FF8700</td><td><span class="sw" style="background:#FF8700;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">+ Добавить</span></td><td class="num">6.83:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>on-primary (тёмный)</td><td class="hex">#1B1F2A</td><td>primary-hover</td><td class="hex">#F07A00</td><td><span class="sw" style="background:#F07A00;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">+ Добавить</span></td><td class="num">5.87:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>on-primary (тёмный)</td><td class="hex">#1B1F2A</td><td>primary-pressed</td><td class="hex">#D96A00</td><td><span class="sw" style="background:#D96A00;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">+ Добавить</span></td><td class="num">4.71:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr class="hl"><td><b>белый на primary</b></td><td class="hex">#FFFFFF</td><td>—</td><td class="hex">#FF8700</td><td><span class="sw" style="background:#FF8700;color:#FFFFFF;width:auto;padding:0 6px;font-weight:600">+ Добавить</span></td><td class="num"><b>2.41:1</b></td><td><span class="tag tag-fail">FAIL</span></td><td><span class="tag tag-fail">FAIL</span></td></tr>
+    <tr class="hl"><td>белый на primary-pressed</td><td class="hex">#FFFFFF</td><td>—</td><td class="hex">#D96A00</td><td><span class="sw" style="background:#D96A00;color:#FFFFFF;width:auto;padding:0 6px;font-weight:600">+ Добавить</span></td><td class="num">3.49:1</td><td><span class="tag tag-fail">FAIL</span></td><td><span class="tag tag-aa">AA</span></td></tr>
+    <tr><td>primary-text</td><td class="hex">#B04E00</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#B04E00;width:auto;padding:0 6px;font-weight:700">2 350 сом</span></td><td class="num">5.34:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>primary-text</td><td class="hex">#B04E00</td><td>primary-container</td><td class="hex">#FFEFD9</td><td><span class="sw" style="background:#FFEFD9;color:#B04E00;width:auto;padding:0 6px;font-weight:700">2 350 сом</span></td><td class="num">4.73:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>primary-text</td><td class="hex">#B04E00</td><td>background</td><td class="hex">#F5F5F4</td><td><span class="sw" style="background:#F5F5F4;color:#B04E00;width:auto;padding:0 6px;font-weight:700">2 350 сом</span></td><td class="num">4.89:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>success</td><td class="hex">#15803D</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#15803D;width:auto;padding:0 6px;font-weight:600">В наличии</span></td><td class="num">5.02:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>success</td><td class="hex">#15803D</td><td>success-container</td><td class="hex">#DCFCE7</td><td><span class="sw" style="background:#DCFCE7;color:#15803D;width:auto;padding:0 6px;font-weight:600">В наличии</span></td><td class="num">4.57:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>warning</td><td class="hex">#8A6A00</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#8A6A00;width:auto;padding:0 6px;font-weight:600">Мало</span></td><td class="num">5.07:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>warning</td><td class="hex">#8A6A00</td><td>warning-container</td><td class="hex">#FEF9C3</td><td><span class="sw" style="background:#FEF9C3;color:#8A6A00;width:auto;padding:0 6px;font-weight:600">Мало</span></td><td class="num">4.72:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>error</td><td class="hex">#C62828</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#C62828;width:auto;padding:0 6px;font-weight:600">Нет</span></td><td class="num">5.62:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>error</td><td class="hex">#C62828</td><td>error-container</td><td class="hex">#FDE2E2</td><td><span class="sw" style="background:#FDE2E2;color:#C62828;width:auto;padding:0 6px;font-weight:600">Нет</span></td><td class="num">4.59:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>info</td><td class="hex">#1F5FA8</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#1F5FA8;width:auto;padding:0 6px;font-weight:600">обновлено</span></td><td class="num">6.44:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>info</td><td class="hex">#1F5FA8</td><td>info-container</td><td class="hex">#E0ECFB</td><td><span class="sw" style="background:#E0ECFB;color:#1F5FA8;width:auto;padding:0 6px;font-weight:600">обновлено</span></td><td class="num">5.39:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>selected-bg</td><td class="hex">#FFEFD9</td><td><span class="sw" style="background:#FFEFD9;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Смесители</span></td><td class="num">14.58:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>selected-bg</td><td class="hex">#FFEFD9</td><td><span class="sw" style="background:#FFEFD9;color:#5A6373;width:auto;padding:0 6px;font-weight:600">124</span></td><td class="num">5.36:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-tertiary</td><td class="hex">#6B7484</td><td>surface</td><td class="hex">#FFFFFF</td><td><span class="sw" style="background:#FFFFFF;color:#6B7484;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">4.71:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-tertiary</td><td class="hex">#6B7484</td><td>background</td><td class="hex">#F5F5F4</td><td><span class="sw" style="background:#F5F5F4;color:#6B7484;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">4.32:1</td><td><span class="tag tag-fail">FAIL</span> (только крупный/полужирный)</td><td><span class="tag tag-aa">AA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>surface-hover</td><td class="hex">#F7F6F4</td><td><span class="sw" style="background:#F7F6F4;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">15.24:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>surface-hover</td><td class="hex">#F7F6F4</td><td><span class="sw" style="background:#F7F6F4;color:#5A6373;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">5.61:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-tertiary</td><td class="hex">#6B7484</td><td>surface-hover</td><td class="hex">#F7F6F4</td><td><span class="sw" style="background:#F7F6F4;color:#6B7484;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">4.36:1</td><td><span class="tag tag-fail">FAIL</span> (только крупный/полужирный)</td><td><span class="tag tag-aa">AA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>surface-pressed</td><td class="hex">#EFEEEC</td><td><span class="sw" style="background:#EFEEEC;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">14.19:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>surface-pressed</td><td class="hex">#EFEEEC</td><td><span class="sw" style="background:#EFEEEC;color:#5A6373;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">5.22:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>primary-container-pressed</td><td class="hex">#FFEAD1</td><td><span class="sw" style="background:#FFEAD1;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">14.06:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>primary-container-pressed</td><td class="hex">#FFEAD1</td><td><span class="sw" style="background:#FFEAD1;color:#5A6373;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">5.17:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-primary</td><td class="hex">#1B1F2A</td><td>icon-button-pressed</td><td class="hex">#E6E4E1</td><td><span class="sw" style="background:#E6E4E1;color:#1B1F2A;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">12.97:1</td><td><span class="tag tag-aaa">AAA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>text-secondary</td><td class="hex">#5A6373</td><td>icon-button-pressed</td><td class="hex">#E6E4E1</td><td><span class="sw" style="background:#E6E4E1;color:#5A6373;width:auto;padding:0 6px;font-weight:600">Aa</span></td><td class="num">4.77:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>primary-text</td><td class="hex">#B04E00</td><td>surface-hover</td><td class="hex">#F7F6F4</td><td><span class="sw" style="background:#F7F6F4;color:#B04E00;width:auto;padding:0 6px;font-weight:700">Aa</span></td><td class="num">4.94:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>primary-text</td><td class="hex">#B04E00</td><td>surface-pressed</td><td class="hex">#EFEEEC</td><td><span class="sw" style="background:#EFEEEC;color:#B04E00;width:auto;padding:0 6px;font-weight:700">Aa</span></td><td class="num">4.60:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>primary-text</td><td class="hex">#B04E00</td><td>primary-container-pressed</td><td class="hex">#FFEAD1</td><td><span class="sw" style="background:#FFEAD1;color:#B04E00;width:auto;padding:0 6px;font-weight:700">Aa</span></td><td class="num">4.56:1</td><td><span class="tag tag-aa">AA</span></td><td><span class="tag tag-aaa">AAA</span></td></tr>
+    <tr><td>disabled-text</td><td class="hex">#9CA3AF</td><td>disabled-bg</td><td class="hex">#E5E7EB</td><td><span class="sw" style="background:#E5E7EB;color:#9CA3AF;width:auto;padding:0 6px;font-weight:600">Неактивно</span></td><td class="num">2.05:1</td><td><span class="tag tag-fail">FAIL</span> <span class="tag tag-ex">исключение</span></td><td><span class="tag tag-fail">FAIL</span></td></tr>
+  </tbody>
+</table>
+
+<h3 id="s3-3">3.3. Нетекстовый контраст (WCAG 1.4.11, порог 3:1)</h3>
+<table>
+  <thead><tr><th>Вариант</th><th>Элемент</th><th>HEX</th><th>Фон</th><th>HEX</th><th class="num">Коэф.</th><th>≥ 3:1</th></tr></thead>
+  <tbody>
+    <tr><td>A</td><td>primary (кнопка/иконка)</td><td class="hex">#0053FA</td><td>surface</td><td class="hex">#FFFFFF</td><td class="num">5.80:1</td><td><span class="tag tag-yes">да</span></td></tr>
+    <tr><td>A</td><td>border (декоративная)</td><td class="hex">#D9DEE6</td><td>surface</td><td class="hex">#FFFFFF</td><td class="num">1.35:1</td><td><span class="tag tag-no">нет</span> — допустимо для декоративных разделителей, не для границ полей</td></tr>
+    <tr><td>A</td><td>border-strong (поля ввода)</td><td class="hex">#7D8797</td><td>surface</td><td class="hex">#FFFFFF</td><td class="num">3.63:1</td><td><span class="tag tag-yes">да</span></td></tr>
+    <tr><td>A</td><td>border-strong (поля ввода)</td><td class="hex">#7D8797</td><td>background</td><td class="hex">#F4F5F7</td><td class="num">3.33:1</td><td><span class="tag tag-yes">да</span></td></tr>
+    <tr><td>A</td><td>skeleton-highlight / surface-hover / surface-pressed</td><td class="hex">#E4E7EC / #F8FAFC / #EEF1F5</td><td>surface(-variant)</td><td>—</td><td class="num">1.09 / 1.05 / 1.13</td><td><span class="tag tag-no">нет</span> — декоративные состояния, не являются единственным индикатором (selected дополнительно имеет полосу primary)</td></tr>
+    <tr><td>A</td><td>focus-ring</td><td class="hex">#0053FA</td><td>surface</td><td class="hex">#FFFFFF</td><td class="num">5.80:1</td><td><span class="tag tag-yes">да</span></td></tr>
+    <tr><td>A</td><td>success / error / warning иконки</td><td>—</td><td>surface</td><td class="hex">#FFFFFF</td><td class="num">5.02 / 5.62 / 5.02</td><td><span class="tag tag-yes">да</span></td></tr>
+    <tr class="hl"><td>B</td><td><b>primary (оранжевая иконка/обводка)</b></td><td class="hex">#FF8700</td><td>surface</td><td class="hex">#FFFFFF</td><td class="num"><b>2.41:1</b></td><td><span class="tag tag-no">нет</span> — оранжевую обводку/иконку нельзя делать единственным индикатором</td></tr>
+    <tr><td>B</td><td>primary-text (иконка)</td><td class="hex">#B04E00</td><td>surface</td><td class="hex">#FFFFFF</td><td class="num">5.34:1</td><td><span class="tag tag-yes">да</span></td></tr>
+    <tr><td>B</td><td>focus-ring</td><td class="hex">#1F5FA8</td><td>surface</td><td class="hex">#FFFFFF</td><td class="num">6.44:1</td><td><span class="tag tag-yes">да</span></td></tr>
+    <tr><td>B</td><td>warning</td><td class="hex">#8A6A00</td><td>surface</td><td class="hex">#FFFFFF</td><td class="num">5.07:1</td><td><span class="tag tag-yes">да</span></td></tr>
+    <tr><td>B</td><td>border-strong (поля ввода)</td><td class="hex">#7D8797</td><td>surface / background</td><td class="hex">#FFFFFF / #F5F5F4</td><td class="num">3.63 / 3.33</td><td><span class="tag tag-yes">да</span></td></tr>
+    <tr><td>B</td><td>skeleton-highlight / surface-hover / surface-pressed</td><td class="hex">#E6E4E1 / #F7F6F4 / #EFEEEC</td><td>surface(-variant)</td><td>—</td><td class="num">1.09 / 1.08 / 1.16</td><td><span class="tag tag-no">нет</span> — декоративные состояния, selected дополнительно имеет полосу primary-text</td></tr>
+  </tbody>
+</table>
+
+<h3 id="s3-4">3.4. Итог по контрасту</h3>
+<div class="grid-2">
+  <div class="card">
+    <div class="variant-head"><span class="dot var-a-color"></span><h3 style="margin:0">A «Синий»</h3></div>
+    <ul>
+      <li>Все рабочие пары текст/фон — <span class="tag tag-aa">AA</span> или <span class="tag tag-aaa">AAA</span>; FAIL только у неактивных элементов (исключение WCAG) и у text-tertiary на background (разрешён только крупный/полужирный).</li>
+      <li>primary как текст (цены, ссылки) — 5.80:1: <b>отдельный «текстовый» цвет не нужен</b>.</li>
+      <li>Белый на CTA — 5.80:1 (AA), hover/pressed — AAA.</li>
+      <li>Нетекстовый контраст primary, focus, borderStrong, статусных иконок — проходит.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="variant-head"><span class="dot var-b-color"></span><h3 style="margin:0">B «Оранжевый»</h3></div>
+    <ul>
+      <li>#FF8700 как текст — <span class="tag tag-fail">FAIL</span> на любом фоне (2.13–2.41:1); белый текст на #FF8700 — <span class="tag tag-fail">FAIL</span> (2.41:1), на pressed — 3.49:1 (только крупный).</li>
+      <li>Работает только связка «оранжевая заливка + тёмный текст» (6.83:1) и отдельный <code>primaryText</code> #B04E00 (5.34:1).</li>
+      <li>Оранжевая обводка/иконка (2.41:1) не проходит 1.4.11 — не может быть единственным индикатором выбора; фокус-ринг вынужденно синий.</li>
+      <li>Семантические и нейтральные пары — на уровне A.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ======================= 4. ОБРАЗЦЫ КОМПОНЕНТОВ ======================= -->
+<h2 id="s4">4. Образцы компонентов в обоих вариантах</h2>
+<p>Один и тот же набор образцов отрисован дважды: слева с токенами A, справа — с токенами B. Разметка идентична, отличаются только значения CSS-переменных <code class="tok">--ds-color-*</code> в обёртках <code>.theme-a</code> / <code>.theme-b</code>. Образцы — чистый HTML/CSS, статичные состояния подписаны (hover/pressed также срабатывают при наведении/нажатии мышью). Это <b>иллюстрация токенов</b>, а не спецификация компонентов — размеры, отступы и поведение описывает 03_UX_UI_DESIGN_SYSTEM.md и 02_SCREEN_SPECIFICATION.md.</p>
+<div class="row" style="margin:8px 0 16px">
+  <span style="font-size:13px;font-weight:600">Показать:</span>
+  <span class="switch"><label for="show-both">Оба варианта</label><label for="show-a">Только A «Синий»</label><label for="show-b">Только B «Оранжевый»</label></span>
+  <span style="font-size:13px;font-weight:600;margin-left:12px">Симуляция цветовосприятия (§5):</span>
+  <span class="switch"><label for="cb-none">Норма</label><label for="cb-protan">Протанопия</label><label for="cb-deutan">Дейтеранопия</label><label for="cb-tritan">Тританопия</label></span>
+</div>
+
+<div class="two-col cb-target">
+  <div class="col-a">
+    <div class="variant-head"><span class="dot var-a-color"></span><h3 class="cb-label" style="margin:0">A «Синий» · primary #0053FA, белый текст на CTA</h3></div>
+    <div class="theme theme-a">
+
+<h4>AppButton — primary / tonal / outlined / danger × default / hover / pressed / disabled (+ focus)</h4>
+<div class="comp-ref">AppButton (ядро §8.5) · размер M 44 lp · R4 §6 №1–3 · SCR-10, SCR-20, SCR-21 · вариант <code>secondary</code> ядра §8.5 не отрисован: его отличие от <code>tonal</code> определит 03</div>
+<div class="stack">
+  <div class="row">
+    <span class="state"><span class="lbl">default</span><span class="btn btn-primary"><svg><use href="#i-plus"/></svg>Добавить</span></span>
+    <span class="state"><span class="lbl">hover</span><span class="btn btn-primary is-hover"><svg><use href="#i-plus"/></svg>Добавить</span></span>
+    <span class="state"><span class="lbl">pressed</span><span class="btn btn-primary is-pressed"><svg><use href="#i-plus"/></svg>Добавить</span></span>
+    <span class="state"><span class="lbl">disabled</span><span class="btn btn-primary is-disabled"><svg><use href="#i-plus"/></svg>Добавить</span></span>
+    <span class="state"><span class="lbl">focus</span><span class="btn btn-primary is-focus"><svg><use href="#i-plus"/></svg>Добавить</span></span>
+  </div>
+  <div class="row">
+    <span class="state"><span class="lbl">default</span><span class="btn btn-secondary">Изменить</span></span>
+    <span class="state"><span class="lbl">hover</span><span class="btn btn-secondary is-hover">Изменить</span></span>
+    <span class="state"><span class="lbl">pressed</span><span class="btn btn-secondary is-pressed">Изменить</span></span>
+    <span class="state"><span class="lbl">disabled</span><span class="btn btn-secondary is-disabled">Изменить</span></span>
+    <span class="state"><span class="lbl">focus</span><span class="btn btn-secondary is-focus">Изменить</span></span>
+  </div>
+  <div class="row">
+    <span class="state"><span class="lbl">default</span><span class="btn btn-outlined">Отложить заказ</span></span>
+    <span class="state"><span class="lbl">hover</span><span class="btn btn-outlined is-hover">Отложить заказ</span></span>
+    <span class="state"><span class="lbl">pressed</span><span class="btn btn-outlined is-pressed">Отложить заказ</span></span>
+    <span class="state"><span class="lbl">disabled</span><span class="btn btn-outlined is-disabled">Отложить заказ</span></span>
+    <span class="state"><span class="lbl">focus</span><span class="btn btn-outlined is-focus">Отложить заказ</span></span>
+  </div>
+  <div class="row">
+    <span class="state"><span class="lbl">default</span><span class="btn btn-danger">Очистить корзину</span></span>
+    <span class="state"><span class="lbl">hover</span><span class="btn btn-danger is-hover">Очистить корзину</span></span>
+    <span class="state"><span class="lbl">pressed</span><span class="btn btn-danger is-pressed">Очистить корзину</span></span>
+    <span class="state"><span class="lbl">disabled</span><span class="btn btn-danger is-disabled">Очистить корзину</span></span>
+    <span class="state"><span class="lbl">focus</span><span class="btn btn-danger is-focus">Очистить корзину</span></span>
+  </div>
+  <div class="row">
+    <span class="state"><span class="lbl">success fill (L 52)</span><span class="btn btn-success l"><svg><use href="#i-check"/></svg>Создать заказ и показать QR</span></span>
+    <span class="state"><span class="lbl">text</span><span class="btn btn-text">Очистить</span></span>
+    <span class="state"><span class="lbl">text hover</span><span class="btn btn-text is-hover">Очистить</span></span>
+  </div>
+</div>
+
+<h4>AppTextField / PhoneField — поле ввода с ошибкой</h4>
+<div class="comp-ref">AppTextField, PhoneField (ядро §8.5) · R4 §6 №6–7 · SCR-01, SCR-21, SCR-26</div>
+<div class="row vt">
+  <label class="field"><span class="flabel">Телефон получателя</span><span class="fbox"><span class="ph">+996 (___) ___-__-__</span></span><span class="fhelp">Формат Кыргызстана</span></label>
+  <label class="field is-focus"><span class="flabel">Телефон получателя</span><span class="fbox">+996 (700) 12<span style="border-left:2px solid currentColor;height:18px"></span></span><span class="fhelp">Введите 9 цифр</span></label>
+  <label class="field is-error"><span class="flabel">Телефон получателя</span><span class="fbox">+996 (700) 12</span><span class="fhelp"><svg><use href="#i-err"/></svg>Введите 9 цифр — осталось 7</span></label>
+  <label class="field is-disabled"><span class="flabel">Телефон получателя</span><span class="fbox">+996 (700) 123-45-67</span><span class="fhelp">Недоступно для роли</span></label>
+</div>
+
+<h4>CategoryChip / FilterChip — чипы</h4>
+<div class="comp-ref">CategoryChip, FilterPanel (ядро §8.5) · R4 §6 №18 · SCR-10 compact, SCR-13</div>
+<div class="row">
+  <span class="chip">Санфаянс</span>
+  <span class="chip is-hover">Трубы и фитинги</span>
+  <span class="chip is-selected"><svg><use href="#i-check"/></svg>Смесители</span>
+  <span class="chip is-selected"><svg><use href="#i-check"/></svg>В наличии</span>
+  <span class="chip is-disabled">Канализация</span>
+</div>
+
+<h4>StockBadge — бейджи остатка «в наличии / мало / нет»</h4>
+<div class="comp-ref">StockBadge (ядро §8.5) · R4 §6 №16 · иконка + текст + число обязательны (дальтонизм, §5) · SCR-10, SCR-14</div>
+<div class="row">
+  <span class="badge badge-ok"><svg><use href="#i-check"/></svg>В наличии · 24 шт</span>
+  <span class="badge badge-low"><svg><use href="#i-warn"/></svg>Мало · 3 шт</span>
+  <span class="badge badge-out"><svg><use href="#i-x"/></svg>Нет в наличии · 0</span>
+  <span class="badge badge-info"><svg><use href="#i-sync"/></svg>Остаток на 09:41</span>
+  <span class="badge badge-neutral">По складам ▾</span>
+</div>
+
+<h4>ReceivableBadge — бейдж долга</h4>
+<div class="comp-ref">ReceivableBadge (ядро §8.5) · R4 §6 №30 · zero / due / overdue · SCR-31, SCR-32, SCR-34</div>
+<div class="row">
+  <span class="debt debt-zero"><svg><use href="#i-check"/></svg>Долг: <span class="pill tnum">0 сом</span></span>
+  <span class="debt debt-due"><svg><use href="#i-money"/></svg>Долг: <span class="pill tnum">12 400 сом · до 25.10</span></span>
+  <span class="debt debt-over"><svg><use href="#i-err"/></svg>Просрочено: <span class="pill tnum">12 400 сом · 6 дн.</span></span>
+  <span class="state"><span class="lbl">NotificationBell</span><span class="nbadge">3</span></span>
+</div>
+
+<h4>CartLine — строка корзины с ценой</h4>
+<div class="comp-ref">CartLine, QuantityStepper, PriceText (ядро §8.5) · R4 §6 №14, 22 · SCR-20</div>
+<div class="stack">
+  <div class="cart-line">
+    <div class="thumb"><svg><use href="#i-tap"/></svg></div>
+    <div class="name">Смеситель для кухни<small>Frap F4252 · арт. F4252</small></div>
+    <div class="stepper s"><span>−</span><span class="v tnum">2</span><span>+</span></div>
+    <div class="price tnum">4 700 сом</div>
+    <div class="x">✕</div>
+  </div>
+  <div class="cart-line is-warn">
+    <div class="thumb"><svg><use href="#i-tap"/></svg></div>
+    <div class="name">Смеситель для ванны<small>Frap F2283 · арт. F2283</small></div>
+    <div class="stepper s"><span>−</span><span class="v tnum">1</span><span class="dis">+</span></div>
+    <div class="price tnum">3 450 сом</div>
+    <div class="x">✕</div>
+    <div class="warn"><svg><use href="#i-warn"/></svg>Остаток изменился: доступно 1 шт</div>
+  </div>
+  <div class="surface" style="max-width:420px">
+    <div class="sum"><span>Товаров (5)</span><span class="v">16 850 сом</span></div>
+    <div class="sum"><span>Скидка (5 %)</span><span class="v">−842,50 сом</span></div>
+    <div class="sum total"><span>Итого</span><span class="v">16 007,50 сом</span></div>
+  </div>
+</div>
+
+<h4>ProductCardGrid — карточка товара</h4>
+<div class="comp-ref">ProductCardGrid, ProductImage, FavoriteToggle, PriceText, StockBadge (ядро §8.5) · R4 §6 №11 · SCR-10</div>
+<div class="row vt">
+  <div class="pcard">
+    <div class="img"><svg><use href="#i-tap"/></svg></div>
+    <svg class="star on" viewBox="0 0 24 24"><use href="#i-star"/></svg>
+    <div class="pname">Смеситель для кухни Frap F4252</div>
+    <div class="sku">арт. F4252 · шт</div>
+    <div class="pprice tnum">2 350 сом</div>
+    <span class="badge badge-ok"><svg><use href="#i-check"/></svg>В наличии · 24</span>
+    <span class="btn btn-primary"><svg><use href="#i-plus"/></svg>Добавить</span>
+  </div>
+  <div class="pcard">
+    <div class="img"><svg><use href="#i-tap"/></svg></div>
+    <svg class="star off" viewBox="0 0 24 24"><use href="#i-star"/></svg>
+    <div class="pname">Смеситель для ванны Frap F2283</div>
+    <div class="sku">арт. F2283 · шт</div>
+    <div class="pprice tnum">3 450 сом</div>
+    <span class="badge badge-low"><svg><use href="#i-warn"/></svg>Мало · 3</span>
+    <div class="stepper" style="width:100%;margin-top:8px"><span>−</span><span class="v tnum" style="flex:1">2</span><span>+</span></div>
+  </div>
+  <div class="pcard is-out">
+    <div class="img"><svg><use href="#i-tap"/></svg></div>
+    <svg class="star off" viewBox="0 0 24 24"><use href="#i-star"/></svg>
+    <div class="pname">Смеситель для раковины Gappo G1007</div>
+    <div class="sku">арт. G1007 · шт</div>
+    <div class="pprice tnum">1 650 сом</div>
+    <span class="badge badge-out"><svg><use href="#i-x"/></svg>Нет в наличии</span>
+    <span class="btn btn-primary is-disabled"><svg><use href="#i-plus"/></svg>Добавить</span>
+  </div>
+</div>
+
+<h4>CategorySidebarItem и PaymentMethodCard — выбранное состояние</h4>
+<div class="comp-ref">CategorySidebarItem, PaymentMethodCard (ядро §8.5) · R4 §6 №19, 26 · SCR-10, SCR-21</div>
+<div class="row vt">
+  <div class="stack">
+    <div class="cat"><svg><use href="#i-cat"/></svg>Санфаянс<span class="cnt">86</span></div>
+    <div class="cat is-hover"><svg><use href="#i-cat"/></svg>Трубы и фитинги<span class="cnt">342</span></div>
+    <div class="cat is-selected"><svg><use href="#i-cat"/></svg>Смесители<span class="cnt">124</span></div>
+    <div class="cat is-mockup"><svg><use href="#i-cat"/></svg>Смесители<span class="cnt">124</span></div>
+    <span class="lbl" style="text-align:left">последняя строка — сплошная заливка как на макете (в ТЗ заменена на primaryContainer + полоса)</span>
+  </div>
+  <div class="row">
+    <span class="tile">Наличными в кассу<small>Оплата в нашем магазине</small></span>
+    <span class="tile is-selected">QR / карта Бакай Банк<small>Оплата картой по QR</small></span>
+  </div>
+</div>
+
+<h4>SyncIndicator — индикатор синхронизации</h4>
+<div class="comp-ref">SyncIndicator, OfflineBanner (ядро §8.5) · R4 §6 №33–34 · TopAppBarPos, SCR-43, SCR-90</div>
+<div class="row">
+  <span class="sync sync-ok"><svg><use href="#i-check"/></svg>Обновлено 09:41</span>
+  <span class="sync sync-run"><svg><use href="#i-sync"/></svg>Синхронизация…</span>
+  <span class="sync sync-stale"><svg><use href="#i-warn"/></svg>Данные устарели · 62 мин</span>
+  <span class="sync sync-err"><svg><use href="#i-err"/></svg>Ошибка синхронизации</span>
+</div>
+<div class="row" style="margin-top:8px">
+  <div class="offline"><svg><use href="#i-cloud-off"/></svg>Нет сети — показаны данные на 09:41. Создание заказа недоступно.</div>
+</div>
+
+<h4>AppSnackbar — тост успеха / ошибки</h4>
+<div class="comp-ref">AppSnackbar (ядро §8.5) · R4 §6 №40 · 4 с (8 с с действием)</div>
+<div class="stack">
+  <div class="toast toast-ok"><svg><use href="#i-check"/></svg><span>Добавлено в корзину: Смеситель Frap F4252</span><span class="act">Отменить</span></div>
+  <div class="toast toast-err"><svg><use href="#i-err"/></svg><span>Не удалось создать заказ: 1С недоступна (ONEC_UNAVAILABLE)</span><span class="act">Повторить</span></div>
+</div>
+
+<h4>SkeletonBox — шиммер</h4>
+<div class="comp-ref">SkeletonBox (ядро §8.5) · skeletonBase → skeletonHighlight</div>
+<div class="stack" style="max-width:300px">
+  <div class="skel" style="width:70%"></div><div class="skel" style="width:90%"></div><div class="skel" style="width:40%;height:22px"></div>
+</div>
+
+    </div>
+    <div class="note" style="margin-top:10px"><b>Заметки A:</b> цены и ссылки — primary #0053FA (5.80:1); CTA — белый текст; выбранная категория — primaryContainer + полоса primary (сплошная заливка макета оставлена только как сравнение); фокус-ринг — primary. Токенов <code>errorHover/errorPressed</code> в ядре нет — для danger-кнопки показано наложение textPrimary 8 % / 16 % <span class="status status-t">НОВОЕ ИМЯ, предложение для 03</span>.</div>
+  </div>
+  <div class="col-b">
+    <div class="variant-head"><span class="dot var-b-color"></span><h3 class="cb-label" style="margin:0">B «Оранжевый» · primary #FF8700, тёмный текст на CTA, primaryText #B04E00</h3></div>
+    <div class="theme theme-b">
+
+<h4>AppButton — primary / tonal / outlined / danger × default / hover / pressed / disabled (+ focus)</h4>
+<div class="comp-ref">AppButton (ядро §8.5) · размер M 44 lp · R4 §6 №1–3 · SCR-10, SCR-20, SCR-21 · вариант <code>secondary</code> ядра §8.5 не отрисован: его отличие от <code>tonal</code> определит 03</div>
+<div class="stack">
+  <div class="row">
+    <span class="state"><span class="lbl">default</span><span class="btn btn-primary"><svg><use href="#i-plus"/></svg>Добавить</span></span>
+    <span class="state"><span class="lbl">hover</span><span class="btn btn-primary is-hover"><svg><use href="#i-plus"/></svg>Добавить</span></span>
+    <span class="state"><span class="lbl">pressed</span><span class="btn btn-primary is-pressed"><svg><use href="#i-plus"/></svg>Добавить</span></span>
+    <span class="state"><span class="lbl">disabled</span><span class="btn btn-primary is-disabled"><svg><use href="#i-plus"/></svg>Добавить</span></span>
+    <span class="state"><span class="lbl">focus</span><span class="btn btn-primary is-focus"><svg><use href="#i-plus"/></svg>Добавить</span></span>
+  </div>
+  <div class="row">
+    <span class="state"><span class="lbl">default</span><span class="btn btn-secondary">Изменить</span></span>
+    <span class="state"><span class="lbl">hover</span><span class="btn btn-secondary is-hover">Изменить</span></span>
+    <span class="state"><span class="lbl">pressed</span><span class="btn btn-secondary is-pressed">Изменить</span></span>
+    <span class="state"><span class="lbl">disabled</span><span class="btn btn-secondary is-disabled">Изменить</span></span>
+    <span class="state"><span class="lbl">focus</span><span class="btn btn-secondary is-focus">Изменить</span></span>
+  </div>
+  <div class="row">
+    <span class="state"><span class="lbl">default</span><span class="btn btn-outlined">Отложить заказ</span></span>
+    <span class="state"><span class="lbl">hover</span><span class="btn btn-outlined is-hover">Отложить заказ</span></span>
+    <span class="state"><span class="lbl">pressed</span><span class="btn btn-outlined is-pressed">Отложить заказ</span></span>
+    <span class="state"><span class="lbl">disabled</span><span class="btn btn-outlined is-disabled">Отложить заказ</span></span>
+    <span class="state"><span class="lbl">focus</span><span class="btn btn-outlined is-focus">Отложить заказ</span></span>
+  </div>
+  <div class="row">
+    <span class="state"><span class="lbl">default</span><span class="btn btn-danger">Очистить корзину</span></span>
+    <span class="state"><span class="lbl">hover</span><span class="btn btn-danger is-hover">Очистить корзину</span></span>
+    <span class="state"><span class="lbl">pressed</span><span class="btn btn-danger is-pressed">Очистить корзину</span></span>
+    <span class="state"><span class="lbl">disabled</span><span class="btn btn-danger is-disabled">Очистить корзину</span></span>
+    <span class="state"><span class="lbl">focus</span><span class="btn btn-danger is-focus">Очистить корзину</span></span>
+  </div>
+  <div class="row">
+    <span class="state"><span class="lbl">success fill (L 52)</span><span class="btn btn-success l"><svg><use href="#i-check"/></svg>Создать заказ и показать QR</span></span>
+    <span class="state"><span class="lbl">text</span><span class="btn btn-text">Очистить</span></span>
+    <span class="state"><span class="lbl">text hover</span><span class="btn btn-text is-hover">Очистить</span></span>
+  </div>
+</div>
+
+<h4>AppTextField / PhoneField — поле ввода с ошибкой</h4>
+<div class="comp-ref">AppTextField, PhoneField (ядро §8.5) · R4 §6 №6–7 · SCR-01, SCR-21, SCR-26</div>
+<div class="row vt">
+  <label class="field"><span class="flabel">Телефон получателя</span><span class="fbox"><span class="ph">+996 (___) ___-__-__</span></span><span class="fhelp">Формат Кыргызстана</span></label>
+  <label class="field is-focus"><span class="flabel">Телефон получателя</span><span class="fbox">+996 (700) 12<span style="border-left:2px solid currentColor;height:18px"></span></span><span class="fhelp">Введите 9 цифр</span></label>
+  <label class="field is-error"><span class="flabel">Телефон получателя</span><span class="fbox">+996 (700) 12</span><span class="fhelp"><svg><use href="#i-err"/></svg>Введите 9 цифр — осталось 7</span></label>
+  <label class="field is-disabled"><span class="flabel">Телефон получателя</span><span class="fbox">+996 (700) 123-45-67</span><span class="fhelp">Недоступно для роли</span></label>
+</div>
+
+<h4>CategoryChip / FilterChip — чипы</h4>
+<div class="comp-ref">CategoryChip, FilterPanel (ядро §8.5) · R4 §6 №18 · SCR-10 compact, SCR-13</div>
+<div class="row">
+  <span class="chip">Санфаянс</span>
+  <span class="chip is-hover">Трубы и фитинги</span>
+  <span class="chip is-selected"><svg><use href="#i-check"/></svg>Смесители</span>
+  <span class="chip is-selected"><svg><use href="#i-check"/></svg>В наличии</span>
+  <span class="chip is-disabled">Канализация</span>
+</div>
+
+<h4>StockBadge — бейджи остатка «в наличии / мало / нет»</h4>
+<div class="comp-ref">StockBadge (ядро §8.5) · R4 §6 №16 · иконка + текст + число обязательны (дальтонизм, §5) · SCR-10, SCR-14</div>
+<div class="row">
+  <span class="badge badge-ok"><svg><use href="#i-check"/></svg>В наличии · 24 шт</span>
+  <span class="badge badge-low"><svg><use href="#i-warn"/></svg>Мало · 3 шт</span>
+  <span class="badge badge-out"><svg><use href="#i-x"/></svg>Нет в наличии · 0</span>
+  <span class="badge badge-info"><svg><use href="#i-sync"/></svg>Остаток на 09:41</span>
+  <span class="badge badge-neutral">По складам ▾</span>
+</div>
+
+<h4>ReceivableBadge — бейдж долга</h4>
+<div class="comp-ref">ReceivableBadge (ядро §8.5) · R4 §6 №30 · zero / due / overdue · SCR-31, SCR-32, SCR-34</div>
+<div class="row">
+  <span class="debt debt-zero"><svg><use href="#i-check"/></svg>Долг: <span class="pill tnum">0 сом</span></span>
+  <span class="debt debt-due"><svg><use href="#i-money"/></svg>Долг: <span class="pill tnum">12 400 сом · до 25.10</span></span>
+  <span class="debt debt-over"><svg><use href="#i-err"/></svg>Просрочено: <span class="pill tnum">12 400 сом · 6 дн.</span></span>
+  <span class="state"><span class="lbl">NotificationBell</span><span class="nbadge">3</span></span>
+</div>
+
+<h4>CartLine — строка корзины с ценой</h4>
+<div class="comp-ref">CartLine, QuantityStepper, PriceText (ядро §8.5) · R4 §6 №14, 22 · SCR-20</div>
+<div class="stack">
+  <div class="cart-line">
+    <div class="thumb"><svg><use href="#i-tap"/></svg></div>
+    <div class="name">Смеситель для кухни<small>Frap F4252 · арт. F4252</small></div>
+    <div class="stepper s"><span>−</span><span class="v tnum">2</span><span>+</span></div>
+    <div class="price tnum">4 700 сом</div>
+    <div class="x">✕</div>
+  </div>
+  <div class="cart-line is-warn">
+    <div class="thumb"><svg><use href="#i-tap"/></svg></div>
+    <div class="name">Смеситель для ванны<small>Frap F2283 · арт. F2283</small></div>
+    <div class="stepper s"><span>−</span><span class="v tnum">1</span><span class="dis">+</span></div>
+    <div class="price tnum">3 450 сом</div>
+    <div class="x">✕</div>
+    <div class="warn"><svg><use href="#i-warn"/></svg>Остаток изменился: доступно 1 шт</div>
+  </div>
+  <div class="surface" style="max-width:420px">
+    <div class="sum"><span>Товаров (5)</span><span class="v">16 850 сом</span></div>
+    <div class="sum"><span>Скидка (5 %)</span><span class="v">−842,50 сом</span></div>
+    <div class="sum total"><span>Итого</span><span class="v">16 007,50 сом</span></div>
+  </div>
+</div>
+
+<h4>ProductCardGrid — карточка товара</h4>
+<div class="comp-ref">ProductCardGrid, ProductImage, FavoriteToggle, PriceText, StockBadge (ядро §8.5) · R4 §6 №11 · SCR-10</div>
+<div class="row vt">
+  <div class="pcard">
+    <div class="img"><svg><use href="#i-tap"/></svg></div>
+    <svg class="star on" viewBox="0 0 24 24"><use href="#i-star"/></svg>
+    <div class="pname">Смеситель для кухни Frap F4252</div>
+    <div class="sku">арт. F4252 · шт</div>
+    <div class="pprice tnum">2 350 сом</div>
+    <span class="badge badge-ok"><svg><use href="#i-check"/></svg>В наличии · 24</span>
+    <span class="btn btn-primary"><svg><use href="#i-plus"/></svg>Добавить</span>
+  </div>
+  <div class="pcard">
+    <div class="img"><svg><use href="#i-tap"/></svg></div>
+    <svg class="star off" viewBox="0 0 24 24"><use href="#i-star"/></svg>
+    <div class="pname">Смеситель для ванны Frap F2283</div>
+    <div class="sku">арт. F2283 · шт</div>
+    <div class="pprice tnum">3 450 сом</div>
+    <span class="badge badge-low"><svg><use href="#i-warn"/></svg>Мало · 3</span>
+    <div class="stepper" style="width:100%;margin-top:8px"><span>−</span><span class="v tnum" style="flex:1">2</span><span>+</span></div>
+  </div>
+  <div class="pcard is-out">
+    <div class="img"><svg><use href="#i-tap"/></svg></div>
+    <svg class="star off" viewBox="0 0 24 24"><use href="#i-star"/></svg>
+    <div class="pname">Смеситель для раковины Gappo G1007</div>
+    <div class="sku">арт. G1007 · шт</div>
+    <div class="pprice tnum">1 650 сом</div>
+    <span class="badge badge-out"><svg><use href="#i-x"/></svg>Нет в наличии</span>
+    <span class="btn btn-primary is-disabled"><svg><use href="#i-plus"/></svg>Добавить</span>
+  </div>
+</div>
+
+<h4>CategorySidebarItem и PaymentMethodCard — выбранное состояние</h4>
+<div class="comp-ref">CategorySidebarItem, PaymentMethodCard (ядро §8.5) · R4 §6 №19, 26 · SCR-10, SCR-21</div>
+<div class="row vt">
+  <div class="stack">
+    <div class="cat"><svg><use href="#i-cat"/></svg>Санфаянс<span class="cnt">86</span></div>
+    <div class="cat is-hover"><svg><use href="#i-cat"/></svg>Трубы и фитинги<span class="cnt">342</span></div>
+    <div class="cat is-selected"><svg><use href="#i-cat"/></svg>Смесители<span class="cnt">124</span></div>
+    <div class="cat is-mockup"><svg><use href="#i-cat"/></svg>Смесители<span class="cnt">124</span></div>
+    <span class="lbl" style="text-align:left">последняя строка — сплошная заливка как на макете (в ТЗ заменена на primaryContainer + полоса)</span>
+  </div>
+  <div class="row">
+    <span class="tile">Наличными в кассу<small>Оплата в нашем магазине</small></span>
+    <span class="tile is-selected">QR / карта Бакай Банк<small>Оплата картой по QR</small></span>
+  </div>
+</div>
+
+<h4>SyncIndicator — индикатор синхронизации</h4>
+<div class="comp-ref">SyncIndicator, OfflineBanner (ядро §8.5) · R4 §6 №33–34 · TopAppBarPos, SCR-43, SCR-90</div>
+<div class="row">
+  <span class="sync sync-ok"><svg><use href="#i-check"/></svg>Обновлено 09:41</span>
+  <span class="sync sync-run"><svg><use href="#i-sync"/></svg>Синхронизация…</span>
+  <span class="sync sync-stale"><svg><use href="#i-warn"/></svg>Данные устарели · 62 мин</span>
+  <span class="sync sync-err"><svg><use href="#i-err"/></svg>Ошибка синхронизации</span>
+</div>
+<div class="row" style="margin-top:8px">
+  <div class="offline"><svg><use href="#i-cloud-off"/></svg>Нет сети — показаны данные на 09:41. Создание заказа недоступно.</div>
+</div>
+
+<h4>AppSnackbar — тост успеха / ошибки</h4>
+<div class="comp-ref">AppSnackbar (ядро §8.5) · R4 §6 №40 · 4 с (8 с с действием)</div>
+<div class="stack">
+  <div class="toast toast-ok"><svg><use href="#i-check"/></svg><span>Добавлено в корзину: Смеситель Frap F4252</span><span class="act">Отменить</span></div>
+  <div class="toast toast-err"><svg><use href="#i-err"/></svg><span>Не удалось создать заказ: 1С недоступна (ONEC_UNAVAILABLE)</span><span class="act">Повторить</span></div>
+</div>
+
+<h4>SkeletonBox — шиммер</h4>
+<div class="comp-ref">SkeletonBox (ядро §8.5) · skeletonBase → skeletonHighlight</div>
+<div class="stack" style="max-width:300px">
+  <div class="skel" style="width:70%"></div><div class="skel" style="width:90%"></div><div class="skel" style="width:40%;height:22px"></div>
+</div>
+
+    </div>
+    <div class="note" style="margin-top:10px"><b>Заметки B:</b> на CTA только тёмный текст onPrimary #1B1F2A (белый — 2.41:1, FAIL); цены, ссылки, outlined-обводка, полоса выбранной строки, иконка-check чипа — <code>primaryText</code> #B04E00, а не #FF8700; warning смещён в жёлтый #8A6A00 / #FEF9C3; фокус-ринг и info — синие #1F5FA8; сплошная оранжевая заливка категории (последняя строка в блоке категорий) с тёмным текстом формально проходит 6.83:1, но создаёт большую светлую насыщенную поверхность в постоянно видимом сайдбаре. Жёлтая звезда избранного рядом с оранжевым primary различается слабо <span class="status status-t">ТИПОВО</span>.</div>
+  </div>
+</div>
+
+<!-- ======================= 5. ДАЛЬТОНИЗМ ======================= -->
+<h2 id="s5">5. Симуляция дальтонизма для статусных цветов</h2>
+<p>≈ 8 % мужчин и 0.5 % женщин имеют нарушения цветовосприятия, преобладают красно-зелёные формы (R4 §2.3, colourblindawareness.org). В R4 §3.4 различимость пар статусных цветов оценена программно: матрицы Machado, Oliveira, Fernandes (2009) в линейном RGB, затем ΔE76 в CIELAB; порог риска путаницы — ΔE &lt; 20 <span class="status status-t">ТИПОВО: модель — приближение, требует проверки с реальными пользователями</span>.</p>
+<p>Переключатель «Симуляция цветовосприятия» (в разделе 4 и ниже) применяет к образцам SVG-фильтр <code>feColorMatrix</code> с теми же матрицами (severity 1.0, <code>color-interpolation-filters="linearRGB"</code>). Это приближение того же порядка, что и расчёт ΔE; оно не заменяет проверку с пользователями и не является частью продукта.</p>
+
+<h3>5.1. Таблица ΔE из R4 §3.4 (скопирована)</h3>
+<table>
+  <thead><tr><th>Вариант</th><th>Пара</th><th class="num">Норма ΔE</th><th class="num">Протанопия</th><th class="num">Дейтеранопия</th><th class="num">Тританопия</th><th>Образец (норма)</th></tr></thead>
+  <tbody>
+    <tr><td>A</td><td>success #15803D vs error #C62828</td><td class="num">105</td><td class="num"><b>16</b></td><td class="num">21</td><td class="num">113</td><td><span class="sw" style="background:#15803D"></span><span class="sw" style="background:#C62828"></span></td></tr>
+    <tr><td>A</td><td>success vs warning #B45309</td><td class="num">84</td><td class="num"><b>15</b></td><td class="num">31</td><td class="num">92</td><td><span class="sw" style="background:#15803D"></span><span class="sw" style="background:#B45309"></span></td></tr>
+    <tr><td>A</td><td>error vs warning</td><td class="num">28</td><td class="num">22</td><td class="num"><b>10</b></td><td class="num">24</td><td><span class="sw" style="background:#C62828"></span><span class="sw" style="background:#B45309"></span></td></tr>
+    <tr><td>A</td><td>primary #0053FA vs error</td><td class="num">129</td><td class="num">110</td><td class="num">136</td><td class="num">113</td><td><span class="sw" style="background:#0053FA"></span><span class="sw" style="background:#C62828"></span></td></tr>
+    <tr><td>A</td><td>primary vs success</td><td class="num">146</td><td class="num">117</td><td class="num">116</td><td class="num">27</td><td><span class="sw" style="background:#0053FA"></span><span class="sw" style="background:#15803D"></span></td></tr>
+    <tr><td>A</td><td>primary vs info #0E6A8E</td><td class="num">83</td><td class="num">60</td><td class="num">64</td><td class="num"><b>18</b></td><td><span class="sw" style="background:#0053FA"></span><span class="sw" style="background:#0E6A8E"></span></td></tr>
+    <tr><td>B</td><td>success vs error</td><td class="num">105</td><td class="num"><b>16</b></td><td class="num">21</td><td class="num">113</td><td><span class="sw" style="background:#15803D"></span><span class="sw" style="background:#C62828"></span></td></tr>
+    <tr><td>B</td><td>success vs warning #8A6A00</td><td class="num">55</td><td class="num"><b>17</b></td><td class="num">27</td><td class="num">56</td><td><span class="sw" style="background:#15803D"></span><span class="sw" style="background:#8A6A00"></span></td></tr>
+    <tr><td>B</td><td>error vs warning</td><td class="num">58</td><td class="num">26</td><td class="num"><b>6</b></td><td class="num">58</td><td><span class="sw" style="background:#C62828"></span><span class="sw" style="background:#8A6A00"></span></td></tr>
+    <tr><td>B</td><td>primary #FF8700 vs error</td><td class="num">47</td><td class="num">48</td><td class="num">37</td><td class="num">30</td><td><span class="sw" style="background:#FF8700"></span><span class="sw" style="background:#C62828"></span></td></tr>
+    <tr><td>B</td><td>primary vs warning</td><td class="num">47</td><td class="num">23</td><td class="num">33</td><td class="num">41</td><td><span class="sw" style="background:#FF8700"></span><span class="sw" style="background:#8A6A00"></span></td></tr>
+    <tr class="hl"><td>B</td><td>primary-text #B04E00 vs error</td><td class="num">28</td><td class="num">21</td><td class="num"><b>9</b></td><td class="num">23</td><td><span class="sw" style="background:#B04E00"></span><span class="sw" style="background:#C62828"></span></td></tr>
+    <tr class="hl"><td>B</td><td>primary-text vs warning</td><td class="num">33</td><td class="num"><b>7</b></td><td class="num"><b>3</b></td><td class="num">36</td><td><span class="sw" style="background:#B04E00"></span><span class="sw" style="background:#8A6A00"></span></td></tr>
+  </tbody>
+</table>
+<p><b>Вывод R4 §3.4:</b> в любом варианте пары «успех / ошибка / предупреждение» неразличимы по цвету для красно-зелёного дальтонизма → <b>обязательны иконка + подпись + (для остатков) число</b>. В варианте B дополнительно сливаются бренд-оранжевый текст и warning/error.</p>
+
+<h3>5.2. Интерактивная симуляция статусных цветов</h3>
+<div class="row" style="margin:8px 0 12px">
+  <span style="font-size:13px;font-weight:600">Симуляция:</span>
+  <span class="switch"><label for="cb-none">Норма</label><label for="cb-protan">Протанопия</label><label for="cb-deutan">Дейтеранопия</label><label for="cb-tritan">Тританопия</label></span>
+  <span class="ref">Фильтр применяется к обоим блокам ниже и к образцам раздела 4.</span>
+</div>
+<div class="two-col cb-target">
+  <div class="col-a">
+    <div class="variant-head"><span class="dot var-a-color"></span><h3 class="cb-label" style="margin:0">A — статусные цвета</h3></div>
+    <div class="theme theme-a">
+      <h4>Только цвет (так НЕЛЬЗЯ)</h4>
+      <div class="cb-grid dont" style="margin-top:12px">
+        <div class="cb-cell"><div class="big" style="background:#15803D;color:#fff">success</div><div class="txt" style="color:#15803D">#15803D</div></div>
+        <div class="cb-cell"><div class="big" style="background:#B45309;color:#fff">warning</div><div class="txt" style="color:#B45309">#B45309</div></div>
+        <div class="cb-cell"><div class="big" style="background:#C62828;color:#fff">error</div><div class="txt" style="color:#C62828">#C62828</div></div>
+        <div class="cb-cell"><div class="big" style="background:#0053FA;color:#fff">primary</div><div class="txt" style="color:#0053FA">#0053FA</div></div>
+        <div class="cb-cell"><div class="big" style="background:#0E6A8E;color:#fff">info</div><div class="txt" style="color:#0E6A8E">#0E6A8E</div></div>
+        <div class="cb-cell"><div class="big" style="background:#FF8700;color:#1B1F2A">brandAccent</div><div class="txt" style="color:#B04E00">#FF8700</div></div>
+      </div>
+      <h4>Цвет + иконка + текст + число (так МОЖНО)</h4>
+      <div class="do row" style="margin-top:12px">
+        <span class="badge badge-ok"><svg><use href="#i-check"/></svg>В наличии · 24 шт</span>
+        <span class="badge badge-low"><svg><use href="#i-warn"/></svg>Мало · 3 шт</span>
+        <span class="badge badge-out"><svg><use href="#i-x"/></svg>Нет в наличии · 0</span>
+        <span class="debt debt-over"><svg><use href="#i-err"/></svg>Просрочено <span class="pill tnum">12 400 сом</span></span>
+        <span class="sync sync-stale"><svg><use href="#i-warn"/></svg>Данные устарели</span>
+      </div>
+    </div>
+  </div>
+  <div class="col-b">
+    <div class="variant-head"><span class="dot var-b-color"></span><h3 class="cb-label" style="margin:0">B — статусные цвета</h3></div>
+    <div class="theme theme-b">
+      <h4>Только цвет (так НЕЛЬЗЯ)</h4>
+      <div class="cb-grid dont" style="margin-top:12px">
+        <div class="cb-cell"><div class="big" style="background:#15803D;color:#fff">success</div><div class="txt" style="color:#15803D">#15803D</div></div>
+        <div class="cb-cell"><div class="big" style="background:#8A6A00;color:#fff">warning</div><div class="txt" style="color:#8A6A00">#8A6A00</div></div>
+        <div class="cb-cell"><div class="big" style="background:#C62828;color:#fff">error</div><div class="txt" style="color:#C62828">#C62828</div></div>
+        <div class="cb-cell"><div class="big" style="background:#FF8700;color:#1B1F2A">primary</div><div class="txt" style="color:#B04E00">#FF8700</div></div>
+        <div class="cb-cell"><div class="big" style="background:#B04E00;color:#fff">primaryText</div><div class="txt" style="color:#B04E00">#B04E00</div></div>
+        <div class="cb-cell"><div class="big" style="background:#1F5FA8;color:#fff">info</div><div class="txt" style="color:#1F5FA8">#1F5FA8</div></div>
+      </div>
+      <h4>Цвет + иконка + текст + число (так МОЖНО)</h4>
+      <div class="do row" style="margin-top:12px">
+        <span class="badge badge-ok"><svg><use href="#i-check"/></svg>В наличии · 24 шт</span>
+        <span class="badge badge-low"><svg><use href="#i-warn"/></svg>Мало · 3 шт</span>
+        <span class="badge badge-out"><svg><use href="#i-x"/></svg>Нет в наличии · 0</span>
+        <span class="debt debt-over"><svg><use href="#i-err"/></svg>Просрочено <span class="pill tnum">12 400 сом</span></span>
+        <span class="sync sync-stale"><svg><use href="#i-warn"/></svg>Данные устарели</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">5.3. Правила для статусов, вытекающие из симуляции (для 03 / A11Y-)</h3>
+  <ul>
+    <li>Любой статус («в наличии / мало / нет», «оплачен / долг / просрочен», «ok / устарело / ошибка») передаётся <b>минимум двумя каналами</b>: цвет + иконка, и всегда с текстовой подписью; для остатков и долга — ещё и число (<code>tabularFigures</code>).</li>
+    <li>Иконки статусов различаются формой: ✓ (success), ▲! (warning), ✕ / ⓘ! (error), ↻ (sync) — не только цветом.</li>
+    <li>В A primary (синий) отличим от всех статусов при протан/дейтеранопии (ΔE ≥ 60); единственная слабая пара — primary vs info при тританопии (ΔE 18, редкая форма) — поэтому info никогда не используется на интерактивных элементах рядом с primary без иконки.</li>
+    <li>В B primaryText #B04E00 сливается с warning (ΔE 7/3) и error (ΔE 21/9): оранжевые ссылки/цены рядом с бейджами «мало»/«просрочено» становятся неразличимы — дополнительный аргумент за A+.</li>
+    <li>brandAccent #FF8700 в A+ не несёт смысла статуса, поэтому его неразличимость с warning при дальтонизме не создаёт ошибки интерпретации — при условии, что он никогда не появляется в бейджах, ценах и обводках (раздел 7).</li>
+  </ul>
+</div>
+
+<!-- ======================= 6. СРАВНИТЕЛЬНАЯ ТАБЛИЦА ======================= -->
+<h2 id="s6">6. Сравнительная таблица по критериям (R4 §3.5)</h2>
+<table>
+  <thead><tr><th>Критерий</th><th>A «Синий»</th><th>B «Оранжевый»</th><th>Комментарий</th><th>Преимущество</th></tr></thead>
+  <tbody>
+    <tr><td>Читаемость цен/итогов цветом бренда</td><td>primary #0053FA как текст 5.80:1 — <span class="tag tag-aa">AA</span></td><td>#FF8700 как текст 2.41:1 — <span class="tag tag-fail">FAIL</span>; нужен отдельный #B04E00 (5.34)</td><td>В B бренд-цвет и «текстовый» бренд-цвет расходятся</td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A</td></tr>
+    <tr><td>Контраст белого текста на CTA</td><td>5.80:1 AA (hover/pressed — AAA)</td><td>2.41:1 FAIL → CTA только с тёмным текстом</td><td>Тёмный текст на оранжевом корректен, но нетипичен для POS</td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A</td></tr>
+    <tr><td>Нетекстовый контраст иконок/обводок бренда</td><td>да (5.80)</td><td>нет (2.41)</td><td>В B выбранная плитка не может обозначаться только оранжевой обводкой</td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A</td></tr>
+    <tr><td>Ассоциация с брендом</td><td>Соответствует трём макетам</td><td>Соответствует <code>Logo Orange.png</code></td><td><b>Открытый вопрос — какой логотип актуален</b> <span class="status status-q">Q-006</span></td><td>— (зависит от Q-006)</td></tr>
+    <tr><td>Утомляемость при 8–10 ч</td><td>Насыщенный синий на больших площадях (активная категория) утомляет; рекомендуется светлая заливка primary-container для выбранных строк, синий — для CTA</td><td>Большие оранжевые поверхности утомляют сильнее (высокая светлота/насыщенность); оранжевый — только акцент</td><td><span class="status status-t">ТИПОВО</span></td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A (с оговоркой)</td></tr>
+    <tr><td>Конфликт с семантикой</td><td>Нет (синий — ни успех, ни ошибка; info отделён тёмно-бирюзовым)</td><td>Бренд ≈ warning; требует смещения warning в жёлтый и запрета оранжевых статусов</td><td></td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A</td></tr>
+    <tr><td>Дальтонизм</td><td>primary отличим от всех статусов (ΔE ≥ 60), кроме info при тританопии (редкая форма)</td><td>primary-text сливается с warning/error при протан/дейтеранопии</td><td>см. раздел 5</td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A</td></tr>
+    <tr><td>Яркое освещение зала</td><td>Тёмно-синий CTA даёт высокий контраст</td><td>Светлый оранжевый CTA при бликах теряет контраст с белым фоном (2.41)</td><td><span class="status status-t">ТИПОВО</span></td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A</td></tr>
+    <tr><td>Печать / чёрно-белые документы</td><td>синий → тёмно-серый, читаемо</td><td>оранжевый → светло-серый</td><td>счёт, товарный чек (D-27)</td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A</td></tr>
+  </tbody>
+</table>
+<p class="ref">Колонка «Преимущество» добавлена в этом документе как сводка; формулировки критериев и оценок — из R4 §3.5 без изменений.</p>
+
+<!-- ======================= 7. ИТОГ A+ ======================= -->
+<h2 id="s7">7. Итоговая схема A+ и правила использования brandAccent #FF8700</h2>
+<div class="card" style="border-left:4px solid #0053FA">
+  <h3 style="margin-top:0">Рекомендация (R4 §3.6) = решение ядра <span class="status status-d">D-16</span></h3>
+  <p><b>Рекомендуется вариант A «Синий» как рабочая интерактивная палитра, в комбинированной схеме A+:</b></p>
+  <ul>
+    <li>нейтральная рабочая база (background #F4F5F7, surface #FFFFFF, text #1B1F2A / #5A6373);</li>
+    <li>интерактивный primary — синий #0053FA (CTA, ссылки, выбранные элементы, фокус);</li>
+    <li>семантические цвета — success #15803D, warning #B45309, error #C62828, info #0E6A8E;</li>
+    <li><b>оранжевый #FF8700 — только брендовый акцент</b> (места перечислены ниже). Никогда — как цвет статуса, цены или единственной обводки.</li>
+  </ul>
+  <p><b>Обоснование:</b> A проходит AA для всех текстовых и нетекстовых пар без дополнительных «текстовых» версий цвета; не конфликтует с семантикой; подтверждён макетами; оранжевый сохраняет узнаваемость бренда без потери доступности. Если заказчик подтвердит, что оранжевый логотип — единственный актуальный бренд и синий недопустим, применяется вариант B со всеми ограничениями §2 (тёмный текст на CTA, #B04E00 для текста, жёлтый warning).</p>
+  <p><b>Решение заказчика требуется по</b> <span class="status status-q">Q-006</span>: (1) актуальный логотип; (2) допустимость синего как интерактивного цвета при оранжевом логотипе; (3) нужна ли тёмная тема (D-43: не в R1); (4) есть ли векторный логотип.</p>
+</div>
+
+<h3>7.1. Правила использования <code class="tok">ds.color.brandAccent</code> #FF8700 (схема A+)</h3>
+<table>
+  <thead><tr><th>#</th><th>Где</th><th>Разрешено / запрещено</th><th>Условие</th><th>Экран / компонент</th></tr></thead>
+  <tbody>
+    <tr><td>BA-1</td><td>Логотип (знак и/или wordmark) в шапке, на экране входа, в документах</td><td><span class="tag tag-yes">разрешено</span></td><td>Логотипы исключены из требований контраста (WCAG 1.4.3); рядом — текст textPrimary</td><td><code>TopAppBarPos</code>, SCR-01, SCR-00</td></tr>
+    <tr><td>BA-2</td><td>Splash: знак на фоне background/surface, анимация появления 600 мс</td><td><span class="tag tag-yes">разрешено</span></td><td>Без текста на оранжевом; прогресс-бар — primary</td><td><code>SplashLogo</code>, SCR-00, ядро §8.4 (<code>splashLogo</code> 600 ms)</td></tr>
+    <tr><td>BA-3</td><td>Персонаж авторизации — детали одежды/аксессуар</td><td><span class="tag tag-yes">разрешено</span></td><td>Персонаж не кодирует результат проверки цветом (D-40); состояния success/error — иконки success/error рядом</td><td><code>Mascot</code>, SCR-01, SCR-02</td></tr>
+    <tr><td>BA-4</td><td>Иллюстрации пустых состояний (пустая корзина, нет результатов, нет избранного)</td><td><span class="tag tag-yes">разрешено</span></td><td>Декоративно; заголовок, причина и кнопка-действие — токены текста и primary</td><td><code>EmptyState</code>, SCR-11, SCR-20, SCR-40</td></tr>
+    <tr><td>BA-5</td><td>Подчёркивание активной вкладки в шапке</td><td><span class="tag tag-yes">разрешено только как дополнительный признак</span></td><td>Основной индикатор — текст вкладки textPrimary / вес 600 против textSecondary 500 у неактивных (оранжевая линия на белом 2.41:1 не может быть единственным индикатором, WCAG 1.4.11). Если нужен один цветовой индикатор — подчёркивание primary #0053FA</td><td><code>AppTabs</code>, SCR-14, SCR-32, SCR-40</td></tr>
+    <tr><td>BA-6</td><td>Цвет статуса (бейджи остатка, долг, синхронизация, статус заказа)</td><td><span class="tag tag-no">запрещено</span></td><td>Конфликт с warning; неразличимость при дальтонизме (§5)</td><td><code>StockBadge</code>, <code>ReceivableBadge</code>, <code>StatusChip</code>, <code>SyncIndicator</code></td></tr>
+    <tr><td>BA-7</td><td>Цена, сумма, итог, скидка</td><td><span class="tag tag-no">запрещено</span></td><td>2.41:1 на белом — FAIL; цены — primary или textPrimary</td><td><code>PriceText</code>, <code>CartSummary</code></td></tr>
+    <tr><td>BA-8</td><td>Единственная обводка/заливка выбранного элемента, фокус-ринг</td><td><span class="tag tag-no">запрещено</span></td><td>Не проходит 1.4.11; выбор — primary + primaryContainer, фокус — focus #0053FA</td><td><code>PaymentMethodCard</code>, <code>CategorySidebarItem</code>, <code>VariantSelector</code></td></tr>
+    <tr><td>BA-9</td><td>Текст любого размера на белом/сером фоне; белый текст на оранжевом</td><td><span class="tag tag-no">запрещено</span></td><td>2.41:1 / 2.21:1 — FAIL даже для крупного текста</td><td>везде</td></tr>
+    <tr><td>BA-10</td><td>Кнопки (primary/secondary/outlined/danger), ссылки, иконки действий</td><td><span class="tag tag-no">запрещено</span></td><td>Интерактивный цвет R1 — только primary #0053FA; исключение возможно лишь при переходе на вариант B по Q-006</td><td><code>AppButton</code>, <code>AppIconButton</code></td></tr>
+    <tr><td>BA-11</td><td>Большие заливки (фон сайдбара, панели корзины, шапки)</td><td><span class="tag tag-no">запрещено</span></td><td>Утомляемость при 8–10 ч, блики в зале <span class="status status-t">ТИПОВО</span></td><td><code>AdaptiveScaffold</code>, <code>CartPanel</code></td></tr>
+    <tr><td>BA-12</td><td>Тёмная тема (R2)</td><td>— </td><td>Токен сохраняется; при проектировании dark-темы контраст #FF8700 на тёмном фоне проверяется отдельно (D-43)</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<h3>7.2. Примеры допустимого акцента в A+</h3>
+<div class="theme theme-a">
+  <div class="row vt" style="gap:24px">
+    <div class="stack">
+      <span class="lbl" style="text-align:left">BA-1 · логотип в шапке (знак условный)</span>
+      <div class="surface" style="display:flex;align-items:center;gap:16px;padding:10px 14px">
+        <span class="brand-logo"><svg viewBox="0 0 120 120" aria-hidden="true"><path d="M98 36 A44 44 0 1 0 98 84" fill="none" stroke="#FF8700" stroke-width="13"/><polygon points="60,34 82,47 82,73 60,86 38,73 38,47" fill="#FF8700"/><path d="M50 76 L72 46" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/></svg><span style="color:var(--ds-color-textPrimary)">Оптомстрой</span></span>
+        <span class="sync sync-ok"><svg><use href="#i-check"/></svg>Обновлено 09:41</span>
+        <span class="nbadge">3</span>
+      </div>
+    </div>
+    <div class="stack">
+      <span class="lbl" style="text-align:left">BA-5 · активная вкладка: вес текста — основной признак, оранжевая линия — дополнительный</span>
+      <div class="surface" style="padding:0 8px">
+        <div class="tabbar"><span class="on-accent">Описание</span><span>Остатки по складам</span><span>Варианты</span></div>
+      </div>
+      <span class="lbl" style="text-align:left">альтернатива с одним цветовым индикатором — primary</span>
+      <div class="surface" style="padding:0 8px">
+        <div class="tabbar"><span class="on">Описание</span><span>Остатки по складам</span><span>Варианты</span></div>
+      </div>
+    </div>
+    <div class="stack">
+      <span class="lbl" style="text-align:left">BA-4 · пустое состояние</span>
+      <div class="empty">
+        <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="34" r="22" fill="#FFEFD9"/><path d="M18 26h28l-3 16H22z" fill="#FF8700"/><circle cx="25" cy="48" r="3" fill="#1B1F2A"/><circle cx="40" cy="48" r="3" fill="#1B1F2A"/><path d="M14 20h5l3 6" stroke="#1B1F2A" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>
+        <b>Корзина пуста</b><small>Добавьте товары из каталога или отсканируйте штрихкод</small>
+        <span class="btn btn-primary s">Открыть каталог</span>
+      </div>
+    </div>
+    <div class="stack">
+      <span class="lbl" style="text-align:left">BA-7/8 · так нельзя</span>
+      <div class="dont stack" style="padding-top:12px">
+        <span class="pprice tnum" style="color:#FF8700;font-weight:700;font-size:18px">2 350 сом</span>
+        <span class="tile is-selected-only-orange" style="background:#fff">QR / карта<small>только оранжевая обводка</small></span>
+        <span class="badge" style="background:#FF8700;color:#fff">Мало · 3</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= 8. СТАТУС И ТРАССИРОВКА ======================= -->
+<h2 id="s8">8. Статус, открытые вопросы, трассировка</h2>
+<div class="grid-2">
+  <div class="card">
+    <h3 style="margin-top:0">Статус утверждений</h3>
+    <table>
+      <tr><th>Утверждение</th><th>Статус</th></tr>
+      <tr><td>HEX-значения макетов и логотипа (#0053FA, #FF8700, #F4F5F7, #0D9E48, #FEC50A)</td><td><span class="status status-d">ПОДТВЕРЖДЕНО: R4 §1.5, скрипты Pillow</span></td></tr>
+      <tr><td>Коэффициенты контраста §3</td><td><span class="status status-d">ПОДТВЕРЖДЕНО: R4 §3.4, contrast.py</span></td></tr>
+      <tr><td>Значения ΔE при дальтонизме §5.1</td><td><span class="status status-t">ТИПОВО: модель Machado 2009 — приближение</span></td></tr>
+      <tr><td>CSS-фильтры симуляции §4–5</td><td><span class="status status-t">ТИПОВО: иллюстрация, не замена проверки с пользователями</span></td></tr>
+      <tr><td>Схема A+, роль brandAccent</td><td><span class="status status-d">РЕШЕНИЕ: D-16</span> + <span class="status status-q">Q-006</span></td></tr>
+      <tr><td>Утомляемость, блики, печать (критерии §6)</td><td><span class="status status-t">ТИПОВО</span></td></tr>
+      <tr><td>Токены <code>iconButtonPressed</code>, <code>onSuccess</code>, <code>onError</code>, <code>onBrandAccent</code></td><td><span class="status status-d">РЕШЕНИЕ: ядро §17.5</span></td></tr>
+      <tr><td>Токены <code>inverseSurface</code>, <code>onInverseSurface</code></td><td><span class="status status-d">РЕШЕНИЕ: ядро §18.2 п.15</span></td></tr>
+      <tr><td>Токены <code>errorHover/errorPressed</code>, <code>favorite</code> в B</td><td><span class="status status-t">НОВОЕ ИМЯ / ТИПОВО — на рассмотрение автора 03 (владелец токенов, ядро §18.1)</span></td></tr>
+      <tr><td>Служебные CSS-переменные документа <code>--pc-selected-bar</code>, <code>--pc-success-fill</code>, <code>--pc-favorite-outline</code> и alias <code>--ds-color-primaryText</code> в теме A</td><td><span class="status status-t">НЕ ТОКЕНЫ ЯДРА — технические переменные этого файла (ссылаются на primary / success / warning); в 03 не переносятся</span></td></tr>
+      <tr><td>Тёмная тема</td><td><span class="status status-d">РЕШЕНИЕ: D-43 — не в R1</span></td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Открытые вопросы</h3>
+    <table>
+      <tr><th>ID</th><th>Вопрос</th><th>Влияние на этот документ</th></tr>
+      <tr><td><span class="status status-q">Q-006</span></td><td>Какой логотип актуален (синий «дом с краном» vs оранжевый); допустим ли синий интерактивный цвет; нужна ли тёмная тема; есть ли векторный логотип</td><td>Выбор A+ (по умолчанию) или B; состав BA-1…BA-5; формат логотипа для splash/шапки</td></tr>
+      <tr><td><span class="status status-q">Q-008</span></td><td>Сенсорные ли POS-мониторы, модели устройств</td><td>Проверка контраста при бликах на реальных экранах (критерий «яркое освещение», ТИПОВО)</td></tr>
+      <tr><td><span class="status status-q">Q-035</span></td><td>Стиль персонажа авторизации, наличие иллюстраций</td><td>Правила BA-3, BA-4 (где именно появляется оранжевый акцент)</td></tr>
+      <tr><td><span class="status status-q">Q-019</span></td><td>Образцы печатных форм, принтеры</td><td>Критерий «печать / чёрно-белые документы» (§6)</td></tr>
+    </table>
+    <h3>Трассировка</h3>
+    <table>
+      <tr><th>Раздел документа</th><th>Источник</th></tr>
+      <tr><td>§0</td><td>R0 §14, R4 §1.1–1.6, Q-006</td></tr>
+      <tr><td>§1</td><td>R0 §8.1, R4 §3.2</td></tr>
+      <tr><td>§2</td><td>R4 §3.3, R0 §8.1 («Вариант B — токены из R4 §3.3»)</td></tr>
+      <tr><td>§3</td><td>R4 §3.4 (таблицы A, B, нетекстовый), R4 §2.3 (пороги WCAG)</td></tr>
+      <tr><td>§4</td><td>R0 §8.5 (имена компонентов), R4 §6 (состояния)</td></tr>
+      <tr><td>§5</td><td>R4 §3.4 (симуляция), R4 §2.3–2.4 п. 7</td></tr>
+      <tr><td>§6</td><td>R4 §3.5</td></tr>
+      <tr><td>§7</td><td>R4 §3.6, R0 D-16, D-40, D-43</td></tr>
+      <tr><td>§9</td><td>R0 §17.2, §17.5, §18.1, §18.2 п.15 (журнал сверки)</td></tr>
+    </table>
+    <p class="ref">Связанные документы ТЗ: 03_UX_UI_DESIGN_SYSTEM.md (DS-, A11Y-), 02_SCREEN_SPECIFICATION.md (UI-), 14_OPEN_QUESTIONS.md (Q-006), 15_DECISION_LOG.md (ADR-016). Соседние визуальные материалы: <code>visual/screen-map.md</code>, <code>visual/navigation.md</code>, <code>visual/wireframes.html</code>, <code>visual/components-states.md</code>, <code>visual/responsive-spec.md</code>.</p>
+  </div>
+</div>
+
+<h2 id="s9">9. Журнал сверки с ядром</h2>
+<table>
+  <thead><tr><th>Пункт ядра</th><th>Что изменено</th><th>Где</th></tr></thead>
+  <tbody>
+    <tr><td>v1.3 · §17.2 (пример арифметики)</td><td>Образцы контраста «Aa 16 030» (сумма макета, не сходится) заменены на «Aa 16 007,50» (16 850,00 − 5 % 842,50); других вхождений 16 030 / −820 / 18 050 в документе нет</td><td>§3.1, §3.2 (столбец «Образец», 16 строк)</td></tr>
+    <tr><td>v1.3 · §17.5</td><td>Метка «НОВОЕ ИМЯ» у <code>iconButtonPressed</code> заменена на «РЕШЕНИЕ: ядро §17.5»; добавлены токены <code>onSuccess</code>, <code>onError</code>, <code>onBrandAccent</code> (CSS-переменные темы A и строки таблицы A)</td><td>CSS <code>:root, .theme-a</code>; §1 таблица токенов A; §2 таблица токенов B; §8 «Статус утверждений»</td></tr>
+    <tr><td>v1.3 · §18.2 п.15</td><td>Добавлены токены <code>inverseSurface #1B1F2A</code> и <code>onInverseSurface #FFFFFF</code> (снэкбар, тултип)</td><td>CSS <code>:root, .theme-a</code>; §1 таблица токенов A; §8 «Статус утверждений»</td></tr>
+    <tr><td>v1.3 · §18.1 (владелец токенов — 03)</td><td>Не канонизированные имена (<code>errorHover/errorPressed</code>, <code>favorite</code> в B) оставлены с меткой «НОВОЕ ИМЯ / ТИПОВО» и адресованы автору 03 как владельцу словаря токенов</td><td>§4 «Заметки A»; §8 «Статус утверждений»</td></tr>
+    <tr><td>v1.3 · §18.2 п.1–14, 16</td><td>Не относятся к палитре (drift, токены сессии, API, env, роли, вопросы) — изменений не требуется</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<div class="footer">
+  <p><b>Wireframe / структурная схема для ТЗ — не финальный интерфейс.</b> Документ не является кодом приложения и не описывает реализацию; все имена токенов, компонентов и экранов — канонические имена ядра R0. Версия 1.1 · 2026-10-19 (сверка с ядром R0 v1.3) · ЭТАП 1 (ТЗ) · «Оптомстрой POS».</p>
+</div>
+</main>
+</body>
+</html>
