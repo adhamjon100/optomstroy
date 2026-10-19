@@ -326,7 +326,7 @@ flowchart LR
     b1["checkout-preview:<br/>цены, остатки, права, скидка;<br/>проверка /check в 1С (≤ 6 с);<br/>долг — по PAY-031"]
     b2{"Конфликты?"}
     b3["POST /orders (Idempotency-Key):<br/>одна транзакция — заказ submitting,<br/>платёж выбранного способа, outbox create;<br/>ответ 201 или 202 + STALE_DATA"]
-    b4["Проекция статусов 1С (10 §2.2):<br/>при sent — awaiting_payment / pending_approval;<br/>далее approved → awaiting_shipment →<br/>shipped → closed"]
+    b4["Проекция статусов 1С (10 §2.2):<br/>при sent — awaiting_payment / pending_approval,<br/>далее approved → awaiting_shipment →<br/>shipped → closed"]
   end
   subgraph O["1С"]
     o1["«Заказ клиента»<br/>«Не согласован» (ТИПОВО)"]
