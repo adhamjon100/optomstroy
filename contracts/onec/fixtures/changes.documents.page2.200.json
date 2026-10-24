@@ -1,0 +1,178 @@
+{
+  "_note": "тестовые данные",
+  "description": "Сообщение 5121, страница 2 (последняя): клиенты, соглашение, скидка, документы, событие QR",
+  "operation": "GET /pos/v1/changes",
+  "kind": "response",
+  "status": 200,
+  "body": {
+    "messageNumber": 5121,
+    "hasMore": false,
+    "cursor": null,
+    "generatedAt": "2026-10-21T14:05:03+06:00",
+    "items": [
+      {
+        "type": "Catalog_Партнеры",
+        "ref": "c3d4e5f6-0000-4000-8000-000000000001",
+        "dataVersion": "AAAAAwAAAAA=",
+        "deletionMark": false,
+        "externalId": "0192f5b1-1111-7aaa-8bbb-000000000001",
+        "code": "00004521",
+        "description": "ООО Пример",
+        "fullName": null,
+        "isClient": true,
+        "mainAgreementRef": "c3d4e5f6-0000-4000-8000-0000000000a1",
+        "phones": [
+          {
+            "phone": "+996700000001",
+            "presentation": "0700 000 001"
+          }
+        ]
+      },
+      {
+        "type": "Catalog_Контрагенты",
+        "ref": "c3d4e5f6-0000-4000-8000-0000000000c1",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "code": "00004522",
+        "description": "ООО Пример",
+        "partnerRef": "c3d4e5f6-0000-4000-8000-000000000001",
+        "taxId": null,
+        "phones": []
+      },
+      {
+        "type": "Catalog_СоглашенияСКлиентами",
+        "ref": "c3d4e5f6-0000-4000-8000-0000000000a1",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "description": "Оптовое соглашение",
+        "partnerRef": "c3d4e5f6-0000-4000-8000-000000000001",
+        "priceListRef": "e5f6a7b8-0000-4000-8000-000000000002",
+        "creditAllowed": true,
+        "creditLimit": "100000.00",
+        "creditDays": 14
+      },
+      {
+        "type": "Catalog_СкидкиНаценки",
+        "ref": "c3d4e5f6-0000-4000-8000-0000000000d1",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "code": "000000003",
+        "description": "Скидка 3% от 50 000 сом"
+      },
+      {
+        "type": "Document_УстановкаЦенНоменклатуры",
+        "ref": "f1e2d3c4-0000-4000-8000-000000000041",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "number": "УЦ00-000128",
+        "date": "2026-10-21T09:00:00+06:00",
+        "posted": true,
+        "priceListRefs": [
+          "e5f6a7b8-0000-4000-8000-000000000001",
+          "e5f6a7b8-0000-4000-8000-000000000002"
+        ]
+      },
+      {
+        "type": "Document_ЗаказКлиента",
+        "ref": "b2c3d4e5-0000-4000-8000-000000000010",
+        "dataVersion": "AAAABAAAAAA=",
+        "deletionMark": false,
+        "externalId": "0192f5a0-7c2e-7d3b-9a1f-3c4d5e6f7a8b",
+        "number": "ОС00-004512",
+        "date": "2026-10-21T13:40:00+06:00",
+        "status": "КВыполнению",
+        "approved": true,
+        "fulfillmentState": "ГотовКОтгрузке",
+        "total": "16007.50",
+        "shipments": []
+      },
+      {
+        "type": "Document_РеализацияТоваровУслуг",
+        "ref": "f1e2d3c4-0000-4000-8000-000000000020",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "number": "РТ00-001845",
+        "date": "2026-10-21T16:10:00+06:00",
+        "posted": true,
+        "customerRef": "c3d4e5f6-0000-4000-8000-000000000001",
+        "orderRef": "b2c3d4e5-0000-4000-8000-000000000010",
+        "orderExternalId": "0192f5a0-7c2e-7d3b-9a1f-3c4d5e6f7a8b",
+        "warehouseRef": "d4e5f6a7-0000-4000-8000-000000000001",
+        "total": "16007.50",
+        "discountTotal": "842.50",
+        "currency": "KGS",
+        "paymentDueDate": null,
+        "returnedTotal": "0.00",
+        "comment": "POS 0192f5a0-7c2e-7d3b-9a1f-3c4d5e6f7a8b",
+        "lines": [
+          {
+            "lineNumber": 1,
+            "productRef": "a1b2c3d4-0000-4000-8000-000000000001",
+            "variantRef": "a1b2c3d4-0000-4000-8000-000000000101",
+            "packagingRef": null,
+            "productName": "Смеситель для кухни однорычажный",
+            "quantity": "2.000",
+            "price": "2350.00",
+            "amount": "4465.00",
+            "discountAmount": "235.00",
+            "returnedQuantity": "0.000"
+          }
+        ]
+      },
+      {
+        "type": "Document_ПриходныйКассовыйОрдер",
+        "ref": "f1e2d3c4-0000-4000-8000-000000000051",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "externalId": "0192f5a1-4444-7eee-8fff-000000000001",
+        "number": "ПКО0-000731",
+        "date": "2026-10-21T13:45:00+06:00",
+        "posted": true,
+        "customerRef": "c3d4e5f6-0000-4000-8000-000000000001",
+        "amount": "16007.50"
+      },
+      {
+        "type": "Document_ВозвратТоваровОтКлиента",
+        "ref": "f1e2d3c4-0000-4000-8000-000000000061",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "number": "ВЗ00-000044",
+        "date": "2026-10-22T11:00:00+06:00",
+        "posted": false,
+        "customerRef": "c3d4e5f6-0000-4000-8000-000000000001",
+        "shipmentRef": "f1e2d3c4-0000-4000-8000-000000000020",
+        "total": "2232.50",
+        "lines": [
+          {
+            "lineNumber": 1,
+            "productRef": "a1b2c3d4-0000-4000-8000-000000000001",
+            "variantRef": "a1b2c3d4-0000-4000-8000-000000000101",
+            "packagingRef": null,
+            "productName": "Смеситель для кухни однорычажный",
+            "quantity": "1.000",
+            "price": "2232.50",
+            "amount": "2232.50",
+            "discountAmount": null,
+            "returnedQuantity": null
+          }
+        ]
+      },
+      {
+        "type": "QrPaymentStatus",
+        "ref": "0192f5a1-2b3c-7d4e-8f50-6a7b8c9d0e1f",
+        "externalId": "0192f5a1-2b3c-7d4e-8f50-6a7b8c9d0e1f",
+        "status": "paid",
+        "reference": "QR-7F3A9C21",
+        "paidAmount": "16007.50",
+        "paidAt": "2026-10-21T14:07:12+06:00",
+        "bankReference": "BK-20261021-000123",
+        "documentRef": null
+      },
+      {
+        "type": "ObjectDeletion",
+        "objectType": "InformationRegister_ШтрихкодыНоменклатуры",
+        "ref": "4600000000024"
+      }
+    ]
+  }
+}

@@ -1,0 +1,1664 @@
+# E_test_run.log — журнал прогонов интеграции backend этапа E (RM-E-011, RM-E-012 backend, RM-E-016)
+
+Дата: 2026-10-22. Машина разработчика: Windows 11, Node 24, embedded PostgreSQL 17 (без Docker).
+Все прогоны — на FakeOnecGateway, фикстурах contracts/onec/fixtures и синтетическом каталоге: **на фикстурах, не
+реальная интеграция** (API специалиста 1С не получено, тестовой копии 1С нет — ядро §24.3). Реальных данных
+клиентов нет. Формат записи: команда (каталог pos-api) → хвост вывода (ANSI-коды убраны) → код выхода.
+Ранние записи с ошибками сохранены: они показывают, что именно чинилось; итоговый зелёный прогон — в конце файла.
+
+### 2026-10-22 10:22:06 — $ npm run test:db
+```
+- CREATE INDEX stock_balances_updated_at_key_idx ON public.stock_balances USING btree (updated_at, variant_id, warehouse_id);
+  CREATE INDEX stock_balances_warehouse_idx ON public.stock_balances USING btree (warehouse_id);
+  CREATE INDEX stock_balances_wh_avail_idx ON public.stock_balances USING btree (warehouse_id) WHERE (available > (0)::numeric);
+  CREATE INDEX sync_entity_versions_last_seen_idx ON public.sync_entity_versions USING btree (entity, last_seen_at);
+  CREATE INDEX sync_entity_versions_run_idx ON public.sync_entity_versions USING btree (seen_in_run_id);
+  CREATE INDEX sync_entity_versions_seen_idx ON public.sync_entity_versions USING btree (entity, seen_in_run_id);
+@@ -2316,11 +2278,10 @@
+  CREATE UNIQUE INDEX transactions_onec_ref_uq ON public.transactions USING btree (onec_ref) WHERE (onec_ref IS NOT NULL);
+  CREATE INDEX transactions_order_idx ON public.transactions USING btree (order_id);
+  CREATE INDEX transactions_payment_idx ON public.transactions USING btree (payment_id);
+  CREATE UNIQUE INDEX units_code_uq ON public.units USING btree (code);
+  CREATE UNIQUE INDEX units_onec_ref_uq ON public.units USING btree (onec_ref) WHERE (onec_ref IS NOT NULL);
+- CREATE INDEX units_updated_at_id_idx ON public.units USING btree (updated_at, id);
+  CREATE INDEX units_updated_at_idx ON public.units USING btree (updated_at);
+  CREATE INDEX user_invitations_invited_by_idx ON public.user_invitations USING btree (invited_by_user_id);
+  CREATE UNIQUE INDEX user_invitations_phone_pending_uq ON public.user_invitations USING btree (phone_e164) WHERE (status = 'pending'::invitation_status);
+  CREATE INDEX user_invitations_status_expires_idx ON public.user_invitations USING btree (status, expires_at);
+  CREATE INDEX user_profiles_home_warehouse_idx ON public.user_profiles USING btree (home_warehouse_id);
+@@ -2331,15 +2292,13 @@
+  CREATE INDEX users_deleted_phone_hmac_idx ON public.users USING btree (deleted_phone_hmac) WHERE (deleted_phone_hmac IS NOT NULL);
+  CREATE INDEX users_kind_status_idx ON public.users USING btree (kind, status);
+  CREATE UNIQUE INDEX users_phone_e164_uq ON public.users USING btree (phone_e164) WHERE ((phone_e164 IS NOT NULL) AND (deleted_at IS NULL));
+  CREATE INDEX variant_attribute_values_attr_number_idx ON public.variant_attribute_values USING btree (attribute_id, value_number);
+  CREATE INDEX variant_attribute_values_attr_text_idx ON public.variant_attribute_values USING btree (attribute_id, value_text_norm);
+- CREATE INDEX variant_attribute_values_attr_updated_idx ON public.variant_attribute_values USING btree (attribute_id, updated_at);
+  CREATE INDEX variant_attribute_values_synced_idx ON public.variant_attribute_values USING btree (synced_at);
+  CREATE UNIQUE INDEX warehouses_default_uq ON public.warehouses USING btree (is_default_for_pos) WHERE is_default_for_pos;
+  CREATE UNIQUE INDEX warehouses_onec_ref_uq ON public.warehouses USING btree (onec_ref) WHERE (onec_ref IS NOT NULL);
+- CREATE INDEX warehouses_updated_at_id_idx ON public.warehouses USING btree (updated_at, id);
+  CREATE INDEX warehouses_updated_at_idx ON public.warehouses USING btree (updated_at);
+
+  -- ----------------------------------------------------------------------------------------------------
+  -- Внешние ключи
+  -- ----------------------------------------------------------------------------------------------------
+@@ -2400,11 +2359,10 @@
+  ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_discount_approved_by_user_id_fk FOREIGN KEY (discount_approved_by_user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_discount_rule_id_fk FOREIGN KEY (discount_rule_id) REFERENCES discount_rules(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_onec_linked_by_user_id_fk FOREIGN KEY (onec_linked_by_user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_price_list_id_fk FOREIGN KEY (price_list_id) REFERENCES price_lists(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_warehouse_id_fk FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+- ALTER TABLE ONLY public.otp_challenges ADD CONSTRAINT otp_challenges_issued_by_user_id_fk FOREIGN KEY (issued_by_user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  ALTER TABLE ONLY public.otp_challenges ADD CONSTRAINT otp_challenges_sms_outbox_id_fk FOREIGN KEY (sms_outbox_id) REFERENCES sms_outbox(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  ALTER TABLE ONLY public.otp_challenges ADD CONSTRAINT otp_challenges_user_id_fk FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  ALTER TABLE ONLY public.packagings ADD CONSTRAINT packagings_product_id_fk FOREIGN KEY (product_id) REFERENCES products(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  ALTER TABLE ONLY public.packagings ADD CONSTRAINT packagings_unit_id_fk FOREIGN KEY (unit_id) REFERENCES units(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+  ALTER TABLE ONLY public.payment_webhook_events ADD CONSTRAINT payment_webhook_events_payment_id_fk FOREIGN KEY (payment_id) REFERENCES payments(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+@@ -2535,16 +2493,14 @@
+  CREATE TRIGGER trg_payments_row_version BEFORE UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION bump_row_version();
+  CREATE TRIGGER trg_payments_set_updated_at BEFORE UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  CREATE TRIGGER trg_permissions_set_updated_at BEFORE UPDATE ON public.permissions FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  CREATE TRIGGER trg_price_lists_admin_audit AFTER UPDATE ON public.price_lists FOR EACH ROW EXECUTE FUNCTION audit_db_changes('settings.changed', 'id', '', 'is_default', 'visible_to_roles', 'sort_order');
+  CREATE TRIGGER trg_price_lists_set_updated_at BEFORE UPDATE ON public.price_lists FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+- CREATE TRIGGER trg_prices_catalog_sync_deleted AFTER DELETE ON public.prices REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION catalog_sync.log_prices_deleted();
+  CREATE TRIGGER trg_prices_set_updated_at BEFORE UPDATE ON public.prices FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  CREATE TRIGGER trg_print_jobs_set_updated_at BEFORE UPDATE ON public.print_jobs FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  CREATE TRIGGER trg_product_attributes_admin_audit AFTER UPDATE ON public.product_attributes FOR EACH ROW EXECUTE FUNCTION audit_db_changes('settings.changed', 'id', '', 'code', 'is_filterable', 'is_variant_axis', 'sort_order');
+  CREATE TRIGGER trg_product_attributes_set_updated_at BEFORE UPDATE ON public.product_attributes FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+- CREATE TRIGGER trg_product_images_catalog_sync_deleted AFTER DELETE ON public.product_images REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION catalog_sync.log_images_deleted();
+  CREATE TRIGGER trg_product_images_set_updated_at BEFORE UPDATE ON public.product_images FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  CREATE TRIGGER trg_product_variants_set_updated_at BEFORE UPDATE ON public.product_variants FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  CREATE TRIGGER trg_products_set_updated_at BEFORE UPDATE ON public.products FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  CREATE TRIGGER trg_rate_limit_counters_set_updated_at BEFORE UPDATE ON public.rate_limit_counters FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  CREATE TRIGGER trg_receivable_documents_set_updated_at BEFORE UPDATE ON public.receivable_documents FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+ ❯ test/db/migrate-seed.db-spec.ts:375:74
+    373|       writeFileSync(SCHEMA_DUMP_SQL, ddl, 'utf8');
+    374|     }
+    375|     expect(readFileSync(SCHEMA_DUMP_SQL, 'utf8').replace(/\r\n/g, '\n'…
+       |                                                                          ^
+    376|
+    377|     // DDL применяется к пустой БД под pos_migrate и даёт тот же отпеч…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  2 failed | 11 passed (13)
+   Start at  10:21:41
+   Duration  24.74s (transform 1.70s, setup 0ms, import 4.55s, tests 19.85s, environment 0ms)
+
+```
+EXIT=1 (26 с)
+
+### 2026-10-22 10:23:00 — $ UPDATE_SCHEMA_DUMP=1 npm run test:db
+```
+
+> pos-api@0.1.0 test:db
+> vitest run --config ./test/db/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+ ❯ test/db/migrate-seed.db-spec.ts (11 tests | 1 failed) 12156ms
+     × 7. forward-only: изменённая применённая миграция — ошибка; CRLF — не изменение; сбой файла — откат 104ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/db/migrate-seed.db-spec.ts > RM-C-006: migrate → seed → проверки на PostgreSQL 17 > 7. forward-only: изменённая применённая миграция — ошибка; CRLF — не изменение; сбой файла — откат
+AssertionError: expected MigrationError: 0003_c006_broken.sql: фай… { code: '…' } to match object { code: 'MIGRATION_FAILED' }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+- {
+-   "code": "MIGRATION_FAILED",
++ MigrationError {
++   "code": "MIGRATION_CHECKSUM_MISMATCH",
+  }
+
+ ❯ test/db/migrate-seed.db-spec.ts:313:85
+    311|
+    312|     writeFileSync(join(dir, '0003_c006_broken.sql'), 'CREATE TABLE c00…
+    313|     await expect(run(env, { seed: false, migrationsDir: dir }, new Cap…
+       |                                                                                     ^
+    314|       code: 'MIGRATION_FAILED',
+    315|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 12 passed (13)
+   Start at  10:22:35
+   Duration  24.20s (transform 1.65s, setup 0ms, import 3.90s, tests 19.93s, environment 0ms)
+
+```
+EXIT=1 (25 с)
+
+### 2026-10-22 10:23:37 — $ npm run test:db
+```
+
+> pos-api@0.1.0 test:db
+> vitest run --config ./test/db/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  2 passed (2)
+      Tests  13 passed (13)
+   Start at  10:23:13
+   Duration  24.39s (transform 1.82s, setup 0ms, import 3.92s, tests 20.12s, environment 0ms)
+
+```
+EXIT=0 (25 с)
+
+### 2026-10-22 10:23:57 — $ cd .. && node tools/pg/run-sql.mjs --repeat-strict pos-api/migrations/0001_init.sql pos-api/migrations/0002_rbac_seed.sql pos-api/migrations/0003_auth_refinements.sql pos-api/migrations/0005_search.sql pos-api/migrations/0006_catalog_sort_indexes.sql pos-api/migrations/0007_catalog_sync.sql --check scripts/check_tables.sql
+```
+-----------------+---------------
+              63 |            63 
+(1 row)
+
+scripts\check_tables.sql:115: NOTICE:  check_tables: OK — 63 из 63 таблиц, лишних нет (prod-схема, dev_outbox нет)
+-- scripts\check_tables.sql:115
+DO
+
+-- scripts\check_tables.sql:141
+CREATE TABLE
+
+-- scripts\check_tables.sql:142
+INSERT 0 45
+
+-- scripts\check_tables.sql:153
+ status | type_name 
+--------+-----------
+(0 rows)
+
+scripts\check_tables.sql:161: NOTICE:  check_tables: OK — 45 из 45 enum-типов 07 §6.1
+-- scripts\check_tables.sql:161
+DO
+
+[check] scripts\check_tables.sql: OK
+[pg] кластер остановлен и удалён
+```
+EXIT=0 (14 с)
+
+### 2026-10-22 10:24:15 — $ cd .. && set -o pipefail && node tools/pg/run-sql.mjs --repeat-strict --set app.env=test pos-api/migrations/0001_init.sql pos-api/migrations/0002_rbac_seed.sql pos-api/migrations/0003_auth_refinements.sql pos-api/migrations/0005_search.sql pos-api/migrations/0006_catalog_sort_indexes.sql pos-api/migrations/0007_catalog_sync.sql pos-api/db/migrations-dev/0001_dev_outbox.sql --check scripts/check_tables.sql --check pos-api/test/sql/check_ddl_behavior.sql 2>&1 | grep -E 'ИТОГ|повтор|\[pg\]|\[check\]|ERROR|NOTICE:  check_tables|PostgreSQL 17'
+```
+[pg] PostgreSQL 17.10 on x86_64-windows, compiled by msvc-19.44.35226, 64-bit
+[pg] кластер tools\pg\.tmp\9d7a9345-166d-4a41-884c-7d4edf049292, порт 55284, БД pos_test (UTF8, collate en-US, ctype en-US), старт 6274 мс
+[pg] доступные расширения: pg_trgm 1.6, pgcrypto 1.3, unaccent 1.1
+[pg] параметр сеанса app.env = 'test' (--set)
+[repeat] ИТОГ: 0 изменений (схема и данные совпадают); команд выполнено: 446, строк DML: 0
+[check] scripts\check_tables.sql
+scripts\check_tables.sql:115: NOTICE:  check_tables: OK — 64 из 64 таблиц, лишних нет (dev/test-схема, dev_outbox есть)
+scripts\check_tables.sql:161: NOTICE:  check_tables: OK — 45 из 45 enum-типов 07 §6.1
+[check] scripts\check_tables.sql: OK
+[check] pos-api\test\sql\check_ddl_behavior.sql
+[check] pos-api\test\sql\check_ddl_behavior.sql: OK
+[pg] кластер остановлен и удалён
+```
+EXIT=0 (9 с)
+
+### 2026-10-22 10:26:21 — $ npm run madge
+```
+
+> pos-api@0.1.0 madge
+> madge --circular --extensions ts src
+
+- Finding files
+Processed 386 files (6.2s) 
+
+✔ No circular dependency found!
+
+```
+EXIT=0 (8 с)
+
+### 2026-10-22 10:26:23 — $ npm run check:permissions
+```
+
+> pos-api@0.1.0 check:permissions
+> node scripts/gen-permissions.mjs --check
+
+gen-permissions: актуально (77 кодов, 7 ролей)
+```
+EXIT=0 (2 с)
+
+### 2026-10-22 10:28:31 — $ npm run test:e2e
+```
+
+> pos-api@0.1.0 test:e2e
+> vitest run --config ./vitest.config.e2e.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  9 passed (9)
+      Tests  86 passed | 4 skipped (90)
+   Start at  10:26:35
+   Duration  116.25s (transform 1.90s, setup 0ms, import 19.36s, tests 95.09s, environment 1ms)
+
+```
+EXIT=0 (117 с)
+
+### 2026-10-22 10:38:55 — $ npm run build
+```
+
+> pos-api@0.1.0 prebuild
+> node scripts/clean-dist.mjs
+
+
+> pos-api@0.1.0 build
+> tsc -p tsconfig.build.json
+
+```
+EXIT=0 (7 с)
+
+### 2026-10-22 10:39:25 — $ node scripts/local-stack.mjs catalog-smoke
+```
+[local-stack] migrate: migration applied
+[local-stack] migrate: migration applied
+[local-stack] migrate: migration applied
+[local-stack] migrate: migration applied
+[local-stack] migrate: migration applied
+[local-stack] migrate: migrate: готово applied=["0001_init.sql","0002_rbac_seed.sql","0003_auth_refinements.sql","0005_search.sql","0006_catalog_sort_indexes.sql","0007_catalog_sync.sql"]
+[local-stack] migrate: migration applied
+[local-stack] migrate: migrate: dev-миграции применены (APP_ENV=dev)
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: seed applied
+[local-stack] migrate --seed: seed: вставлено строк 39 inserted={"app_settings":30,"customers":1,"price_lists":1,"role_discount_limits":7}
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: seed applied
+[local-stack] migrate --seed: seed: 0 изменений inserted={"app_settings":0,"customers":0,"price_lists":0,"role_discount_limits":0}
+[local-stack] catalog: [load-catalog] на фикстурах, не реальная интеграция: 500 синтетических SKU + фикстуры 1С
+[local-stack] catalog: [load-catalog] полная загрузка: 774 мс
+[local-stack] catalog: run units      success  стр.=1 +9 ~0 =0 удал.=0 ошибок=0 $count 1С=9 БД=9
+[local-stack] catalog: run categories success  стр.=1 +94 ~0 =0 удал.=0 ошибок=0 $count 1С=94 БД=94
+[local-stack] catalog: run products   success  стр.=2 +673 ~0 =0 удал.=0 ошибок=0 $count 1С=668 БД=668
+[local-stack] catalog: run variants   success  стр.=1 +293 ~0 =0 удал.=0 ошибок=0 $count 1С=293 БД=293
+[local-stack] catalog: run attributes success  стр.=0 +0 ~0 =0 удал.=0 ошибок=0
+[local-stack] catalog: run barcodes   success  стр.=1 +865 ~0 =0 удал.=0 ошибок=0 $count 1С=865 БД=865
+[local-stack] catalog: run warehouses success  стр.=1 +5 ~0 =0 удал.=0 ошибок=0 $count 1С=5 БД=5
+[local-stack] catalog: run prices     success  стр.=4 +2543 ~0 =0 удал.=0 ошибок=0 $count 1С=5 БД=5
+[local-stack] catalog: run stock      success  стр.=2 +1444 ~0 =0 удал.=0 ошибок=0
+[local-stack] catalog: count units      units                                    1С=     9 БД=     9 OK
+[local-stack] catalog: count categories categories                               1С=    94 БД=    94 OK
+[local-stack] catalog: count products   products                                 1С=   496 БД=   496 OK
+[local-stack] catalog: count products   packagings                               1С=   172 БД=   172 OK
+[local-stack] catalog: count variants   product_variants (характеристики 1С)     1С=   293 БД=   293 OK
+[local-stack] catalog: count variants   product_variants (служебные is_default)  1С=   496 БД=   496 OK
+[local-stack] catalog: count barcodes   barcodes                                 1С=   865 БД=   865 OK
+[local-stack] catalog: count warehouses warehouses                               1С=     5 БД=     5 OK
+[local-stack] catalog: count prices     price_lists                              1С=     5 БД=     5 OK
+[local-stack] catalog: count prices     prices                                   1С=  2538 БД=  2538 OK
+[local-stack] catalog: count stock      stock_balances                           1С=  1444 БД=  1444 OK
+[local-stack] catalog: count attributes product_attributes                       1С=     6 БД=     6 OK
+[local-stack] catalog: [load-catalog] count_check: расхождений 0 (categories=success, products=success, variants=success, units=success, barcodes=success, warehouses=success, prices=success)
+[local-stack] catalog: [load-catalog] sync_errors: {}; ошибок маппинга: 0
+[local-stack] catalog: [load-catalog] фото: файлов 300, готово 300, дедупликация 1, ошибок 0, товаров с фото 300, уникальных sha256 299, каталогов в хранилище 299, 12782 мс
+[local-stack] catalog: [load-catalog] ИТОГ: OK
+[local-stack] catalog-fixtures: каталог (500 SKU + фикстуры 1С) и фото загружены — на фикстурах, не реальная интеграция
+[local-stack] auth-fixtures: администратор (admin, без PIN) и приглашение seller созданы; тестовый режим OTP включён
+[local-stack] pos-api pid=34680 готов: http://127.0.0.1:3000 (обычный режим)
+[local-stack] media-proxy http://127.0.0.1:8080: /images/{sha}/{size} из MEDIA_DIR, прочее → http://127.0.0.1:3000
+[local-stack] PASS синхронизация через FakeOnecGateway: прогоны каталога sync_runs = success — units=success, categories=success, products=success, variants=success, attributes=success, barcodes=success, warehouses=success, prices=success, stock=success, categories=success, products=success, variants=success, units=success, barcodes=success, warehouses=success, prices=success
+[local-stack] FAIL реплика: живых товаров ≥ 500 — products=496
+[local-stack] PASS сессии: seller (приглашение), admin, customer (регистрация) — seller=true roles=["seller"] admin=true customer=true
+[local-stack] PASS GET /catalog/categories → 200 + ETag — 200 items=11 etag=есть
+[local-stack] PASS If-None-Match → 304 — 304
+[local-stack] FAIL GET /catalog/products?limit=50 → 200, страница + nextCursor, цены строкой "1234.50" + KGS — 200 items=50 hasMore=true price=undefined
+[local-stack] PASS курсор: вторая страница без повторов — 200 items=50 повторов=0
+[local-stack] FAIL GET /catalog/products/{id} → 200 карточка — 400 sku=undefined
+[local-stack] FAIL просмотр карточки → «Недавние» (08 §4.4.3, @RecordsRecentView) — recent содержит товар: false
+[local-stack] PASS GET /search/products?q=F4252 → matchType=sku — 200 first=F4252 matchType=sku
+[local-stack] PASS GET /search/products?q=смеситель фрап → найдено (fts/trgm) — 200 items=9 matchType=fts
+[local-stack] PASS GET /search/barcode/{value} → 200 товар и вариант — 200 barcodeType=EAN13
+[local-stack] FAIL POST /inventory/check (3 варианта) → 200 ok/shortages/unavailable — 400 ok=undefined shortages=undefined unavailable=undefined
+[local-stack] FAIL избранное: двойной PUT → 204/204, в списке один раз — 400/400 в списке=0
+[local-stack] FAIL избранное: DELETE → 204, товара нет — 400
+[local-stack] PASS GET /catalog/sync/products: выгрузка до hasMore=false = реплика (живые товары), ключи ответа ровно 5 — 200 страниц=3 items=496 БД=496 ключи=deleted,hasMore,items,nextCursor,serverTime
+[local-stack] PASS повтор с since последней страницы → 0 новых — 200 items=0
+[local-stack] PASS GET /catalog/sync/prices (seller) → 200 — 200 items=200
+[local-stack] PASS customer (customer_stock_display=status): остатки без quantity/reserved/available — 200 items=20 с количествами=0
+[local-stack] PASS фото (синтетические) через мини-прокси: /images/{sha}/card → 200 image/webp, immutable — 200 image/webp public, max-age=31536000, immutable 928 байт
+[local-stack] PASS primaryImage.cardUrl из API открывается через прокси (/images/{sha}/card) — /images/5ae8662bd0ff3f488a4e6a7dfe63745e69d97fcbb1481e040a2b99de845cab10/card → 200
+[local-stack] PASS GET /sync/status (admin) → 200 — 200 overall=ok entities=17
+[local-stack] catalog-smoke итог: 15/22 PASS (на фикстурах, не реальная интеграция)
+```
+EXIT=1 (30 с)
+
+### 2026-10-22 10:40:23 — $ npm run build
+```
+> pos-api@0.1.0 build
+> tsc -p tsconfig.build.json
+
+```
+EXIT=0 (7 с)
+
+### 2026-10-22 10:40:49 — $ node scripts/local-stack.mjs catalog-smoke
+```
+[local-stack] auth-fixtures: администратор (admin, без PIN) и приглашение seller созданы; тестовый режим OTP включён
+[local-stack] pos-api pid=20656 готов: http://127.0.0.1:3000 (обычный режим)
+[local-stack] media-proxy http://127.0.0.1:8080: /images/{sha}/{size} из MEDIA_DIR, прочее → http://127.0.0.1:3000
+[local-stack] PASS синхронизация через FakeOnecGateway: прогоны каталога sync_runs = success — units=success, categories=success, products=success, variants=success, attributes=success, barcodes=success, warehouses=success, prices=success, stock=success, categories=success, products=success, variants=success, units=success, barcodes=success, warehouses=success, prices=success
+[local-stack] PASS реплика: живых товаров ≥ 95 % от 500 SKU — products=496
+[local-stack] PASS сессии: seller (приглашение), admin, customer (регистрация) — seller=true roles=["seller"] admin=true customer=true
+[local-stack] PASS GET /catalog/categories → 200 + ETag — 200 items=11 etag=есть
+[local-stack] PASS If-None-Match → 304 — 304
+[local-stack] PASS GET /catalog/products?limit=50 → 200, страница + nextCursor, цены строкой "1234.50" + KGS — 200 items=50 hasMore=true price={"amount":"28547.50","currency":"KGS"}
+[local-stack] PASS курсор: вторая страница без повторов — 200 items=50 повторов=0
+[local-stack] PASS GET /catalog/products/{id} → 200 карточка — 200 sku=HB4328
+[local-stack] PASS просмотр карточки → «Недавние» (08 §4.4.3, @RecordsRecentView) — recent содержит товар: true
+[local-stack] PASS GET /search/products?q=F4252 → matchType=sku — 200 first=F4252 matchType=sku
+[local-stack] PASS GET /search/products?q=смеситель фрап → найдено (fts/trgm) — 200 items=9 matchType=fts
+[local-stack] PASS GET /search/barcode/{value} → 200 товар и вариант — 200 barcodeType=EAN13
+[local-stack] PASS POST /inventory/check (3 варианта) → 200 ok/shortages/unavailable — 200 ok=false shortages=2 unavailable=0
+[local-stack] PASS избранное: двойной PUT → 204/204, в списке один раз — 204/204 в списке=1
+[local-stack] PASS избранное: DELETE → 204, товара нет — 204
+[local-stack] PASS GET /catalog/sync/products: выгрузка до hasMore=false = реплика (живые товары), ключи ответа ровно 5 — 200 страниц=3 items=496 БД=496 ключи=deleted,hasMore,items,nextCursor,serverTime
+[local-stack] PASS повтор с since последней страницы → 0 новых — 200 items=0
+[local-stack] PASS GET /catalog/sync/prices (seller) → 200 — 200 items=200
+[local-stack] PASS customer (customer_stock_display=status): остатки без quantity/reserved/available — 200 items=20 с количествами=0
+[local-stack] PASS фото (синтетические) через мини-прокси: /images/{sha}/card → 200 image/webp, immutable — 200 image/webp public, max-age=31536000, immutable 1388 байт
+[local-stack] PASS primaryImage.cardUrl из API открывается через прокси (/images/{sha}/card) — /images/5ae8662bd0ff3f488a4e6a7dfe63745e69d97fcbb1481e040a2b99de845cab10/card → 200
+[local-stack] PASS GET /sync/status (admin) → 200 — 200 overall=ok entities=17
+[local-stack] catalog-smoke итог: 22/22 PASS (на фикстурах, не реальная интеграция)
+```
+EXIT=0 (26 с)
+
+### 2026-10-22 10:41:54 — $ npm run test:sync-apply
+```
+ FAIL  test/sync-apply/catalog-apply.spec.ts > Конвейер применения 1С → реплики каталога (RM-E-001; на фикстурах и синтетике, не реальная интеграция) > вид цены по умолчанию из seed («Розничная», onec_ref NULL) связывается с видом цены 1С того же имени (EQ-INT-03)
+AssertionError: expected [ { …(5) }, { …(5) } ] to have a length of 1 but got 2
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ test/sync-apply/catalog-apply.spec.ts:732:24
+    730|     );
+    731|     // одна строка: seed-строка получила onec_ref вида цены 1С, сохран…
+    732|     expect(lists.rows).toHaveLength(1);
+       |                        ^
+    733|     expect(lists.rows[0]).toMatchObject({ id: SEED_ID, is_default: tru…
+    734|     expect(lists.rows[0]?.prices).toBeGreaterThan(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 21 passed (22)
+   Start at  10:41:12
+   Duration  42.40s (transform 217ms, setup 0ms, import 987ms, tests 40.80s, environment 0ms)
+
+```
+EXIT=1 (43 с)
+
+### 2026-10-22 10:42:50 — $ npm run test:sync-apply
+```
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  3 passed (3)
+      Tests  22 passed (22)
+   Start at  10:42:03
+   Duration  47.12s (transform 280ms, setup 0ms, import 1.29s, tests 45.14s, environment 0ms)
+
+```
+EXIT=0 (48 с)
+
+### 2026-10-22 10:52:24 — $ npm run test:cov:e
+```
+  event: 'sms.send',
+  transactionId: 'AbCdEf123456',
+  phoneMasked: '+996 7** *** *56',
+  purpose: 'otp_login',
+  providerStatus: 11,
+  outcome: 'ACCEPTED_TEST',
+  smscnt: 1,
+  phonesRecognized: 1,
+  latencyMs: 3,
+  attempt: 1
+}
+
+ Test Files  44 passed | 2 skipped (46)
+      Tests  452 passed | 6 skipped (458)
+   Start at  10:46:15
+   Duration  368.40s (transform 27.00s, setup 0ms, import 116.39s, tests 281.90s, environment 5ms)
+
+ % Coverage report from v8
+
+=============================== Coverage summary ===============================
+Statements   : 87.25% ( 4812/5515 )
+Branches     : 74.83% ( 2985/3989 )
+Functions    : 87.04% ( 927/1065 )
+Lines        : 89.73% ( 4247/4733 )
+================================================================================
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   87.25 |    74.83 |   87.04 |   89.73 |                   
+ catalog/api       |   93.46 |    80.73 |   94.87 |   94.32 |                   
+  ...ts.service.ts |   94.21 |    79.71 |   94.11 |    94.6 | ...80-781,920-921 
+  ...ce.service.ts |   98.11 |    86.76 |     100 |     100 | ...10-117,128-141 
+  ...controller.ts |   84.31 |    57.14 |      90 |    87.5 | 150-157           
+  ...ct-filters.ts |   94.73 |    90.47 |     100 |   94.73 | 76                
+ catalog/common    |   92.06 |    86.58 |   97.72 |    98.5 |                   
+  ...log-cursor.ts |   84.78 |    81.25 |     100 |   97.22 | 49                
+  ...log-format.ts |   88.88 |    78.94 |   85.71 |   95.23 | 34                
+  catalog-query.ts |    90.8 |    89.02 |     100 |   98.43 | 105               
+  ...log-viewer.ts |   94.87 |    89.13 |     100 |     100 | 75,89,160         
+  ...projection.ts |     100 |    86.95 |     100 |     100 | 57,61,73          
+ catalog/inventory |   87.65 |    82.44 |     100 |   89.47 |                   
+  ...controller.ts |   96.77 |    92.85 |     100 |     100 | 41                
+  ...ry.service.ts |   85.27 |    81.19 |     100 |    86.4 | ...41-242,247-252 
+ catalog/recent    |   91.66 |    77.77 |   93.75 |   95.89 |                   
+  ...controller.ts |     100 |    93.75 |     100 |     100 | 41                
+  ...ts.service.ts |   89.74 |    68.75 |    87.5 |   91.66 | 66-67,83          
+  ...nterceptor.ts |   85.71 |    69.23 |     100 |     100 | 21-29,42-43       
+ catalog/search    |   94.03 |    83.98 |   94.31 |   96.91 |                   
+  search-cursor.ts |   87.09 |    83.78 |     100 |    92.3 | 57,72             
+  search-params.ts |     100 |    85.71 |     100 |     100 | 84,96,108         
+  search-text.ts   |   97.53 |     85.1 |   93.75 |   98.52 | 220               
+  ...controller.ts |   91.66 |       20 |    87.5 |    90.9 | 28                
+  ...repository.ts |   96.61 |       90 |     100 |   97.16 | 69,108,146        
+  ...ch.service.ts |   90.38 |    83.89 |   86.95 |   96.15 | ...54,264-265,330 
+  sql-params.ts    |   94.73 |     87.5 |     100 |     100 | 50                
+ catalog/sync      |   93.82 |    82.66 |   97.82 |   98.05 |                   
+  ...controller.ts |    92.1 |    90.24 |     100 |   96.96 | 77                
+  ...ync.cursor.ts |   86.53 |    86.36 |     100 |   95.12 | 60,72             
+  ...nc.horizon.ts |      75 |       50 |   66.66 |   85.71 | 66                
+  ...ync.mapper.ts |   93.85 |    65.21 |     100 |      98 | 38,51             
+  ...nc.queries.ts |    98.5 |     90.9 |     100 |     100 | 93-94,328         
+  ...nc.service.ts |   97.01 |     93.5 |     100 |     100 | ...11,116,141-142 
+ ...mers/favorites |   98.57 |    86.36 |     100 |     100 |                   
+  ...controller.ts |   96.77 |    86.95 |     100 |     100 | 28,44,69          
+  ...ts.service.ts |     100 |    85.71 |     100 |     100 | 50,85,92          
+ integrations/onec |   87.96 |    81.42 |   79.91 |   89.62 |                   
+  ...hange-plan.ts |   95.89 |    80.95 |     100 |   98.46 | 95                
+  ...ec.gateway.ts |   85.92 |    80.23 |   69.04 |   85.34 | ...45,362,376,387 
+  onec-adapters.ts |   86.36 |    70.83 |     100 |   94.11 | 83                
+  ...on.gateway.ts |   89.71 |    87.28 |   78.04 |      89 | ...49,274-304,380 
+  ...ay.factory.ts |   93.33 |    94.44 |     100 |   91.66 | 37                
+  ...-transport.ts |   86.07 |    74.41 |   81.25 |   88.57 | ...25-126,135-137 
+  ...ata.client.ts |   89.79 |    79.41 |   93.75 |   90.47 | ...82,216-217,236 
+  ...ta.gateway.ts |   26.19 |     5.88 |      28 |   27.77 | ...77-126,142-147 
+  ...ic-catalog.ts |   93.45 |    88.46 |   98.36 |    96.4 | 784-794           
+ sync/alerts       |   95.91 |       80 |   88.88 |   97.56 |                   
+  ...ts.service.ts |   95.91 |       80 |   88.88 |   97.56 | 52                
+ sync/api          |   86.64 |    76.94 |   87.69 |   91.66 |                   
+  ...api.common.ts |   85.71 |    76.81 |   93.33 |   90.56 | 51,72,74,79,128   
+  ...api.module.ts |      50 |    33.33 |   66.66 |   57.14 | 16-18             
+  ...presenters.ts |     100 |       78 |     100 |     100 | 22,35,90-162      
+  ...ox.service.ts |      84 |    70.37 |     100 |   82.22 | ...7-68,71-72,135 
+  ...ns.service.ts |    80.8 |     75.3 |    62.5 |   92.07 | ...27-228,269-270 
+  ...us.service.ts |   96.55 |    81.94 |     100 |   98.07 | 153               
+  ...controller.ts |     100 |       50 |     100 |     100 | 56                
+ sync/apply        |    84.3 |    66.23 |   85.17 |   86.06 |                   
+  ...og-applier.ts |   90.92 |    67.78 |   98.82 |   91.93 | ...1165,1279-1280 
+  ...ad.service.ts |   79.05 |    60.34 |   80.55 |    79.5 | ...33,460-461,469 
+  ...log-slices.ts |   82.48 |    61.84 |   90.62 |    83.1 | ...89-394,414-421 
+  ...log-source.ts |   96.77 |    84.21 |     100 |     100 | 62,100-101        
+  ...log.source.ts |   63.31 |    32.62 |   55.55 |   69.09 | ...84,508,528-537 
+  ...es.service.ts |   87.58 |       86 |   72.22 |   88.23 | ...72,281,301,375 
+  onec-values.ts   |   92.66 |    89.09 |     100 |     100 | ...02,123-124,197 
+  ...ica-writer.ts |   86.84 |    88.37 |      92 |   86.31 | ...56-158,255-256 
+  run-tracker.ts   |     100 |    95.23 |     100 |     100 | 30                
+  ...ply.module.ts |      50 |       20 |   16.66 |   46.66 | 35-38,53-98       
+  ...hetic-load.ts |     100 |       90 |     100 |     100 | 40                
+ sync/images       |   81.63 |    64.51 |   82.17 |   83.91 |                   
+  ...ory-import.ts |   86.88 |     68.1 |      95 |   92.85 | ...15-221,333-339 
+  ...es.handler.ts |   93.33 |       60 |     100 |     100 | 35-37             
+  ...-processor.ts |    87.8 |    61.29 |     100 |   94.59 | 76,116            
+  image-sources.ts |   81.66 |    60.31 |    90.9 |   88.23 | 26-32,62-64       
+  image-store.ts   |   72.72 |    44.44 |   81.81 |   78.37 | 74-90             
+  ...nc.handler.ts |      40 |      100 |      50 |      40 | 18-25             
+  ...nc.service.ts |   85.33 |    75.22 |   78.57 |   84.32 | ...70-275,324,349 
+  image.types.ts   |   83.33 |       50 |     100 |     100 | 96-98             
+  images.module.ts |   55.55 |    57.14 |   22.22 |   52.94 | 39,51-86          
+  ...images.cli.ts |       0 |        0 |       0 |       0 | 22-74             
+  ...repository.ts |   94.23 |    73.49 |     100 |   94.25 | 64-70,407-414     
+ sync/reconcile    |   76.27 |    70.37 |   76.92 |   76.36 |                   
+  ...ck.service.ts |   76.27 |    70.37 |   76.92 |   76.36 | ...14,156,160-172 
+ sync/scheduler    |   76.58 |    49.57 |   84.61 |   80.11 |                   
+  ...ox-backoff.ts |   71.42 |       50 |     100 |     100 | 11-22             
+  queue-specs.ts   |     100 |    66.66 |     100 |     100 | 22                
+  ...e-resolver.ts |   66.66 |    27.58 |   88.88 |   74.28 | ...,74-78,106-107 
+  ...ler.config.ts |     100 |       60 |     100 |     100 | 85                
+  ...n.registry.ts |      88 |    74.35 |   91.66 |   93.18 | 108,115,217       
+  ....requester.ts |       0 |        0 |       0 |       0 | 31-62             
+  ...-scheduler.ts |   82.35 |       44 |    87.5 |   81.66 | ...47-150,186-188 
+-------------------|---------|----------|---------|---------|-------------------
+```
+EXIT=0 (371 с)
+
+### 2026-10-22 10:52:38 — $ cd .. && python -I -X utf8 scripts/check_onec_paths.py
+```
+  info коллекция `AccumulationRegister_РасчетыСКлиентамиПоДокументам` не названа в 05 §5 в нотации OData (выведена из имени объекта 1С)
+  info коллекция `AccumulationRegister_РасчетыСКлиентамиПоСрокам` не названа в 05 §5 в нотации OData (выведена из имени объекта 1С)
+  info коллекция `Catalog_Контрагенты_КонтактнаяИнформация` не названа в 05 §5 в нотации OData (выведена из имени объекта 1С)
+  info коллекция `Document_ЗаявкаНаВозвратТоваровОтКлиента` не названа в 05 §5 в нотации OData (выведена из имени объекта 1С)
+  info коллекция `Document_ПоступлениеБезналичныхДенежныхСредств` не названа в 05 §5 в нотации OData (выведена из имени объекта 1С)
+  info коллекция `Document_УстановкаЦенНоменклатуры_Товары` не названа в 05 §5 в нотации OData (выведена из имени объекта 1С)
+  info коллекция `Document_ЭквайринговаяОперация` не названа в 05 §5 в нотации OData (выведена из имени объекта 1С)
+  ok   33 коллекций: подтверждено $metadata — 0, [ТИПОВО]/[НЕ ПОДТВЕРЖДЕНО] с fallback — 33; упомянутые в 05 §5: 27, все покрыты
+[7] Сверка 18 §4.0 с 05 §6.3 (информационно; при расхождении прав 05)
+  ok   набор операций 18 §4.0 совпадает с 05 §6.3 (21)
+
+ИТОГ: OK — ошибок: 0, информационных замечаний: 7
+```
+EXIT=0 (11 с)
+
+### 2026-10-22 10:52:41 — $ npx tsx scripts/onec_acceptance.ts --mock --allow-write
+```
+[onec-acceptance] PASS   КП-1 — 200 apiVersion=1 extensionVersion=1.0.3 platform=8.3.25.1000 exchangeNode=POS backlog=142 lastAck=5120; без ключа: OnecError 401 POS_E_UNAUTHORIZED
+[onec-acceptance] PASS   КП-2 — reregister: OK; два GET без ack: номер 5121/5121; страниц 2, элементов 21: Catalog_Номенклатура=2, Catalog_ХарактеристикиНоменклатуры=1, Catalog_КлассификаторЕдиницИзмерения=1, Catalog_УпаковкиЕдиницыИзмерения=1, Catalog_Склады=1, Catalog_ВидыЦен=1, InformationRegister_ШтрихкодыНоменклатуры=1, Catalog_НоменклатураПрисоединенныеФайлы=1, ObjectDeletion=2, Catalog_Партнеры=1, Catalog_Контрагенты=1, Catalog_СоглашенияСКлиентами=1, Catalog_СкидкиНаценки=1, Document_УстановкаЦенНоменклатуры=1, Document_ЗаказКлиента=1, Document_РеализацияТоваровУслуг=1, Document_ПриходныйКассовыйОрдер=1, Document_ВозвратТоваровОтКлиента=1, QrPaymentStatus=1; ack 200, повтор ack 200; registrationBacklog после ack: 142 (мок: значение фикстуры)
+[onec-acceptance] PASS   КП-5 — 0700123456: 1 карточ.; +996700*****: 1 карточ.; совпадают: true
+[onec-acceptance] PASS   КП-18 — 200 image/png 11 байт ETag=есть; повтор: 304
+[onec-acceptance] PASS   КП-19 — 200 объектов 2
+[onec-acceptance] ИТОГ (мок HS на фикстурах contracts/onec/fixtures — репетиция, НЕ реальная интеграция): PASS 5, FAIL 0, SKIP 0, вручную 15
+```
+EXIT=0 (2 с)
+
+### 2026-10-22 10:53:30 — $ npx tsx scripts/load_catalog_fixtures.ts --embedded --sku 5000 --seed 1 --report D:/optomstroy/.tmp/e011-report.json
+```
+[load-catalog] embedded PostgreSQL 17: миграции 0001_init.sql, 0002_rbac_seed.sql, 0003_auth_refinements.sql, 0005_search.sql, 0006_catalog_sort_indexes.sql, 0007_catalog_sync.sql
+[load-catalog] на фикстурах, не реальная интеграция: 5000 синтетических SKU + фикстуры 1С
+[load-catalog] полная загрузка: 8276 мс
+  run units      success  стр.=1 +9 ~0 =0 удал.=0 ошибок=0 $count 1С=9 БД=9
+  run categories success  стр.=1 +94 ~0 =0 удал.=0 ошибок=0 $count 1С=94 БД=94
+  run products   success  стр.=8 +6879 ~0 =0 удал.=0 ошибок=0 $count 1С=6829 БД=6829
+  run variants   success  стр.=4 +3156 ~0 =0 удал.=0 ошибок=0 $count 1С=3156 БД=3156
+  run attributes success  стр.=0 +0 ~0 =0 удал.=0 ошибок=0
+  run barcodes   success  стр.=9 +8982 ~0 =0 удал.=0 ошибок=0 $count 1С=8982 БД=8982
+  run warehouses success  стр.=1 +5 ~0 =0 удал.=0 ошибок=0 $count 1С=5 БД=5
+  run prices     success  стр.=28 +26584 ~0 =0 удал.=0 ошибок=0 $count 1С=5 БД=5
+  run stock      success  стр.=16 +15006 ~0 =0 удал.=0 ошибок=0
+  count units      units                                    1С=     9 БД=     9 OK
+  count categories categories                               1С=    94 БД=    94 OK
+  count products   products                                 1С=  4951 БД=  4951 OK
+  count products   packagings                               1С=  1878 БД=  1878 OK
+  count variants   product_variants (характеристики 1С)     1С=  3156 БД=  3156 OK
+  count variants   product_variants (служебные is_default)  1С=  4951 БД=  4951 OK
+  count barcodes   barcodes                                 1С=  8982 БД=  8982 OK
+  count warehouses warehouses                               1С=     5 БД=     5 OK
+  count prices     price_lists                              1С=     5 БД=     5 OK
+  count prices     prices                                   1С= 26579 БД= 26579 OK
+  count stock      stock_balances                           1С= 15006 БД= 15006 OK
+  count attributes product_attributes                       1С=     6 БД=     6 OK
+[load-catalog] count_check: расхождений 0 (categories=success, products=success, variants=success, units=success, barcodes=success, warehouses=success, prices=success)
+[load-catalog] sync_errors: {}; ошибок маппинга: 0
+[load-catalog] фото: файлов 300, готово 300, дедупликация 1, ошибок 0, товаров с фото 300, уникальных sha256 299, каталогов в хранилище 299, 13247 мс
+[load-catalog] ИТОГ: OK
+```
+EXIT=0 (33 с)
+
+### 2026-10-22 10:54:44 — $ npm run lint
+```
+  183:69  error  This assertion is unnecessary since it does not change the type of the expression  @typescript-eslint/no-unnecessary-type-assertion
+  188:25  error  This assertion is unnecessary since it does not change the type of the expression  @typescript-eslint/no-unnecessary-type-assertion
+  206:16  error  This assertion is unnecessary since it does not change the type of the expression  @typescript-eslint/no-unnecessary-type-assertion
+  229:24  error  This assertion is unnecessary since it does not change the type of the expression  @typescript-eslint/no-unnecessary-type-assertion
+  248:19  error  This assertion is unnecessary since it does not change the type of the expression  @typescript-eslint/no-unnecessary-type-assertion
+
+D:\optomstroy\pos-api\test\onec\onec-acceptance.spec.ts
+  19:42  error  Unnecessary escape character: \|  no-useless-escape
+  19:51  error  Unnecessary escape character: \|  no-useless-escape
+  19:55  error  Unnecessary escape character: \|  no-useless-escape
+  19:63  error  Unnecessary escape character: \|  no-useless-escape
+
+✖ 13 problems (13 errors, 0 warnings)
+  9 errors and 0 warnings potentially fixable with the `--fix` option.
+
+```
+EXIT=1 (26 с)
+
+### 2026-10-22 10:55:54 — $ npm run lint
+```
+
+> pos-api@0.1.0 lint
+> tsc -p tsconfig.json --noEmit && eslint "src/**/*.ts" "test/**/*.ts" "scripts/**/*.ts" "scripts/**/*.mjs" && prettier --check "src/**/*.ts" "test/**/*.ts" "scripts/**/*.ts"
+
+Checking formatting...
+[warn] src/sync/apply/catalog-applier.ts
+[warn] Code style issues found in the above file. Run Prettier with --write to fix.
+```
+EXIT=1 (29 с)
+
+### 2026-10-22 10:56:29 — $ npm run lint
+```
+
+> pos-api@0.1.0 lint
+> tsc -p tsconfig.json --noEmit && eslint "src/**/*.ts" "test/**/*.ts" "scripts/**/*.ts" "scripts/**/*.mjs" && prettier --check "src/**/*.ts" "test/**/*.ts" "scripts/**/*.ts"
+
+Checking formatting...
+All matched files use Prettier code style!
+```
+EXIT=0 (29 с)
+
+### 2026-10-22 10:56:37 — $ npm run build
+```
+> node scripts/clean-dist.mjs
+
+
+> pos-api@0.1.0 build
+> tsc -p tsconfig.build.json
+
+```
+EXIT=0 (6 с)
+
+### 2026-10-22 10:56:44 — $ npm run madge
+```
+
+- Finding files
+Processed 386 files (5.3s) 
+
+✔ No circular dependency found!
+
+```
+EXIT=0 (7 с)
+
+### 2026-10-22 10:56:45 — $ npm run check:permissions
+```
+> pos-api@0.1.0 check:permissions
+> node scripts/gen-permissions.mjs --check
+
+gen-permissions: актуально (77 кодов, 7 ролей)
+```
+EXIT=0 (1 с)
+
+### 2026-10-22 10:57:00 — $ npm run test:all
+```
+
+> pos-api@0.1.0 test:all
+> npm test && npm run test:integrations && npm run test:worker && npm run test:db && npm run test:foundation && npm run test:auth && npm run test:admin && npm run test:customers && npm run test:profile && npm run test:registration && npm run test:settings && npm run test:sms && npm run test:onec && npm run test:sync-apply && npm run test:sync && npm run test:catalog && npm run test:catalog-sync && npm run test:favorites && npm run test:search && npm run test:images && npm run test:e2e
+
+
+> pos-api@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  12 passed (12)
+      Tests  127 passed (127)
+   Start at  10:56:53
+   Duration  6.63s (transform 10.12s, setup 0ms, import 40.07s, tests 5.34s, environment 3ms)
+
+```
+EXIT=127 (8 с)
+
+### 2026-10-22 11:07:43 — $ npm run test:all > D:/optomstroy/.tmp/test_all_full.out 2>&1; c=$?; sed -e 's/\x1b\[[0-9;]*[A-Za-z]//g' D:/optomstroy/.tmp/test_all_full.out | grep -E '^> pos-api@0.1.0 test|^> vitest|Test Files|^ +Tests |FAIL| × '; exit $c
+```
+> pos-api@0.1.0 test:all
+> pos-api@0.1.0 test
+> vitest run
+ Test Files  12 passed (12)
+      Tests  127 passed (127)
+> pos-api@0.1.0 test:integrations
+> vitest run --config ./test/integrations/vitest.config.ts
+ Test Files  5 passed (5)
+      Tests  38 passed (38)
+> pos-api@0.1.0 test:worker
+> vitest run --config ./test/worker/vitest.config.ts
+ Test Files  3 passed (3)
+      Tests  19 passed (19)
+> pos-api@0.1.0 test:db
+> vitest run --config ./test/db/vitest.config.ts
+ Test Files  2 passed (2)
+      Tests  13 passed (13)
+> pos-api@0.1.0 test:foundation
+> vitest run --config ./test/foundation/vitest.config.ts
+ Test Files  6 passed (6)
+      Tests  56 passed (56)
+> pos-api@0.1.0 test:auth
+> vitest run --config ./test/auth/vitest.config.ts
+ Test Files  3 passed (3)
+      Tests  53 passed (53)
+> pos-api@0.1.0 test:admin
+> vitest run --config ./test/admin/vitest.config.ts
+ Test Files  5 passed (5)
+      Tests  43 passed (43)
+> pos-api@0.1.0 test:customers
+> vitest run --config ./test/customers/vitest.config.ts
+ Test Files  2 passed (2)
+      Tests  28 passed (28)
+> pos-api@0.1.0 test:profile
+> vitest run --config ./test/profile/vitest.config.ts
+ Test Files  2 passed (2)
+      Tests  25 passed (25)
+> pos-api@0.1.0 test:registration
+> vitest run --config ./test/registration/vitest.config.ts
+ Test Files  1 passed (1)
+      Tests  19 passed (19)
+> pos-api@0.1.0 test:settings
+> vitest run --config ./test/settings/vitest.config.ts
+ Test Files  2 passed (2)
+      Tests  17 passed (17)
+> pos-api@0.1.0 test:sms
+> vitest run --config ./test/sms/vitest.config.ts
+ Test Files  4 passed (4)
+      Tests  65 passed (65)
+> pos-api@0.1.0 test:onec
+> vitest run --config ./test/onec/vitest.config.ts
+[onec-acceptance] ИТОГ (мок HS на фикстурах contracts/onec/fixtures — репетиция, НЕ реальная интеграция): PASS 5, FAIL 0, SKIP 0, вручную 15
+ Test Files  4 passed (4)
+      Tests  35 passed (35)
+> pos-api@0.1.0 test:sync-apply
+> vitest run --config ./test/sync-apply/vitest.config.ts
+ Test Files  3 passed (3)
+      Tests  22 passed (22)
+> pos-api@0.1.0 test:sync
+> vitest run --config ./test/sync/vitest.config.ts
+ Test Files  2 passed (2)
+      Tests  25 passed (25)
+> pos-api@0.1.0 test:catalog
+> vitest run --config ./test/catalog/vitest.config.ts
+ Test Files  2 passed (2)
+      Tests  26 passed (26)
+> pos-api@0.1.0 test:catalog-sync
+> vitest run --config ./test/catalog-sync/vitest.config.ts
+ Test Files  2 passed | 1 skipped (3)
+      Tests  15 passed | 1 skipped (16)
+> pos-api@0.1.0 test:favorites
+> vitest run --config ./test/favorites/vitest.config.ts
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+> pos-api@0.1.0 test:search
+> vitest run --config ./test/search/vitest.config.ts
+ Test Files  2 passed (2)
+      Tests  49 passed (49)
+> pos-api@0.1.0 test:images
+> vitest run --config ./test/images/vitest.config.ts
+ Test Files  2 passed (2)
+      Tests  15 passed (15)
+> pos-api@0.1.0 test:e2e
+> vitest run --config ./vitest.config.e2e.ts
+ Test Files  10 passed | 1 skipped (11)
+      Tests  93 passed | 5 skipped (98)
+```
+EXIT=0 (631 с)
+
+### 2026-10-22 11:11:35 — $ npm run test:cov:d 2>&1 | grep -E 'Test Files|Tests |All files|src/auth|src/registration|Lines|ERROR|threshold'; exit ${PIPESTATUS[0]}
+```
+[Nest] 18472  - 22.10.2026, 11:07:56   ERROR [auth] Object(3) {
+[Nest] 18472  - 22.10.2026, 11:07:56   ERROR [auth] Object(3) {
+      at OtpService.rateLimitedAudit (D:/optomstroy/pos-api/src/auth/otp/otp.service.ts:435:8)
+      at OtpService.issue (D:/optomstroy/pos-api/src/auth/otp/otp.service.ts:264:20)
+  outcome: 'CONFIG_ERROR',
+[Nest] 18472  - 22.10.2026, 11:07:56   ERROR [auth] Object(3) {
+[Nest] 18472  - 22.10.2026, 11:07:56   ERROR [auth] Object(3) {
+[Nest] 18472  - 22.10.2026, 11:07:56   ERROR [auth] Object(3) {
+[Nest] 18472  - 22.10.2026, 11:07:56   ERROR [auth] Object(3) {
+[Nest] 18472  - 22.10.2026, 11:07:56   ERROR [auth] Object(2) {
+      at StepUpService.failedAudit (D:/optomstroy/pos-api/src/auth/step-up/step-up.service.ts:246:8)
+      at StepUpService.request (D:/optomstroy/pos-api/src/auth/step-up/step-up.service.ts:95:18)
+      at AuthPolicyService.effective (D:/optomstroy/pos-api/src/auth/common/auth-policy.ts:109:23)
+[Nest] 32504  - 22.10.2026, 11:07:57   ERROR [auth] Object(3) {
+ Test Files  33 passed | 1 skipped (34)
+      Tests  360 passed | 5 skipped (365)
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+All files          |   95.31 |    88.41 |    96.3 |   97.92 |                   
+Lines        : 97.92% ( 1275/1302 )
+```
+EXIT=0 (225 с)
+
+### 2026-10-22 11:12:04 — $ node scripts/local-stack.mjs smoke 2>&1 | grep -E 'PASS|FAIL|итог|ОШИБКА'; exit ${PIPESTATUS[0]}
+```
+[local-stack] migrate: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] PASS GET /health — 200 {"status":"ok","apiVersion":"1.0","serverTime":"2026-10-22T07:12:01.628Z"}
+[local-stack] PASS GET /health/ready — 200 {"status":"ok","checks":{"db":"ok","worker":"ok","sync":{"stale":false}}}
+[local-stack] PASS /health не проверяет версию (RM-C-015 п. 4) — 200
+[local-stack] PASS /health/ready не проверяет версию (RM-C-015 п. 4) — 200
+[local-stack] PASS windows 1.1.0 < MIN windows=1.2.0 → 426 APP_UPDATE_REQUIRED + X-Min-App-Version — 426 code=APP_UPDATE_REQUIRED X-Min-App-Version=windows=1.2.0
+[local-stack] PASS android 1.1.0 ≥ MIN android=1.0.0 → не 426 (маршрута на этапе C нет → 404) + X-Min/X-Recommended — 401 code=UNAUTHENTICATED X-Min-App-Version=android=1.0.0 X-Recommended-App-Version=android=1.1.0
+[local-stack] PASS GET /api/v1/openapi.json (windows 1.2.0) → 200 + X-Min-App-Version + X-Request-Id — 200 openapi=3.0.3 X-Min-App-Version=windows=1.2.0 X-Request-Id=01a16273-d869-770f-a150-031d59b5b1f0
+[local-stack] PASS защищённый путь без токена → не 200 (deny by default) — 401 code=UNAUTHENTICATED
+[local-stack] PASS APP_READ_ONLY=true: GET /health/ready → 200 — 200
+[local-stack] PASS APP_READ_ONLY=true: POST /api/v1/orders → 503 APP_READ_ONLY или 404 (на этапе C мутирующих маршрутов нет) — 404 code=NOT_FOUND
+[local-stack] итог: 10/10 PASS
+```
+EXIT=0 (23 с)
+
+### 2026-10-22 11:12:16 — $ node scripts/local-stack.mjs auth-smoke 2>&1 | grep -E 'PASS|FAIL|итог|ОШИБКА'; exit ${PIPESTATUS[0]}
+```
+[local-stack] migrate: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] PASS клиент +9967*****03: POST /auth/otp/request → 202 — 202
+[local-stack] PASS клиент: POST /auth/otp/verify → 200 registration_required — 200 status=registration_required
+[local-stack] PASS клиент: POST /registration/complete → 201, customer active — 201 kind=customer status=active customerMatch=none 
+[local-stack] PASS клиент: GET /me → 200, pinSet=true — 200 pinSet=true
+[local-stack] PASS клиент +9967*****56 с карточкой 1С: 201, customerMatch=proposed (SCR-06) — 201 customerMatch.status=proposed nextStep=wait_admin 
+[local-stack] PASS приглашённый +9967*****02: verify → authenticated staff/seller, roleSource=invitation, nextStep=set_pin — 200 status=authenticated kind=staff roles=["seller"] roleSource=invitation nextStep=set_pin
+[local-stack] PASS приглашённый до PIN: прочие маршруты → 403 FORBIDDEN reason=pin_not_set — 403 code=FORBIDDEN reason=pin_not_set
+[local-stack] PASS приглашённый: первый POST /me/pin без step-up → 204 — 204 
+[local-stack] PASS приглашённый: GET /me → pinSet=true, ФИО приглашения — 200 pinSet=true fullName=совпадает
+[local-stack] PASS admin: OTP → POST /me/pin → POST /auth/step-up (pin) → stepUpToken — verify=200 pin=204 stepUp=200 
+[local-stack] PASS admin: POST /admin/invitations без X-Step-Up-Token → 403 STEP_UP_REQUIRED — 403 STEP_UP_REQUIRED
+[local-stack] PASS admin: POST /admin/invitations (cashier) → 201 — 201 
+[local-stack] PASS приглашённый администратором: OTP → staff/cashier, nextStep=set_pin — 200 roles=["cashier"] nextStep=set_pin
+[local-stack] PASS неверный код → 422 OTP_INVALID с attemptsLeft — 422 OTP_INVALID attemptsLeft=4
+[local-stack] PASS JWT alg=none → 401 UNAUTHENTICATED — 401 UNAUTHENTICATED
+[local-stack] auth-smoke итог: 15/15 PASS
+```
+EXIT=0 (11 с)
+
+### 2026-10-22 11:12:58 — $ npm run test:e2e:catalog 2>&1 | grep -E 'PASS|FAIL|итог|Test Files|Tests |EXIT|error'; exit ${PIPESTATUS[0]}
+```
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+```
+EXIT=0 (38 с)
+
+### 2026-10-22 11:13:34 — $ node scripts/local-stack.mjs catalog-smoke 2>&1 | grep -E 'FAIL|итог|ОШИБКА'; exit ${PIPESTATUS[0]}
+```
+[local-stack] catalog-smoke итог: 22/22 PASS (на фикстурах, не реальная интеграция)
+```
+EXIT=0 (27 с)
+
+### 2026-10-22 11:14:20 — $ (node scripts/local-stack.mjs serve --auth-fixtures --catalog-fixtures=50 --ttl 25 --ready-file D:/optomstroy/.tmp/ready.txt > D:/optomstroy/.tmp/serve.out 2>&1 &) ; for i in $(seq 1 60); do [ -s D:/optomstroy/.tmp/ready.txt ] && break; sleep 1; done; cat D:/optomstroy/.tmp/ready.txt; curl -s -o /dev/null -w 'api /health %{http_code}\n' http://127.0.0.1:3000/health; curl -s -o /dev/null -w 'proxy /health %{http_code}\n' http://127.0.0.1:8080/health; sleep 30; grep -E 'catalog-fixtures:|media-proxy|READY|ИТОГ' D:/optomstroy/.tmp/serve.out; rm -f D:/optomstroy/.tmp/ready.txt D:/optomstroy/.tmp/serve.out
+```
+http://127.0.0.1:3000
+api /health 200
+proxy /health 200
+[local-stack] catalog: [load-catalog] ИТОГ: OK
+[local-stack] catalog-fixtures: каталог (50 SKU + фикстуры 1С) и фото загружены — на фикстурах, не реальная интеграция
+[local-stack] media-proxy http://127.0.0.1:8080: /images/{sha}/{size} из MEDIA_DIR, прочее → http://127.0.0.1:3000
+[local-stack] READY http://127.0.0.1:3000 (фото и API через http://127.0.0.1:8080) (журнал API: D:\optomstroy\.tmp\pos-local-stack-IIYzBJ\api.log); Ctrl+C — остановка
+```
+EXIT=0 (46 с)
+
+## Итог интеграции backend этапа E (2026-10-22, 11:15)
+
+Зелёные итоговые прогоны (все записи выше с EXIT=0 после последних правок):
+- миграции: `run-sql --repeat-strict` (0001…0007, + dev 0001_dev_outbox, check_tables 64/64, check_ddl_behavior) — 0 изменений; `npm run test:db` — Drizzle-схема = БД (64 таблицы, 45 enum), schema_v1.sql перегенерирован;
+- `npm run lint` (tsc + eslint + prettier), `npm run build`, `npm run madge` (0 циклов), `npm run check:permissions`;
+- `npm run test:all` (unit, integrations, worker, db, foundation, auth, admin, customers, profile, registration, settings, sms, onec, sync-apply, sync, catalog, catalog-sync, favorites, search, images, e2e) — EXIT=0;
+- e2e: экспорт /openapi.json ⊆ контракт; RBAC-матрица: 25 операций этапа E реализованы с путями/методами контракта, x-roles ⇔ permissions.yaml, HTTP × 6 ролей без 5xx;
+- `npm run test:cov:e` — строки 89,73 % (sync, catalog, integrations/onec, customers/favorites; каждый каталог ≥ 75 %); `npm run test:cov:d` — 97,92 % (порог 80 %);
+- local-stack: smoke 10/10, auth-smoke 15/15, catalog-smoke 22/22; `npm run test:e2e:catalog` (настоящие процессы) — PASS; serve --auth-fixtures --catalog-fixtures=50 — READY, прокси :8080;
+- RM-E-011: load_catalog_fixtures --embedded --sku 5000 — $count 1С = БД по всем сущностям, 0 ошибок маппинга, 300 фото (на фикстурах, не реальная интеграция);
+- RM-E-016: onec_acceptance --mock — КП-1/2/5/18/19 PASS (мок на фикстурах); check_onec_paths.py — 0 ошибок.
+Процессы node/postgres после прогонов остановлены (tasklist — пусто), временные каталоги backend в .tmp удалены.
+
+---
+
+# Интеграция Flutter этапа E (pos-app; RM-E-012 п. 2, RM-E-009 п. 1, RM-E-017) — 2026-10-22
+
+Windows 11, Flutter 3.38.7 / Dart 3.10.7, TEMP/TMP = D:/optomstroy/.tmp. Каталог команд — `pos-app`, если не сказано
+иное. Всё — на FakeOnecGateway, фикстурах contracts/onec/fixtures, 500 синтетических SKU и синтетических номерах
++99677700090N: **на фикстурах, не реальная интеграция**. Android/iOS не запускались (см. конец раздела).
+
+## Что подключено в композиционном корне и оболочке
+
+- `appDatabaseProvider` ← `AppDatabase.forUser(sub)` (`app/di/overrides.dart`, `userDatabase`); владелец БД — копия
+  `SessionState.userId` в `sessionUserIdProvider` (мост `featureBridgesProvider`), без прямой зависимости от контроллера
+  сессии. `App` создаёт `syncSchedulerProvider` с открытием БД (первичная загрузка кэша, outbox, период 5 мин);
+  переход профиля входа в `signedIn` (первый вход сотрудника после установки PIN) повторяет первичную загрузку сразу.
+- Оболочка `AppShell` → `AdaptiveScaffold`: compact — `BottomNavBar`, medium/expanded — `NavigationRailApp`;
+  баннер оболочки — `CatalogInitialLoadBanner` (NFR-PERF-006); `HidScanScope` для режимов сотрудников.
+- Порты: `scanBarcodeLookupProvider` ← `CatalogScanBarcodeLookup` (`app/di/scan_catalog_adapter.dart`),
+  `scanAddsToCartProvider` (умолчание по роли), `catalogSyncIndicatorProvider` ← `ConnectedSyncIndicator`,
+  `catalogViewerNameProvider` ← профиль входа. Настройки отображения SCR-42 (размер текста, «Уменьшить анимации»)
+  применяются в `App.builder`. «Открыть настройки» SCR-17 — пакет `app_settings` 7.x (Android/iOS).
+- Новый integration_test: `integration_test/catalog_flow_test.dart` (стек поднимает и останавливает сам тест);
+  профиль `env/dev_proxy.json` (API и фото через мини-прокси :8080).
+
+## Найдено и исправлено по ходу (записи прогонов)
+
+### 11:45 — $ flutter test integration_test/catalog_flow_test.dart -d windows --dart-define-from-file=env/dev_proxy.json
+```
+не дождались widget with key [<'scr-02-otp'>] за 30 с; экран: /auth/phone   (оба сценария)
+```
+EXIT=1. Регрессия первой версии корня: `userDatabase` смотрел `sessionControllerProvider`, а интерсептор версии Dio
+читает `appDatabaseProvider` → `CircularDependencyError` на первом ответе API (`POST /auth/otp/request` → 202, клиент —
+UnknownFailure). Тот же сбой воспроизводился в `auth_flow_test.dart` (3/3 FAIL). Исправлено мостом
+`sessionUserIdProvider`; регрессионный unit-тест — `test/app/app_wiring_test.dart` («не зависит от контроллера сессии»).
+
+### 12:00 — тот же прогон
+```
+catalog_flow_test: кэш каталога загружен за 294082 мс, товаров: 496
+```
+Первый вход сотрудника: БД открывается сразу после OTP, `GET /catalog/sync/units` до установки PIN → 403
+(`sync_meta.last_error = PermissionFailure`), следующая попытка — только по периоду планировщика (5 мин). Исправлено:
+переход в `signedIn` повторяет первичную загрузку. После правки — 2,3 с.
+
+### 12:08 — тот же прогон
+```
+не дождались widget with type "OfflineBanner" descending from widget with key [<'catalog-offline-banner'>]
+```
+Тест: после остановки стека список каталога был в памяти, запросов не было — приложение не узнало об офлайне.
+Сценарий дополнен действием пользователя (поиск «F3241» → ответ из кэша с пометкой `search-offline-note`), затем SCR-10.
+
+## Итоговые прогоны (после всех правок)
+
+### 12:20 — $ dart run build_runner build -d
+```
+Built with build_runner/jit in 34s; wrote 419 outputs.
+```
+EXIT=0
+
+### 12:21 — $ flutter analyze
+```
+No issues found! (ran in 43.0s)
+```
+EXIT=0
+
+### 12:24 — $ flutter test --concurrency=2
+```
+02:54 +1199: All tests passed!
+```
+EXIT=0 (в т. ч. новый test/app/app_wiring_test.dart — 12 тестов; customer_navigation_test переведён на BottomNavBar)
+
+### 12:25 — $ flutter test --concurrency=2 --tags golden
+```
+00:54 +162: All tests passed!
+```
+EXIT=0
+
+### 12:26 — $ python -I -X utf8 scripts/check_layers.py   (корень репозитория)
+```
+check_layers: файлов 353, импортов 2430, нарушений 0
+```
+EXIT=0
+
+### 12:26 — $ python -I -X utf8 scripts/sync_contracts.py --check   (корень репозитория)
+```
+OK l10n: 3 файл(ов) идентичны (contracts/l10n == pos-app/lib/l10n)
+OK l10n: pos-app/lib/l10n/gen_input соответствует преобразованию источника
+```
+EXIT=0
+
+### 12:26 — $ bash scripts/check_no_double_money.sh   (корень репозитория)
+```
+НАРУШЕНИЕ [api: number/parseFloat/toNumber для денег и количеств]:   — 22 строки pos-api/src (счётчики total/sourceTotal/
+  localTotal/qtyPrecision/priceLists, Decimal.toNumber() метрики баланса SMS)
+check_no_double_money: НАЙДЕНЫ нарушения (MNY-002)
+```
+EXIT=1. pos-app/lib — 0 нарушений: 102 строки геометрии/анимации UI, долей прогресса и разбора JSON-чисел в int
+(этапы D–E, вне design_system) помечены `money-double: allow — <причина>`, два диалоговых построителя упрощены до
+выводимых типов; денег/количеств в double нет. Остаток — pos-api (не в путях Flutter-интегратора), EQ-FINT-05.
+
+### 12:28 — $ flutter build windows --release
+```
+√ Built build\windows\x64\runner\Release\optomstroy.exe
+```
+EXIT=0 (74,7 с)
+
+### 12:30 — $ flutter test integration_test/catalog_flow_test.dart -d windows --dart-define-from-file=env/dev_proxy.json
+```
+catalog_flow_test: локальный стек готов (журнал D:\optomstroy\.tmp\catalog_flow_stack.log)
+catalog_flow_test: кэш каталога загружен за 1514 мс, товаров: 496          (клиент +996777000905)
+catalog_flow_test: кэш каталога загружен за 2297 мс, товаров: 496          (продавец +996777000902)
+catalog_flow_test: бейджи наличия сотрудника: 1
+catalog_flow_test: черновик — строк 1, вариант выбран, количество «2шт»
+catalog_flow_test: локальный стек остановлен (код 0)
+catalog_flow_test: офлайн — баннер с возрастом данных, карточек из кэша: 8
+01:10 +2: All tests passed!
+```
+EXIT=0. Клиент: SCR-01 → SCR-02 → SCR-03 → SCR-04 → /home (SCR-50) → в `StockBadge` нет цифр, в drift
+`stock_balances` нет `*_milli` (customer_stock_display=status) → SCR-14. Продавец: первый вход → SCR-10 → кэш →
+поиск «F4252» (SCR-11) → SCR-14 → товар с характеристиками: вариант не по умолчанию → «+» → «В корзину» → строка
+`cart_items_draft` с этим вариантом. Офлайн: стек остановлен → поиск из кэша (пометка) → SCR-10 с `OfflineBanner`
+(variant offline, dataAsOf ≠ null) → SCR-14 из кэша.
+
+### 12:32 — стек `node scripts/local-stack.mjs serve --auth-fixtures --exit-on-stdin-end` (pos-api, свежий) + регрессия этапа D
+```
+$ flutter test integration_test/auth_flow_test.dart -d windows --dart-define-from-file=env/dev.json          → 00:34 +3: All tests passed!  EXIT=0
+$ flutter test integration_test/admin_invite_flow_test.dart -d windows --dart-define-from-file=env/dev.json  → 00:27 +1: All tests passed!  EXIT=0
+$ flutter test integration_test/boot_test.dart -d windows --dart-define-from-file=env/dev.json               → 00:01 +1: All tests passed!  EXIT=0
+[local-stack] остановка через закрытие stdin → stack exit 0
+```
+
+После прогонов: процессов node/postgres/optomstroy нет (Get-CimInstance — 0), каталоги pos-local-stack-* в .tmp удалены
+самим стеком.
+
+Не выполнялось: Android/iOS (сборка, integration на устройстве, скан EAN-13 камерой, 50 000 SKU ≤ 3 мин по Wi-Fi) —
+на диске C: ~4,8 ГБ, лицензии Android SDK не приняты, устройства и macOS нет.
+
+### 12:50 — повторная проверка после правки размера текста по 02 UI-42-025 (max(системный, выбранный), clamp 1,3 / 1,5)
+```
+$ dart format --output=none --set-exit-if-changed lib test integration_test  → Formatted 514 files (0 changed)        EXIT=0
+$ flutter analyze                                                          → No issues found! (ran in 43.5s)          EXIT=0
+$ flutter test --concurrency=2                                             → 02:51 +1199: All tests passed!           EXIT=0
+$ flutter build windows --release                                          → √ Built build\windows\x64\runner\Release\optomstroy.exe  EXIT=0
+$ flutter test integration_test/catalog_flow_test.dart -d windows --dart-define-from-file=env/dev_proxy.json → 01:08 +2: All tests passed!  EXIT=0
+$ python -I -X utf8 scripts/check_layers.py                                → файлов 353, импортов 2431, нарушений 0   EXIT=0
+$ bash scripts/check_no_double_money.sh                                    → pos-app/lib: 0; pos-api/src: 22 (EQ-FINT-05) EXIT=1
+```
+Процессы node/postgres/optomstroy после прогонов — 0.
+
+## Исправление замечаний ревью этапа E — backend (исправитель, 2026-10-22 14:47)
+
+### python -I -X utf8 scripts/check_secrets.py
+pos-app/test/features/settings/data/settings_repositories_test.dart:322: [generic-secret-assignment] bio-…**** (10 симв.)
+pos-app/test/features/settings/data/settings_repositories_test.dart:349: [generic-secret-assignment] bio-…**** (10 симв.)
+pos-app/test/features/sync_status/sync_status_screen_test.dart:221: [generic-secret-assignment] step…**** (10 симв.)
+check_secrets: режим git ls-files + новые неигнорируемые; файлов проверено: 1718; находок: 3
+EXIT=1 (pos-api: 0 находок; 3 оставшиеся — pos-app/test, область исправителя Flutter)
+
+### bash scripts/check_no_double_money.sh
+check_no_double_money: OK — 0 совпадений (pos-app/lib: 358 файлов, pos-api/src: 372 файлов)
+EXIT=0
+
+### python -I -X utf8 scripts/check_repo_layout.py
+check_repo_layout: файлов 1718; ошибок 0, предупреждений 17, ожидающих задач 5
+EXIT=0
+
+### python -I -X utf8 scripts/trace_test_ids.py --summary
+ИТОГ: ID в охвате 178; с тестом 154; not_done с причиной 24; без теста и причины 0
+EXIT=0
+
+### python -I -X utf8 scripts/check_layers.py
+check_layers: файлов 358, импортов 2475, нарушений 0
+
+### pos-api: npm run lint / madge / check:permissions / build — все EXIT=0 (tsc, ESLint, Prettier; «No circular dependency found!»; gen-permissions: актуально (77 кодов, 7 ролей))
+
+### pos-api: наборы (после исправлений)
+      Tests  127 passed (127)
+=== EXIT test = 0
+      Tests  28 passed (28)
+=== EXIT test:sync-apply = 0
+      Tests  1 failed | 35 passed (36)
+=== EXIT test:onec = 1
+      Tests  1 failed | 52 passed (53)
+=== EXIT test:search = 1
+      Tests  33 passed (33)
+=== EXIT test:catalog = 0
+      Tests  1 failed | 15 passed | 1 skipped (17)
+=== EXIT test:catalog-sync = 1
+      Tests  23 passed (23)
+=== EXIT test:images = 0
+      Tests  25 passed (25)
+=== EXIT test:sync = 0
+      Tests  1 failed | 19 passed (20)
+=== EXIT test:worker = 1
+      Tests  44 passed (44)
+=== EXIT test:admin = 0
+      Tests  9 passed (9)
+=== EXIT test:favorites = 0
+      Tests  13 passed (13)
+=== EXIT test:db = 0
+      Tests  93 passed | 5 skipped (98)
+=== EXIT test:e2e = 0
+повтор после правки тестов: test:onec 36 passed; test:search search-text 11 passed; test:catalog-sync 16 passed | 1 skipped; test:worker 20 passed
+
+### npm run test:cov:all (все наборы одним запуском, как CI job api-integration)
+ Test Files  78 passed | 2 skipped (80)
+      Tests  821 passed | 6 skipped (827)
+   Duration  937.04s (transform 57.75s, setup 0ms, import 317.17s, tests 644.31s, environment 11ms)
+Lines        : 92.12% ( 10302/11183 )
+EXIT=0
+
+### npm run test:cov:e
+ Test Files  48 passed | 2 skipped (50)
+      Tests  481 passed | 6 skipped (487)
+Lines        : 90.18% ( 4364/4839 )
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+EXIT=0
+
+### coverage-gate (скрипт из ci.yml на локальных lcov: unit + coverage/all)
+pos-api domain: 97.1 % — OK; pos-api application: 94.2 % (2893/3072) — OK (pos-app data — по локальному lcov pos-app, область Flutter)
+
+### npm run stack:catalog-smoke
+[local-stack] catalog-smoke итог: 22/22 PASS (на фикстурах, не реальная интеграция)
+EXIT=0
+
+---
+
+# Перепроверка после ревью, раунд 1 (независимый проверяющий, 2026-10-22 14:40–15:25)
+
+Код не менялся. Windows 11, Node 24, Flutter 3.38.7, TEMP/TMP = D:/optomstroy/.tmp. Все прогоны — на
+FakeOnecGateway, фикстурах и синтетике: **на фикстурах, не реальная интеграция**. Полный вывод — D:/optomstroy/.tmp/rv1/*.out.
+Отчёт ревью — docs/reviews/E_review.md.
+
+## pos-api (каталог pos-api)
+```
+$ npm run lint                → tsc + eslint + «All matched files use Prettier code style!»            EXIT=0
+$ npm run build               → tsc -p tsconfig.build.json                                            EXIT=0
+$ npm run madge               → Processed 388 files; No circular dependency found!                     EXIT=0
+$ npm run check:permissions   → gen-permissions: актуально (77 кодов, 7 ролей)                         EXIT=0
+$ npm run test:all            (14:52:21 → 15:08:27)                                                    EXIT=0
+    test 127 · integrations 38 · worker 20 · db 13 · foundation 56 · auth 53 · admin 44 · customers 28 ·
+    profile 25 · registration 19 · settings 17 · sms 65 · onec 36 · sync-apply 28 · sync 25 · catalog 33 ·
+    catalog-sync 16 (+1 skipped) · favorites 9 · search 53 · images 23 · e2e 93 (+5 skipped)
+    итого 821 passed, 6 skipped, 0 failed
+$ npm run test:cov:e          → Test Files 48 passed | 2 skipped (50); Tests 481 passed | 6 skipped (487)
+                                Statements 87.65 % · Branches 75.57 % · Functions 87.32 % · Lines 90.18 %   EXIT=0
+                                (по каталогам, строки: catalog/* 89–98 %; integrations/onec 89.63; sync/apply 87.19;
+                                 sync/images 84.45; sync/reconcile 76.36; sync/scheduler 80.11)
+$ npm run test:cov:d          → Test Files 33 passed | 1 skipped; Tests 361 passed | 5 skipped;
+                                All files: Stmts 95.31 · Branch 88.41 · Funcs 96.3 · Lines 97.92 %           EXIT=0
+$ node scripts/local-stack.mjs smoke          → итог: 10/10 PASS                                       EXIT=0
+$ node scripts/local-stack.mjs auth-smoke     → auth-smoke итог: 15/15 PASS                            EXIT=0
+$ node scripts/local-stack.mjs catalog-smoke  → catalog-smoke итог: 22/22 PASS (на фикстурах)          EXIT=0
+```
+Запись test:cov:e 10:52 (E-fresh-run-4) устарела; актуальные числа — запись исправителя 14:47 и эта (совпадают:
+481/487, строки 90.18 %).
+
+## Миграции (корень репозитория)
+```
+$ node tools/pg/run-sql.mjs --repeat-strict 0001 0002 0003 0005 0006 0007 --check scripts/check_tables.sql
+    [repeat] ИТОГ: 0 изменений; команд 435; check_tables: 63 из 63 (prod), 45/45 enum                  EXIT=0
+$ node tools/pg/run-sql.mjs --repeat-strict --set app.env=test 0001…0007 + dev 0001_dev_outbox \
+      --check scripts/check_tables.sql --check pos-api/test/sql/check_ddl_behavior.sql
+    [repeat] ИТОГ: 0 изменений; команд 446; check_tables: 64 из 64 (dev/test), 45/45 enum; check_ddl_behavior OK   EXIT=0
+```
+
+## Скрипты корня
+```
+$ bash scripts/check_no_double_money.sh             → OK — 0 совпадений (pos-app/lib 358, pos-api/src 372)  EXIT=0
+$ python -I -X utf8 scripts/check_secrets.py        → файлов 1718; находок: 3                               EXIT=1  <- КРАСНЫЙ
+    pos-app/test/features/settings/data/settings_repositories_test.dart:322, :349 [generic-secret-assignment] bio-…
+    pos-app/test/features/sync_status/sync_status_screen_test.dart:221 [generic-secret-assignment] step…
+    (тестовые значения без пометки `check-secrets: allow`; E-fresh-run-1 — частично)
+$ python -I -X utf8 scripts/build_openapi.py --check → OK: pos-api.v1.yaml актуален (119 путей, 141 операция) EXIT=0
+$ python -I -X utf8 scripts/check_api_paths.py      → OK: все обязательные пути и методы есть                EXIT=0
+$ python -I -X utf8 scripts/check_enums.py          → проверок 248, расхождений 0                            EXIT=0
+$ python -I -X utf8 scripts/check_arb_keys.py       → итог: ошибок 0 (инфо: error_* 27/49, нет status_*)      EXIT=0
+$ python -I -X utf8 scripts/check_repo_layout.py    → ошибок 0, предупреждений 17                            EXIT=0
+$ python -I -X utf8 scripts/check_layers.py         → файлов 358, импортов 2475, нарушений 0                 EXIT=0
+$ python -I -X utf8 scripts/sync_contracts.py --check → OK l10n (3 файла идентичны, gen_input соответствует) EXIT=0
+$ python -I -X utf8 scripts/check_onec_paths.py     → ИТОГ: OK — ошибок 0                                    EXIT=0
+$ python -I -X utf8 scripts/trace_test_ids.py --summary → ID в охвате 178 (только этап D), без теста и причины 0  EXIT=0
+```
+
+## pos-app (каталог pos-app)
+```
+$ flutter analyze                                   → No issues found! (68.7s)                               EXIT=0
+$ dart format --output=none --set-exit-if-changed lib test integration_test
+                                                    → 525 файлов, 7 изменились бы — только сгенерированные
+                                                      *.g.dart (app_router, routes, app_mode, app_database,
+                                                      app_meta_dao, catalog_dao, favorites_dao)   EXIT=1 (шага в CI нет; инфо)
+$ flutter test --concurrency=2                      → 03:29 +1237: All tests passed!                          EXIT=0
+$ flutter test --concurrency=2 --tags golden        → 01:30 +162: All tests passed!                           EXIT=0
+$ flutter test --concurrency=2 --coverage --coverage-path=D:/optomstroy/.tmp/rv1/app_lcov.info
+                                                    → 04:49 +1237: All tests passed!                          EXIT=0
+    покрытие строк (без *.g.dart / *.freezed.dart): catalog domain+data 83.9 % (1447/1724); product_details
+    domain+data 97.6 %; favorites domain+data 81.0 %; scan 91.3 %; sync_status 89.3 %; core/sync 88.2 %;
+    все features/*/data 83.1 % (2392/2878); все features/*/domain 80.3 % (800/996);
+    core/database: DAO 91–100 % (catalog_dao 97 %); декларации таблиц и schema_versions.dart тестами не исполняются
+$ flutter build windows --release                   → √ Built build\windows\x64\runner\Release\optomstroy.exe EXIT=0
+$ flutter test integration_test/catalog_flow_test.dart -d windows --dart-define-from-file=env/dev_proxy.json
+    (стек поднимает сам тест)                       → кэш 496 товаров за 1835 / 2502 мс; черновик — 1 строка;
+                                                      офлайн — баннер, 8 карточек из кэша; 01:11 +2: All tests passed!  EXIT=0
+```
+Регрессия этапа D — стек `LOCAL_STACK_MIN_APP_VERSION=android=0.1.0,windows=0.1.0 node scripts/local-stack.mjs serve
+--auth-fixtures --exit-on-stdin-end`. Без этой переменной стек требует версию 1.0.0 и отвечает 426 на `0.1.0+1`;
+первая попытка проверяющего без переменной (все сценарии «не дождались scr-02-otp») не засчитана.
+```
+$ flutter test integration_test/auth_flow_test.dart -d windows --dart-define-from-file=env/dev.json        → 00:35 +3: All tests passed!  EXIT=0
+$ flutter test integration_test/admin_invite_flow_test.dart -d windows --dart-define-from-file=env/dev.json → 00:27 +0 -1: Some tests failed.  EXIT=1
+    сценарий дошёл до конца («приглашённый вошёл — /cashier», +1), затем в (tearDownAll) — необработанная
+    асинхронная ошибка; стек: ScannerConfigController._load (core/hardware/hardware_providers.dart:43,
+    `unawaited(_load(store))`) <- _HidScanScopeState.initState. Текст исходной ошибки скрыт assertion
+    stack_frame.dart:197 (FlutterError.demangleStackTrace). Вероятная причина — чтение настроек сканера из БД
+    прежнего пользователя после её закрытия при смене пользователя.
+$ flutter test integration_test/boot_test.dart -d windows --dart-define-from-file=env/dev.json             → 00:02 +1: All tests passed!  EXIT=0
+повтор admin_invite_flow_test на свежем стеке                                                               → 00:27 +1: All tests passed!  EXIT=0
+(третий запуск на том же стеке не засчитан: у admin уже есть PIN от второго запуска, тест ждёт SCR-04)
+```
+Итог по admin_invite_flow_test: 1 из 2 корректных запусков красный — тест нестабилен (новое наблюдение R1-N-01 в
+E_review.md). В записи 12:32 этот тест был зелёным.
+
+Не выполнялось: Android/iOS, камера, ручной тест HID-сканера, 50 000 SKU на устройстве, Caddy и `curl -I`, CI на GitHub
+Actions (job api-integration и объединённый coverage-gate проверены только исправителем локально).
+После прогонов: процессов node/postgres/optomstroy проверяющего нет (остался чужой nodejs.exe pid 41432, был до
+начала проверки); каталоги .tmp/pos-local-stack-* удалены самим стеком.
+
+---
+
+# Исправление замечаний ревью этапа E, раунд 2 (исправитель backend/scripts, 2026-10-22 15:30–16:10)
+
+Область: pos-api/**, scripts/**, docs/stages (отчёт этапа). pos-app не менялся. Windows 11, Node 24,
+TEMP/TMP = D:/optomstroy/.tmp. Прогоны — на FakeOnecGateway, фикстурах и синтетике: **на фикстурах, не реальная
+интеграция**. Полный вывод — D:/optomstroy/.tmp/fix2/*.out.
+
+Изменения:
+- E-fresh-run-1: `scripts/check_secrets.py` — значение из строчных латинских слов через «-» трактуется так же, как
+  через «_» (метка/enum, не секрет): «step-token», «bio-secret»; дефисные значения с цифрами или заглавными
+  по-прежнему находка. Самопроверка дополнена: 2 негативных образца (строки pos-app/test, при прежнем правиле давали
+  находки) и 2 позитивных (`k8s-Zq7-wX2p`, `Correct-Horse-Battery`).
+- E-trace-1: `scripts/trace_test_ids.py --stage E` (охват 12 §2.15 + T-UI экранов этапа + T-SEC-017/027/046,
+  статус «тест (трасса)» для тестов pos-app без T-ID с проверкой ссылки, доля AC-UI для T-UI, NOT_DONE/PARTIAL с
+  причинами); NOT_DONE этапа D обновлён (T-SEC-017, T-SEC-027). В тесты pos-api добавлено 88 комментариев с T-ID.
+  Новые тесты: `test/sync/sync-policy.spec.ts` — T-SYNC-027 (нет операции паузы), T-SYNC-022/T-ONEC-002 (pos-app
+  не содержит адресов и настроек 1С); `test/favorites/favorites-recent.e2e.spec.ts` — T-FAV-007 (избранное не
+  создаёт onec_outbox, конвейер sync не пишет favorites_products).
+- E-trace-2: `docs/stages/E_catalog_report.md` (шаблон 13 §6.3, G-E «жёлтый»).
+
+### python -I -X utf8 scripts/check_secrets.py --self-test
+self-test: OK (7 позитивных по правилам + 2 дефисных позитивных, 10 негативных, doc-allowlist, имена файлов)
+EXIT=0
+
+### python -I -X utf8 scripts/check_secrets.py
+check_secrets: режим git ls-files + новые неигнорируемые; файлов проверено: 1720; находок: 0
+EXIT=0
+
+### python -I -X utf8 scripts/trace_test_ids.py --summary
+ИТОГ: ID в охвате 178; с тестом 155; not_done с причиной 23; без теста и причины 0
+EXIT=0
+(было 154/24: T-SEC-027 теперь имеет тест класса A — search.e2e, search-text)
+
+### python -I -X utf8 scripts/trace_test_ids.py --stage E --summary
+По группам (охват / с тестом / not_done / без теста и причины):
+  CAT: 36 / 34 / 2 / 0
+  INV: 14 / 10 / 4 / 0
+  FAV: 8 / 6 / 2 / 0
+  SYNC: 34 / 23 / 11 / 0
+  ONEC: 19 / 9 / 10 / 0
+  SEC: 3 / 3 / 0 / 0
+  UI: 12 / 0 / 12 / 0
+  PERF: 2 / 1 / 1 / 0
+ИТОГ этапа E: ID в охвате 128; с тестом 86 (T-ID в тесте 69, трасса 17; из них частично 47); not_done с причиной 42; без теста и причины 0
+EXIT=0
+Полная матрица: `python -I -X utf8 scripts/trace_test_ids.py --stage E` (сводка — E_catalog_report.md §2.2).
+Найдено при трассировке: правило выбора привязки штрихкода в catalog-applier.ts расходится с 05 ONEC-017 п. 2,
+теста BARCODE_CONFLICT нет (E-KI-03); отчёта о дублях onec_code нет (E-KI-04) — T-SYNC-005/009/019 в not_done.
+
+### python -I -X utf8 scripts/check_repo_layout.py
+check_repo_layout: файлов 1720; ошибок 0, предупреждений 17, ожидающих задач 5
+EXIT=0
+
+### pos-api: npm run lint
+tsc + eslint + «All matched files use Prettier code style!»
+EXIT=0
+
+### pos-api: npm run build
+EXIT=0
+
+### pos-api: npm run test:all
+    test 127 · integrations 38 · worker 20 · db 13 · foundation 56 · auth 53 · admin 44 · customers 28 ·
+    profile 25 · registration 19 · settings 17 · sms 65 · onec 36 · sync-apply 28 · sync 27 (+2) · catalog 33 ·
+    catalog-sync 16 (+1 skipped) · favorites 10 (+1) · search 53 · images 23 · e2e 93 (+5 skipped)
+    итого 824 passed, 6 skipped, 0 failed
+EXIT=0
+
+Не выполнялось: pos-app (вне области раунда 2), Android/iOS, HID, Caddy, CI на GitHub Actions.
+После прогонов процессов node/postgres исправителя нет (остался чужой nodejs.exe pid 41432, был до начала).
+
+---
+
+# Перепроверка после ревью, раунд 2 (независимый проверяющий, 2026-10-22 15:56–16:40)
+
+Код не менялся. Windows 11, Node 24, Flutter 3.38.7, TEMP/TMP = D:/optomstroy/.tmp. Все прогоны — на
+FakeOnecGateway, фикстурах и синтетике: **на фикстурах, не реальная интеграция**. Полный вывод — D:/optomstroy/.tmp/rv2/*.out.
+Состояние кода: после раунда 1 менялись только scripts/check_secrets.py, scripts/trace_test_ids.py, тесты pos-api
+(комментарии T-ID, test/sync/sync-policy.spec.ts, test/favorites/favorites-recent.e2e.spec.ts) и документы этапа;
+pos-api/src и pos-app/lib, pos-app/test не менялись (проверено по времени изменения файлов).
+
+## pos-api (каталог pos-api)
+```
+$ npm run lint                → tsc + eslint + «All matched files use Prettier code style!»            EXIT=0
+$ npm run build               → tsc -p tsconfig.build.json                                            EXIT=0
+$ npm run madge               → No circular dependency found!                                          EXIT=0
+$ npm run check:permissions   → gen-permissions: актуально (77 кодов, 7 ролей)                         EXIT=0
+$ npm run test:all            (15:58:53 → 16:14:12)                                                    EXIT=0
+    test 127 · integrations 38 · worker 20 · db 13 · foundation 56 · auth 53 · admin 44 · customers 28 ·
+    profile 25 · registration 19 · settings 17 · sms 65 · onec 36 · sync-apply 28 · sync 27 · catalog 33 ·
+    catalog-sync 16 (+1 skipped) · favorites 10 · search 53 · images 23 · e2e 93 (+5 skipped)
+    итого 824 passed, 6 skipped, 0 failed
+$ npm run test:cov:e          (16:25:37 → 16:32:36) → Test Files 48 passed | 2 skipped (50); Tests 484 passed | 6 skipped (490)
+                                Statements 87.65 % · Branches 75.57 % · Functions 87.32 % · Lines 90.18 %   EXIT=0
+                                (+3 теста к раунду 1 — новые тесты раунда 2; проценты совпадают)
+$ npm run test:cov:d          → Test Files 33 passed | 1 skipped; Tests 361 passed | 5 skipped;
+                                All files: Stmts 95.31 · Branch 88.41 · Funcs 96.3 · Lines 97.92 %           EXIT=0
+$ node scripts/local-stack.mjs smoke          → итог: 10/10 PASS                                       EXIT=0
+$ node scripts/local-stack.mjs auth-smoke     → auth-smoke итог: 15/15 PASS                            EXIT=0
+$ node scripts/local-stack.mjs catalog-smoke  → catalog-smoke итог: 22/22 PASS (на фикстурах, не реальная интеграция) EXIT=0
+```
+
+## Миграции (корень репозитория)
+```
+$ node tools/pg/run-sql.mjs --repeat-strict 0001 0002 0003 0005 0006 0007 --check scripts/check_tables.sql
+    [repeat] ИТОГ: 0 изменений; команд 435; check_tables: 63 из 63 (prod), 45/45 enum                  EXIT=0
+$ node tools/pg/run-sql.mjs --repeat-strict --set app.env=test 0001…0007 + db/migrations-dev/0001_dev_outbox \
+      --check scripts/check_tables.sql --check pos-api/test/sql/check_ddl_behavior.sql
+    [repeat] ИТОГ: 0 изменений; команд 446; check_tables: 64 из 64 (dev/test), 45/45 enum;
+    check_ddl_behavior OK (негативных 60, позитивных инвариантов 6)                                    EXIT=0
+```
+
+## Скрипты корня
+```
+$ bash scripts/check_no_double_money.sh             → OK — 0 совпадений (pos-app/lib 358, pos-api/src 372)  EXIT=0
+$ python -I -X utf8 scripts/check_secrets.py --self-test → self-test: OK                                    EXIT=0
+$ python -I -X utf8 scripts/check_secrets.py        → файлов проверено: 1720; находок: 0                     EXIT=0
+    (зелёный за счёт изменения правила: значения из строчных латинских слов через «-» считаются меткой;
+     строки pos-app/test не помечались — см. E_review.md, раунд 2, R2-N-01)
+$ python -I -X utf8 scripts/build_openapi.py --check → OK: pos-api.v1.yaml актуален                          EXIT=0
+$ python -I -X utf8 scripts/check_api_paths.py      → OK: все обязательные пути и методы есть                EXIT=0
+$ python -I -X utf8 scripts/check_enums.py          → проверок 248, расхождений 0                            EXIT=0
+$ python -I -X utf8 scripts/check_arb_keys.py       → итог: ошибок 0                                         EXIT=0
+$ python -I -X utf8 scripts/check_repo_layout.py    → файлов 1720; ошибок 0, предупреждений 17               EXIT=0
+$ python -I -X utf8 scripts/check_layers.py         → файлов 358, импортов 2475, нарушений 0                 EXIT=0
+$ python -I -X utf8 scripts/sync_contracts.py --check → OK l10n (3 файла идентичны, gen_input соответствует) EXIT=0
+$ python -I -X utf8 scripts/check_onec_paths.py     → ИТОГ: OK — ошибок 0, информационных 7                  EXIT=0
+$ python -I -X utf8 scripts/trace_test_ids.py --summary          → ID 178; с тестом 155; not_done 23; без теста и причины 0  EXIT=0
+$ python -I -X utf8 scripts/trace_test_ids.py --stage E --summary → ID 128; с тестом 86 (T-ID 69, трасса 17; частично 47);
+                                                                    not_done с причиной 42 (из них T-UI 12/12); без теста и причины 0  EXIT=0
+```
+
+## pos-app (каталог pos-app)
+```
+$ flutter analyze                                   → No issues found! (59.5s)                               EXIT=0
+$ flutter test --concurrency=2                      → 05:01 +1237: All tests passed!                          EXIT=0
+$ flutter test --concurrency=2 --tags golden        → 00:57 +162: All tests passed!                           EXIT=0
+$ flutter build windows --release                   → √ Built build\windows\x64\runner\Release\optomstroy.exe EXIT=0
+$ dart format --output=none --set-exit-if-changed lib test integration_test
+                                                    → 525 файлов, 7 изменились бы (только сгенерированные *.g.dart; шага в CI нет; инфо)
+$ flutter test integration_test/catalog_flow_test.dart -d windows --dart-define-from-file=env/dev_proxy.json
+    (стек поднимает сам тест)                       → кэш 496 товаров за 2354 / 2553 мс; черновик — 1 строка, «2шт»;
+                                                      офлайн — баннер с возрастом данных, 8 карточек из кэша; 01:20 +2: All tests passed!  EXIT=0
+```
+Регрессия этапа D — свежий стек на каждую серию: `LOCAL_STACK_MIN_APP_VERSION=android=0.1.0,windows=0.1.0
+node scripts/local-stack.mjs serve --auth-fixtures --exit-on-stdin-end`, затем тесты с `--dart-define-from-file=env/dev.json`.
+```
+серия 1: auth_flow_test 00:32 +3 · admin_invite_flow_test 00:28 +1 · boot_test 00:01 +1 — All tests passed     EXIT=0
+серия 2: auth_flow_test 00:32 +3 · admin_invite_flow_test 00:28 +1 — All tests passed                         EXIT=0
+серия 3: auth_flow_test 00:33 +3 · admin_invite_flow_test 00:27 +1 — All tests passed                         EXIT=0
+```
+admin_invite_flow_test: 3 из 3 зелёные (в раунде 1 — 1 из 2 красный). Код pos-app после раунда 1 не менялся, причина
+(R1-N-01 / E-KI-02, `ScannerConfigController._load` после закрытия БД) не устранена — нестабильность не воспроизвелась,
+но и не исключена.
+
+Не выполнялось: Android/iOS, камера, ручной тест HID-сканера, 50 000 SKU на устройстве, Caddy и `curl -I`, CI на GitHub
+Actions (job api-integration и объединённый coverage-gate по-прежнему проверены только локально).
+После прогонов: процессов node/postgres/optomstroy проверяющего нет (остался чужой nodejs.exe pid 41432, запущен
+18.10 — до начала проверки); каталоги .tmp/pos-local-stack-* удалены самим стеком.
+
+---
+
+# Свежий прогон для отчёта этапа E (RM-E-012; автор отчёта, 2026-10-22 17:30–17:50)
+
+Код не менялся. Windows 11, Node 24.11.1, Flutter 3.38.7, TEMP/TMP = D:/optomstroy/.tmp. Все прогоны — на
+FakeOnecGateway, фикстурах и синтетике: **на фикстурах, не реальная интеграция**. Полный вывод — D:/optomstroy/.tmp/rpt/*.out.
+Состояние кода: после перепроверки раунда 2 (16:40) синхронизация ТЗ (docs/stages/E_spec_sync.md) изменила
+contracts/enums.json (1.0.0 → 1.1.0), contracts/openapi/parts/00_root.yaml, pos-api.v1.yaml, CHANGELOG и
+перегенерировала pos-api/src/common/enums.ts и pos-app/lib/core/enums.dart; иных изменений pos-api/src, pos-app/lib,
+pos-app/test после 16:40 нет (find -newer docs/reviews/E_review.md).
+
+## pos-api (каталог pos-api)
+```
+$ npm run test:cov:e          (17:30:31 → 17:38:57) → Test Files 48 passed | 2 skipped (50); Tests 484 passed | 6 skipped (490)
+                                Statements 87.65 % · Branches 75.57 % · Functions 87.32 % · Lines 90.18 %   EXIT=0
+                                (строки по каталогам: catalog/* 89.47–98.6 %; integrations/onec 89.63; sync/apply 87.19;
+                                 sync/images 84.45; sync/reconcile 76.36; sync/scheduler 80.11)
+$ npm run lint                → tsc --noEmit + eslint + «All matched files use Prettier code style!»   EXIT=0
+$ npx tsx scripts/onec_acceptance.ts --mock --allow-write
+                              → КП-1, КП-2, КП-5, КП-18, КП-19 PASS; ИТОГ (мок HS на фикстурах — репетиция, НЕ реальная
+                                интеграция): PASS 5, FAIL 0, SKIP 0, вручную 15                         EXIT=0
+$ npx tsx scripts/load_catalog_fixtures.ts --embedded --sku 5000 --seed 1 --report D:/optomstroy/.tmp/rpt/e011-report.json
+                              → полная загрузка 9166 мс; 9 прогонов success, ошибок 0; count_check: расхождений 0
+                                (12 строк сверки 1С = БД); sync_errors {}; ошибок маппинга 0; фото 300/300, ошибок 0;
+                                ИТОГ: OK (на фикстурах, не реальная интеграция)                         EXIT=0
+$ npm run bench:search -- --sku 50000 --duration 60 --warmup 10 --connections 50 --json ../.tmp/rpt/search-bench.json ...
+                              → НЕ ВЫПОЛНЕН: при посеве 50 000 SKU соединение с embedded PostgreSQL оборвалось
+                                (Error: read ECONNRESET; «seed_synthetic_catalog: код 1»), замер не начат.
+                                На D: свободно ~1 ГБ (df -h), вероятная причина — место на диске; не перезапускался.
+                                Действующий результат — docs/perf/E_search_benchmark.md (прогон 06:00 UTC, до
+                                исправлений ревью)                                                        EXIT=2
+```
+
+## Скрипты корня
+```
+$ python -I -X utf8 scripts/check_secrets.py        → файлов проверено: 1721; находок: 0                     EXIT=0
+$ python -I -X utf8 scripts/build_openapi.py --check → OK: pos-api.v1.yaml актуален (119 путей, 141 операция) EXIT=0
+$ python -I -X utf8 scripts/check_api_paths.py      → OK: все обязательные пути и методы есть                EXIT=0
+$ python -I -X utf8 scripts/check_enums.py          → проверок 248, расхождений 0                            EXIT=0
+$ python -I -X utf8 scripts/check_enum_triangle.py  → ИТОГ: OK — ошибок 0, информационных 11                 EXIT=0
+$ python -I -X utf8 scripts/check_arb_keys.py       → итог: ошибок 0 (инфо: нет status_*, error_* 27/49)     EXIT=0
+$ python -I -X utf8 scripts/sync_contracts.py --check → OK l10n (3 файла идентичны, gen_input соответствует) EXIT=0
+$ python -I -X utf8 scripts/check_onec_paths.py     → ИТОГ: OK — ошибок 0, информационных 7                  EXIT=0
+$ python -I -X utf8 scripts/check_repo_layout.py    → файлов 1721; ошибок 0, предупреждений 17               EXIT=0
+$ python -I -X utf8 scripts/check_layers.py         → файлов 358, импортов 2475, нарушений 0                 EXIT=0
+$ python -I -X utf8 scripts/trace_test_ids.py --summary          → ID 178; с тестом 155; not_done 23; без теста и причины 0  EXIT=0
+$ python -I -X utf8 scripts/trace_test_ids.py --stage E --summary → ID 128; с тестом 86 (T-ID 69, трасса 17; частично 47);
+                                                                    not_done с причиной 42; без теста и причины 0  EXIT=0
+$ bash scripts/check_no_double_money.sh             → OK — 0 совпадений (pos-app/lib 358, pos-api/src 372)  EXIT=0
+```
+
+## pos-app (каталог pos-app)
+```
+$ flutter test --concurrency=2        (17:30:31 → 17:34:52) → 04:13 +1237: All tests passed!          EXIT=0
+$ flutter analyze                                   → No issues found! (84.2s)                               EXIT=0
+$ flutter test integration_test/catalog_flow_test.dart -d windows --dart-define-from-file=env/dev_proxy.json
+    (17:39:11 → 17:41:21; стек поднимает сам тест) → кэш 496 товаров за 1302 / 2217 мс; черновик — 1 строка, вариант
+                                                      выбран, «2шт»; офлайн — баннер с возрастом данных, 8 карточек из
+                                                      кэша; 01:18 +2: All tests passed!                 EXIT=0
+```
+
+Не выполнялось: golden, сборка Windows, регрессия этапа D (auth/admin_invite/boot), test:all, миграции, smoke — их
+результат взят из «Перепроверки после ревью, раунд 2» выше (код с тех пор менялся только в перегенерированных enums).
+Android/iOS, камера, HID, 50 000 SKU на устройстве, Caddy и `curl -I`, CI на GitHub Actions — по окружению.
+После прогонов: процессов node/postgres/optomstroy автора нет (tasklist — 0); новых каталогов кластеров в .tmp нет.
+
+---
+
+# Прогон после закрытия остатков (независимый проверяющий, 2026-10-22 19:20–20:13)
+
+Файлы проекта не менялись (кроме этого журнала и раздела «Повтор после ревью» в docs/perf/E_search_benchmark.md).
+Windows 11, Node 24.11.1, Flutter 3.38.7, TEMP/TMP = D:/optomstroy/.tmp. Все прогоны — на FakeOnecGateway, фикстурах
+и синтетике: **на фикстурах, не реальная интеграция**. Полный вывод собирался в D:/optomstroy/.tmp/frun/ (удалён по завершении).
+Состояние кода: снимок на 19:20 (последние правки исправителей: pos-app/lib/.../product_details_screen.dart,
+app/router/routes.dart 19:12, l10n 19:13, contracts/openapi/pos-api.v1.yaml 19:18); в 19:19–19:21 чужой процесс vitest
+(test/sync-apply) ещё работал и закончился до начала прогонов pos-api. Команды — последовательно.
+
+## Скрипты корня (19:20–19:21)
+```
+$ bash scripts/check_no_double_money.sh               → OK — 0 совпадений (pos-app/lib 365, pos-api/src 382)       EXIT=0
+$ python -I -X utf8 scripts/check_secrets.py          → файлов проверено: 1754; находок: 0                          EXIT=0
+$ python -I -X utf8 scripts/check_secrets.py --self-test → self-test: OK                                            EXIT=0
+$ python -I -X utf8 scripts/check_repo_layout.py      → файлов 1754; ошибок 0, предупреждений 17, ожидающих задач 5 EXIT=0
+$ python -I -X utf8 scripts/check_env_example.py      → ожидается 97, в .env.example 97; ошибок 0                   EXIT=0
+$ python -I -X utf8 scripts/build_openapi.py --check  → OK: pos-api.v1.yaml актуален (119 путей, 141 операция)      EXIT=0
+$ python -I -X utf8 scripts/check_api_paths.py        → OK: все обязательные пути и методы есть                     EXIT=0
+$ python -I -X utf8 scripts/check_api_permissions.py  → ИТОГ: ошибок 0, предупреждений 9                            EXIT=0
+$ python -I -X utf8 scripts/check_enums.py            → проверок 248, расхождений 0                                 EXIT=0
+$ python -I -X utf8 scripts/check_enum_triangle.py    → ИТОГ: OK — ошибок 0, информационных 11                      EXIT=0
+$ python -I -X utf8 scripts/check_arb_keys.py         → итог: ошибок 0                                              EXIT=0
+$ python -I -X utf8 scripts/check_onec_paths.py       → ИТОГ: OK — ошибок 0, информационных 7                       EXIT=0
+$ python -I -X utf8 scripts/check_layers.py           → файлов 365, импортов 2528, нарушений 0                      EXIT=0
+$ python -I -X utf8 scripts/sync_contracts.py --check → OK l10n (3 файла идентичны, gen_input соответствует)       EXIT=0
+$ python -I -X utf8 scripts/trace_test_ids.py --summary            → ID 178; с тестом 155; not_done 23; без теста и причины 0  EXIT=0
+$ python -I -X utf8 scripts/trace_test_ids.py --stage D --summary  → то же (178 / 155 / 23 / 0)                    EXIT=0
+$ python -I -X utf8 scripts/trace_test_ids.py --stage E --summary                                                   EXIT=1
+    ERROR: нет теста и причины: T-CAT-032: трасса не найдена:
+      pos-app/test/features/catalog/presentation/customer_mode_catalog_test.dart::SCR-11 customer: status — без чисел
+    (тест переименован в 18:36 в «SCR-11 customer: status — «В наличии» без чисел; quantity — …», трасса в
+     scripts/trace_test_ids.py:156 не обновлена); сводка: ID 128; с тестом 87 (T-ID 70, трасса 17; частично 48);
+     not_done с причиной 41
+```
+
+## pos-api (каталог pos-api)
+```
+$ npm run lint                → tsc --noEmit + eslint + «All matched files use Prettier code style!»  (19:21:48)  EXIT=0
+$ npm run build               → tsc -p tsconfig.build.json                                           EXIT=0
+$ npm run madge               → Processed 398 files; No circular dependency found!                   EXIT=0
+$ npm run check:permissions   → gen-permissions: актуально (77 кодов, 7 ролей)                        EXIT=0
+$ npm run test:all            (19:23:30 → 19:39:31)                                                   EXIT=0
+    test 129 · integrations 38 · worker 20 · db 13 · foundation 57 · auth 56 · admin 52 · customers 28 ·
+    profile 27 · registration 19 · settings 17 · sms 65 · onec 36 · sync-apply 34 · sync 27 · catalog 33 ·
+    catalog-sync 16 (+1 skipped) · favorites 10 · search 53 · images 25 · e2e 93 (+5 skipped)
+    итого 848 passed, 6 skipped, 0 failed
+$ npm run test:cov:e          (19:39:47 → 19:46:54) → Test Files 50 passed | 2 skipped (52); Tests 494 passed | 6 skipped (500)
+                                Statements 87.73 % · Branches 76.06 % · Functions 87.34 % · Lines 90.23 %  EXIT=0
+$ npm run test:cov:d          (19:46:58 → 19:51:22) → Test Files 36 passed | 1 skipped (37); Tests 376 passed | 5 skipped (381)
+                                Stmts 95.31 · Branch 88.41 · Funcs 96.3 · Lines 97.92 %                   EXIT=0
+$ node scripts/local-stack.mjs smoke          → итог: 10/10 PASS                                       EXIT=0
+$ node scripts/local-stack.mjs auth-smoke     → auth-smoke итог: 15/15 PASS                            EXIT=0
+$ node scripts/local-stack.mjs catalog-smoke  → catalog-smoke итог: 22/22 PASS (на фикстурах, не реальная интеграция) EXIT=0
+```
+
+## Миграции (корень репозитория)
+```
+$ node tools/pg/run-sql.mjs --repeat-strict 0001 0002 0003 0005 0006 0007 --check scripts/check_tables.sql
+    [repeat] ИТОГ: 0 изменений; команд 435; check_tables: 63 из 63 (prod), 45/45 enum                      EXIT=0
+$ node tools/pg/run-sql.mjs --repeat-strict --set app.env=test 0001…0007 + db/migrations-dev/0001_dev_outbox \
+      --check scripts/check_tables.sql --check pos-api/test/sql/check_ddl_behavior.sql
+    [repeat] ИТОГ: 0 изменений; команд 446; check_tables: 64 из 64 (dev/test), 45/45 enum;
+    check_ddl_behavior OK (негативных 60, позитивных инвариантов 6)                                        EXIT=0
+```
+
+## pos-app (каталог pos-app)
+```
+$ flutter analyze                                   → No issues found! (48.6s)                               EXIT=0
+$ flutter test --concurrency=2   (19:54:00 → 19:57:00) → 02:50 +1294: All tests passed!                      EXIT=0
+$ flutter test --concurrency=2 --tags golden        → 01:01 +164: All tests passed!                           EXIT=0
+$ dart format --output=none --set-exit-if-changed lib test integration_test (инфо, шага в CI нет)
+                                                    → 541 файл, 10 изменились бы: 9 сгенерированных *.g.dart и
+                                                      test/features/catalog/presentation/customer_mode_catalog_test.dart  EXIT=1
+$ flutter test integration_test/catalog_flow_test.dart -d windows --dart-define-from-file=env/dev_proxy.json
+    (19:58:49 → 20:01:11; стек поднимает сам тест)  → клиент: кэш 496 товаров за 1068 мс — PASS;
+                                                      сотрудник: кэш за 2062 мс, поиск «F4252» — бейджей 1, затем
+      не дождались widget with key [<'scr-14'>] за 30 с; экран:
+      /catalog/p/01a16457-1344-76ab-9fdc-71c0b64d26a8?variantId=01a16457-13d2-7912-b0a8-e2129e119b85
+      (catalog_flow_test.dart:489 → _openProduct:334); 01:32 +1 -1: Some tests failed.                     EXIT=1
+    повтор (20:01:46 → 20:03:52)                    → то же место, 01:30 +1 -1: Some tests failed.           EXIT=1
+    Причина (по коду): на expanded/large ProductRoute.buildPage (app/router/routes.dart:441) открывает SCR-14
+    прозрачной страницей, и ProductDetailsScreen рисует ветку «панель поверх колонки» (Stack →
+    'product-panel-overlay', product_details_screen.dart:120–152) без ключа 'scr-14' — ключ есть только у
+    Scaffold в _page (:168). Сценарий сотрудника дальше (вариант → «2шт» → черновик; офлайн SCR-10/SCR-14) не проверен.
+```
+Регрессия этапа D — свежий стек: `sleep 1500 | LOCAL_STACK_MIN_APP_VERSION=android=0.1.0,windows=0.1.0
+node scripts/local-stack.mjs serve --auth-fixtures --exit-on-stdin-end --ready-file .tmp/frun/ready.txt`
+(READY http://127.0.0.1:3000), тесты с `--dart-define-from-file=env/dev.json`:
+```
+$ flutter test integration_test/auth_flow_test.dart -d windows ...          → 00:33 +3: All tests passed!   EXIT=0
+$ flutter test integration_test/admin_invite_flow_test.dart -d windows ...  → 00:27 +1: All tests passed!   EXIT=0
+$ flutter test integration_test/boot_test.dart -d windows ...               → 00:02 +1: All tests passed!   EXIT=0
+стек остановлен закрытием stdin                                             → stack EXIT=0
+$ flutter build windows --release   (20:07:25 → 20:08:23) → √ Built build\windows\x64\runner\Release\optomstroy.exe  EXIT=0
+```
+
+## Бенчмарк поиска (pos-api; машина свободна, D: 7,4 ГБ)
+```
+$ npm run bench:search -- --sku 50000 --duration 60 --warmup 10 --connections 50 \
+      --json ../.tmp/frun/search-bench.json --report ../.tmp/frun/search-bench.md     (20:08:33 → 20:12:30)
+    посев 50 000 SKU 125 с; matchType 20/20; 41 785 ответов, ошибок 0, не-2xx 0;
+    p50 62.3 мс · p95 135.2 мс · p99 191.4 мс · max 356.4 мс; 696.4 запросов/с; CPU 1.36 мс/запрос, ELU 92.2 %
+    худший: «радиатор» inStock+sort=price:asc — p95 252.0 / p99 320.6 мс                              EXIT=0
+    → docs/perf/E_search_benchmark.md §8 «Повтор после ревью»
+```
+
+Итог: красные — `trace_test_ids.py --stage E` (EXIT=1, трасса T-CAT-032) и `catalog_flow_test` (EXIT=1, 2 из 2,
+ключ 'scr-14' на панели expanded); остальное зелёное. Не выполнялось: Android/iOS, камера, HID, Caddy, CI на GitHub
+Actions. После прогонов: процессов node/postgres/optomstroy проверяющего нет (остался посторонний nodejs.exe pid 41432);
+pos-app/.dart_tool/flutter_build удалён; каталоги pos-local-stack-* и кластеры бенчмарка удалены самими скриптами.
+
+---
+
+# Финальный прогон этапа E (после раунда Fix2 закрытия остатков; автор итоговых документов, 2026-10-22 20:43–21:13)
+
+Windows 11, Node 24.11.1, Flutter 3.38.7, TEMP/TMP = D:/optomstroy/.tmp. Все прогоны — на FakeOnecGateway, фикстурах
+и синтетике: **на фикстурах, не реальная интеграция**. Полный вывод — D:/optomstroy/.tmp/fin/*.out (временный).
+Код при прогоне не менялся. Состояние кода: снимок после раунда Fix2 (последние правки — 20:36,
+pos-app/lib/core/l10n/app_localizations*.dart). После прогона «Прогон после закрытия остатков» (снимок 19:20) менялись:
+contracts/openapi (parts/00_root.yaml, 60_sync_admin_ops.yaml, pos-api.v1.yaml, CHANGELOG), contracts/l10n и копии в
+pos-app/lib/l10n, pos-api/src/health/openapi.document{,.spec}.ts, pos-api/test/e2e/smoke.e2e-spec.ts,
+scripts/check_secrets.py, check_no_double_money.sh, trace_test_ids.py, pos-app/lib/app/router/{panel_page,routes}.dart,
+catalog_workspace.dart, product_details_screen.dart, design_system/layout/content_region.dart и 5 тестов pos-app
+(find -newer). Код pos-api/src/catalog/** и src/sync/** после 19:20 не менялся — бенчмарк поиска 20:08 (выше)
+относится к текущему коду поиска. Посторонних процессов vitest во время прогона не было (кроме чужого nodejs.exe pid 41432).
+
+## Скрипты корня (20:43–20:44)
+```
+$ bash scripts/check_no_double_money.sh               → НАРУШЕНИЕ [app: double/num/RealColumn вне design_system]:
+      pos-app/lib/app/router/panel_page.dart:65, 71, 72 — Animation<double> в PanelPage (новый файл раунда Fix2,
+      RC-6) без пометки `money-double: allow — <причина>`; в pos-api нарушений нет                  EXIT=1
+    повтор в 21:11 (после всех прогонов)                → то же, 3 строки panel_page.dart                    EXIT=1
+$ bash scripts/check_no_double_money.sh --self-test   → check_no_double_money --self-test: OK                EXIT=0
+$ python -I -X utf8 scripts/check_secrets.py          → файлов проверено: 1756; находок: 0                   EXIT=0
+$ python -I -X utf8 scripts/check_secrets.py --self-test → self-test: OK                                     EXIT=0
+$ python -I -X utf8 scripts/build_openapi.py --check  → OK: pos-api.v1.yaml актуален (119 путей, 141 операция,
+                                                        schemas 315)                                         EXIT=0
+$ python -I -X utf8 scripts/check_arb_keys.py         → итог: ошибок 0 (инфо: status_* 31/45, error_* 27/49, role_* 7/7) EXIT=0
+$ python -I -X utf8 scripts/check_api_paths.py        → OK: все обязательные пути и методы есть              EXIT=0
+$ python -I -X utf8 scripts/check_enums.py            → проверок 248, расхождений 0                          EXIT=0
+$ python -I -X utf8 scripts/check_enum_triangle.py    → ИТОГ: OK — ошибок 0, информационных 11               EXIT=0
+$ python -I -X utf8 scripts/sync_contracts.py --check → OK l10n (3 файла идентичны, gen_input соответствует) EXIT=0
+$ python -I -X utf8 scripts/check_layers.py           → файлов 366, импортов 2532, нарушений 0               EXIT=0
+$ python -I -X utf8 scripts/check_repo_layout.py      → файлов 1756; ошибок 0, предупреждений 17             EXIT=0
+$ python -I -X utf8 scripts/check_onec_paths.py       → ИТОГ: OK — ошибок 0, информационных 7                EXIT=0
+$ python -I -X utf8 scripts/trace_test_ids.py --summary            → ID 178; с тестом 155; not_done 23; без теста и причины 0  EXIT=0
+$ python -I -X utf8 scripts/trace_test_ids.py --stage E --summary  → ID 128; с тестом 87 (T-ID 70, трасса 17; частично 48);
+                                                                    not_done с причиной 41; без теста и причины 0  EXIT=0
+$ python -I -X utf8 infra/docker/scripts/check_compose_test.py infra/compose.test.yml (21:13; EQ-AUTH-08, без Docker)
+                                                      → сервисы api, backup, caddy, migrate, postgres, worker;
+                                                        ИТОГ: OK — нарушений нет                             EXIT=0
+```
+
+## pos-api (каталог pos-api)
+```
+$ npm run test:all            (20:43:23 → 20:56:01)                                                   EXIT=0
+    test 130 (+1: src/health/openapi.document.spec.ts, RC-3) · integrations 38 · worker 20 · db 13 · foundation 57 ·
+    auth 56 · admin 52 · customers 28 · profile 27 · registration 19 · settings 17 · sms 65 · onec 36 ·
+    sync-apply 34 · sync 27 · catalog 33 · catalog-sync 16 (+1 skipped) · favorites 10 · search 53 · images 25 ·
+    e2e 93 (+5 skipped; в т. ч. smoke «экспорт OpenAPI ⊆ контракт» с проверкой info.version, RS-11)
+    итого 849 passed, 6 skipped, 0 failed
+$ npm run test:cov:e          (20:59:48 → 21:07:59) → Test Files 51 passed | 2 skipped (53); Tests 495 passed | 6 skipped (501)
+                                Statements 87.73 % · Branches 76.06 % · Functions 87.34 % · Lines 90.23 %  EXIT=0
+                                (строки: catalog/* 89.47–98.6 %; integrations/onec 89.63; sync/apply 87.84;
+                                 sync/images 84.42; sync/reconcile 76.36; sync/scheduler 80.33)
+$ npm run lint                → tsc --noEmit + eslint + «All matched files use Prettier code style!»   EXIT=0
+$ npm run build               → tsc -p tsconfig.build.json                                           EXIT=0
+```
+
+## pos-app (каталог pos-app)
+```
+$ flutter analyze                                   → No issues found! (56.5s)                               EXIT=0
+$ flutter test --concurrency=2   (20:47:14 → 20:50:25) → 03:00 +1298: All tests passed!                      EXIT=0
+    (в т. ч. catalog_dto_contract_test и dto_schema_test — зелёные; guard_notice_test — снекбары G-7)
+$ flutter test --concurrency=2 --tags golden (21:01 → 21:03) → 01:36 +164: All tests passed!                  EXIT=0
+$ dart format --output=none --set-exit-if-changed lib test integration_test (инфо, шага в CI нет)
+                                                    → 542 файла, 9 изменились бы — только сгенерированные *.g.dart
+                                                      (E-KI-06 / RR-3); рукописные файлы отформатированы     EXIT=1
+$ flutter test integration_test/catalog_flow_test.dart -d windows --dart-define-from-file=env/dev_proxy.json
+    запуск 1 (20:56:14 → 20:58:00; стек поднимает сам тест) → клиент: кэш 496 товаров за 1046 мс — PASS;
+        сотрудник: кэш за 2034 мс; черновик — строк 1, вариант выбран, «2шт»; офлайн — баннер с возрастом данных,
+        карточек из кэша 8; 01:09 +2: All tests passed!                                                     EXIT=0
+    запуск 2 (20:58:05 → 20:59:43)                  → кэш 1332 / 3261 мс; черновик 1 строка, «2шт»; офлайн 8
+        карточек; 01:05 +2: All tests passed!                                                               EXIT=0
+```
+Регрессия этапа D — свежий стек: `sleep 420 | LOCAL_STACK_MIN_APP_VERSION=android=0.1.0,windows=0.1.0
+node scripts/local-stack.mjs serve --auth-fixtures --exit-on-stdin-end --ready-file .tmp/fin/ready.txt`
+(READY http://127.0.0.1:3000), тесты с `--dart-define-from-file=env/dev.json`:
+```
+$ flutter test integration_test/auth_flow_test.dart -d windows ...          → 00:33 +3: All tests passed!   EXIT=0
+$ flutter test integration_test/admin_invite_flow_test.dart -d windows ...  → 00:26 +1: All tests passed!   EXIT=0
+$ flutter test integration_test/boot_test.dart -d windows ...               → 00:02 +1: All tests passed!   EXIT=0
+стек остановлен закрытием stdin                                             → stack EXIT=0
+```
+
+Не перезапускались в этом прогоне (результат — раздел «Прогон после закрытия остатков» выше): madge,
+check:permissions, test:cov:d, local-stack smoke / auth-smoke / catalog-smoke, миграции repeat-strict, бенчмарк поиска
+(20:08: p95 135.2 мс) — проверяемый ими код после 19:20 не менялся; `flutter build windows --release` (20:08) — сделан
+ДО правок Fix2 в pos-app, после них не повторялся (компиляцию подтверждают flutter analyze и debug-сборка Windows
+внутри catalog_flow_test).
+Не выполнялось (окружение): Android/iOS, камера, HID, Caddy и `curl -I`, CI на GitHub Actions.
+
+Итог: красная одна обязательная команда — `check_no_double_money.sh` (EXIT=1: 3 строки `Animation<double>` в новом
+`pos-app/lib/app/router/panel_page.dart`); информационная `dart format` — только 9 `*.g.dart`. Остальное зелёное,
+в т. ч. `catalog_flow_test` 2 из 2 (RR-1 исправлен) и `trace_test_ids.py --stage E` (RR-2 исправлен).
+После прогонов: процессов node/postgres/optomstroy автора нет (tasklist: только посторонний nodejs.exe pid 41432);
+pos-app/.dart_tool/flutter_build (470 МБ) удалён; каталоги pos-local-stack-* удалены самим стеком.
+
+=== Финальная правка оркестратора (2026-10-22, после закрытия остатков) ===
+Правка: pos-app/lib/app/router/panel_page.dart — пометки «money-double: allow — анимация перехода, не деньги» у Animation<double> (F-N-01); dart format файла.
+$ bash scripts/check_no_double_money.sh
+check_no_double_money: OK — 0 совпадений (pos-app/lib: 366 файлов, pos-api/src: 382 файлов)
+EXIT=0
+$ cd pos-app && flutter analyze lib/app/router/panel_page.dart && flutter build windows --release
+No issues found! (ran in 36.2s)
+√ Built build\windows\x64\runner\Release\optomstroy.exe
+EXIT=0

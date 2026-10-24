@@ -1,0 +1,11 @@
+{
+  "_note": "тестовые данные",
+  "operation": "GET /pos/v1/changes",
+  "kind": "response",
+  "status": 503,
+  "body": {
+    "code": "POS_E_MAINTENANCE",
+    "message": "Идёт обновление конфигурации",
+    "requestId": "0192f5c3-0000-7000-8000-000000000001"
+  }
+}

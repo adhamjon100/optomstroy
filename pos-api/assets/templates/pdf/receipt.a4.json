@@ -1,0 +1,89 @@
+{
+  "$comment": "Нефискальный товарный чек, A4 (10 PRINT-005, PRINT-010, PAY-014; D-26). Только после получения оплаты. Пометка «не является фискальным документом» обязательна на каждой форме. Формат шаблона — README.md рядом.",
+  "kind": "receipt",
+  "paper": "a4",
+  "title": "Товарный чек",
+  "page": { "width": 595.28, "height": 841.89, "margins": { "top": 36, "right": 36, "bottom": 40, "left": 42 } },
+  "fontSize": 9,
+  "blocks": [
+    { "type": "text", "text": "{{copy}}", "when": "copy", "align": "right", "bold": true, "size": 12 },
+    { "type": "text", "text": "{{seller.name}}", "bold": true, "size": 11, "gapAfter": 1 },
+    { "type": "text", "text": "ИНН {{seller.inn}}", "when": "seller.inn", "gapAfter": 1 },
+    { "type": "text", "text": "{{seller.address}}", "when": "seller.address", "gapAfter": 1 },
+    { "type": "text", "text": "Тел. {{seller.phone}}", "when": "seller.phone" },
+    { "type": "spacer", "height": 8 },
+    {
+      "type": "text",
+      "text": "Товарный чек № {{number}} от {{date}}",
+      "size": 15,
+      "bold": true,
+      "align": "center",
+      "gapAfter": 1
+    },
+    { "type": "text", "text": "{{nonFiscalTitle}}", "align": "center", "size": 10 },
+    { "type": "rule" },
+    {
+      "type": "fields",
+      "labelWidth": 0.2,
+      "rows": [
+        { "label": "Покупатель", "value": "{{customer.name}}", "bold": true },
+        { "label": "ИНН покупателя", "value": "{{customer.inn}}", "when": "customer.inn" },
+        { "label": "Заказ", "value": "№ {{orderNumber}}" },
+        { "label": "Кассир", "value": "{{cashier}}", "when": "cashier" }
+      ]
+    },
+    {
+      "type": "table",
+      "rows": "items",
+      "grid": true,
+      "size": 8.5,
+      "columns": [
+        { "header": "№", "value": "{{lineNo}}", "width": 0.05, "align": "right" },
+        { "header": "Наименование", "value": "{{name}}", "width": 0.33 },
+        { "header": "Артикул", "value": "{{sku}}", "width": 0.12 },
+        { "header": "Кол-во", "value": "{{quantity}}", "width": 0.08, "align": "right" },
+        { "header": "Ед.", "value": "{{unit}}", "width": 0.06 },
+        { "header": "Цена", "value": "{{price}}", "width": 0.12, "align": "right" },
+        { "header": "Скидка", "value": "{{discount}}", "width": 0.11, "align": "right" },
+        { "header": "Сумма", "value": "{{sum}}", "width": 0.13, "align": "right" }
+      ]
+    },
+    {
+      "type": "fields",
+      "labelWidth": 0.8,
+      "labelAlign": "right",
+      "valueAlign": "right",
+      "rows": [
+        { "label": "Сумма без скидки:", "value": "{{totals.subtotal}}" },
+        { "label": "{{totals.discountLabel}}:", "value": "−{{totals.discount}}", "when": "totals.hasDiscount" },
+        { "label": "Итого:", "value": "{{totals.total}}", "bold": true },
+        { "label": "Оплачено:", "value": "{{paid}}" },
+        { "label": "Осталось оплатить:", "value": "{{remaining}}", "when": "remaining" }
+      ]
+    },
+    {
+      "type": "each",
+      "items": "payments",
+      "blocks": [
+        {
+          "type": "fields",
+          "labelWidth": 0.8,
+          "labelAlign": "right",
+          "valueAlign": "right",
+          "gapAfter": 1,
+          "rows": [
+            { "label": "Оплата ({{method}}, {{receivedAt}}):", "value": "{{amount}}" },
+            { "label": "Получено:", "value": "{{received}}", "when": "received" },
+            { "label": "Сдача:", "value": "{{change}}", "when": "change" }
+          ]
+        }
+      ]
+    },
+    { "type": "text", "text": "Всего наименований {{itemsCount}}, на сумму {{totals.total}} {{currency}}" },
+    { "type": "spacer", "height": 24 },
+    { "type": "text", "text": "Продавец ____________________" },
+    { "type": "spacer", "height": 14 },
+    { "type": "rule" },
+    { "type": "text", "text": "{{nonFiscalMark}}", "align": "center", "bold": true, "size": 9 }
+  ]
+}

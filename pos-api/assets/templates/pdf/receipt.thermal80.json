@@ -1,0 +1,70 @@
+{
+  "$comment": "Нефискальный товарный чек, лента 80 мм (10 PRINT-005, PRINT-006, PAY-014; D-26). Ширина 226,77 pt = 80 мм, поля по 4 мм (печатная область 72 мм); высота страницы — по содержимому. Формат шаблона — README.md рядом.",
+  "kind": "receipt",
+  "paper": "thermal80",
+  "title": "Товарный чек",
+  "page": { "width": 226.77, "margins": { "top": 10, "right": 11.34, "bottom": 14, "left": 11.34 } },
+  "fontSize": 7.5,
+  "blocks": [
+    { "type": "text", "text": "{{copy}}", "when": "copy", "align": "center", "bold": true, "size": 10 },
+    { "type": "text", "text": "{{seller.name}}", "align": "center", "bold": true, "size": 9, "gapAfter": 1 },
+    { "type": "text", "text": "ИНН {{seller.inn}}", "when": "seller.inn", "align": "center", "gapAfter": 1 },
+    { "type": "text", "text": "{{seller.address}}", "when": "seller.address", "align": "center", "gapAfter": 1 },
+    { "type": "text", "text": "Тел. {{seller.phone}}", "when": "seller.phone", "align": "center" },
+    { "type": "rule", "dashed": true },
+    { "type": "text", "text": "ТОВАРНЫЙ ЧЕК № {{number}}", "align": "center", "bold": true, "size": 9, "gapAfter": 1 },
+    { "type": "text", "text": "{{nonFiscalTitle}}", "align": "center", "gapAfter": 1 },
+    { "type": "text", "text": "{{date}}", "align": "center" },
+    {
+      "type": "fields",
+      "labelWidth": 0.3,
+      "rows": [
+        { "label": "Заказ", "value": "№ {{orderNumber}}" },
+        { "label": "Покупатель", "value": "{{customer.name}}" },
+        { "label": "Кассир", "value": "{{cashier}}", "when": "cashier" }
+      ]
+    },
+    {
+      "type": "table",
+      "rows": "items",
+      "size": 7,
+      "columns": [
+        { "header": "Товар", "value": "{{name}}", "width": 0.46 },
+        { "header": "Кол-во × цена", "value": "{{qtyPrice}}", "width": 0.3, "align": "right" },
+        { "header": "Сумма", "value": "{{sum}}", "width": 0.24, "align": "right" }
+      ]
+    },
+    {
+      "type": "fields",
+      "labelWidth": 0.6,
+      "valueAlign": "right",
+      "rows": [
+        { "label": "Сумма без скидки", "value": "{{totals.subtotal}}" },
+        { "label": "{{totals.discountLabel}}", "value": "−{{totals.discount}}", "when": "totals.hasDiscount" },
+        { "label": "ИТОГО", "value": "{{totals.total}} {{currency}}", "bold": true },
+        { "label": "Оплачено", "value": "{{paid}}" },
+        { "label": "Осталось оплатить", "value": "{{remaining}}", "when": "remaining" }
+      ]
+    },
+    {
+      "type": "each",
+      "items": "payments",
+      "blocks": [
+        {
+          "type": "fields",
+          "labelWidth": 0.6,
+          "valueAlign": "right",
+          "gapAfter": 1,
+          "rows": [
+            { "label": "{{method}}", "value": "{{amount}}" },
+            { "label": "Получено", "value": "{{received}}", "when": "received" },
+            { "label": "Сдача", "value": "{{change}}", "when": "change" }
+          ]
+        }
+      ]
+    },
+    { "type": "rule", "dashed": true },
+    { "type": "text", "text": "{{nonFiscalMark}}", "align": "center", "bold": true, "size": 7.5 },
+    { "type": "text", "text": "Спасибо за покупку!", "align": "center" }
+  ]
+}

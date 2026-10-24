@@ -1,0 +1,11 @@
+{
+  "_note": "тестовые данные",
+  "operation": "POST /pos/v1/changes/ack",
+  "kind": "response",
+  "status": 409,
+  "body": {
+    "code": "POS_E_ACK_OUT_OF_ORDER",
+    "message": "Номер сообщения 5130 не выдавался",
+    "requestId": "0192f5c3-0000-7000-8000-000000000001"
+  }
+}

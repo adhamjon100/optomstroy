@@ -1,0 +1,62 @@
+# Статический анализ pos-app (RM-C-002). Гейт: `flutter analyze` — 0 issues.
+# Правила слоёв (06 §6.1 L-1…L-10; B_architecture_review.md §5.1 FL-01…FL-07, FL-11)
+# проверяет `python -I -X utf8 scripts/check_layers.py` (pos-app/NOTES.md §4):
+# custom_lint несовместим с набором генераторов на Dart 3.10.7 (NOTES.md §1).
+include: package:flutter_lints/flutter.yaml
+
+# dart format: ширина строки (CI: dart format --set-exit-if-changed, 06 §6.13).
+formatter:
+  page_width: 120
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    # freezed + json_serializable: @JsonKey на параметрах фабрик.
+    invalid_annotation_target: ignore
+    missing_required_param: error
+    missing_return: error
+    unawaited_futures: warning
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - "lib/core/l10n/app_localizations*.dart"
+    - "build/**"
+
+# riverpod_lint 3.x — плагин analysis_server_plugin (не custom_lint), R3 §1.1.
+plugins:
+  riverpod_lint: 3.1.0
+
+linter:
+  rules:
+    # Импорты только package: — однозначные пути для scripts/check_layers.py.
+    always_use_package_imports: true
+    avoid_relative_lib_imports: true
+    directives_ordering: true
+    # Надёжность
+    always_declare_return_types: true
+    avoid_dynamic_calls: true
+    avoid_catches_without_on_clauses: true
+    avoid_type_to_string: true
+    cancel_subscriptions: true
+    close_sinks: true
+    discarded_futures: true
+    only_throw_errors: true
+    prefer_void_to_null: true
+    throw_in_finally: true
+    unawaited_futures: true
+    unnecessary_statements: true
+    use_build_context_synchronously: true
+    # Стиль
+    prefer_single_quotes: true
+    prefer_final_locals: true
+    prefer_final_in_for_each: true
+    prefer_const_constructors: true
+    prefer_const_declarations: true
+    sort_constructors_first: true
+    unnecessary_lambdas: true
+    unnecessary_parenthesis: true
+    public_member_api_docs: false
+    # Денежные значения не double (FL-10) проверяются ревью до появления правила.

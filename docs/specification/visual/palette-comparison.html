@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Оптомстрой POS — Сравнение палитр: A «Синий», B «Оранжевый», итог A+ (D-16)</title>
-<meta name="description" content="Wireframe / структурная схема для ТЗ: сравнение двух вариантов цветовой палитры POS-системы «Оптомстрой» и итоговой схемы A+ (D-16, Q-006). Не финальный интерфейс.">
+<title>Оптомстрой POS — Сравнение палитр: A «Синий», B «Оранжевый», выбран B (D-16, ядро §24.1)</title>
+<meta name="description" content="Wireframe / структурная схема для ТЗ: сравнение двух вариантов цветовой палитры POS-системы «Оптомстрой»; выбран вариант B «Оранжевый» (решение заказчика 2026-10-21, D-16 в редакции ядра v1.9 §24.1), схема A+ — альтернатива, не выбрана. Не финальный интерфейс.">
 <style>
 /* ==========================================================================
    0. Служебные стили страницы-документа (не относятся к дизайн-системе продукта)
@@ -106,7 +106,8 @@ tr.hl td{background:#FFF7E6}
 /* ==========================================================================
    2. Токены дизайн-системы (имена ядра R0 §8.1, ds.color.* -> --ds-color-*)
    ========================================================================== */
-/* --- Вариант A «Синий» / схема A+ (ядро §8.1, R4 §3.2) --- */
+/* --- Вариант A «Синий» / схема A+ (ядро §8.1, R4 §3.2) — историческая альтернатива, не выбрана (ядро v1.9 §24.1).
+       :root оставлен на значениях A только как технический fallback разметки документа; все образцы обёрнуты в .theme-a / .theme-b --- */
 :root, .theme-a{
   --ds-color-background:#F4F5F7;
   --ds-color-surface:#FFFFFF;
@@ -151,7 +152,7 @@ tr.hl td{background:#FFF7E6}
   --pc-selected-bar:#0053FA;               /* служебная переменная документа, не токен ядра: полоса 3 px у выбранной строки = primary */
   --pc-success-fill:#15803D;               /* служебная переменная документа, не токен ядра: fill-кнопка success = success (R4 §3.2: белый текст 5.02:1) */
 }
-/* --- Вариант B «Оранжевый» (R4 §3.3, те же имена токенов; альтернатива по Q-006) --- */
+/* --- Вариант B «Оранжевый» (R4 §3.3, 03 §5.3, те же имена токенов) — ОСНОВНАЯ палитра R1: D-16 в редакции ядра v1.9 §24.1, решение заказчика 2026-10-21 --- */
 .theme-b{
   --ds-color-background:#F5F5F4;
   --ds-color-surface:#FFFFFF;
@@ -388,9 +389,10 @@ tr.hl td{background:#FFF7E6}
 </head>
 <body>
 <!-- Переключатели: должны идти ДО <main>, чтобы работали селекторы «input:checked ~ main …» -->
-<input class="sr" type="radio" name="show" id="show-both" checked>
+<!-- По умолчанию показан выбранный вариант B «Оранжевый» (ядро v1.9 §24.1); «Оба варианта» и «Только A» — для сравнения -->
+<input class="sr" type="radio" name="show" id="show-both">
 <input class="sr" type="radio" name="show" id="show-a">
-<input class="sr" type="radio" name="show" id="show-b">
+<input class="sr" type="radio" name="show" id="show-b" checked>
 <input class="sr" type="radio" name="cb" id="cb-none" checked>
 <input class="sr" type="radio" name="cb" id="cb-protan">
 <input class="sr" type="radio" name="cb" id="cb-deutan">
@@ -434,16 +436,19 @@ tr.hl td{background:#FFF7E6}
   <span>Документ сравнения палитр. Все элементы ниже — иллюстрации токенов и правил, а не экраны продукта.</span>
 </div>
 
-<h1>Сравнение палитр: A «Синий» · B «Оранжевый» · итоговая схема A+</h1>
+<h1>Сравнение палитр: A «Синий» · B «Оранжевый» · выбран вариант B</h1>
 <div class="meta">
   <span>Проект: <b>«Оптомстрой POS»</b> (ЭТАП 1 — ТЗ)</span>
   <span>Файл: <b>docs/specification/visual/palette-comparison.html</b></span>
-  <span>Версия <b>1.0</b> · Дата <b>2026-10-18</b></span>
-  <span>Статус: <span class="status status-q">черновик для утверждения заказчиком</span></span>
-  <span>Решение ядра: <span class="status status-d">D-16 — схема A+</span></span>
-  <span>Открытый вопрос: <span class="status status-q">Q-006 — логотип и допустимость синего</span></span>
+  <span>Версия <b>1.2</b> · Дата <b>2026-10-21</b> (v1.0 — 2026-10-18)</span>
+  <span>Статус: <span class="status status-d">палитра выбрана заказчиком 2026-10-21</span> · документ — материал ТЗ</span>
+  <span>Решение ядра: <span class="status status-d">D-16 в ред. ядра v1.9 §24.1 — вариант B «Оранжевый»</span></span>
+  <span>Вопрос: <span class="status status-d">Q-006 закрыт</span>, кроме векторного логотипа <span class="status status-q">Q-006 (вектор) — открыт</span></span>
 </div>
-<p class="ref">Источники: ядро решений <code>R0_DECISION_KERNEL.md</code> §2 (D-16, D-17, D-43), §8.1 (токены A+), §8.5 (компоненты), §12 (Q-006), §14 (факты о макетах); отчёт <code>R4_UX_RESEARCH.md</code> §1.5 (измеренные цвета), §3.1–3.6 (палитры, контраст, дальтонизм, сравнение, рекомендация), §6 (состояния компонентов). Все HEX-значения и коэффициенты контраста скопированы из этих источников; собственных измерений документ не содержит.</p>
+<div class="card" style="border-left:4px solid #FF8700">
+  <p style="margin:0"><b>Итог (решение заказчика 2026-10-21, ядро v1.9 §24.1):</b> основная палитра R1 — <b>вариант B «Оранжевый»</b> (03 §5.3, токены и HEX без изменений), логотип — оранжевый «C + шестиугольник + стрелка» (<code>Logo Orange.png</code>). Комбинированная схема <b>A+</b> (синий интерактивный #0053FA) — <b>альтернатива, не выбрана</b>; её таблицы сохранены для сравнения. Макеты остаются эталоном <b>компоновки</b>, а не цвета. Переключатель в разделе 4 по умолчанию показывает вариант B.</p>
+</div>
+<p class="ref">Источники: ядро решений <code>R0_DECISION_KERNEL.md</code> §24.1 (выбор палитры B и логотипа — высший приоритет), §2 (D-16, D-17, D-43), §8.1 (токены A+), §8.5 (компоненты), §12 (Q-006), §14 (факты о макетах); <code>03_UX_UI_DESIGN_SYSTEM.md</code> §5.3, §5.7–5.9, DS-098 (ограничения и роли цвета палитры B); отчёт <code>R4_UX_RESEARCH.md</code> §1.5 (измеренные цвета), §3.1–3.6 (палитры, контраст, дальтонизм, сравнение, рекомендация), §6 (состояния компонентов). Все HEX-значения и коэффициенты контраста скопированы из этих источников; собственных измерений документ не содержит.</p>
 
 <div class="card">
   <h4 style="margin-top:0">Легенда</h4>
@@ -465,14 +470,14 @@ tr.hl td{background:#FFF7E6}
 <div class="card">
   <h4 style="margin-top:0">Содержание</h4>
   <ol class="toc">
-    <li><a href="#s0">0. Что сравниваем и почему (логотип vs макеты, Q-006)</a></li>
-    <li><a href="#s1">1. Вариант A «Синий» — таблица токенов и свотчи</a></li>
-    <li><a href="#s2">2. Вариант B «Оранжевый» — таблица токенов и свотчи</a></li>
+    <li><a href="#s0">0. Что сравниваем и почему (логотип vs макеты, Q-006 — закрыт)</a></li>
+    <li><a href="#s1">1. Вариант A «Синий» — таблица токенов и свотчи (альтернатива)</a></li>
+    <li><a href="#s2">2. Вариант B «Оранжевый» — таблица токенов и свотчи (основная палитра R1)</a></li>
     <li><a href="#s3">3. Контраст WCAG 2.2 (данные R4 §3.4)</a></li>
     <li><a href="#s4">4. Образцы компонентов в обоих вариантах</a></li>
     <li><a href="#s5">5. Симуляция дальтонизма для статусных цветов</a></li>
     <li><a href="#s6">6. Сравнительная таблица по критериям (R4 §3.5)</a></li>
-    <li><a href="#s7">7. Итоговая схема A+ и правила brandAccent #FF8700</a></li>
+    <li><a href="#s7">7. Итог: выбран вариант B «Оранжевый»; правила оранжевого; A+ — альтернатива</a></li>
     <li><a href="#s8">8. Статус, открытые вопросы, трассировка</a></li>
     <li><a href="#s9">9. Журнал сверки с ядром</a></li>
   </ol>
@@ -480,7 +485,7 @@ tr.hl td{background:#FFF7E6}
 
 <!-- ======================= 0. ЧТО СРАВНИВАЕМ ======================= -->
 <h2 id="s0">0. Что сравниваем и почему</h2>
-<p>В исходных материалах заказчика два несовместимых источника цвета бренда (R0 §14, R4 §1.6): <b>три цифровых макета</b> экранов (каталог, подтверждение заказа, вход) построены на насыщенном синем, а <b>файл логотипа</b> <code>Logo Orange.png</code> — однотонный оранжевый знак другой формы. Какой логотип актуален и допустим ли синий как интерактивный цвет — открытый вопрос <span class="status status-q">Q-006</span>. Поэтому в R4 §3 проработаны два полных варианта палитры, а ядро решений (<span class="status status-d">D-16</span>) принимает комбинированную схему <b>A+</b> с оранжевым только как брендовым акцентом.</p>
+<p>В исходных материалах заказчика два несовместимых источника цвета бренда (R0 §14, R4 §1.6): <b>три цифровых макета</b> экранов (каталог, подтверждение заказа, вход) построены на насыщенном синем, а <b>файл логотипа</b> <code>Logo Orange.png</code> — однотонный оранжевый знак другой формы. Какой логотип актуален и допустим ли синий как интерактивный цвет — был вопрос <span class="status status-q">Q-006</span>. Поэтому в R4 §3 проработаны два полных варианта палитры; исходная редакция D-16 предлагала комбинированную схему <b>A+</b> с оранжевым только как брендовым акцентом. <b>Заказчик 2026-10-21 выбрал «оранжевый»</b>: <span class="status status-d">D-16 в ред. ядра v1.9 §24.1</span> — основная палитра R1 — <b>вариант B «Оранжевый»</b>, логотип — <code>Logo Orange.png</code>; синий логотип «дом с краном» с макетов не используется; <span class="status status-d">Q-006 закрыт</span>, кроме векторного исходника логотипа. Сравнение ниже сохранено как обоснование обязательных ограничений варианта B.</p>
 
 <div class="grid-2">
   <div class="card">
@@ -514,38 +519,38 @@ tr.hl td{background:#FFF7E6}
         <p style="margin-top:0"><b>Файл:</b> <code>Logo Orange.png</code>, 8334×8334 px, RGBA, прозрачный фон.</p>
         <p><b>Знак:</b> оранжевое кольцо-«C» + шестиугольник + белая стрелка вверх. Общий с макетами элемент — только шестиугольник; wordmark отсутствует.</p>
         <p><b>Измерено (R4 §1.5):</b> ровный однотонный <span class="hex">#FF8700</span> (RGB 255,135,0) — 96 % насыщенных пикселей; белые элементы — чистый <span class="hex">#FFFFFF</span>. <span class="status status-d">ПОДТВЕРЖДЕНО</span></p>
-        <p class="ref">Схема знака — условная перерисовка. Наличие векторного оригинала — часть открытого вопроса Q-006 (ответ заказчика не получен).</p>
+        <p class="ref">Схема знака — условная перерисовка. <b>Выбран заказчиком как логотип продукта</b> (2026-10-21, ядро v1.9 §24.1). Наличие векторного оригинала — оставшаяся открытая часть Q-006; до его получения — растр.</p>
       </div>
     </div>
   </div>
 </div>
 
 <div class="card">
-  <h3 style="margin-top:0">Почему нельзя просто «взять цвет логотипа»</h3>
+  <h3 style="margin-top:0">Почему нельзя просто «взять цвет логотипа» — откуда ограничения выбранного варианта B</h3>
   <ul>
     <li><b>Контраст.</b> Белый текст на #FF8700 даёт <b>2.41:1</b> (R4 §3.4) — ниже AA (4.5) и даже ниже порога крупного текста (3.0). Оранжевый как цвет текста/цены на белом — те же 2.41:1. Для варианта B приходится вводить отдельный «текстовый» оранжевый <span class="hex">#B04E00</span> и CTA с тёмным текстом.</li>
     <li><b>Семантика.</b> Оранжевый (hue ≈ 32°) почти совпадает с цветом предупреждения; в POS статусы «мало», «просрочено», «данные устарели» должны быть отделены от бренда (R4 §3.3).</li>
     <li><b>Дальтонизм.</b> При протан/дейтеранопии «текстовый» оранжевый #B04E00 сливается с warning и error (ΔE 7/3 и 21/9, R4 §3.4).</li>
     <li><b>Утомляемость.</b> Большие светлые насыщенные поверхности при 8–10-часовой смене и ярком освещении зала утомляют сильнее тёмно-синих <span class="status status-t">ТИПОВО</span>.</li>
   </ul>
-  <p>Отсюда решение <span class="status status-d">D-16</span>: рабочий интерактивный цвет — синий #0053FA (из макетов), оранжевый #FF8700 — брендовый акцент в заранее перечисленных местах (раздел 7). Вариант B описан полностью как запасной на случай, если заказчик по Q-006 подтвердит: «актуален только оранжевый логотип, синий недопустим».</p>
+  <p>Исходная редакция <span class="status status-d">D-16</span> поэтому предлагала схему A+ (синий #0053FA — интерактивный, оранжевый — только акцент). Заказчик выбрал оранжевый (ядро v1.9 §24.1), и применяется <b>вариант B со всеми ограничениями 03 §5.3 / DS-098</b> (раздел 7.1): оранжевая заливка <span class="hex">#FF8700</span> — только с тёмным текстом <span class="hex">#1B1F2A</span>; белый текст на оранжевом запрещён; текст, ссылки, цены и полоса выбранного — <span class="hex">#B04E00</span>; <code>warning</code> <span class="hex">#8A6A00</span> / <span class="hex">#FEF9C3</span> — всегда с иконкой и текстом; фокус и <code>info</code> — синие <span class="hex">#1F5FA8</span>; оранжевый никогда не означает статус. Схема A+ — альтернатива, не выбрана.</p>
 </div>
 
 <div class="card">
   <h3 style="margin-top:0">Что в этом документе</h3>
   <table>
-    <tr><th>Раздел</th><th>Вариант A «Синий»</th><th>Вариант B «Оранжевый»</th><th>Схема A+ (итог)</th></tr>
-    <tr><td>Полная таблица токенов</td><td>§1 — ядро §8.1 / R4 §3.2</td><td>§2 — R4 §3.3</td><td>= A + правила <code>brandAccent</code> (§7)</td></tr>
+    <tr><th>Раздел</th><th>Вариант A «Синий» (альтернатива)</th><th>Вариант B «Оранжевый» (выбран)</th><th>Схема A+ (альтернатива, не выбрана)</th></tr>
+    <tr><td>Полная таблица токенов</td><td>§1 — ядро §8.1 / R4 §3.2</td><td>§2 — R4 §3.3 = 03 §5.3</td><td>= A + правила <code>brandAccent</code> (§7.2)</td></tr>
     <tr><td>Контраст WCAG</td><td>§3.1 (42 пары)</td><td>§3.2 (43 пары)</td><td>§3.3 нетекстовый, §3.4 итог</td></tr>
-    <tr><td>Образцы компонентов</td><td colspan="2">§4 — один и тот же набор в двух колонках (переключатель «оба / A / B»)</td><td>§7 — примеры допустимого акцента</td></tr>
+    <tr><td>Образцы компонентов</td><td colspan="2">§4 — один и тот же набор в двух колонках (переключатель «B / оба / A», по умолчанию — B)</td><td>§7.3 — примеры акцента A+</td></tr>
     <tr><td>Дальтонизм</td><td colspan="2">§5 — таблица ΔE из R4 §3.4 + CSS-фильтры (приближение)</td><td>§5 — выводы для правил статусов</td></tr>
-    <tr><td>Сравнение и рекомендация</td><td colspan="3">§6 (критерии R4 §3.5), §7 (рекомендация R4 §3.6 = D-16)</td></tr>
+    <tr><td>Сравнение и итог</td><td colspan="3">§6 (критерии R4 §3.5 + решение заказчика), §7 (итог: вариант B по ядру v1.9 §24.1; ограничения B — §7.1, примеры B — §7.4; A+ — §7.2–7.3 как альтернатива)</td></tr>
   </table>
 </div>
 
 <!-- ======================= 1. ВАРИАНТ A ======================= -->
 <h2 id="s1">1. Вариант A «Синий» — таблица токенов</h2>
-<div class="variant-head"><span class="dot var-a-color"></span><h3 style="margin:0">Основа: макеты заказчика · статус: <span class="status status-d">РЕШЕНИЕ D-16</span> (как база схемы A+)</h3></div>
+<div class="variant-head"><span class="dot var-a-color"></span><h3 style="margin:0">Основа: макеты заказчика · статус: <span class="status status-t">альтернатива, не выбрана</span> (база схемы A+ исходной редакции D-16; ядро v1.9 §24.1)</h3></div>
 <p>Имена токенов — ровно из ядра §8.1 (<code>ds.color.*</code>, в CSS этого файла — <code class="tok">--ds-color-*</code>). HEX — из ядра §8.1; примечания и значения состояний — из R4 §3.2. Отличия от макетов, обоснованные измерениями: вторичный текст ≈ #8B8FA0 (≈ 3.2–3.8:1, FAIL) → <b>#5A6373</b> (6.06:1); зелёная CTA #0D9E48 с белым (3.50:1) → <b>#15803D</b> (5.02:1); сплошная синяя заливка активной категории → светлая <code>primaryContainer</code> + полоса 3 px <code>primary</code>.</p>
 
 <h4>Палитра-свотчи A</h4>
@@ -625,7 +630,7 @@ tr.hl td{background:#FFF7E6}
 
 <!-- ======================= 2. ВАРИАНТ B ======================= -->
 <h2 id="s2">2. Вариант B «Оранжевый» — таблица токенов</h2>
-<div class="variant-head"><span class="dot var-b-color"></span><h3 style="margin:0">Основа: Logo Orange.png · статус: <span class="status status-q">альтернатива по Q-006</span> (описана полностью, не принята в ядре)</h3></div>
+<div class="variant-head"><span class="dot var-b-color"></span><h3 style="margin:0">Основа: Logo Orange.png · статус: <span class="status status-d">РЕШЕНИЕ D-16 в ред. ядра v1.9 §24.1</span> — основная палитра R1 (выбор заказчика 2026-10-21; токены = 03 §5.3)</h3></div>
 <p>Токены — из R4 §3.3 с теми же именами, что в ядре §8.1 (ядро §8.1: «Вариант B — токены из R4 §3.3 с теми же именами»). Ключевые ограничения B: (1) на <code>primary</code> #FF8700 допустим только тёмный текст <code>onPrimary</code> #1B1F2A; (2) для текста, ссылок, иконок, цен и обводок вводится отдельный токен <code class="tok">primaryText</code> #B04E00; (3) warning смещён в жёлто-охристый, чтобы отойти от бренда; (4) фокус-ринг и info — синие.</p>
 
 <h4>Палитра-свотчи B</h4>
@@ -828,7 +833,7 @@ tr.hl td{background:#FFF7E6}
 <h3 id="s3-4">3.4. Итог по контрасту</h3>
 <div class="grid-2">
   <div class="card">
-    <div class="variant-head"><span class="dot var-a-color"></span><h3 style="margin:0">A «Синий»</h3></div>
+    <div class="variant-head"><span class="dot var-a-color"></span><h3 style="margin:0">A «Синий» (альтернатива)</h3></div>
     <ul>
       <li>Все рабочие пары текст/фон — <span class="tag tag-aa">AA</span> или <span class="tag tag-aaa">AAA</span>; FAIL только у неактивных элементов (исключение WCAG) и у text-tertiary на background (разрешён только крупный/полужирный).</li>
       <li>primary как текст (цены, ссылки) — 5.80:1: <b>отдельный «текстовый» цвет не нужен</b>.</li>
@@ -837,29 +842,30 @@ tr.hl td{background:#FFF7E6}
     </ul>
   </div>
   <div class="card">
-    <div class="variant-head"><span class="dot var-b-color"></span><h3 style="margin:0">B «Оранжевый»</h3></div>
+    <div class="variant-head"><span class="dot var-b-color"></span><h3 style="margin:0">B «Оранжевый» (выбран, ядро v1.9 §24.1)</h3></div>
     <ul>
       <li>#FF8700 как текст — <span class="tag tag-fail">FAIL</span> на любом фоне (2.13–2.41:1); белый текст на #FF8700 — <span class="tag tag-fail">FAIL</span> (2.41:1), на pressed — 3.49:1 (только крупный).</li>
       <li>Работает только связка «оранжевая заливка + тёмный текст» (6.83:1) и отдельный <code>primaryText</code> #B04E00 (5.34:1).</li>
       <li>Оранжевая обводка/иконка (2.41:1) не проходит 1.4.11 — не может быть единственным индикатором выбора; фокус-ринг вынужденно синий.</li>
       <li>Семантические и нейтральные пары — на уровне A.</li>
+      <li><b>Поскольку B выбран</b>, перечисленные ограничения обязательны в R1 (03 §5.3, §5.9, DS-098; раздел 7.1 этого документа).</li>
     </ul>
   </div>
 </div>
 
 <!-- ======================= 4. ОБРАЗЦЫ КОМПОНЕНТОВ ======================= -->
 <h2 id="s4">4. Образцы компонентов в обоих вариантах</h2>
-<p>Один и тот же набор образцов отрисован дважды: слева с токенами A, справа — с токенами B. Разметка идентична, отличаются только значения CSS-переменных <code class="tok">--ds-color-*</code> в обёртках <code>.theme-a</code> / <code>.theme-b</code>. Образцы — чистый HTML/CSS, статичные состояния подписаны (hover/pressed также срабатывают при наведении/нажатии мышью). Это <b>иллюстрация токенов</b>, а не спецификация компонентов — размеры, отступы и поведение описывает 03_UX_UI_DESIGN_SYSTEM.md и 02_SCREEN_SPECIFICATION.md.</p>
+<p>Один и тот же набор образцов отрисован дважды: слева с токенами A, справа — с токенами B. Разметка идентична, отличаются только значения CSS-переменных <code class="tok">--ds-color-*</code> в обёртках <code>.theme-a</code> / <code>.theme-b</code>. Образцы — чистый HTML/CSS, статичные состояния подписаны (hover/pressed также срабатывают при наведении/нажатии мышью). Это <b>иллюстрация токенов</b>, а не спецификация компонентов — размеры, отступы и поведение описывает 03_UX_UI_DESIGN_SYSTEM.md и 02_SCREEN_SPECIFICATION.md. <b>По умолчанию показан выбранный вариант B «Оранжевый»</b> (ядро v1.9 §24.1); «Оба варианта» и «Только A» — для сравнения.</p>
 <div class="row" style="margin:8px 0 16px">
   <span style="font-size:13px;font-weight:600">Показать:</span>
-  <span class="switch"><label for="show-both">Оба варианта</label><label for="show-a">Только A «Синий»</label><label for="show-b">Только B «Оранжевый»</label></span>
+  <span class="switch"><label for="show-b">B «Оранжевый» (выбран)</label><label for="show-both">Оба варианта</label><label for="show-a">Только A «Синий»</label></span>
   <span style="font-size:13px;font-weight:600;margin-left:12px">Симуляция цветовосприятия (§5):</span>
   <span class="switch"><label for="cb-none">Норма</label><label for="cb-protan">Протанопия</label><label for="cb-deutan">Дейтеранопия</label><label for="cb-tritan">Тританопия</label></span>
 </div>
 
 <div class="two-col cb-target">
   <div class="col-a">
-    <div class="variant-head"><span class="dot var-a-color"></span><h3 class="cb-label" style="margin:0">A «Синий» · primary #0053FA, белый текст на CTA</h3></div>
+    <div class="variant-head"><span class="dot var-a-color"></span><h3 class="cb-label" style="margin:0">A «Синий» (альтернатива) · primary #0053FA, белый текст на CTA</h3></div>
     <div class="theme theme-a">
 
 <h4>AppButton — primary / tonal / outlined / danger × default / hover / pressed / disabled (+ focus)</h4>
@@ -1040,7 +1046,7 @@ tr.hl td{background:#FFF7E6}
     <div class="note" style="margin-top:10px"><b>Заметки A:</b> цены и ссылки — primary #0053FA (5.80:1); CTA — белый текст; выбранная категория — primaryContainer + полоса primary (сплошная заливка макета оставлена только как сравнение); фокус-ринг — primary. Токенов <code>errorHover/errorPressed</code> в ядре нет — для danger-кнопки показано наложение textPrimary 8 % / 16 % <span class="status status-t">НОВОЕ ИМЯ, предложение для 03</span>.</div>
   </div>
   <div class="col-b">
-    <div class="variant-head"><span class="dot var-b-color"></span><h3 class="cb-label" style="margin:0">B «Оранжевый» · primary #FF8700, тёмный текст на CTA, primaryText #B04E00</h3></div>
+    <div class="variant-head"><span class="dot var-b-color"></span><h3 class="cb-label" style="margin:0">B «Оранжевый» (выбран) · primary #FF8700, тёмный текст на CTA, primaryText #B04E00</h3></div>
     <div class="theme theme-b">
 
 <h4>AppButton — primary / tonal / outlined / danger × default / hover / pressed / disabled (+ focus)</h4>
@@ -1252,11 +1258,13 @@ tr.hl td{background:#FFF7E6}
 <div class="row" style="margin:8px 0 12px">
   <span style="font-size:13px;font-weight:600">Симуляция:</span>
   <span class="switch"><label for="cb-none">Норма</label><label for="cb-protan">Протанопия</label><label for="cb-deutan">Дейтеранопия</label><label for="cb-tritan">Тританопия</label></span>
-  <span class="ref">Фильтр применяется к обоим блокам ниже и к образцам раздела 4.</span>
+  <span class="ref">Фильтр применяется к блокам ниже и к образцам раздела 4.</span>
+  <span style="font-size:13px;font-weight:600;margin-left:12px">Показать:</span>
+  <span class="switch"><label for="show-b">B «Оранжевый» (выбран)</label><label for="show-both">Оба варианта</label><label for="show-a">Только A «Синий»</label></span>
 </div>
 <div class="two-col cb-target">
   <div class="col-a">
-    <div class="variant-head"><span class="dot var-a-color"></span><h3 class="cb-label" style="margin:0">A — статусные цвета</h3></div>
+    <div class="variant-head"><span class="dot var-a-color"></span><h3 class="cb-label" style="margin:0">A — статусные цвета (альтернатива)</h3></div>
     <div class="theme theme-a">
       <h4>Только цвет (так НЕЛЬЗЯ)</h4>
       <div class="cb-grid dont" style="margin-top:12px">
@@ -1278,7 +1286,7 @@ tr.hl td{background:#FFF7E6}
     </div>
   </div>
   <div class="col-b">
-    <div class="variant-head"><span class="dot var-b-color"></span><h3 class="cb-label" style="margin:0">B — статусные цвета</h3></div>
+    <div class="variant-head"><span class="dot var-b-color"></span><h3 class="cb-label" style="margin:0">B — статусные цвета (выбран)</h3></div>
     <div class="theme theme-b">
       <h4>Только цвет (так НЕЛЬЗЯ)</h4>
       <div class="cb-grid dont" style="margin-top:12px">
@@ -1307,45 +1315,71 @@ tr.hl td{background:#FFF7E6}
     <li>Любой статус («в наличии / мало / нет», «оплачен / долг / просрочен», «ok / устарело / ошибка») передаётся <b>минимум двумя каналами</b>: цвет + иконка, и всегда с текстовой подписью; для остатков и долга — ещё и число (<code>tabularFigures</code>).</li>
     <li>Иконки статусов различаются формой: ✓ (success), ▲! (warning), ✕ / ⓘ! (error), ↻ (sync) — не только цветом.</li>
     <li>В A primary (синий) отличим от всех статусов при протан/дейтеранопии (ΔE ≥ 60); единственная слабая пара — primary vs info при тританопии (ΔE 18, редкая форма) — поэтому info никогда не используется на интерактивных элементах рядом с primary без иконки.</li>
-    <li>В B primaryText #B04E00 сливается с warning (ΔE 7/3) и error (ΔE 21/9): оранжевые ссылки/цены рядом с бейджами «мало»/«просрочено» становятся неразличимы — дополнительный аргумент за A+.</li>
-    <li>brandAccent #FF8700 в A+ не несёт смысла статуса, поэтому его неразличимость с warning при дальтонизме не создаёт ошибки интерпретации — при условии, что он никогда не появляется в бейджах, ценах и обводках (раздел 7).</li>
+    <li>В B primaryText #B04E00 сливается с warning (ΔE 7/3) и error (ΔE 21/9): оранжевые ссылки/цены рядом с бейджами «мало»/«просрочено» по цвету неразличимы. Исходная редакция D-16 считала это аргументом за A+; поскольку заказчик выбрал B (ядро v1.9 §24.1), это превращается в обязательное правило основной палитры: <code>primaryText</code> никогда не обозначает статус, статус всегда передаётся иконкой и текстом, <code>warning</code> смещён в жёлтый #8A6A00 и всегда с иконкой (03 §5.5, §5.9, DS-098, A11Y-004).</li>
+    <li>Оранжевый #FF8700 (в B <code>primary</code> = <code>brandAccent</code>) не несёт смысла статуса, поэтому его неразличимость с warning при дальтонизме не создаёт ошибки интерпретации — при условии, что он никогда не появляется в бейджах статусов, ценах (цены — <code>primaryText</code>) и единственных обводках (раздел 7.1; для схемы A+ — правила BA-6…BA-8, раздел 7.2).</li>
   </ul>
 </div>
 
 <!-- ======================= 6. СРАВНИТЕЛЬНАЯ ТАБЛИЦА ======================= -->
 <h2 id="s6">6. Сравнительная таблица по критериям (R4 §3.5)</h2>
+<p>Сравнение выполнено 2026-10-18, до ответа заказчика, и сохранено как обоснование обязательных ограничений варианта B (как в 03 §5.6). Выбор сделан заказчиком — последняя строка таблицы.</p>
 <table>
   <thead><tr><th>Критерий</th><th>A «Синий»</th><th>B «Оранжевый»</th><th>Комментарий</th><th>Преимущество</th></tr></thead>
   <tbody>
     <tr><td>Читаемость цен/итогов цветом бренда</td><td>primary #0053FA как текст 5.80:1 — <span class="tag tag-aa">AA</span></td><td>#FF8700 как текст 2.41:1 — <span class="tag tag-fail">FAIL</span>; нужен отдельный #B04E00 (5.34)</td><td>В B бренд-цвет и «текстовый» бренд-цвет расходятся</td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A</td></tr>
     <tr><td>Контраст белого текста на CTA</td><td>5.80:1 AA (hover/pressed — AAA)</td><td>2.41:1 FAIL → CTA только с тёмным текстом</td><td>Тёмный текст на оранжевом корректен, но нетипичен для POS</td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A</td></tr>
     <tr><td>Нетекстовый контраст иконок/обводок бренда</td><td>да (5.80)</td><td>нет (2.41)</td><td>В B выбранная плитка не может обозначаться только оранжевой обводкой</td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A</td></tr>
-    <tr><td>Ассоциация с брендом</td><td>Соответствует трём макетам</td><td>Соответствует <code>Logo Orange.png</code></td><td><b>Открытый вопрос — какой логотип актуален</b> <span class="status status-q">Q-006</span></td><td>— (зависит от Q-006)</td></tr>
+    <tr><td>Ассоциация с брендом</td><td>Соответствует трём макетам</td><td>Соответствует <code>Logo Orange.png</code></td><td>Актуален оранжевый логотип <code>Logo Orange.png</code> — <span class="status status-d">Q-006 закрыт</span> (ядро v1.9 §24.1)</td><td><span class="dot var-b-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> B</td></tr>
     <tr><td>Утомляемость при 8–10 ч</td><td>Насыщенный синий на больших площадях (активная категория) утомляет; рекомендуется светлая заливка primary-container для выбранных строк, синий — для CTA</td><td>Большие оранжевые поверхности утомляют сильнее (высокая светлота/насыщенность); оранжевый — только акцент</td><td><span class="status status-t">ТИПОВО</span></td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A (с оговоркой)</td></tr>
     <tr><td>Конфликт с семантикой</td><td>Нет (синий — ни успех, ни ошибка; info отделён тёмно-бирюзовым)</td><td>Бренд ≈ warning; требует смещения warning в жёлтый и запрета оранжевых статусов</td><td></td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A</td></tr>
     <tr><td>Дальтонизм</td><td>primary отличим от всех статусов (ΔE ≥ 60), кроме info при тританопии (редкая форма)</td><td>primary-text сливается с warning/error при протан/дейтеранопии</td><td>см. раздел 5</td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A</td></tr>
     <tr><td>Яркое освещение зала</td><td>Тёмно-синий CTA даёт высокий контраст</td><td>Светлый оранжевый CTA при бликах теряет контраст с белым фоном (2.41)</td><td><span class="status status-t">ТИПОВО</span></td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A</td></tr>
     <tr><td>Печать / чёрно-белые документы</td><td>синий → тёмно-серый, читаемо</td><td>оранжевый → светло-серый</td><td>счёт, товарный чек (D-27)</td><td><span class="dot var-a-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> A</td></tr>
+    <tr class="hl"><td><b>Решение заказчика (2026-10-21)</b></td><td>— (не выбран)</td><td>выбран «оранжевый»; логотип <code>Logo Orange.png</code></td><td>Q-006 закрыт, кроме векторного логотипа; D-16 в ред. ядра v1.9 §24.1</td><td><span class="dot var-b-color" style="display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle"></span> <b>B — итог</b></td></tr>
   </tbody>
 </table>
-<p class="ref">Колонка «Преимущество» добавлена в этом документе как сводка; формулировки критериев и оценок — из R4 §3.5 без изменений.</p>
+<p class="ref">Колонка «Преимущество» добавлена в этом документе как сводка; формулировки критериев и оценок — из R4 §3.5 без изменений. Строка «Ассоциация с брендом» и последняя строка обновлены по ответу заказчика (ядро v1.9 §24.1). Как вариант B закрывает критерии, по которым A была сильнее, — 03 §5.6 и раздел 7.1: роли разведены (заливка — <code>primary</code>, всё текстовое и индикаторное — <code>primaryText</code>), в печатных формах цены и итоги — <code>textPrimary</code>, оранжевым печатается только логотип.</p>
 
-<!-- ======================= 7. ИТОГ A+ ======================= -->
-<h2 id="s7">7. Итоговая схема A+ и правила использования brandAccent #FF8700</h2>
-<div class="card" style="border-left:4px solid #0053FA">
-  <h3 style="margin-top:0">Рекомендация (R4 §3.6) = решение ядра <span class="status status-d">D-16</span></h3>
-  <p><b>Рекомендуется вариант A «Синий» как рабочая интерактивная палитра, в комбинированной схеме A+:</b></p>
+<!-- ======================= 7. ИТОГ: ВАРИАНТ B ======================= -->
+<h2 id="s7">7. Итог: выбран вариант B «Оранжевый»; правила оранжевого #FF8700; схема A+ — альтернатива</h2>
+<div class="card" style="border-left:4px solid #FF8700">
+  <h3 style="margin-top:0">Итог = решение заказчика 2026-10-21 · <span class="status status-d">D-16 в ред. ядра v1.9 §24.1</span></h3>
+  <p><b>Основная палитра R1 — вариант B «Оранжевый»</b> (03 §5.3, токены и HEX без изменений; 03 §5.7):</p>
   <ul>
-    <li>нейтральная рабочая база (background #F4F5F7, surface #FFFFFF, text #1B1F2A / #5A6373);</li>
-    <li>интерактивный primary — синий #0053FA (CTA, ссылки, выбранные элементы, фокус);</li>
-    <li>семантические цвета — success #15803D, warning #B45309, error #C62828, info #0E6A8E;</li>
-    <li><b>оранжевый #FF8700 — только брендовый акцент</b> (места перечислены ниже). Никогда — как цвет статуса, цены или единственной обводки.</li>
+    <li>тёплая нейтральная рабочая база — <code>background</code> #F5F5F4, <code>surface</code> #FFFFFF, текст #1B1F2A / #5A6373;</li>
+    <li><code>primary</code> #FF8700 — <b>только заливки</b> (CTA, <code>CartFab</code>, бейдж корзины, выбранный чекбокс, свотч, края диапазона) и <b>только с тёмным текстом</b> <code>onPrimary</code> #1B1F2A (6.83:1); белый текст на оранжевом запрещён (2.41:1);</li>
+    <li><code>primaryText</code> #B04E00 — текст, ссылки, цены, итоги, активные иконки, обводки и полоса выбранного элемента (5.34:1 на <code>surface</code>);</li>
+    <li>фокус и <code>info</code> — синие #1F5FA8 (контрастны к оранжевому);</li>
+    <li>семантические цвета — success #15803D, <b>warning #8A6A00 / #FEF9C3</b> (смещён в жёлтый, всегда с иконкой и текстом), error #C62828;</li>
+    <li><b>оранжевый никогда не означает статус</b>; выделения — светлым <code>primaryContainer</code> #FFEFD9, а не большими оранжевыми поверхностями;</li>
+    <li>логотип — оранжевый «C + шестиугольник + стрелка» (<code>Logo Orange.png</code>, <code>brandAccent</code> #FF8700 = <code>primary</code>); синий логотип «дом с краном» с макетов не используется.</li>
   </ul>
-  <p><b>Обоснование:</b> A проходит AA для всех текстовых и нетекстовых пар без дополнительных «текстовых» версий цвета; не конфликтует с семантикой; подтверждён макетами; оранжевый сохраняет узнаваемость бренда без потери доступности. Если заказчик подтвердит, что оранжевый логотип — единственный актуальный бренд и синий недопустим, применяется вариант B со всеми ограничениями §2 (тёмный текст на CTA, #B04E00 для текста, жёлтый warning).</p>
-  <p><b>Решение заказчика требуется по</b> <span class="status status-q">Q-006</span>: (1) актуальный логотип; (2) допустимость синего как интерактивного цвета при оранжевом логотипе; (3) нужна ли тёмная тема (D-43: не в R1); (4) есть ли векторный логотип.</p>
+  <p><b>Основание:</b> выбор заказчика («оранжевый», ядро v1.9 §24.1). Риски, выявленные сравнением (§3, §5, §6), закрываются обязательными ограничениями 03 §5.3, правилом ролей 03 §5.9 и требованием DS-098 — сводка в 7.1. Макеты остаются эталоном <b>компоновки</b>, а не цвета.</p>
+  <p><b>Схема A+ — альтернатива, не выбрана.</b> Исходная рекомендация R4 §3.6 (вариант A «Синий» как интерактивная палитра + оранжевый только как акцент) в R1 не применяется; её правила BA-1…BA-12 и примеры сохранены ниже (7.2, 7.3) для сравнения и на случай пересмотра решения заказчиком (03 §5.7, <code>DsColors.lightA</code>).</p>
+  <p><b>Открыто:</b> только векторный исходник логотипа (оставшаяся часть <span class="status status-q">Q-006</span>; до получения — растр). Тёмная тема — вне R1 (<span class="status status-d">D-43</span>).</p>
 </div>
 
-<h3>7.1. Правила использования <code class="tok">ds.color.brandAccent</code> #FF8700 (схема A+)</h3>
+<h3>7.1. Обязательные ограничения и роли цвета варианта B (сводка 03 §5.3, §5.8, §5.9, DS-098)</h3>
+<table>
+  <thead><tr><th>Роль</th><th>Токен варианта B</th><th>Контраст (03 §5.4.2, §5.4.5)</th><th>Разрешено / запрещено</th></tr></thead>
+  <tbody>
+    <tr><td>Заливка основной CTA, <code>CartFab</code>, бейджа корзины, выбранного чекбокса, свотча, краёв диапазона</td><td><code>primary</code> #FF8700 (hover #F07A00, pressed #D96A00)</td><td class="num">—</td><td><span class="tag tag-yes">разрешено</span> только с <code>onPrimary</code></td></tr>
+    <tr><td>Текст и иконка на оранжевой заливке</td><td><code>onPrimary</code> #1B1F2A</td><td class="num">6.83 / 5.87 / 4.71:1</td><td><span class="tag tag-no">белый запрещён</span> (2.41:1)</td></tr>
+    <tr><td>Текст-ссылка, кнопки text/outlined/tonal, цена, итог, активная иконка, подпись активной вкладки и пункта навигации</td><td><code>primaryText</code> #B04E00</td><td class="num">5.34:1 (surface), 4.89:1 (background)</td><td><span class="tag tag-no">#FF8700 как текст запрещён</span> (2.41:1)</td></tr>
+    <tr><td>Обводка поля в фокусе, обводка и полоса выбранного, индикатор вкладки, прогресс, радио, трек переключателя</td><td><code>primaryText</code></td><td class="num">5.34:1 (1.4.11)</td><td><span class="tag tag-no"><code>primary</code> как единственный индикатор запрещён</span></td></tr>
+    <tr><td>Выделение: выбранная строка, плитка, чип, пилюля навигации</td><td><code>primaryContainer</code> #FFEFD9</td><td class="num">текст ≥ 4.56:1</td><td><span class="tag tag-yes">разрешено</span> всегда с индикатором формы (DS-036)</td></tr>
+    <tr><td>Кольцо клавиатурного фокуса</td><td><code>focus</code> #1F5FA8</td><td class="num">6.44:1</td><td><span class="tag tag-yes">синее</span></td></tr>
+    <tr><td>Информация, синхронизация</td><td><code>info</code> #1F5FA8 / <code>infoContainer</code> #E0ECFB</td><td class="num">6.44 / 5.39:1</td><td><span class="tag tag-no">оранжевый не применяется</span></td></tr>
+    <tr><td>Предупреждение, «мало», «долг к сроку», устаревшие данные</td><td><code>warning</code> #8A6A00 / <code>warningContainer</code> #FEF9C3</td><td class="num">5.07 / 4.72:1</td><td><span class="tag tag-yes">всегда иконка + текст</span></td></tr>
+    <tr><td>Любой статус (остаток, долг, заказ, синхронизация)</td><td>success / warning / error / info</td><td class="num">—</td><td><span class="tag tag-no">оранжевый никогда не статус</span></td></tr>
+    <tr><td>Белый текст и знак на тёмном (снекбар, тултип, галерея, видоискатель)</td><td><code>onInverseSurface</code> #FFFFFF</td><td class="num">16.46:1</td><td><code>onPrimary</code> B тёмный и здесь не используется</td></tr>
+    <tr><td>Логотип, персонаж (≤ 20 % площади), иллюстрации пустых состояний (10–20 %)</td><td><code>brandAccent</code> #FF8700 (= <code>primary</code>); текст внутри — <code>onBrandAccent</code></td><td class="num">—</td><td><span class="tag tag-yes">разрешено</span> декоративно</td></tr>
+    <tr><td>Большие оранжевые поверхности (фон экранов, панелей, баннеров, сайдбара)</td><td>—</td><td class="num">—</td><td><span class="tag tag-no">запрещено</span> (утомляемость, блики <span class="status status-t">ТИПОВО</span>)</td></tr>
+  </tbody>
+</table>
+<p class="ref">Канонический текст ролей и ограничений — 03 §5.3, §5.8, §5.9 и DS-098; таблица — сводка для этого документа, значения скопированы без изменений.</p>
+
+<h3>7.2. Правила использования <code class="tok">ds.color.brandAccent</code> #FF8700 в схеме A+ (альтернатива, не выбрана; в R1 не применяются)</h3>
 <table>
   <thead><tr><th>#</th><th>Где</th><th>Разрешено / запрещено</th><th>Условие</th><th>Экран / компонент</th></tr></thead>
   <tbody>
@@ -1358,13 +1392,13 @@ tr.hl td{background:#FFF7E6}
     <tr><td>BA-7</td><td>Цена, сумма, итог, скидка</td><td><span class="tag tag-no">запрещено</span></td><td>2.41:1 на белом — FAIL; цены — primary или textPrimary</td><td><code>PriceText</code>, <code>CartSummary</code></td></tr>
     <tr><td>BA-8</td><td>Единственная обводка/заливка выбранного элемента, фокус-ринг</td><td><span class="tag tag-no">запрещено</span></td><td>Не проходит 1.4.11; выбор — primary + primaryContainer, фокус — focus #0053FA</td><td><code>PaymentMethodCard</code>, <code>CategorySidebarItem</code>, <code>VariantSelector</code></td></tr>
     <tr><td>BA-9</td><td>Текст любого размера на белом/сером фоне; белый текст на оранжевом</td><td><span class="tag tag-no">запрещено</span></td><td>2.41:1 / 2.21:1 — FAIL даже для крупного текста</td><td>везде</td></tr>
-    <tr><td>BA-10</td><td>Кнопки (primary/secondary/outlined/danger), ссылки, иконки действий</td><td><span class="tag tag-no">запрещено</span></td><td>Интерактивный цвет R1 — только primary #0053FA; исключение возможно лишь при переходе на вариант B по Q-006</td><td><code>AppButton</code>, <code>AppIconButton</code></td></tr>
+    <tr><td>BA-10</td><td>Кнопки (primary/secondary/outlined/danger), ссылки, иконки действий</td><td><span class="tag tag-no">запрещено</span></td><td>В схеме A+ интерактивный цвет — только primary #0053FA. Заказчик выбрал вариант B (ядро v1.9 §24.1): в R1 оранжевая заливка кнопок допустима с тёмным текстом, ссылки и иконки действий — <code>primaryText</code> #B04E00 (раздел 7.1)</td><td><code>AppButton</code>, <code>AppIconButton</code></td></tr>
     <tr><td>BA-11</td><td>Большие заливки (фон сайдбара, панели корзины, шапки)</td><td><span class="tag tag-no">запрещено</span></td><td>Утомляемость при 8–10 ч, блики в зале <span class="status status-t">ТИПОВО</span></td><td><code>AdaptiveScaffold</code>, <code>CartPanel</code></td></tr>
     <tr><td>BA-12</td><td>Тёмная тема (R2)</td><td>— </td><td>Токен сохраняется; при проектировании dark-темы контраст #FF8700 на тёмном фоне проверяется отдельно (D-43)</td><td>—</td></tr>
   </tbody>
 </table>
 
-<h3>7.2. Примеры допустимого акцента в A+</h3>
+<h3>7.3. Примеры допустимого акцента в A+ (альтернатива, не выбрана)</h3>
 <div class="theme theme-a">
   <div class="row vt" style="gap:24px">
     <div class="stack">
@@ -1404,6 +1438,41 @@ tr.hl td{background:#FFF7E6}
   </div>
 </div>
 
+<h3>7.4. Примеры применения оранжевого в выбранном варианте B</h3>
+<div class="theme theme-b">
+  <div class="row vt" style="gap:24px">
+    <div class="stack">
+      <span class="lbl" style="text-align:left">логотип в шапке — <code>brandAccent</code> (знак условный)</span>
+      <div class="surface" style="display:flex;align-items:center;gap:16px;padding:10px 14px">
+        <span class="brand-logo"><svg viewBox="0 0 120 120" aria-hidden="true"><path d="M98 36 A44 44 0 1 0 98 84" fill="none" stroke="#FF8700" stroke-width="13"/><polygon points="60,34 82,47 82,73 60,86 38,73 38,47" fill="#FF8700"/><path d="M50 76 L72 46" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/></svg><span style="color:var(--ds-color-textPrimary)">Оптомстрой</span></span>
+        <span class="sync sync-ok"><svg><use href="#i-check"/></svg>Обновлено 09:41</span>
+      </div>
+    </div>
+    <div class="stack">
+      <span class="lbl" style="text-align:left">CTA — <code>primary</code> + тёмный <code>onPrimary</code>; цена — <code>primaryText</code></span>
+      <div class="surface stack" style="gap:8px">
+        <span class="pprice tnum" style="font-size:18px;font-weight:700;color:var(--ds-color-primaryText)">2 350 сом</span>
+        <span class="btn btn-primary">Оформить заказ</span>
+        <span class="btn btn-outlined s">Отложить</span>
+      </div>
+    </div>
+    <div class="stack">
+      <span class="lbl" style="text-align:left">выбранная категория — <code>primaryContainer</code> + полоса <code>primaryText</code>; статус — иконка + текст</span>
+      <span class="cat is-selected"><svg><use href="#i-cat"/></svg>Смесители<span class="cnt">128</span></span>
+      <span class="badge badge-low"><svg><use href="#i-warn"/></svg>Мало · 3</span>
+    </div>
+    <div class="stack">
+      <span class="lbl" style="text-align:left">так нельзя (DS-098)</span>
+      <div class="dont stack" style="padding-top:12px">
+        <span class="btn" style="background:#FF8700;color:#FFFFFF">Белый на оранжевом</span>
+        <span class="pprice tnum" style="color:#FF8700;font-weight:700;font-size:18px">2 350 сом</span>
+        <span class="badge" style="background:#FF8700;color:#1B1F2A">Мало · 3</span>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="ref">Иллюстрация токенов, а не спецификация компонентов; размеры и поведение — 03 §9 и 02.</p>
+
 <!-- ======================= 8. СТАТУС И ТРАССИРОВКА ======================= -->
 <h2 id="s8">8. Статус, открытые вопросы, трассировка</h2>
 <div class="grid-2">
@@ -1415,7 +1484,9 @@ tr.hl td{background:#FFF7E6}
       <tr><td>Коэффициенты контраста §3</td><td><span class="status status-d">ПОДТВЕРЖДЕНО: R4 §3.4, contrast.py</span></td></tr>
       <tr><td>Значения ΔE при дальтонизме §5.1</td><td><span class="status status-t">ТИПОВО: модель Machado 2009 — приближение</span></td></tr>
       <tr><td>CSS-фильтры симуляции §4–5</td><td><span class="status status-t">ТИПОВО: иллюстрация, не замена проверки с пользователями</span></td></tr>
-      <tr><td>Схема A+, роль brandAccent</td><td><span class="status status-d">РЕШЕНИЕ: D-16</span> + <span class="status status-q">Q-006</span></td></tr>
+      <tr><td>Вариант B «Оранжевый» — основная палитра R1; логотип <code>Logo Orange.png</code></td><td><span class="status status-d">РЕШЕНИЕ: D-16 в ред. ядра v1.9 §24.1 (заказчик, 2026-10-21)</span></td></tr>
+      <tr><td>Ограничения и роли цвета варианта B (§7.1)</td><td><span class="status status-d">РЕШЕНИЕ: ядро v1.9 §24.1; 03 §5.3, §5.8, §5.9, DS-098</span></td></tr>
+      <tr><td>Схема A+, роль brandAccent (BA-1…BA-12)</td><td><span class="status status-t">АЛЬТЕРНАТИВА, НЕ ВЫБРАНА: исходная редакция D-16; ядро v1.9 §24.1</span></td></tr>
       <tr><td>Утомляемость, блики, печать (критерии §6)</td><td><span class="status status-t">ТИПОВО</span></td></tr>
       <tr><td>Токены <code>iconButtonPressed</code>, <code>onSuccess</code>, <code>onError</code>, <code>onBrandAccent</code></td><td><span class="status status-d">РЕШЕНИЕ: ядро §17.5</span></td></tr>
       <tr><td>Токены <code>inverseSurface</code>, <code>onInverseSurface</code></td><td><span class="status status-d">РЕШЕНИЕ: ядро §18.2 п.15</span></td></tr>
@@ -1425,10 +1496,10 @@ tr.hl td{background:#FFF7E6}
     </table>
   </div>
   <div class="card">
-    <h3 style="margin-top:0">Открытые вопросы</h3>
+    <h3 style="margin-top:0">Вопросы</h3>
     <table>
       <tr><th>ID</th><th>Вопрос</th><th>Влияние на этот документ</th></tr>
-      <tr><td><span class="status status-q">Q-006</span></td><td>Какой логотип актуален (синий «дом с краном» vs оранжевый); допустим ли синий интерактивный цвет; нужна ли тёмная тема; есть ли векторный логотип</td><td>Выбор A+ (по умолчанию) или B; состав BA-1…BA-5; формат логотипа для splash/шапки</td></tr>
+      <tr><td><span class="status status-d">Q-006</span> закрыт, кроме вектора</td><td>Какой логотип актуален (синий «дом с краном» vs оранжевый); допустим ли синий интерактивный цвет; нужна ли тёмная тема; есть ли векторный логотип. <b>Ответ заказчика 2026-10-21:</b> «оранжевый» — логотип <code>Logo Orange.png</code>, палитра B (ядро v1.9 §24.1); тёмная тема — вне R1 (D-43). <span class="status status-q">Открыто:</span> векторный исходник логотипа</td><td>Выбран B (раздел 7); A+ — альтернатива; формат логотипа для splash/шапки — растр до получения вектора</td></tr>
       <tr><td><span class="status status-q">Q-008</span></td><td>Сенсорные ли POS-мониторы, модели устройств</td><td>Проверка контраста при бликах на реальных экранах (критерий «яркое освещение», ТИПОВО)</td></tr>
       <tr><td><span class="status status-q">Q-035</span></td><td>Стиль персонажа авторизации, наличие иллюстраций</td><td>Правила BA-3, BA-4 (где именно появляется оранжевый акцент)</td></tr>
       <tr><td><span class="status status-q">Q-019</span></td><td>Образцы печатных форм, принтеры</td><td>Критерий «печать / чёрно-белые документы» (§6)</td></tr>
@@ -1436,15 +1507,15 @@ tr.hl td{background:#FFF7E6}
     <h3>Трассировка</h3>
     <table>
       <tr><th>Раздел документа</th><th>Источник</th></tr>
-      <tr><td>§0</td><td>R0 §14, R4 §1.1–1.6, Q-006</td></tr>
-      <tr><td>§1</td><td>R0 §8.1, R4 §3.2</td></tr>
-      <tr><td>§2</td><td>R4 §3.3, R0 §8.1 («Вариант B — токены из R4 §3.3»)</td></tr>
+      <tr><td>§0</td><td>R0 §14, §24.1, R4 §1.1–1.6, Q-006</td></tr>
+      <tr><td>§1</td><td>R0 §8.1, R4 §3.2; 03 §5.2 (историческая альтернатива)</td></tr>
+      <tr><td>§2</td><td>R4 §3.3, R0 §8.1 («Вариант B — токены из R4 §3.3»), R0 §24.1; 03 §5.3</td></tr>
       <tr><td>§3</td><td>R4 §3.4 (таблицы A, B, нетекстовый), R4 §2.3 (пороги WCAG)</td></tr>
       <tr><td>§4</td><td>R0 §8.5 (имена компонентов), R4 §6 (состояния)</td></tr>
       <tr><td>§5</td><td>R4 §3.4 (симуляция), R4 §2.3–2.4 п. 7</td></tr>
-      <tr><td>§6</td><td>R4 §3.5</td></tr>
-      <tr><td>§7</td><td>R4 §3.6, R0 D-16, D-40, D-43</td></tr>
-      <tr><td>§9</td><td>R0 §17.2, §17.5, §18.1, §18.2 п.15 (журнал сверки)</td></tr>
+      <tr><td>§6</td><td>R4 §3.5; 03 §5.6; R0 §24.1 (решение заказчика)</td></tr>
+      <tr><td>§7</td><td>R0 §24.1 (итог B), 03 §5.3, §5.7–5.9, DS-098 (§7.1, §7.4); R4 §3.6, R0 D-16 (исходная редакция), D-40, D-43 (§7.2–7.3, A+)</td></tr>
+      <tr><td>§9</td><td>R0 §17.2, §17.5, §18.1, §18.2 п.15, §24.1, §24.5 (журнал сверки)</td></tr>
     </table>
     <p class="ref">Связанные документы ТЗ: 03_UX_UI_DESIGN_SYSTEM.md (DS-, A11Y-), 02_SCREEN_SPECIFICATION.md (UI-), 14_OPEN_QUESTIONS.md (Q-006), 15_DECISION_LOG.md (ADR-016). Соседние визуальные материалы: <code>visual/screen-map.md</code>, <code>visual/navigation.md</code>, <code>visual/wireframes.html</code>, <code>visual/components-states.md</code>, <code>visual/responsive-spec.md</code>.</p>
   </div>
@@ -1459,11 +1530,16 @@ tr.hl td{background:#FFF7E6}
     <tr><td>v1.3 · §18.2 п.15</td><td>Добавлены токены <code>inverseSurface #1B1F2A</code> и <code>onInverseSurface #FFFFFF</code> (снэкбар, тултип)</td><td>CSS <code>:root, .theme-a</code>; §1 таблица токенов A; §8 «Статус утверждений»</td></tr>
     <tr><td>v1.3 · §18.1 (владелец токенов — 03)</td><td>Не канонизированные имена (<code>errorHover/errorPressed</code>, <code>favorite</code> в B) оставлены с меткой «НОВОЕ ИМЯ / ТИПОВО» и адресованы автору 03 как владельцу словаря токенов</td><td>§4 «Заметки A»; §8 «Статус утверждений»</td></tr>
     <tr><td>v1.3 · §18.2 п.1–14, 16</td><td>Не относятся к палитре (drift, токены сессии, API, env, роли, вопросы) — изменений не требуется</td><td>—</td></tr>
+    <tr><td>v1.9 · §24.1 (ответы заказчика 2026-10-21)</td><td>Итог документа переписан: основная палитра R1 — вариант B «Оранжевый» (D-16 в ред. ядра v1.9), логотип — <code>Logo Orange.png</code>; схема A+ помечена «альтернатива, не выбрана»; токены и HEX обоих вариантов не изменены; все таблицы сохранены</td><td><code>&lt;title&gt;</code>, meta description; шапка (итог-карточка, статус, версия 1.2); §0; заголовки §1, §2, §3.4, §4, §5.2; §7 (итог, новая сводка 7.1, A+ → 7.2–7.3 как альтернатива, новые примеры B 7.4); §8; подвал</td></tr>
+    <tr><td>v1.9 · §24.1 (переключатель)</td><td>Переключатель вариантов по умолчанию показывает B (<code>checked</code> перенесён с <code>show-both</code> на <code>show-b</code>); кнопка «B «Оранжевый» (выбран)» первая; переключатель продублирован в §5.2</td><td>радиокнопки перед <code>&lt;main&gt;</code>; §4; §5.2</td></tr>
+    <tr><td>v1.9 · §24.1 (ограничения B; владелец — 03)</td><td>Добавлена сводка обязательных ограничений и ролей цвета B по 03 §5.3, §5.8, §5.9, DS-098 (значения скопированы); §5.3 и BA-10 переформулированы: аргумент «за A+» заменён обязательными правилами B</td><td>§5.3; §7.1; §7.2 (BA-10)</td></tr>
+    <tr><td>v1.9 · §24.1, §24.5 (вопросы)</td><td>Q-006 — «закрыт ответом заказчика, кроме векторного логотипа»; строка «Ассоциация с брендом» в §6 → преимущество B; добавлена строка «Решение заказчика (2026-10-21)»</td><td>шапка; §0 (карточка логотипа B); §6; §8 «Вопросы»</td></tr>
+    <tr><td>v1.9 · §24.2–§24.4 (регистрация, API 1С, QR)</td><td>Не относятся к палитре — изменений не требуется</td><td>—</td></tr>
   </tbody>
 </table>
 
 <div class="footer">
-  <p><b>Wireframe / структурная схема для ТЗ — не финальный интерфейс.</b> Документ не является кодом приложения и не описывает реализацию; все имена токенов, компонентов и экранов — канонические имена ядра R0. Версия 1.1 · 2026-10-19 (сверка с ядром R0 v1.3) · ЭТАП 1 (ТЗ) · «Оптомстрой POS».</p>
+  <p><b>Wireframe / структурная схема для ТЗ — не финальный интерфейс.</b> Документ не является кодом приложения и не описывает реализацию; все имена токенов, компонентов и экранов — канонические имена ядра R0. Версия 1.2 · 2026-10-21 (сверка с ядром R0 v1.9 §24.1: выбран вариант B «Оранжевый»; v1.1 — 2026-10-19, ядро v1.3) · ЭТАП 1 (ТЗ) · «Оптомстрой POS».</p>
 </div>
 </main>
 </body>

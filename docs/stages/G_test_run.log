@@ -1,0 +1,1087 @@
+# G_test_run.log — журнал прогонов интеграции backend этапа G (RM-G-009 backend; RM-G-001…RM-G-008, RM-G-011…RM-G-014)
+
+Дата: 2026-10-24. Коммит: 343db65 (рабочее дерево не закоммичено — этапы B–G). Машина разработчика: Windows 11,
+Node 24.11, embedded PostgreSQL 17.10 (без Docker), `TEMP=TMP=D:/optomstroy/.tmp`. Все сценарии с 1С — на
+FakeOnecGateway / ScriptedOnecGateway (синтетика кассира `SyntheticCashier`) и управляемом фейке HTTP-сервиса
+расширения (`pos-api/scripts/pos_fake_onec.ts --cashier`) поверх фикстур `contracts/onec/fixtures`: **на фикстурах,
+не реальная интеграция** (тестовой копии 1С нет). Формат: команда (каталог pos-api, если не указано иное) → выдержка
+вывода (ANSI убраны) → код выхода. Ранние прогоны с ошибками описаны в заголовках записей — они показывают, что
+чинилось.
+
+## 0. Что сделано интеграцией (сведение модулей, портов, DI)
+
+1. Порты `common/ports` — все привязаны реальными реализациями (проверка — `test/e2e/cashier`, «DI этапа G»):
+   `CREDIT_DECISION_SERVICE` → `SnapshotCreditDecisionService` (fail-closed заглушка F больше не используется),
+   `RECEIVABLES_SNAPSHOT_PORT` → `ReceivablesSnapshotService`, `DISCOUNT_POLICY_PORT` → `DiscountPolicyService`,
+   `CUSTOMER_READER` → `PgCustomerReader`, `AUDIT_QUERY_PORT` → `AuditQueryService`, `TRANSACTIONS_WRITER` →
+   `TransactionJournal` (по умолчанию реестра); порты F — без изменений. Конфликтов маршрутов нет: `GET
+   /search/customers` и `GET /customers/{id}/orders` обслуживают только модули `customers`.
+2. Удалён мёртвый код F после переноса поиска и истории в `customers` (GQ-CUS-11 → GQ-INT-07):
+   `src/cart/search-customers.{controller,service}.ts`, `CustomerOrdersController` и `OrderQueryService.customerHistory`.
+3. `lint`: исправлено `no-useless-assignment` в `src/admin/audit/audit-chain.verifier.ts`; недостижимая ветвь
+   разбора аргументов CLI (не-Error от `parseArgs`) упрощена.
+4. Миграции: 0014–0016 агентами не создавались (обоснования — GQ-FND-09, GQ-CUS-*, GQ-CRD-01/06); применяются
+   0001…0013, 0017 (возвраты/транзакции), 0018 (системные события аудита). `docs/erd/schema_v1.sql` пересобран
+   штатной командой (`UPDATE_SCHEMA_DUMP=1 npm run test:db`).
+5. `package.json`: в `test:all` добавлены `test:receivables`, `test:discounts`, `test:transactions`, `test:returns`;
+   новые скрипты `test:cov:g` (`vitest.config.cov-g.ts`), `test:e2e:cashier` (настоящие процессы), `stack:cashier-smoke`.
+6. Тесты: `test/e2e/rbac-matrix` (операции G: 26 в контракте, все реализованы, лишних маршрутов нет, HTTP-матрица
+   123 операции × 6 ролей без 5xx), `test/e2e/smoke` (экспорт OpenAPI = контракт 1.2.0 с перечнем исключений),
+   `test/e2e/cashier/**` (сквозные сценарии кассира; `cashier-process.e2e-spec.ts` — local-stack `cashier-smoke`),
+   `src/admin/audit/audit-chain.verifier.spec.ts`. Трассировка 12 → тесты: `scripts/trace_test_ids.py --stage G`.
+7. local-stack: режим `cashier-smoke` и `serve --cashier-fixtures` (фейк 1С в режиме кассира, загрузка мира кассира
+   синхронизацией pos-worker); `vitest.config.cov-e.ts` — обработчики синхронизации G исключены из регрессии E (они в
+   `test:cov:g`).
+8. Вопросы ТЗ интеграции — `docs/stages/G_spec_questions.md`, раздел «G-be-int» (GQ-INT-01…08).
+
+## 1. Итог
+
+| Проверка | Итог |
+|---|---|
+| миграции 0001…0018: run-sql --repeat-strict, check_tables, check_ddl_behavior | 0 изменений; 63/64 таблицы, 45 enum; DDL-сценарии OK |
+| test:db (src/db/schema ↔ БД, schema_v1.sql) | 14/14 |
+| lint, build, madge, check:permissions | зелёные (0 циклов; 77 кодов, 7 ролей) |
+| test:all (C–G) | код 0 |
+| e2e rbac-matrix / smoke (OpenAPI 1.2.0) / cashier | зелёные; G — 26 операций, HTTP-матрица 738 ячеек |
+| test:cov:g | 94.22 % строк; каждый каталог G ≥ 80 %; критичные — 100 % ветвей и строк |
+| test:cov:d / test:cov:e / test:cov:f | пороги выполнены (F: критичные файлы — 100 % ветвей) |
+| test:e2e:pos, test:e2e:cashier | 1/1, 1/1 |
+| local-stack smoke / auth-smoke / catalog-smoke / pos-smoke / cashier-smoke | 10/10, 15/15, 22/22, 30/30, 22/22 (+ serve --cashier-fixtures) |
+| trace_test_ids --stage G | 125 ID: 104 с тестом (12 частично), 21 not_done с причиной, 0 без причины (после исправлений ревью G; до них итог прогона 05:59 — 125 / 98 / 27 / 0; первая строка таблицы — 95 / 85 / 10 — была промежуточным backend-итогом) |
+| check_no_double_money.sh | OK |
+| check_secrets.py | код 0, 0 находок (2695 файлов; после исправлений ревью G; итог прогона 06:03 — 0 находок, код 0; прежняя строка «код 1, 2 находки» — промежуточный итог до исправления тестов pos-app) |
+
+## 2. Прогоны
+
+### 2026-10-24 02:31 — миграции 0001…0018 (12 файлов, prod-схема), повтор, check_tables
+$ node tools/pg/run-sql.mjs --repeat-strict pos-api/migrations/*.sql (0001 0002 0003 0005 0006 0007 0009 0011 0012 0013 0017 0018) --check scripts/check_tables.sql
+```
+[apply] pos-api\migrations\0017_returns_transactions.sql: 9 команд — OK (5 мс)
+[apply] pos-api\migrations\0018_audit_system_events.sql: 8 команд — OK (3 мс)
+  pos-api\migrations\0017_returns_transactions.sql:14: BEGIN
+pos-api\migrations\0017_returns_transactions.sql:17: NOTICE:  relation "return_requests_number_seq" already exists, skipping
+  pos-api\migrations\0017_returns_transactions.sql:17: CREATE SEQUENCE
+  pos-api\migrations\0017_returns_transactions.sql:19: CREATE FUNCTION
+  pos-api\migrations\0017_returns_transactions.sql:34: GRANT
+  pos-api\migrations\0017_returns_transactions.sql:35: GRANT
+  pos-api\migrations\0017_returns_transactions.sql:36: GRANT
+pos-api\migrations\0017_returns_transactions.sql:39: NOTICE:  relation "return_requests_author_created_idx" already exists, skipping
+  pos-api\migrations\0017_returns_transactions.sql:39: CREATE INDEX
+pos-api\migrations\0017_returns_transactions.sql:42: NOTICE:  relation "transactions_amount_idx" already exists, skipping
+  pos-api\migrations\0017_returns_transactions.sql:42: CREATE INDEX
+  pos-api\migrations\0017_returns_transactions.sql:44: COMMIT
+[repeat] pos-api\migrations\0017_returns_transactions.sql: 9 команд, затронуто строк DML: 0
+  pos-api\migrations\0018_audit_system_events.sql:18: BEGIN
+  pos-api\migrations\0018_audit_system_events.sql:21: CREATE FUNCTION
+  pos-api\migrations\0018_audit_system_events.sql:38: CREATE FUNCTION
+  pos-api\migrations\0018_audit_system_events.sql:45: CREATE FUNCTION
+  pos-api\migrations\0018_audit_system_events.sql:80: CREATE TRIGGER
+  pos-api\migrations\0018_audit_system_events.sql:86: CREATE FUNCTION
+  pos-api\migrations\0018_audit_system_events.sql:111: CREATE TRIGGER
+  pos-api\migrations\0018_audit_system_events.sql:114: COMMIT
+[repeat] pos-api\migrations\0018_audit_system_events.sql: 8 команд, затронуто строк DML: 0
+[repeat] ИТОГ: 0 изменений (схема и данные совпадают); команд выполнено: 479, строк DML: 0
+[check] scripts\check_tables.sql
+scripts\check_tables.sql:115: NOTICE:  check_tables: OK — 63 из 63 таблиц, лишних нет (prod-схема, dev_outbox нет)
+scripts\check_tables.sql:161: NOTICE:  check_tables: OK — 45 из 45 enum-типов 07 §6.1
+[check] scripts\check_tables.sql: OK
+```
+код выхода: 0
+
+### 2026-10-24 02:31 — то же, dev/test-схема + check_ddl_behavior
+$ node tools/pg/run-sql.mjs --repeat-strict --set app.env=test pos-api/migrations/*.sql pos-api/db/migrations-dev/0001_dev_outbox.sql --check scripts/check_tables.sql --check pos-api/test/sql/check_ddl_behavior.sql
+```
+[repeat] ИТОГ: 0 изменений (схема и данные совпадают); команд выполнено: 490, строк DML: 0
+[check] scripts\check_tables.sql
+scripts\check_tables.sql:115: NOTICE:  check_tables: OK — 64 из 64 таблиц, лишних нет (dev/test-схема, dev_outbox есть)
+scripts\check_tables.sql:161: NOTICE:  check_tables: OK — 45 из 45 enum-типов 07 §6.1
+[check] scripts\check_tables.sql: OK
+[check] pos-api\test\sql\check_ddl_behavior.sql
+pos-api\test\sql\check_ddl_behavior.sql:398: NOTICE:  check_ddl_behavior: OK — негативных сценариев 62, позитивных инвариантов 6
+[check] pos-api\test\sql\check_ddl_behavior.sql: OK
+```
+код выхода: 0
+
+### 2026-10-24 02:31 — test:db с пересборкой docs/erd/schema_v1.sql (штатная команда)
+$ env UPDATE_SCHEMA_DUMP=1 npm run test:db
+```
+ Test Files  2 passed (2)
+      Tests  14 passed (14)
+```
+код выхода: 0
+
+### 2026-10-24 02:32 — test:db (повтор без UPDATE_SCHEMA_DUMP: src/db/schema ↔ БД, DDL ↔ schema_v1.sql)
+$ npm run test:db
+```
+ Test Files  2 passed (2)
+      Tests  14 passed (14)
+```
+код выхода: 0
+
+### 2026-10-24 02:51 — денежный гейт (double в деньгах)
+$ bash scripts/check_no_double_money.sh
+```
+check_no_double_money: OK — 0 совпадений (pos-app/lib: 620 файлов, pos-api/src: 577 файлов)
+```
+код выхода: 0
+
+### 2026-10-24 02:51 — проверка секретов
+$ python -I -X utf8 scripts/check_secrets.py
+```
+pos-app/test/features/customers/presentation/customers_screens_test.dart:326: [generic-secret-assignment] step…**** (13 симв.)
+pos-app/test/features/customers/support/customers_harness.dart:465: [generic-secret-assignment] step…**** (13 симв.)
+check_secrets: режим git ls-files + новые неигнорируемые; файлов проверено: 2619; находок: 2
+```
+код выхода: 1
+
+### 2026-10-24 02:59 — local-stack cashier-smoke (настоящие процессы; первый прогон 18/22 — возврат сверх порога 10 000 у кассира и выборка аудита по первой странице; исправлено в сценарии)
+$ node scripts/local-stack.mjs cashier-smoke
+```
+[local-stack] migrate: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate: migrate: готово applied=["0001_init.sql","0002_rbac_seed.sql","0003_auth_refinements.sql","0005_search.sql","0006_catalog_sort_indexes.sql","0007_catalog_sync.sql","0009_cart.sql","0011_payments.sql","0012_payments_qr_ref_history.sql","0013_sync_error_code_qr_paid_after_void.sql","0017_returns_transactions.sql","0018_audit_system_events.sql"]
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] cashier-fixtures: администратор синхронизации +996777000908 создан (тестовые данные)
+[local-stack] cashier-fixtures: sync customers → success {"fetched":90,"upserted":90,"deleted":1,"errors":0}
+[local-stack] cashier-fixtures: sync receivables → success {"fetched":27,"upserted":27,"errors":0}
+[local-stack] cashier-fixtures: клиентов 1С 30, снимков долга 27, реализаций 43, правил скидок 5 (тестовые данные)
+[local-stack] PASS мир кассира: синхронизация customers и receivables pos-worker из плана обмена фейка 1С — customers=success receivables=success counts={"customers":30,"receivables":27,"shipments":43,"discounts":5}
+[local-stack] PASS каталог (200 SKU) и сценарные клиенты в реплике — вариантов=4 overdue=01a16afd-3368-733e-b217-b15e66e65d36 buyer=01a16afd-3387-78b3-af79-b24e6a8c1979 debtWithinLimit=01a16afd-3357-7e53-8530-bffb68bf1e64
+[local-stack] PASS сессии: seller, cashier, senior_seller — seller=true cashier=true senior=true
+[local-stack] PASS GET /search/customers: кассир — по 4 цифрам телефона; продавец — только полный номер (400 search_scope_role) — cashier=200 found=1 seller=400 VALIDATION_FAILED
+[local-stack] PASS GET /customers/{id}/receivables: снимок 1С (просрочка 8000.00, свежий); seller → 403 (Q-017) — cashier=200 overdue={"amount":"8000.00","currency":"KGS"} stale=false seller=403
+[local-stack] PASS GET /customers/{id}/orders: история из реализаций 1С (shipments) в глубине SALES_HISTORY_MONTHS — 200 items=12 historyFrom=2025-10-24
+[local-stack] PASS GET /discounts/rules: правила 1С и лимит роли — 200 rules=2 limit=5.00
+[local-stack] PASS POST /orders credit клиенту с просрочкой → 422 CREDIT_BLOCKED (creditReason=overdue), без 503 — 422 CREDIT_BLOCKED overdue
+[local-stack] PASS разрешение старшего: без step-up → 403 STEP_UP_REQUIRED; со step-up (PIN) → заказ в долг, transactions credit_sale_approved, аудит credit.sale_approved (pin) — noStep=403 STEP_UP_REQUIRED order=201  tx=order_created,credit_sale_approved audit=1
+[local-stack] PASS оплата: кассир меняет способ на наличные (FLOW-024.S2) → заказ → POST /orders/{id}/payments → received — order=201  pay=200 received
+[local-stack] PASS POST /customers → 201 pending → outbox → pos-worker → POST /pos/v1/customers фейка 1С → onec_ref, confirmed — create=201 pending db=confirmed ref=c3d4e5f6-00ff-4000-8000-000000000001
+[local-stack] PASS возврат 1: draft 201 → submit (step-up) submitted → accept старшим (step-up) accepted → reject (принят в POS) rejected — draft=201  submit=200 submitted  accept=200 accepted reject=200 rejected
+[local-stack] PASS возврат 2: submit → reject старшим; журнал: return_requested по каждой заявке; outbox в 1С нет (RETURNS_FROM_POS_ENABLED=false) — submit=200 reject=200 rejected return_requested=2
+[local-stack] PASS GET /transactions (admin): order_created, credit_sale_approved, payment_received, return_requested; summary — 200 kinds=credit_sale_approved,order_created,payment_received,refund,return_requested summary={"count":7,"sumIn":{"amount":"7141.00","currency":"KGS"},"sumOut":{"amount":"927.50","currency":"KGS"}}
+[local-stack] PASS GET /transactions (seller): только свои, без summary — 200 items=0
+[local-stack] PASS GET /admin/audit-logs: credit.sale_blocked, credit.sale_approved, payment.received, customer.created, return.submitted, return.status_changed; chainOk у всех строк — 200 rows=200 chainOk=true found={"credit.sale_blocked":1,"credit.sale_approved":1,"payment.received":1,"customer.created":3,"return.submitted":2,"return.status_changed":5}
+[local-stack] PASS scripts/verify_audit_chain.ts (DATABASE_URL_FILE) → код 0: цепочка и якоря аудита целы — код 0: ЦЕПОЧКА ЦЕЛА
+[local-stack] PASS GET /admin/reports/sales-summary: итог = Σ order_created журнала transactions (заказы периода без отмен) — 200 report=3570.50/2 journal=3570.50/2
+[local-stack] PASS GET /admin/reports/receivables: итог = Σ положительных сальдо снимков 1С — 200 report=357800.00 db=357800.00
+[local-stack] PASS GET /pos/dashboard: кассир → 200; продавец → 403 — cashier=200 seller=403
+[local-stack] PASS режим клиента: регистрация по телефону клиента 1С → proposed → самоподтверждение → confirmed — reg=201  match=200 proposed confirm=200 confirmed
+[local-stack] PASS режим клиента: своя карточка и долг → 200; чужая карточка → 404; журнал транзакций и дашборд → 403 — own=200 receivables=200 foreign=404 transactions=403 dashboard=403
+[local-stack] cashier-smoke итог: 22/22 PASS (на фикстурах, не реальная интеграция)
+```
+код выхода: 0
+
+### 2026-10-24 03:00 — local-stack serve --cashier-fixtures (стенд для Flutter-интегратора; --ttl 40)
+$ node scripts/local-stack.mjs serve --cashier-fixtures --catalog-fixtures=200 --ready-file .tmp/glog/serve.ready --ttl 40
+```
+[local-stack] cashier-fixtures: администратор синхронизации +996777000908 создан (тестовые данные)
+[local-stack] fake-onec http://127.0.0.1:8091/ut11/hs [режим кассира] (тестовые данные; управляющие вызовы http://127.0.0.1:8091/__fake/*)
+[local-stack] cashier-fixtures: sync customers → success {"fetched":90,"upserted":90,"deleted":1,"errors":0}
+[local-stack] cashier-fixtures: sync receivables → success {"fetched":27,"upserted":27,"errors":0}
+[local-stack] cashier-fixtures: клиентов 1С 30, снимков долга 27, реализаций 43, правил скидок 5 (тестовые данные)
+[local-stack] READY http://127.0.0.1:3000 (фото и API через http://127.0.0.1:8080) (журнал API: D:\optomstroy\.tmp\pos-local-stack-XXXX\api.log); Ctrl+C — остановка
+[local-stack] POS-FIXTURES: pos-worker (журнал D:\optomstroy\.tmp\pos-local-stack-XXXX\worker.log), фейк 1С http://127.0.0.1:8091/ut11/hs, управление http://127.0.0.1:8091/__fake/state (тестовые данные)
+[local-stack] CASHIER-FIXTURES: мир кассира загружен синхронизацией; сценарные клиенты — http://127.0.0.1:8091/__fake/cashier/state; администратор синхронизации +996777000908 (PIN 930517, тестовые данные)
+GET /__fake/cashier/state → 200 (scenarios: debtWithinLimit +996700123456 …); GET /health/ready → 200
+```
+код выхода: 0 (остановка по --ttl)
+
+### 2026-10-24 03:06 — регрессия: local-stack smoke
+$ node scripts/local-stack.mjs smoke
+```
+[local-stack] migrate: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embed
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользовател
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользовател
+[local-stack] PASS GET /health — 200 {"status":"ok","apiVersion":"1.0","serverTime":"2026-10-23T23:01:17.208Z"}
+[local-stack] PASS GET /health/ready — 200 {"status":"ok","checks":{"db":"ok","worker":"ok","sync":{"stale":false}}}
+[local-stack] PASS /health не проверяет версию (RM-C-015 п. 4) — 200
+[local-stack] PASS /health/ready не проверяет версию (RM-C-015 п. 4) — 200
+[local-stack] PASS windows 1.1.0 < MIN windows=1.2.0 → 426 APP_UPDATE_REQUIRED + X-Min-App-Version — 426 code=APP_UPDATE_REQUIRED X-Min-App-Version=windows=1.2.0
+[local-stack] PASS android 1.1.0 ≥ MIN android=1.0.0 → не 426 (маршрута на этапе C нет → 404) + X-Min/X-Recommended — 401 code=UNAUTHENTICATED X-Min-App-Version=android=1.0.0 X-Recommended-App-Version=android=1.1.0
+[local-stack] PASS GET /api/v1/openapi.json (windows 1.2.0) → 200 + X-Min-App-Version + X-Request-Id — 200 openapi=3.0.3 X-Min-App-Version=windows=1.2.0 X-Request-Id=01a16aff-472b-759a-9cda-1a85c9be57c2
+[local-stack] PASS защищённый путь без токена → не 200 (deny by default) — 401 code=UNAUTHENTICATED
+[local-stack] PASS APP_READ_ONLY=true: GET /health/ready → 200 — 200
+[local-stack] PASS APP_READ_ONLY=true: POST /api/v1/orders → 503 APP_READ_ONLY или 404 (на этапе C мутирующих маршрутов нет) — 503 code=APP_READ_ONLY
+[local-stack] итог: 10/10 PASS
+```
+код выхода: 0
+
+### 2026-10-24 03:06 — регрессия: local-stack auth-smoke
+$ node scripts/local-stack.mjs auth-smoke
+```
+[local-stack] migrate: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embed
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользовател
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользовател
+[local-stack] PASS клиент +9967*****03: POST /auth/otp/request → 202 — 202
+[local-stack] PASS клиент: POST /auth/otp/verify → 200 registration_required — 200 status=registration_required
+[local-stack] PASS клиент: POST /registration/complete → 201, customer active — 201 kind=customer status=active customerMatch=none 
+[local-stack] PASS клиент: GET /me → 200, pinSet=true — 200 pinSet=true
+[local-stack] PASS клиент +9967*****56 с карточкой 1С: 201, customerMatch=proposed (SCR-06) — 201 customerMatch.status=proposed nextStep=wait_admin 
+[local-stack] PASS приглашённый +9967*****02: verify → authenticated staff/seller, roleSource=invitation, nextStep=set_pin — 200 status=authenticated kind=staff roles=["seller"] roleSource=invitation nextStep=set_pin
+[local-stack] PASS приглашённый до PIN: прочие маршруты → 403 FORBIDDEN reason=pin_not_set — 403 code=FORBIDDEN reason=pin_not_set
+[local-stack] PASS приглашённый: первый POST /me/pin без step-up → 204 — 204 
+[local-stack] PASS приглашённый: GET /me → pinSet=true, ФИО приглашения — 200 pinSet=true fullName=совпадает
+[local-stack] PASS admin: OTP → POST /me/pin → POST /auth/step-up (pin) → stepUpToken — verify=200 pin=204 stepUp=200 
+[local-stack] PASS admin: POST /admin/invitations без X-Step-Up-Token → 403 STEP_UP_REQUIRED — 403 STEP_UP_REQUIRED
+[local-stack] PASS admin: POST /admin/invitations (cashier) → 201 — 201 
+[local-stack] PASS приглашённый администратором: OTP → staff/cashier, nextStep=set_pin — 200 roles=["cashier"] nextStep=set_pin
+[local-stack] PASS неверный код → 422 OTP_INVALID с attemptsLeft — 422 OTP_INVALID attemptsLeft=4
+[local-stack] PASS JWT alg=none → 401 UNAUTHENTICATED — 401 UNAUTHENTICATED
+[local-stack] auth-smoke итог: 15/15 PASS
+```
+код выхода: 0
+
+### 2026-10-24 03:06 — регрессия: local-stack catalog-smoke
+$ node scripts/local-stack.mjs catalog-smoke
+```
+[local-stack] migrate: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embed
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользовател
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользовател
+[local-stack] PASS синхронизация через FakeOnecGateway: прогоны каталога sync_runs = success — units=success, categories=success, products=success, variants=success, attributes=success, barcodes=success, warehouses=success, p
+[local-stack] PASS реплика: живых товаров ≥ 95 % от 500 SKU — products=496
+[local-stack] PASS сессии: seller (приглашение), admin, customer (регистрация) — seller=true roles=["seller"] admin=true customer=true
+[local-stack] PASS GET /catalog/categories → 200 + ETag — 200 items=11 etag=есть
+[local-stack] PASS If-None-Match → 304 — 304
+[local-stack] PASS GET /catalog/products?limit=50 → 200, страница + nextCursor, цены строкой "1234.50" + KGS — 200 items=50 hasMore=true price={"amount":"28547.50","currency":"KGS"}
+[local-stack] PASS курсор: вторая страница без повторов — 200 items=50 повторов=0
+[local-stack] PASS GET /catalog/products/{id} → 200 карточка — 200 sku=HB4328
+[local-stack] PASS просмотр карточки → «Недавние» (08 §4.4.3, @RecordsRecentView) — recent содержит товар: true
+[local-stack] PASS GET /search/products?q=F4252 → matchType=sku — 200 first=F4252 matchType=sku
+[local-stack] PASS GET /search/products?q=смеситель фрап → найдено (fts/trgm) — 200 items=9 matchType=fts
+[local-stack] PASS GET /search/barcode/{value} → 200 товар и вариант — 200 barcodeType=EAN13
+[local-stack] PASS POST /inventory/check (3 варианта) → 200 ok/shortages/unavailable — 200 ok=false shortages=2 unavailable=0
+[local-stack] PASS избранное: двойной PUT → 204/204, в списке один раз — 204/204 в списке=1
+[local-stack] PASS избранное: DELETE → 204, товара нет — 204
+[local-stack] PASS GET /catalog/sync/products: выгрузка до hasMore=false = реплика (живые товары), ключи ответа ровно 5 — 200 страниц=3 items=496 БД=496 ключи=deleted,hasMore,items,nextCursor,serverTi
+[local-stack] PASS повтор с since последней страницы → 0 новых — 200 items=0
+[local-stack] PASS GET /catalog/sync/prices (seller) → 200 — 200 items=200
+[local-stack] PASS customer (customer_stock_display=status): остатки без quantity/reserved/available — 200 items=20 с количествами=0
+[local-stack] PASS фото (синтетические) через мини-прокси: /images/{sha}/card → 200 image/webp, immutable — 200 image/webp public, max-age=31536000, immutable 1226 байт
+[local-stack] PASS primaryImage.cardUrl из API открывается через прокси (/images/{sha}/card) — /images/5ae8662bd0ff3f488a4e6a7dfe63745e69d97fcbb1481e040a2b99de845cab10/card → 200
+[local-stack] PASS GET /sync/status (admin) → 200 — 200 overall=ok entities=17
+[local-stack] catalog-smoke итог: 22/22 PASS (на фикстурах, не реальная интеграция)
+```
+код выхода: 0
+
+### 2026-10-24 03:06 — npm run test:e2e:pos (сборка + настоящие процессы)
+$ npm run test:e2e:pos
+```
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+```
+код выхода: 0
+
+### 2026-10-24 03:06 — npm run test:e2e:cashier (сборка + настоящие процессы)
+$ npm run test:e2e:cashier
+```
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+```
+код выхода: 0
+
+### 2026-10-24 03:08 — npm run lint (tsc --noEmit + eslint src/test/scripts + prettier --check)
+$ npm run lint
+```
+Checking formatting...
+All matched files use Prettier code style!
+```
+код выхода: 0
+
+### 2026-10-24 03:08 — npm run build
+$ npm run build
+```
+> tsc -p tsconfig.build.json
+```
+код выхода: 0
+
+### 2026-10-24 03:08 — npm run madge (циклы импорта)
+$ npm run madge
+```
+> madge --circular --extensions ts src
+Processed 597 files (7.8s) 
+✔ No circular dependency found!
+```
+код выхода: 0
+
+### 2026-10-24 03:08 — npm run check:permissions (permissions.yaml ↔ permissions.generated.ts)
+$ npm run check:permissions
+```
+> node scripts/gen-permissions.mjs --check
+gen-permissions: актуально (77 кодов, 7 ролей)
+```
+код выхода: 0
+
+### 2026-10-24 03:08 — сверка контракта OpenAPI 1.2.0 (сборка частей ↔ pos-api.v1.yaml)
+$ python -I -X utf8 scripts/build_openapi.py --check
+```
+INFO: части: 7 (00_root.yaml, 10_auth.yaml, 20_catalog.yaml, 30_cart_orders.yaml, 40_payments_pos_returns.yaml, 50_customers.yaml, 60_sync_admin_ops.yaml); путей: 119; операций: 141; компонентов: schemas=315, responses=17, parameters=36, headers=14, securitySchemes=4
+OK: D:\optomstroy\contracts\openapi\pos-api.v1.yaml актуален; sha256=164a2242986818ac291e517619d8349efd7dd1d409bbb74de6092403ead13899
+```
+код выхода: 0
+
+### 2026-10-24 03:08 — пути и методы API ↔ ядро/08/13
+$ python -I -X utf8 scripts/check_api_paths.py
+```
+INFO: обязательных операций/путей: 236; исключено как R2/неканоническое: 4; запрещённых шаблонов: 18
+OK: все обязательные пути и методы есть; запрещённых и лишних операций нет
+```
+код выхода: 0
+
+### 2026-10-24 03:08 — x-permissions/x-roles контракта ↔ permissions.yaml
+$ python -I -X utf8 scripts/check_api_permissions.py
+```
+ИТОГ: ошибок 0, предупреждений 9
+```
+код выхода: 0
+
+### 2026-10-24 03:08 — словари OpenAPI
+$ python -I -X utf8 scripts/check_openapi_dictionaries.py
+```
+ИТОГ: ошибок нет
+```
+код выхода: 0
+
+### 2026-10-24 03:08 — env-пример ↔ схема env pos-api (16 §4.3)
+$ python -I -X utf8 scripts/check_env_example.py
+```
+check_env_example: ожидается 97, в .env.example 97; недостающих 0, лишних 0; ключей схемы pos-api проверено 114; ошибок 0
+```
+код выхода: 0
+
+### 2026-10-24 03:08 — трассировка 12 → тесты, этап G (RM-G-009 п. 1)
+$ python -I -X utf8 scripts/trace_test_ids.py --stage G --summary
+```
+По группам (охват / с тестом / not_done / без теста и причины):
+  DEBT: 14 / 12 / 2 / 0
+  DISC: 12 / 12 / 0 / 0
+  CASH: 16 / 13 / 3 / 0
+  CUST: 17 / 16 / 1 / 0
+  TXN: 11 / 8 / 3 / 0
+  RET: 15 / 14 / 1 / 0
+  ADMIN: 10 / 10 / 0 / 0
+ИТОГ этапа G: ID в охвате 95; с тестом 85 (T-ID в тесте 40, трасса 45; из них частично 16); not_done с причиной 10; без теста и причины 0
+```
+код выхода: 0
+
+### 2026-10-24 02:56…03:20 — полный регресс этапов C–G: npm run test:all (новые наборы G: test:customers, test:receivables, test:discounts, test:transactions, test:returns, test:reports, test:customer-mode, test:cashier-foundation; e2e: rbac-matrix с операциями G, экспорт OpenAPI, test/e2e/cashier)
+$ npm run test:all
+```
+START 2026-10-24 02:56:52
+> pos-api@0.1.0 test:all
+> pos-api@0.1.0 test
+ Test Files  16 passed (16)
+      Tests  171 passed (171)
+> pos-api@0.1.0 test:integrations
+ Test Files  5 passed (5)
+      Tests  38 passed (38)
+> pos-api@0.1.0 test:worker
+ Test Files  3 passed (3)
+      Tests  22 passed (22)
+> pos-api@0.1.0 test:db
+ Test Files  2 passed (2)
+      Tests  14 passed (14)
+> pos-api@0.1.0 test:foundation
+ Test Files  6 passed (6)
+      Tests  57 passed (57)
+> pos-api@0.1.0 test:auth
+ Test Files  4 passed (4)
+      Tests  56 passed (56)
+> pos-api@0.1.0 test:admin
+ Test Files  9 passed (9)
+      Tests  68 passed (68)
+> pos-api@0.1.0 test:customers
+ Test Files  6 passed (6)
+      Tests  62 passed (62)
+> pos-api@0.1.0 test:profile
+ Test Files  3 passed (3)
+      Tests  27 passed (27)
+> pos-api@0.1.0 test:registration
+ Test Files  1 passed (1)
+      Tests  19 passed (19)
+> pos-api@0.1.0 test:settings
+ Test Files  2 passed (2)
+      Tests  17 passed (17)
+> pos-api@0.1.0 test:sms
+ Test Files  4 passed (4)
+      Tests  65 passed (65)
+> pos-api@0.1.0 test:onec
+[onec-acceptance] ИТОГ (мок HS на фикстурах contracts/onec/fixtures — репетиция, НЕ реальная интеграция): PASS 5, FAIL 0, SKIP 0, вручную 15
+ Test Files  4 passed (4)
+      Tests  36 passed (36)
+> pos-api@0.1.0 test:sync-apply
+ Test Files  5 passed (5)
+      Tests  34 passed (34)
+> pos-api@0.1.0 test:sync
+ Test Files  2 passed (2)
+      Tests  27 passed (27)
+> pos-api@0.1.0 test:catalog
+ Test Files  3 passed (3)
+      Tests  33 passed (33)
+> pos-api@0.1.0 test:catalog-sync
+ Test Files  2 passed | 1 skipped (3)
+      Tests  16 passed | 1 skipped (17)
+> pos-api@0.1.0 test:favorites
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+> pos-api@0.1.0 test:search
+ Test Files  2 passed (2)
+      Tests  53 passed (53)
+> pos-api@0.1.0 test:images
+ Test Files  4 passed (4)
+      Tests  25 passed (25)
+> pos-api@0.1.0 test:sales-domain
+ Test Files  10 passed (10)
+      Tests  151 passed (151)
+> pos-api@0.1.0 test:cart
+ Test Files  6 passed (6)
+      Tests  56 passed (56)
+> pos-api@0.1.0 test:payments
+ Test Files  8 passed (8)
+      Tests  89 passed (89)
+> pos-api@0.1.0 test:orders
+ Test Files  12 passed (12)
+      Tests  97 passed (97)
+> pos-api@0.1.0 test:documents
+ Test Files  4 passed (4)
+      Tests  27 passed (27)
+> pos-api@0.1.0 test:notifications
+ Test Files  2 passed (2)
+      Tests  14 passed (14)
+> pos-api@0.1.0 test:cashier-foundation
+ Test Files  3 passed (3)
+      Tests  51 passed (51)
+> pos-api@0.1.0 test:receivables
+ Test Files  4 passed (4)
+      Tests  142 passed (142)
+> pos-api@0.1.0 test:discounts
+ Test Files  2 passed (2)
+      Tests  24 passed (24)
+> pos-api@0.1.0 test:transactions
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+> pos-api@0.1.0 test:returns
+ Test Files  2 passed (2)
+      Tests  19 passed (19)
+> pos-api@0.1.0 test:reports
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+> pos-api@0.1.0 test:customer-mode
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+> pos-api@0.1.0 test:e2e
+ Test Files  11 passed | 3 skipped (14)
+      Tests  102 passed | 7 skipped (109)
+END 2026-10-24 03:20:48
+```
+код выхода: 0
+
+### 2026-10-24 03:26 — e2e: матрица RBAC (все реализованные операции D–G × 6 ролей; x-roles ⇔ permissions.yaml; без 5xx), экспорт OpenAPI = контракт 1.2.0, сквозные сценарии кассира test/e2e/cashier
+Первые прогоны (в составе test:e2e) — 3 падения, исправлены: (1) «маршруты ⊆ контракт»: POST /registration/customer-match (ответ 405, RM-D-005) и служебный /api/v1/openapi.json — перечень ROUTES_OUTSIDE_CONTRACT; (2) GET /discounts/rules × customer без привязки — 403 объектного правила 08 §4.12.2, неотличимый от RBAC (GQ-INT-02); (3) «контракт ⊆ экспорт»: /images/{sha}/{size} (pos-proxy) и /integrations/onec/* (C-2) — исключения (GQ-INT-03). Набор cashier: AdminModule требует PgBossService — стенд с pg-boss; две записи customer.created (прикладная + триггер БД) — проверка прикладной.
+$ npx vitest run --config ./vitest.config.e2e.ts test/e2e/rbac-matrix.e2e-spec.ts test/e2e/smoke.e2e-spec.ts test/e2e/cashier/cashier-flow.e2e-spec.ts --reporter=verbose
+```
+stderr | test/e2e/rbac-matrix.e2e-spec.ts > RBAC: матрица операция × роль из контракта и permissions.yaml (RM-D-006 п. 1; T-SEC-018/019) > T-SEC-018: у каждого маршрута объявлена политика; коды маршрута ⊆ x-permissions контракта
+[RBAC] маршрутов 146; операций контракта 141; этапа D не реализованы: —; этапа E: 25 операций, не реализованы: —
+[RBAC] этап F: 34 операций контракта, не реализованы: POST /payments/qr/webhook (ожидаемо: G/R2)
+[RBAC] этап G: 26 операций контракта, не реализованы: —
+ ✓ test/e2e/rbac-matrix.e2e-spec.ts > RBAC: матрица операция × роль из контракта и permissions.yaml (RM-D-006 п. 1; T-SEC-018/019) > T-SEC-018: у каждого маршрута объявлена политика; коды маршрута ⊆ x-permissions контракта 4ms
+ ✓ test/e2e/rbac-matrix.e2e-spec.ts > RBAC: матрица операция × роль из контракта и permissions.yaml (RM-D-006 п. 1; T-SEC-018/019) > T-SEC-019 (статически, весь контракт): x-roles ⇔ права permissions.yaml; owner/admin без кассовых операций 
+stderr | test/e2e/rbac-matrix.e2e-spec.ts > RBAC: матрица операция × роль из контракта и permissions.yaml (RM-D-006 п. 1; T-SEC-018/019) > HTTP: каждая реализованная операция этапов D, E, F и G × 6 ролей — вне x-roles 403 FORBIDDEN, в x-rol
+[RBAC] HTTP-матрица: 123 операций × 6 ролей = 738 ячеек
+ ✓ test/e2e/rbac-matrix.e2e-spec.ts > RBAC: матрица операция × роль из контракта и permissions.yaml (RM-D-006 п. 1; T-SEC-018/019) > HTTP: каждая реализованная операция этапов D, E, F и G × 6 ролей — вне x-roles 403 FORBIDDEN, в x-roles нет
+ ✓ test/e2e/cashier/cashier-flow.e2e-spec.ts > DI этапа G: все порты привязаны реальными реализациями > SalesPortRegistry: каждый токен common/ports привязан модулем-владельцем или реализацией по умолчанию (не заглушкой) 2ms
+ ✓ test/e2e/cashier/cashier-flow.e2e-spec.ts > клиент с долгом → продажа в долг заблокирована → разрешение старшего (step-up) → оплата → транзакция → аудит > полный сценарий FLOW-024 (10 PAY-031, PAY-032, DEBT-010; TXN-001; 11 §7.2) и сверк
+ ✓ test/e2e/cashier/cashier-flow.e2e-spec.ts > возврат: черновик → submit → accept / reject (RM-G-005; RET-001…RET-010; RETURNS_FROM_POS_ENABLED=false) > T-RET-003, T-RET-008: количество ≤ отгружено − возвращено − в других заявках; две пара
+ ✓ test/e2e/cashier/cashier-flow.e2e-spec.ts > возврат: черновик → submit → accept / reject (RM-G-005; RET-001…RET-010; RETURNS_FROM_POS_ENABLED=false) > accept и reject старшим со step-up; return_requested в журнале; аудит; outbox в 1С не 
+ ✓ test/e2e/cashier/cashier-flow.e2e-spec.ts > создание клиента → outbox → 1С (RM-G-001; CUST-010…CUST-015) > кассир создаёт клиента: 201 pending → outbox customer → 1С 201 → onec_ref; поиск по телефону; аудит 44ms
+ ✓ test/e2e/cashier/cashier-flow.e2e-spec.ts > отчёты сходятся с данными (T-ADMIN-006) > receivables: итог = Σ положительных сальдо снимков 1С (без пометки удаления); роли 24ms
+ ✓ test/e2e/cashier/cashier-flow.e2e-spec.ts > режим клиента (RM-G-014; CUST-023, CUST-024; T-SEC-016) > confirmed — своя карточка, долг и история; proposed/чужая — 404; кассовые и админ-операции — 403 88ms
+ ✓ test/e2e/cashier/cashier-flow.e2e-spec.ts > результаты 1С по клиенту: очереди pg-boss pos-worker и сверщик потерянных результатов (customers/jobs) > мост регистрирует очереди (гонка createQueue), события применяются идемпотентно; сверщик
+ ✓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > GET /health → 200 {status: ok} 21ms
+ ✓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > GET /health/ready → 200: БД и pg-boss готовы (миграции применены, worker-очереди доступны) 10ms
+ ✓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > X-Request-Id клиента сохраняется сквозь proxy и api (эхо 08 §2.3, RM-C-010; C-MJ-04) 12ms
+ ✓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > каждый ответ несёт X-Request-Id (UUID) и заголовки безопасности 6ms
+ ✓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > GET /api/v1/openapi.json → 200, документ OpenAPI 3.0 (OPENAPI_PUBLIC=true на тестовом контуре) 5ms
+ ✓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > неизвестный маршрут API → 404 problem+json с code NOT_FOUND 5ms
+ ✓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > версия клиента ниже минимальной → 426 APP_UPDATE_REQUIRED и X-Min-App-Version 4ms
+ ✓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > входящий обмен 1С выключен по умолчанию: /api/v1/integrations/onec/ping → 404 (16 §4.6) 4ms
+ ✓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > защищённый маршрут без токена не отдаёт данные (deny by default, RBAC) 4ms
+ ✓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > мигратор (RM-C-006) на пустой БД > первый прогон применяет 0001 (DDL RM-B-005) и 0002 (seed RBAC RM-B-008), повторный — 0 изменений 0ms
+ ✓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > мигратор (RM-C-006) на пустой БД > роли и права из seed RBAC на месте 136ms
+ ✓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > APP_READ_ONLY=true на полном AppModule и PostgreSQL 17 (RM-C-005 п. 4, ADR-083) > мутация вне перечня (POST /orders) → 503 APP_READ_ONLY; из перечня (POST
+ ✓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > APP_READ_ONLY=true на полном AppModule и PostgreSQL 17 (RM-C-005 п. 4, ADR-083) > RM-C-015 п. 5: MIN_APP_VERSION = N−1 (1.2.0) → N (1.3.0) и N−1 (1.2.0) п
+ ✓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > экспорт OpenAPI ⊆ контракт (RM-C-005 п. 5 — замена openapi-diff, C-MJ-06) > каждая операция /api/v1/openapi.json есть в contracts/openapi/pos-api.v1.yaml 
+ ↓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > pos-proxy (Caddy) тестового контура > HTTP → HTTPS: редирект 301/308 на https
+ ↓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > pos-proxy (Caddy) тестового контура > proxy скрывает Server и запрещает встраивание (X-Frame-Options: DENY)
+ ↓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > pos-proxy (Caddy) тестового контура > всё вне /api/*, /health*, /images/* → 404 от proxy
+ ↓ test/e2e/smoke.e2e-spec.ts > smoke тестового контура (в процессе, PostgreSQL 17) > pos-proxy (Caddy) тестового контура > readiness снаружи закрыт allow-list Caddy, кроме внутренних сетей (ARCH-006; C-MN-03)
+ Test Files  3 passed (3)
+      Tests  25 passed | 4 skipped (29)
+```
+код выхода: 0
+
+### 2026-10-24 03:26 — регрессия F: npm run test:cov:f (≥ 80 % строк по каталогам F; критичные файлы F — 100 % ветвей)
+$ npm run test:cov:f && node scripts/coverage-by-dir.mjs coverage/stage-f src/orders/documents
+```
+ Test Files  76 passed | 3 skipped (79)
+      Tests  794 passed | 7 skipped (801)
+Statements   : 90.94% ( 4798/5276 )
+Branches     : 83.42% ( 4101/4916 )
+Functions    : 94.9% ( 932/982 )
+Lines        : 94.18% ( 4289/4554 )
+src/cart                  95.04 %  1034/1088
+src/common               100.00 %  151/151
+src/notifications         92.01 %  507/551
+src/orders                93.15 %  1319/1416
+src/orders/documents      95.87 %  395/412
+src/payments              93.85 %  916/976
+src/sales-domain          97.31 %  362/372
+всего                     94.18 %
+критичные файлы F (coverage-summary.json):
+src/cart/checkout.service.ts: branches 100% (237/237), lines 100%
+src/common/idempotency/fingerprint.ts: branches 100% (20/20), lines 100%
+src/common/idempotency/idempotency.context.ts: branches 100% (2/2), lines 100%
+src/common/idempotency/idempotency.interceptor.ts: branches 100% (48/48), lines 100%
+src/common/idempotency/idempotency.repository.ts: branches 100% (14/14), lines 100%
+src/common/idempotency/idempotency.service.ts: branches 100% (13/13), lines 100%
+src/orders/order-create.service.ts: branches 100% (310/310), lines 100%
+src/orders/worker/order-onec-results.handler.ts: branches 100% (89/89), lines 100%
+src/payments/app/payments-port.service.ts: branches 100% (62/62), lines 100%
+src/payments/app/payments.service.ts: branches 100% (201/201), lines 100%
+src/sales-domain/cart/cart-status.ts: branches 100% (13/13), lines 100%
+src/sales-domain/idempotency/sales-idempotency.ts: branches 100% (12/12), lines 100%
+src/sales-domain/order/order-status.ts: branches 100% (94/94), lines 100%
+src/sales-domain/outbox/outbox-status.ts: branches 100% (33/33), lines 100%
+src/sales-domain/payment/payment-status.ts: branches 100% (67/67), lines 100%
+
+```
+код выхода: 0 (пороги выполнены; мёртвый код F — search-customers и CustomerOrdersController — удалён интеграцией, GQ-INT-07)
+
+### 2026-10-24 03:34 — покрытие модулей G (RM-G-009 п. 2–3): npm run test:cov:g — ≥ 80 % строк всего и по каждому каталогу G; критичные (долг, скидка сверх лимита, цепочка аудита) — 100 % ветвей и строк
+Первый прогон (02:43) — код 1: src/customers/jobs/** 55 % строк (мост pg-boss и сверщик результатов 1С без тестов), audit-chain.verifier.ts — 87.71 % строк / 73.77 % ветвей. Добавлены: src/admin/audit/audit-chain.verifier.spec.ts (unit: разбор audit_verify_chain, якоря, отчёт, CLI на подменённом pg.Client), сценарий «результаты 1С по клиенту» в test/e2e/cashier; недостижимая ветвь parseArgs (не-Error) упрощена.
+$ npm run test:cov:g   (+ разбор coverage/stage-g/coverage-summary.json по каталогам)
+```
+ Test Files  59 passed | 3 skipped (62)
+      Tests  688 passed | 7 skipped (695)
+всего: строки 94.22% (2839/3013), ветви 82.19%, функции 95.14%
+src/customers/search                  91.43 %  64/70
+src/customers/history                 98.33 %  59/60
+src/customers/directory               97.07 %  199/205
+src/customers/common                  93.43 %  185/198
+src/customers/reader                 100.00 %  28/28
+src/customers/jobs                    97.50 %  78/80
+src/customers/receivables             97.35 %  257/264
+src/customers/discounts              100.00 %  121/121
+src/customers/favorites (клиенты)     97.73 %  43/44
+src/transactions                      93.01 %  213/229
+src/payments/dashboard                95.45 %  84/88
+src/returns                           88.14 %  602/683
+src/admin/audit                       96.45 %  190/197
+src/admin/reports                     99.01 %  100/101
+src/admin/discount-limits             97.94 %  95/97
+src/sync/customers                    91.60 %  240/262
+src/sync/receivables                  96.67 %  116/120
+src/sync/discounts                    98.46 %  64/65
+src/common/journal                   100.00 %  25/25
+src/sales-domain/credit              100.00 %  32/32
+критичные (100 % ветвей и строк):
+  src/admin/audit/audit-chain.verifier.ts: ветви 100% (59/59), строки 100%
+  src/customers/discounts/discount-policy.service.ts: ветви 100% (55/55), строки 100%
+  src/sales-domain/adapters/snapshot-credit-decision.service.ts: ветви 100% (47/47), строки 100%
+  src/sales-domain/credit/credit-decision.ts: ветви 100% (43/43), строки 100%
+```
+код выхода: 0
+
+### 2026-10-24 03:39 — регрессия D: npm run test:cov:d
+$ npm run test:cov:d
+```
+ Test Files  44 passed | 3 skipped (47)
+      Tests  443 passed | 7 skipped (450)
+Statements   : 95.31% ( 1362/1429 )
+Branches     : 88.41% ( 992/1122 )
+Functions    : 96.3% ( 261/271 )
+Lines        : 97.92% ( 1275/1302 )
+```
+код выхода: 0
+
+### 2026-10-24 03:46 — регрессия E: npm run test:cov:e
+Первый прогон (03:3x) — код 1: «src/sync/**/*.ts» 74.32 % строк < 75 % — в каталог sync этапом G добавлены обработчики клиентов/долгов/скидок (src/sync/customers 4.6 %, receivables 6.7 %, discounts 9.2 % в наборах E), они измеряются test:cov:g (91.6 / 96.7 / 98.5 %). В vitest.config.cov-e.ts они исключены (STAGE_G_SYNC); src/sync без них в наборах E — 85.35 %.
+$ npm run test:cov:e
+```
+ Test Files  55 passed | 4 skipped (59)
+      Tests  545 passed | 8 skipped (553)
+Statements   : 85.76% ( 5469/6377 )
+Branches     : 74.08% ( 3384/4568 )
+Functions    : 85.71% ( 1050/1225 )
+Lines        : 88.16% ( 4836/5485 )
+src/catalog               96.14 %  1394/1450
+src/customers             90.83 %  99/109
+src/customers/favorites   90.83 %  99/109
+src/integrations          84.67 %  972/1148
+src/sync                  85.35 %  2371/2778
+всего                     88.16 %
+```
+код выхода: 0
+
+### 2026-10-24 03:46 — денежный гейт — итоговый прогон
+$ bash scripts/check_no_double_money.sh
+```
+check_no_double_money: OK — 0 совпадений (pos-app/lib: 620 файлов, pos-api/src: 577 файлов)
+```
+код выхода: 0
+
+### 2026-10-24 03:46 — проверка секретов — итоговый прогон
+$ python -I -X utf8 scripts/check_secrets.py
+```
+pos-app/test/features/customers/presentation/customers_screens_test.dart:326: [generic-secret-assignment] step…**** (13 симв.)
+pos-app/test/features/customers/support/customers_harness.dart:465: [generic-secret-assignment] step…**** (13 симв.)
+check_secrets: режим git ls-files + новые неигнорируемые; файлов проверено: 2622; находок: 2
+```
+код выхода: 1
+
+### 2026-10-24 03:49 — регрессия F: local-stack pos-smoke (отдельно, для журнала строк проверок)
+$ timeout 1500 node scripts/local-stack.mjs pos-smoke
+```
+[local-stack] migrate: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] PASS каталог (200 SKU + фикстуры 1С): ≥ 8 продаваемых вариантов — вариантов=12
+[local-stack] PASS сессии: seller, cashier, senior_seller, customer — seller=true cashier=true senior=true customer=true
+[local-stack] PASS PUT /cart/items/{variantId} → 200, цена строки и итоги считает сервер (строки денег "1234.50") — 200  total={"amount":"97623.00","currency":"KGS"}
+[local-stack] PASS POST /cart/checkout-preview → 200 + previewToken, /check 1С через фейк выполнен (onecCheck.result=ok) — 200  onecCheck={"performed":true,"at":"2026-10-23T23:48:06.565Z","result":"ok"} allowed=["cash","qr_bakai","credit"]
+[local-stack] PASS POST /orders (cash) → 201 (/check выполнен), status=submitting, onecSyncState=pending — 201  status=submitting onecSyncState=pending total={"amount":"97623.00","currency":"KGS"}
+[local-stack] PASS повтор POST /orders с тем же Idempotency-Key → тот же заказ, Idempotent-Replayed: true — 201 id совпадает=true replayed=true
+[local-stack] PASS outbox → pos-worker → «Заказ клиента» в 1С (фейк): номер и ref 1С в заказе, status=awaiting_payment (проекция на sent) — status=awaiting_payment onecSyncState=pending onec.number=ОС00-004601
+[local-stack] PASS фейк 1С: ровно один документ с externalId = id заказа (идемпотентность по externalId) — документов=1 createCalls=1 outbox=sent
+[local-stack] PASS повторная отправка в 1С с тем же externalId → 200, тот же ref/номер, документ один — 200 number=ОС00-004601
+[local-stack] PASS POST /orders/{id}/payments (cash, кассир) → received, заказ оплачен — 200  status=received isPaid=true начальный=cash_pending
+[local-stack] PASS GET /orders/{id}/documents/receipt.pdf → 200 application/pdf, %PDF — 200 application/pdf 14822 байт
+[local-stack] PASS GET /orders/{id}/documents/invoice.pdf?format=thermal80 → 200 PDF (номер 1С есть) — 200 12764 байт
+[local-stack] PASS смена статуса в 1С («К выполнению») → GET /orders/{id}?refreshFromOnec: статус проецирован, onecSyncState=linked — status=awaiting_shipment onecSyncState=linked
+[local-stack] PASS POST /orders (qr_bakai, QR_PROVIDER=onec) → платёж qr_shown, qr.provider=onec, autoConfirm=true — 201  payment=qr_shown provider=onec autoConfirm=true
+[local-stack] PASS pos-worker опрашивает статус QR у 1С (payments.qr_onec_poll) → оплачено → payment received (long-poll ?wait) — status=received опросов 1С=2 статус в фейке=paid
+[local-stack] PASS QR-заказ: isPaid=true, документ 1С создан; товарный чек PDF → 200 — isPaid=true status=pending_approval onec.number=ОС00-004602 pdf=200
+[local-stack] PASS 1С 503: outbox pending (attempts=1, повтор по графику), заказ submitting, onecSyncState=pending (баннер) — outbox=pending attempts=1 error=ONEC_UNAVAILABLE order=submitting/pending
+[local-stack] PASS 1С восстановилась → повтор outbox → документ создан, заказ awaiting_payment — status=awaiting_payment onecSyncState=pending onec.number=ОС00-004603
+[local-stack] PASS отказ 1С (422) → submit_failed; корзина восстановлена pos-worker (CartReader, ORD-027); уведомление автору — status=submit_failed restoredFromOrderId=01a16b2a-80ce-7126-afe2-4469fa1efc3b уведомлений=5 unread=5
+[local-stack] PASS dead-letter: после OUTBOX_MAX_ATTEMPTS попыток → dead; виден в GET /sync/outbox?status=dead (senior_seller) — outbox=dead attempts=2 list=200 items=1
+[local-stack] PASS ручной повтор POST /sync/outbox/{id}/retry → 202 → документ создан (тот же externalId), заказ awaiting_payment — retry=202  status=awaiting_payment onec.number=ОС00-004604
+[local-stack] PASS режим клиента: PUT /cart/items → 200; checkout-preview allowedPaymentMethods = [cash, qr_bakai] (QR_PROVIDER=onec) — put=200  preview=200  allowed=["cash","qr_bakai"]
+[local-stack] PASS режим клиента: POST /orders credit → 403 FORBIDDEN — 403 FORBIDDEN forbidden_role
+[local-stack] PASS режим клиента: ручная скидка в POST /orders → 403 — 403 FORBIDDEN
+[local-stack] PASS режим клиента: заказ cash → 201/202 → документ 1С; товарный чек клиенту → 403 — 201  status=awaiting_payment receipt=403
+[local-stack] PASS после перезапуска: повторный вход по OTP (cashier, customer) — cashier=true customer=true
+[local-stack] PASS QR_PROVIDER=none: POST /orders qr_bakai → платёж с qr.provider≠onec, autoConfirm=false — 201  payment=qr_shown provider=none autoConfirm=false
+[local-stack] PASS ручное подтверждение: без step-up → 403 STEP_UP_REQUIRED; со step-up (PIN) → received — noStep=403 STEP_UP_REQUIRED stepUp=200  confirm=200  status=received
+[local-stack] PASS QR_PROVIDER=none: обращений к методам QR 1С нет — вызовов /pos/v1/payments до=3 после=3
+[local-stack] PASS режим клиента при QR_PROVIDER=none: allowedPaymentMethods=[cash]; qr_bakai → 422 payment_method_unavailable — preview=200 allowed=["cash"] order=422 VALIDATION_FAILED "payment_method_unavailable"
+[local-stack] pos-smoke итог: 30/30 PASS (на фикстурах, не реальная интеграция)
+```
+код выхода: 0
+
+
+## Интеграция Flutter этапа G — RM-G-009 (Flutter-часть), RM-G-010 (агент G-fe-int), 2026-10-24 03:55–06:05
+
+Окружение: Windows 11, Flutter 3.38.7 / Dart 3.10.7, `TEMP=TMP=D:/optomstroy/.tmp`; данные приложения integration_test —
+`APP_DATA_DIR=D:/optomstroy/.tmp/appdata` (`env/local.json`). Реальной 1С нет — фейк HTTP-сервиса 1С в режиме кассира
+(`SyntheticCashier`), **на фикстурах, не реальная интеграция**. Android/iOS — не запускались (эмулятор не запускать).
+
+Изменения интеграции (pos-app/**, точечно pos-api/scripts/local-stack.mjs):
+- корень `app/di/stage_g_overrides.dart`: `customerDebtPaymentsEnabledProvider` ← `debtPaymentsFromPosProvider`
+  (RM-G-013, R1 — выключено), «В заказ» SCR-32 (`POST /cart/customer`, ConfirmDialog замены), «Заказы и операции»
+  SCR-32 (`app/di/customer_orders_tab.dart`), роль/пользователь SCR-39, роль SCR-30/36, печать SCR-37/SCR-38, сотрудники
+  фильтра SCR-36; `appCheckoutPrinterProvider` — точка подмены печати SCR-22 для integration_test;
+- SCR-26 `/customers/new` вынесен на root-уровень (02 §4.1; GQ-FEINT-01), `NewCustomerScreen` закрывается `GoRouter.pop`;
+- guard G-8: `CUSTOMER_SELF_SERVICE=false` закрывает клиенту `/customers/{id}…` (GQ-FECM-03 → GQ-FEINT-07);
+- local-stack `serve --cashier-fixtures`: руководитель `+996777000909`, управляющий HTTP `POST :8092/__stack/ship/{id}`
+  (GQ-FEINT-04/05); `scripts/trace_test_ids.py --stage G`: + T-SEC класса A этапа G, T-UI SCR-30…39, 41…48.
+
+### 2026-10-24 06:00 — кодогенерация и анализ
+$ dart run build_runner build -d
+```
+Built with build_runner/jit in 31s; wrote 62 outputs.
+```
+код выхода: 0
+$ flutter analyze
+```
+No issues found! (ran in 53.0s)
+```
+код выхода: 0
+
+### 2026-10-24 05:53–05:58 — unit/widget/golden pos-app
+$ flutter test --concurrency=2
+```
+03:59 +2144: All tests passed!
+```
+код выхода: 0 (до интеграции — 2131; + test/app/di/stage_g_integration_test.dart, 13 кейсов)
+$ flutter test --tags golden --concurrency=2
+```
+01:36 +344: All tests passed!
+```
+код выхода: 0
+
+### 2026-10-24 06:03 — гейты корня
+```
+$ python -I -X utf8 scripts/check_layers.py          → файлов 622, импортов 5242, нарушений 0                    код 0
+$ python -I -X utf8 scripts/sync_contracts.py --check → OK l10n: 3 файл(ов) идентичны; gen_input соответствует  код 0
+$ bash scripts/check_no_double_money.sh              → OK — 0 совпадений (pos-app/lib: 622, pos-api/src: 577)   код 0
+$ python -I -X utf8 scripts/check_secrets.py         → файлов проверено: 2627; находок: 0                       код 0
+  (2 находки прогона 03:46 — литерал токена в тестах customers — заменён на заглушку `detail_token`)
+$ python -I -X utf8 scripts/trace_test_ids.py --stage F --summary → ID 242; с тестом 215; not_done 27; без теста 0  код 0
+```
+
+### 2026-10-24 05:59 — трассировка 12 → тесты, этап G (backend + Flutter)
+$ python -I -X utf8 scripts/trace_test_ids.py --stage G --summary
+```
+  DEBT: 14 / 12 / 2 / 0
+  DISC: 12 / 12 / 0 / 0
+  CASH: 16 / 13 / 3 / 0
+  CUST: 17 / 16 / 1 / 0
+  TXN: 11 / 8 / 3 / 0
+  RET: 15 / 14 / 1 / 0
+  ADMIN: 10 / 10 / 0 / 0
+  SEC: 12 / 12 / 0 / 0
+  UI: 18 / 1 / 17 / 0
+ИТОГ этапа G: ID в охвате 125; с тестом 98 (T-ID в тесте 63, трасса 35; из них частично 16); not_done с причиной 27; без теста и причины 0
+```
+код выхода: 0. T-AUD-* в 12 нет (аудит — T-SEC-030/038/067, T-ADMIN). T-UI-030…048 (кроме 044) — not_done: AC-UI экрана
+названы в тестах pos-app частично (счётчик x/y в матрице), причины — GQ-FEINT-08 и пункты агентов FE.
+
+### 2026-10-24 05:45–05:48 — integration_test этапа G (Windows; стек поднимает и останавливает тест)
+$ flutter test integration_test/cashier_flow_test.dart -d windows --dart-define-from-file=env/dev_proxy.json --dart-define-from-file=env/local.json
+  (стек: `node scripts/local-stack.mjs serve --auth-fixtures --catalog-fixtures=200 --pos-fixtures --cashier-fixtures
+  --qr-paid-after-polls 0 --exit-on-stdin-end`)
+```
+cashier_flow_test: стек кассира готов (журнал D:\optomstroy\.tmp\cashier_flow_stack.log)
+cashier_flow_test: кассир — SCR-30
+cashier_flow_test: «В заказ» — клиент с просрочкой в корзине
+cashier_flow_test: продажа в долг заблокирована (просрочка) — без step-up у кассира
+cashier_flow_test: SCR-38 — наличные приняты, заказ оплачен
+cashier_flow_test: SCR-36 — транзакция оплаты в журнале
+cashier_flow_test: SCR-26 из оформления — клиент создан и выбран в заказе
+cashier_flow_test: SCR-39 — заявка на возврат отправлена (step-up)
+cashier_flow_test: разрешение старшего (step-up) — заказ в долг создан
+cashier_flow_test: SCR-39 — заявка согласована старшим (step-up)
+cashier_flow_test: SCR-47 — запись credit.sale_approved видна администратору
+cashier_flow_test: SCR-47 — customer.debt_viewed по карточке клиента виден
+cashier_flow_test: SCR-48 — отчёт руководителя открыт
+cashier_flow_test: клиент — свой долг виден только после подтверждения привязки
+cashier_flow_test: стек остановлен (код 0)
+01:58 +5: All tests passed!
+```
+код выхода: 0 (такой же прогон 05:14–05:17 — 01:57 +5, код 0). Найдено и исправлено по ходу: push SCR-26 из root
+SCR-21 падал на дубле страницы оболочки (GQ-FEINT-01); заявка кассира свыше `return_approval_threshold` (10 000,00)
+требует решения старшего — для сценария выбран товар дешевле порога; отгрузка стенда дополнена
+`order_items.shipped_quantity`.
+
+### 2026-10-24 05:36–05:52 — регрессия integration_test (Windows)
+```
+$ flutter test integration_test/pos_flow_test.dart -d windows --dart-define-from-file=env/dev_proxy.json --dart-define-from-file=env/local.json
+    (стек поднимает тест)  05:42 +4: All tests passed!                                                        код 0
+    первая попытка 05:18 зависла на системном диалоге «Настройка печати» (автопечать счёта SCR-22 при появлении номера
+    1С, PRINT-009, настоящим пакетом printing) — процесс остановлен; печать SCR-22 подменяется тестом через
+    appCheckoutPrinterProvider (то же в cashier_flow_test), повтор — зелёный
+$ flutter test integration_test/catalog_flow_test.dart -d windows --dart-define-from-file=env/dev_proxy.json --dart-define-from-file=env/local.json
+    (стек поднимает тест)  01:13 +2: All tests passed!                                                        код 0
+$ (стек: serve --auth-fixtures) flutter test integration_test/auth_flow_test.dart -d windows --dart-define-from-file=env/dev.json --dart-define-from-file=env/local.json
+    00:33 +3: All tests passed!                                                                               код 0
+$ (свежий стек: serve --auth-fixtures) flutter test integration_test/admin_invite_flow_test.dart -d windows --dart-define-from-file=env/dev.json --dart-define-from-file=env/local.json
+    00:26 +1: All tests passed!                                                                               код 0
+$ (стек: serve) flutter test integration_test/boot_test.dart -d windows --dart-define=API_BASE_URL=http://127.0.0.1:3000/api/v1 --dart-define=ENV=dev --dart-define-from-file=env/local.json
+    BackendHealthReport(ok: true, httpStatus: 200)  00:01 +1: All tests passed!                               код 0
+```
+Стеки остановлены штатно (stdin), процессов node/postgres/optomstroy не осталось (проверено Get-CimInstance).
+
+### 2026-10-24 05:52 — регрессия стенда после правок local-stack.mjs
+$ timeout 1500 node scripts/local-stack.mjs cashier-smoke
+```
+[local-stack] cashier-smoke итог: 22/22 PASS (на фикстурах, не реальная интеграция)
+```
+код выхода: 0; `npx eslint scripts/local-stack.mjs` — без замечаний, prettier — без расхождений.
+
+### 2026-10-24 06:01 — сборка Windows release
+$ flutter build windows --release
+```
+√ Built build\windows\x64\runner\Release\optomstroy.exe   (60,7 s)
+```
+код выхода: 0. `pos-app/.dart_tool/flutter_build` удалён после integration_test и сборки.
+Android/iOS — not_done (эмулятор не запускается по условиям этапа; iOS — архитектурно).
+
+### 2026-10-24 — исправления ревью этапа G (backend), повторные прогоны
+Изменения: G-credit-1…7, G-customers-1c-1/2/3/6/7, G-returns-txn-1/2/3/5, G-security-1/2/3/5/7/8, G-trace-10/13/14/15,
+G-fresh-run-3 (см. docs/stages/G_spec_questions.md, раздел FIX). TEMP/TMP = D:/optomstroy/.tmp.
+```
+npm run lint                         код 0 (tsc, ESLint, Prettier)
+npm run build / madge / check:permissions   код 0 / 0 циклов / актуально (77 кодов, 7 ролей)
+npm test                             код 0
+test:receivables test:orders test:cart test:cashier-foundation test:customers test:transactions test:returns
+test:customer-mode test:discounts test:admin test:worker test:payments test:registration test:auth test:sync
+test:sync-apply test:integrations test:notifications test:documents test:reports test:sales-domain   — все код 0
+test:e2e (rbac-matrix, smoke, auth, cashier-flow …)   11 passed | 3 skipped (14); 104 passed | 7 skipped
+test:cov:g   код 0; 63 файла / 723 теста; строки 95.09 %, ветви 82.8 %; returns/onec 87.62 % строк;
+             критичные (credit-decision, snapshot-credit-decision, discount-policy.service, audit-chain.verifier) 100/100
+test:cov:f   код 0; 76 файлов / 799 тестов; строки 94.13 %; критичные 100 % ветвей, в т. ч. order-create.service.ts
+             и (новое) sales-domain/pricing/discount-policy.ts
+test:e2e:cashier 1/1, test:e2e:pos 1/1
+trace_test_ids --stage G  125 / 104 / 21 / 0;  check_no_double_money OK;  check_secrets код 0, 0 находок
+```
+
+## Перепроверка после ревью, раунд 1 (независимый проверяющий), 2026-10-24 10:00–11:40
+
+Код не менялся. Окружение: Windows 11, Node 24, embedded PostgreSQL 17, Flutter 3.38.7 / Dart 3.10.7;
+`TEMP=TMP=D:/optomstroy/.tmp`, `PUB_CACHE=D:/optomstroy/.tmp/pub-cache` (см. FIX-G-FE-ENV: `.dart_tool/package_config.json`
+указывает на кэш pub на D:). Перед integration_test на C: свободно 3 578–3 586 МБ (≥ 300 МБ). Все прогоны шли
+последовательно, без параллельных тяжёлых процессов. Сырые логи — `D:/optomstroy/.tmp/verify_g1/*.log`.
+На фикстурах и фейке 1С, **не реальная интеграция**. Android/iOS — не запускались (эмулятор запрещён).
+
+### pos-api (каталог pos-api; миграции — из корня)
+```
+npm run lint                                   код 0 (tsc, ESLint, Prettier)
+npm run build                                  код 0
+npm run madge                                  код 0; Processed 601 files; No circular dependency found
+npm run check:permissions                      код 0; актуально (77 кодов, 7 ролей)
+run-sql --repeat-strict (prod, 12 миграций) --check check_tables       код 0; 0 изменений (479 команд); 63/63 таблиц, 45/45 enum
+run-sql --repeat-strict --set app.env=test (+dev_outbox) --check check_tables --check check_ddl_behavior
+                                               код 0; 0 изменений (490 команд); 64/64, 45/45; DDL: 62 негативных, 6 инвариантов OK
+npm run test:all (34 набора, 10:02–10:21)      код 0; Σ 1687 passed, 8 skipped, 0 failed; test:e2e — 11 passed | 3 skipped файлов,
+                                               104 passed | 7 skipped тестов
+npm run test:cov:g                             код 0 с первого раза; 63 passed | 3 skipped файлов; 723 passed | 7 skipped;
+                                               All files: строки 95.09 %, ветви 82.8 %, функции 96.05 %; returns/onec 87.62 % строк,
+                                               returns-jobs.bridge.ts 100 % строк; пороги CRITICAL_BRANCHES (credit-decision,
+                                               snapshot-credit-decision, discount-policy.service, audit-chain.verifier) выполнены
+npm run test:cov:f                             код 0; 76 passed | 3 skipped файлов; 799 passed | 7 skipped; строки 94.13 %, ветви 83.45 %
+npm run test:cov:e (1-й прогон)                код 1: 1 failed | 546 passed | 8 skipped — test/e2e/auth/otp.e2e-spec.ts:61
+                                               «T-SEC-006, T-AUTH-011/T-AUTH-045: ответ request одинаков…» — 500 вместо 202 (этап D)
+  повтор файла otp.e2e-spec.ts ×3              26/26, 26/26, 26/26
+  npm run test:cov:e (повтор)                  код 0; 55 passed | 4 skipped файлов; 547 passed | 8 skipped; строки 88.26 %
+npm run test:cov:d                             код 0; 449 passed | 7 skipped; строки 97.92 %
+npm run test:e2e:pos / test:e2e:cashier        код 0 / код 0 (1/1, 1/1)
+local-stack smoke / auth-smoke / catalog-smoke / pos-smoke / cashier-smoke
+                                               10/10, 15/15, 22/22, 30/30, 22/22 PASS; все код 0
+```
+
+### pos-app
+```
+flutter analyze                                No issues found! (47.6 s)                                         код 0
+flutter test --concurrency=2 --coverage        06:10 +2240: All tests passed!                                    код 0
+  покрытие domain/data фич G (lcov, D:/optomstroy/.tmp/verify_g1/fe_cov_g.txt): cashier 100/100, transactions 100/100,
+  returns 100/100, customers 96.6 (data) / 89.7 (domain), reports 91.9 / 100, admin 91.5 / 82.8; итог по фичам
+  cashier, transactions, customers, returns, admin, reports, profile, settings — 87.4 % (1668/1909);
+  ниже 80 %: profile (data 61.4 %, domain 55.0 %; RM-G-008), settings/domain 50.4 % (settings — RM-D-009 и RM-G-008)
+flutter test --tags golden --concurrency=2     01:30 +362: All tests passed!                                     код 0
+python scripts/check_layers.py                 файлов 630, импортов 5342, нарушений 0                            код 0
+python scripts/sync_contracts.py --check       OK l10n: 3 файла идентичны; gen_input соответствует               код 0
+integration_test (Windows, APP_DATA_DIR=D:/optomstroy/.tmp/appdata):
+  cashier_flow_test (стек поднимает тест)      03:07 +5: All tests passed! (FLOW-042, офлайн SCR-34/SCR-31,
+                                               FLOW-023, «финансов клиента нет ни в drift, ни в secure storage»)  код 0
+  pos_flow_test                                05:55 +4: All tests passed!                                       код 0
+  catalog_flow_test                            01:16 +2: All tests passed!                                       код 0
+  auth_flow_test, admin_invite_flow_test       1-й запуск — код 1 (−3, −1): стек поднят БЕЗ
+                                               LOCAL_STACK_MIN_APP_VERSION=android=0.1.0,windows=0.1.0 (ошибка
+                                               проверяющего; API ответил 426 на POST /auth/otp/request, версия
+                                               клиента 0.1.0+1 < 1.0.0); повтор с переменной из заголовка тестов:
+                                               00:32 +3 и 00:26 +1: All tests passed!                            код 0
+  boot_test (стек serve)                       BackendHealthReport(ok: true, httpStatus: 200); 00:01 +1           код 0
+flutter build windows --release                √ Built build\windows\x64\runner\Release\optomstroy.exe (107 s)   код 0
+pos-app/.dart_tool/flutter_build удалён; стеки остановлены штатно (stdin, exit=0); своих процессов node/postgres/
+flutter_tester не осталось (flutter_tester PID 30728 запущен в 01:24 — не мой, не трогался).
+```
+
+### Гейты корня
+```
+bash scripts/check_no_double_money.sh          OK — 0 совпадений (pos-app/lib: 630, pos-api/src: 581)             код 0
+python scripts/check_secrets.py                файлов проверено: 2671; находок: 0                                 код 0
+python scripts/check_repo_layout.py            ошибок 0, предупреждений 7, ожидающих задач 5                      код 0
+python scripts/build_openapi.py --check        pos-api.v1.yaml актуален (7 частей, 119 путей, 141 операция)       код 0
+python scripts/check_api_paths.py              все обязательные пути и методы есть; лишних нет                    код 0
+python scripts/check_enums.py                  проверок 248, расхождений 0                                        код 0
+python scripts/check_arb_keys.py               ключей 2024 × 3 языка; ошибок 0                                    код 0
+python scripts/trace_test_ids.py --stage G --summary
+  DEBT 14/14/0/0  DISC 12/12/0/0  CASH 16/15/1/0  CUST 17/17/0/0  TXN 11/8/3/0  RET 15/15/0/0  ADMIN 10/10/0/0
+  SEC 12/12/0/0  UI 18/1/17/0
+  ИТОГ этапа G: ID в охвате 125; с тестом 104 (T-ID в тесте 66, трасса 38; из них частично 12); not_done с причиной 21;
+  без теста и причины 0                                                                                        код 0
+```
+Итог раунда 1: все проверки зелёные. Нестабильность: 1 из 555 тестов `test:cov:e` (otp.e2e-spec.ts, этап D; 500 на
+`POST /auth/otp/request`) — в трёх повторах файла и в повторе `test:cov:e` не воспроизвелась (ср. R1-N-01 ревью F).
+Разбор замечаний — `docs/reviews/G_review.md`.
+
+### 2026-10-24 — исправитель Flutter, раунд 2 (G-trace-8, G-trace-7; область pos-app/**)
+```
+integration_test/cashier_flow_test.dart (Windows, стек поднимает тест, APP_DATA_DIR=D:/optomstroy/.tmp/appdata)
+  + FLOW-025 (фейк 1С POST /__fake/down), FLOW-029 S1-S4 и A2, FLOW-022 на SCR-38, FLOW-031.A4 «Отклонить»
+  1-й прогон: падение FLOW-025 — 503 ONEC_UNAVAILABLE на POST /customers/{id}/receivables/refresh показывался общей
+             ошибкой (дефект pos-app, исправлен: debtRefreshOutcomeOf → DebtRefreshOnecDown); далее — правки теста
+             (confirmationKind — из GET /payments/{id}; step-up токен return.submit действует 15 мин — диалога нет;
+             уход с SCR-39 согласованной заявки перед второй)
+  итог                                          04:05 +5: All tests passed!                                  код 0
+flutter analyze                                 No issues found!                                             код 0
+flutter test --concurrency=2                    04:28 +2256: All tests passed!                               код 0
+flutter test --tags golden --concurrency=2      01:35 +362: All tests passed!                                код 0
+python scripts/check_layers.py                  файлов 630, импортов 5342, нарушений 0                       код 0
+python scripts/sync_contracts.py --check        OK l10n                                                      код 0
+bash scripts/check_no_double_money.sh / check_secrets.py / check_arb_keys.py   OK / 0 находок / ошибок 0
+python scripts/trace_test_ids.py --stage G --summary  UI: 18 / 1 / 17 / 0; без теста и причины 0 (D, E, F — без ошибок)
+  AC-UI в тестах pos-app: SCR-30 22/22, 31 9/12, 32 12/16, 34 14/17, 36 14/16, 38 24/29
+pos-app/.dart_tool/flutter_build удалён; стек остановлен штатно (код 0); Android — не прогонялся (этап H)
+```
+
+## Перепроверка после ревью, раунд 2 (независимый проверяющий), 2026-10-24 12:24–13:51
+
+Код не менялся. С раунда 1 изменён только pos-app (исправитель Flutter, раунд 2: 9 файлов lib, 5 файлов test,
+`integration_test/cashier_flow_test.dart`; pos-api, scripts, contracts, миграции — без изменений, проверено по времени
+изменения файлов). Окружение: Windows 11, Node 24, embedded PostgreSQL 17, Flutter 3.38.7 / Dart 3.10.7;
+`TEMP=TMP=D:/optomstroy/.tmp`, `PUB_CACHE=D:/optomstroy/.tmp/pub-cache`; свободно перед прогоном: 5,1 ГБ RAM, C: 3 514–3 540 МБ
+(≥ 300 МБ — integration_test запускались), `APP_DATA_DIR=D:/optomstroy/.tmp/appdata` (env/local.json). Все прогоны
+последовательно, без параллельных тяжёлых процессов. Сырые логи — `D:/optomstroy/.tmp/verify_g2/*.log`.
+На фикстурах и фейке 1С, **не реальная интеграция**. Android/iOS — не запускались (эмулятор запрещён).
+
+### pos-api (каталог pos-api; миграции — из корня)
+```
+npm run lint                                   12:29–12:30  код 0 (tsc, ESLint, Prettier)
+npm run build                                  код 0
+npm run madge                                  код 0; Processed 601 files; No circular dependency found
+npm run check:permissions                      код 0; актуально (77 кодов, 7 ролей)
+run-sql --repeat-strict (prod, 12 миграций) --check check_tables       код 0; 0 изменений; 63/63 таблиц, 45/45 enum
+run-sql --repeat-strict --set app.env=test (+dev_outbox) --check check_tables --check check_ddl_behavior
+                                               код 0; 0 изменений (490 команд); 64/64, 45/45; DDL: 62 негативных, 6 инвариантов OK
+npm run test:all (34 набора, 12:30–12:49)      код 0 с первого раза; Σ 1687 passed, 8 skipped, 0 failed; test:e2e — 11 passed |
+                                               3 skipped файлов, 104 passed | 7 skipped тестов
+npm run test:cov:g                             код 0 с первого раза; 63 passed | 3 skipped файлов; 723 passed | 7 skipped;
+                                               All files: строки 95.09 %, ветви 82.8 %, функции 96.05 %; returns/onec 87.62 % строк,
+                                               returns-jobs.bridge.ts 100 % строк; пороги CRITICAL_BRANCHES выполнены
+                                               (строки «ERROR [returns.jobs]» в логе — ожидаемые сбои из returns-jobs.bridge.spec.ts)
+npm run test:cov:f                             код 0; 76 passed | 3 skipped файлов; 799 passed | 7 skipped; строки 94.13 %, ветви 83.45 %
+npm run test:cov:e                             код 0 с первого раза; 55 passed | 4 skipped файлов; 547 passed | 8 skipped; строки 88.26 %
+                                               (нестабильность otp.e2e-spec.ts из раунда 1 не воспроизвелась)
+npm run test:cov:d                             код 0; 449 passed | 7 skipped; строки 97.92 %
+npm run test:e2e:pos / test:e2e:cashier        код 0 / код 0 (1/1, 1/1)
+local-stack smoke / auth-smoke / catalog-smoke / pos-smoke / cashier-smoke
+                                               10/10, 15/15, 22/22, 30/30, 22/22 PASS; все код 0
+```
+
+### pos-app
+```
+flutter analyze                                No issues found! (51.5 s)                                         код 0
+flutter test --concurrency=2 --coverage        06:36 +2256: All tests passed!                                    код 0
+  покрытие domain/data фич G (lcov, D:/optomstroy/.tmp/verify_g2/lcov.info): cashier 100/100, transactions 100/100,
+  returns 100/100, customers 96.6 (data) / 89.7 (domain), reports 91.9 / 100, admin 91.5 / 82.8, settings/data 88.7;
+  итог по фичам G — 87.4 % (1668/1909), как в раунде 1; ниже 80 %: profile (data 61.4 %, domain 55.0 %),
+  settings/domain 50.4 % (R1-N-02 без изменений)
+flutter test --tags golden --concurrency=2     01:53 +362: All tests passed!                                     код 0
+python scripts/check_layers.py                 файлов 630, импортов 5342, нарушений 0                            код 0
+python scripts/sync_contracts.py --check       OK l10n: 3 файла идентичны; gen_input соответствует               код 0
+integration_test (Windows):
+  cashier_flow_test (стек поднимает тест)      04:07 +5: All tests passed! — шаги FLOW-042, офлайн SCR-34/SCR-31, SCR-38
+                                               наличные, SCR-36, FLOW-023, FLOW-025, FLOW-029 (S1–S4 и A2), FLOW-022 на
+                                               SCR-38, SCR-26 из оформления, SCR-39 отправка/согласование/отклонение
+                                               (FLOW-031.A4), SCR-47, SCR-48, привязка клиента                    код 0
+  pos_flow_test                                05:59 +4: All tests passed!                                       код 0
+  catalog_flow_test                            01:18 +2: All tests passed!                                       код 0
+  auth_flow_test (стек serve --auth-fixtures, LOCAL_STACK_MIN_APP_VERSION=android=0.1.0,windows=0.1.0)
+                                               00:36 +3: All tests passed!                                       код 0
+  admin_invite_flow_test (то же)               00:29 +1: All tests passed!                                       код 0
+  boot_test (стек serve)                       BackendHealthReport(ok: true, httpStatus: 200); 00:01 +1           код 0
+flutter build windows --release                √ Built build\windows\x64\runner\Release\optomstroy.exe           код 0
+pos-app/.dart_tool/flutter_build удалён; стеки остановлены штатно (stdin, exit=0); своих процессов node/postgres/
+flutter_tester не осталось (flutter_tester PID 30728 — не мой, существовал до прогона, не трогался).
+```
+
+### Гейты корня (12:24)
+```
+bash scripts/check_no_double_money.sh          OK — 0 совпадений (pos-app/lib: 630, pos-api/src: 581)             код 0
+python scripts/check_secrets.py                файлов проверено: 2672; находок: 0                                 код 0
+python scripts/check_repo_layout.py            ошибок 0, предупреждений 7, ожидающих задач 5                      код 0
+python scripts/build_openapi.py --check        pos-api.v1.yaml актуален                                           код 0
+python scripts/check_api_paths.py              все обязательные пути и методы есть; лишних нет                    код 0
+python scripts/check_enums.py                  проверок 248, расхождений 0                                        код 0
+python scripts/check_arb_keys.py               ключей 2024 × 3 языка; ошибок 0                                    код 0
+python scripts/trace_test_ids.py --stage G --summary
+  DEBT 14/14/0/0  DISC 12/12/0/0  CASH 16/15/1/0  CUST 17/17/0/0  TXN 11/8/3/0  RET 15/15/0/0  ADMIN 10/10/0/0
+  SEC 12/12/0/0  UI 18/1/17/0
+  ИТОГ этапа G: ID в охвате 125; с тестом 104 (T-ID в тесте 66, трасса 38; из них частично 12); not_done с причиной 21;
+  без теста и причины 0                                                                                        код 0
+  (T-UI-030: все 22 AC-UI SCR-30 названы в тестах, но набор выводится not_done по старой причине «HID-скан … не
+  сделаны»; устаревшие причины также у T-UI-042, T-UI-043 — см. G_review.md, R2-N-02)
+```
+Итог раунда 2: все проверки зелёные с первого раза, нестабильностей нет. Разбор замечаний — `docs/reviews/G_review.md`,
+раздел «Раунд 2».
+
+## Свежий прогон для отчёта этапа G (автор отчёта, RM-G-010), 2026-10-24 14:40–15:01
+
+Код не менялся (после раунда 2 проверяющего менялись только документы ТЗ и 5 текстов описаний OpenAPI — синхронизация
+ТЗ, `docs/stages/G_spec_sync.md`). Окружение: то же, что в раунде 2; `TEMP=TMP=D:/optomstroy/.tmp`,
+`PUB_CACHE=D:/optomstroy/.tmp/pub-cache`, `APP_DATA_DIR=D:/optomstroy/.tmp/appdata` (env/local.json). Все команды —
+последовательно одним скриптом. Свободно на C: перед прогоном 3 598 МБ, после `test:cov:g` — 2 506 МБ, в конце — 2 576 МБ
+(≥ 300 МБ — integration_test запускался; причина уменьшения на ~1 ГБ не установлена, данные на C: не трогались).
+Сырые логи — `D:/optomstroy/.tmp/report_g/*.log`. На фикстурах и фейке 1С, **не реальная интеграция**. Android/iOS —
+не запускались (эмулятор запрещён).
+```
+npm run test:cov:g (pos-api)                  14:40–14:50  код 0; 63 passed | 3 skipped файлов; 723 passed | 7 skipped;
+                                              All files: строки 95.09 %, ветви 82.8 %, функции 96.05 %;
+                                              критичные: credit-decision.ts, snapshot-credit-decision.service.ts,
+                                              discount-policy.service.ts, audit-chain.verifier.ts — ветви 100 %, строки 100 %;
+                                              src/returns/onec 87.6 % строк (170/194), returns-jobs.bridge.ts 100 % строк
+python scripts/trace_test_ids.py --stage G --summary
+                                              код 0; DEBT 14/14/0/0  DISC 12/12/0/0  CASH 16/15/1/0  CUST 17/17/0/0
+                                              TXN 11/8/3/0  RET 15/15/0/0  ADMIN 10/10/0/0  SEC 12/12/0/0  UI 18/1/17/0;
+                                              ИТОГ: 125; с тестом 104 (частично 12); not_done с причиной 21; без теста и причины 0
+python scripts/check_secrets.py               код 0; файлов проверено: 2687; находок: 0
+flutter test --concurrency=2 (pos-app)        14:50–14:55  04:49 +2256: All tests passed!                    код 0
+flutter test integration_test/cashier_flow_test.dart -d windows --dart-define-from-file=env/dev_proxy.json
+  --dart-define-from-file=env/local.json (стек поднимает тест)
+                                              14:55–15:01  04:35 +5: All tests passed!                       код 0
+                                              шаги: SCR-30, FLOW-042, офлайн SCR-34/SCR-31, «В заказ», долг заблокирован,
+                                              SCR-38 наличные, SCR-36, FLOW-023, FLOW-025, FLOW-029 (+A2), FLOW-022 на SCR-38,
+                                              SCR-26 из оформления, SCR-39 отправка ×2, хранилища без финансов; старший:
+                                              CustomerPicker SCR-21, разрешение долга, SCR-39 согласовать/отклонить; SCR-47;
+                                              SCR-48 (owner); клиент — долг после подтверждения привязки; стек остановлен (код 0)
+```
+Не запускались в этом прогоне (последний зелёный результат — раунд 2, выше): `test:all`, `test:cov:f/e/d`,
+`test:e2e:*`, local-stack smoke, миграции, golden отдельно (входят в `flutter test`), `flutter test --coverage`,
+прочие integration_test, сборка Windows, прочие гейты корня. FLOW-026 «Отмена заказа» в integration_test по-прежнему
+нет (G_review.md, R2-N-01). `pos-app/.dart_tool/flutter_build` удалён. Своих процессов node/postgres/flutter_tester не
+осталось (flutter_tester PID 30728, запущен 01:24, — не мой, не трогался).
+
+## FLOW-026 «Отмена заказа» в integration_test (остаток G-trace-8 / R2-N-01 / G-KI-01, RM-G-010 п. 1), 2026-10-24 15:26–15:46
+
+Изменение: `pos-app/integration_test/cashier_flow_test.dart` — шаг FLOW-026 в конце сценария кассира и проверка аудита
+у администратора; `pos-app/lib` не менялся (ключи `action-cancel`, `cancel-reason-*`, `cancel-reason-text`, `cancel-refund`,
+`cancel-confirm`, `order-status`, `order-cancel-requested` уже были). Шаги: SCR-24 отгруженного заказа — «Отменить заказ»
+нет (AC-FLOW-026-06); свой заказ за наличные без полученных денег (заказ FLOW-025) → «Отменить заказ» → диалог отмены
+(причина `customer_refused` + текст; без причины кнопка неактивна; выбора «вернуть / авансом» нет) → `POST /orders/{id}/cancel`
+без step-up → снекбар «Запрос отмены отправлен в 1С» (заказ уже создан в 1С, `awaiting_payment`; при `submitting` без
+документа 1С тест принимает немедленную отмену «Заказ отменён») → ответ фейка 1С «Закрыт» → `cancelled`, на SCR-24 статус
+«Отменён», кнопки отмены нет; ветка S4: оплаченный заказ (FLOW-022, QR подтверждён вручную, `received`) → «Запросить отмену» →
+причина + «Деньги: вернуть» (без выбора кнопка неактивна) → `403 STEP_UP_REQUIRED` → StepUpDialog (PIN кассира) → повтор →
+`cancelRequested` → «Отменён»; платёж `received` не изменился; администратор SCR-47 — запись `order.cancel_requested` по
+заказу (AC-FLOW-026-02). Окружение: `TEMP=TMP=D:/optomstroy/.tmp`, `PUB_CACHE=D:/optomstroy/.tmp/pub-cache`,
+`APP_DATA_DIR=D:/optomstroy/.tmp/appdata` (env/local.json). Свободно на C: перед прогоном 2,6 ГБ, после — 1,5 ГБ (≥ 300 МБ;
+в это же время шли прогоны других задач — vitest, сборки pos-api; данные на C: не трогались). На фикстурах и фейке 1С,
+**не реальная интеграция**. Android/iOS — не запускались (эмулятор запрещён). Сырые логи — `D:/optomstroy/.tmp/fl026/*.log`.
+```
+dart format --line-length 120 integration_test/cashier_flow_test.dart
+                                              Formatted 1 file (1 changed)                                   код 0
+flutter analyze integration_test/cashier_flow_test.dart
+                                              No issues found! (133.9 s)                                     код 0
+npm run build (pos-api)                       код 0
+flutter test integration_test/cashier_flow_test.dart -d windows --dart-define-from-file=env/dev_proxy.json
+  --dart-define-from-file=env/local.json (стек поднимает тест), попытка 1
+                                              00:08 +0 -1: (setUpAll) — local-stack завершился до готовности:
+                                              «Cannot find module dist/migrate.js» (параллельная задача в это время
+                                              пересобирала pos-api: prebuild очищает dist/)                  код 1
+npm run build (pos-api) + тот же flutter test, попытка 2 (15:38–15:46)
+                                              build код 0; 06:30 +5: All tests passed!                       код 0
+                                              шаги кассира — как в прогоне 14:55 и дополнительно: «FLOW-026.S2/S3 —
+                                              свой заказ (awaiting_payment) отменён без step-up (запрос отмены в 1С →
+                                              «Отменён»)», «FLOW-026.S4/S5 — оплаченный заказ: запрос отмены со step-up →
+                                              «Отменён»»; администратор: «SCR-47 — order.cancel_requested по оплаченному
+                                              заказу виден»; стек остановлен (код 0)
+bash scripts/check_no_double_money.sh         OK — 0 совпадений (pos-app/lib: 630, pos-api/src: 587)        код 0
+```
+В этом прогоне ветка немедленной отмены (FLOW-026.S3, `submitting` без документа 1С) не выполнялась: к моменту шага заказ
+уже был создан в 1С повтором outbox; немедленную отмену покрывают widget-тест `order_details_screen_test.dart` и e2e
+backend этапа F. `pos-app/.dart_tool/flutter_build` удалён. Своих процессов node/postgres/flutter_tester не осталось
+(работающие node/postgres запущены в 15:44–15:46 другими задачами — vitest, `npm run build`; flutter_tester PID 30728 —
+не мой, не трогался). Запись 13 v2.4 §3.7 о FLOW-026 исправлена.

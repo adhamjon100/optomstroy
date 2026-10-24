@@ -1,0 +1,2331 @@
+# =====================================================================================
+# Optomstroy POS API — фрагмент модулей catalog, search, inventory, images, settings (RM-B-003)
+# Пути: /catalog/* (включая §4.24 /catalog/sync/{entity}), /search/*, /inventory/*, /images/{sha}/{size},
+# /settings/public — относительно servers (/api/v1).
+# Источник: 08_API_SPECIFICATION.md v1.9 §2, §3.6, §3.15, §4.4–§4.6, §4.23, §4.24, §8, §9; права — 11 §4.3–§4.4;
+# ядро R0 v1.9 §19.2, §22.7, §24.2 (приоритет). Правила оформления — ../NOTES.md.
+# Файл сгенерирован детерминированно; ссылки $ref — на компоненты собранного документа (00_root.yaml + фрагменты).
+#
+# Решения автора фрагмента (записаны здесь: задача разрешает писать только этот файл; перенести в NOTES.md при сборке):
+#  1. Ключи openapi/info оставлены по постановке задачи («openapi: 3.0.3, info (минимальный)»); NOTES §1 считает
+#     фрагмент без них — сборщик берёт из фрагмента только paths и components.
+#  2. operationId — <module>_<action> snake_case по тегу (08 §8 — владелец правил генерации; NOTES §3 п.2), а не camelCase
+#     из постановки. Расширение прав — x-permissions (массив, NOTES §5 п.1), а не x-permission.
+#  3. x-permissions перечисляет все коды 11 §4.3, которые сервер проверяет на операции (08 §3.15): первый — обязательный код
+#     доступа к операции, остальные — field-level/параметры (цена по роли, prices[] и priceListId, stock в sync,
+#     суммы долга в /search/customers). Условия описаны в description операции.
+#  4. GET /images/{sha}/{size}: security: [], x-permissions: [], x-roles: [] (публичный, 08 §2.2, §3.15); без X-Device-Id,
+#     X-App-Version, X-Platform и без default problem+json — ответ формирует pos-proxy, коды 08 §2.4 не применяются (08 §4.4.7);
+#     x-rate-limit-group не задан — лимит на уровне Caddy. Тег — catalog (08 §4.4.7 входит в модуль catalog).
+#  5. GET /catalog/sync/{entity}: items — anyOf двенадцати схем элементов (соответствие entity → схема — в description
+#     CatalogSyncResponse); oneOf не применим — схемы элементов пересекаются по составу полей. CatalogSyncProduct и
+#     CatalogSyncVariant не содержат вложенных variants/packagings/images: эти данные приходят своими сущностями (08 §4.24).
+#     Версия 1.1.0 (аддитивно, ADR-097): поля выгрузки, которые сервер уже отдаёт, внесены по 08 §4.24.1 «Уточнения выгрузки»
+#     п. 2 (EQ-CSYNC-02, FIX-EF-01, EQ-FEF-02, EQ-FEF-03, EQ-FEF-12); categories → CatalogSyncCategory (Category + path, depth,
+#     isVisible, updatedAt) — экранная схема Category этих полей не получает.
+#  6. GET /search/barcode/{value}: warnings[] — общая схема Warning (08 §2.4, NOTES §2). Значения ambiguous_barcode
+#     (08 §4.5.2) нет в WarningCode (00_root) — расхождение 08 §4.5.2 ↔ §2.4: требуется добавить код в WarningCode
+#     у владельца (08 §2.4) и в 00_root.yaml; до этого сервер не может вернуть это предупреждение по контракту.
+#  7. GET /search/customers: matchType — поле каждого элемента (как у /search/products); элементы — Customer (надмножество
+#     с x-roles) + matchType, т. к. строгие CustomerView* имеют additionalProperties: false и не допускают matchType.
+#  8. POST /inventory/check: тело требует warehouseId и items (оба поля в карточке 08 §4.6.2 без пометки «необязательно»);
+#     Idempotency-Key допускается (IdempotencyKeyOptional, x-idempotent: true — NOTES §3 п.5), но не нужен.
+#  9. VALIDATION_FAILED по семантическим правилам (q_too_short, search_scope_role) может прийти как 422 (08 §2.4) —
+#     для поиска явно перечислены и 400, и 422.
+# 10. R2 не включено: подписанные URL изображений (?exp=&sig=), прочие элементы 13 §3.11.
+# =====================================================================================
+openapi: 3.0.3
+info:
+  title: Optomstroy POS API — catalog, search, inventory, images, settings (фрагмент)
+  version: 1.0.0
+paths:
+  /catalog/categories:
+    get:
+      operationId: catalog_categories_list
+      tags:
+      - catalog
+      summary: Дерево категорий со счётчиками
+      description: 'Сайдбар «Категории товаров» (SCR-10, SCR-12): дерево с productCount и iconKey (Q-022). Реплика 1С, только чтение (D-28). ETag
+        = sha256(snapshotVersion), Cache-Control: private, max-age=300 (08 §2.8). Аудит не пишется (08 §4.4.1).'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - name: parentId
+        in: query
+        required: false
+        description: Вернуть поддерево; неизвестный → 404 NOT_FOUND.
+        schema:
+          type: string
+          format: uuid
+      - name: depth
+        in: query
+        required: false
+        description: Глубина дерева 1…5; по умолчанию — все уровни.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 5
+      - name: includeEmpty
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+      - name: inStockOnly
+        in: query
+        required: false
+        description: Считать только товары с available > 0.
+        schema:
+          type: boolean
+          default: false
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Дерево категорий.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: private, max-age=300
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Data-As-Of:
+              $ref: '#/components/headers/XDataAsOf'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogCategoriesResponse'
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - catalog.read
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+  /catalog/products:
+    get:
+      operationId: catalog_products_list
+      tags:
+      - catalog
+      summary: 'Список товаров: фильтры, сортировка, курсор'
+      description: 'Сетка/список SCR-10/12 («Найдено: 124 товара», «Загружаем ещё…»). Товары с deletionMark=true не возвращаются; товар без цены
+        в выбранном виде цены — price: null и stockLevel (в корзину нельзя — VARIANT_UNAVAILABLE). Для hasVariants=true — priceRange и суммарный
+        stock по вариантам. Сортировка popularity — [НЕ ПОДТВЕРЖДЕНО, Q-023]. ETag = хэш (max(updated_at), count, priceListId, warehouseId), Cache-Control:
+        private, max-age=60 (08 §2.8). Для офлайн-кэша не используется — только GET /catalog/sync/{entity} (ядро §22.7). customer (R1, ядро §24.2):
+        цена — по виду цены клиента, остатки — по app_settings.customer_stock_display (status — только stockLevel, quantity — плюс available;
+        08 §3.6). x-permissions: catalog.read — обязательный код операции; catalog.prices.read — цена по правилам роли; catalog.prices.read.all
+        — prices[] всех видов и параметр priceListId (08 §3.15, 11 §4.3).'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - $ref: '#/components/parameters/CatalogCategoryIdQuery'
+      - $ref: '#/components/parameters/CatalogIncludeSubcategories'
+      - $ref: '#/components/parameters/CatalogWarehouseIdQuery'
+      - $ref: '#/components/parameters/CatalogPriceListIdQuery'
+      - $ref: '#/components/parameters/CatalogInStock'
+      - $ref: '#/components/parameters/CatalogPriceMin'
+      - $ref: '#/components/parameters/CatalogPriceMax'
+      - $ref: '#/components/parameters/CatalogBrand'
+      - $ref: '#/components/parameters/CatalogAttr'
+      - $ref: '#/components/parameters/CatalogFavorite'
+      - $ref: '#/components/parameters/CatalogHasImage'
+      - $ref: '#/components/parameters/CatalogProductsLimit'
+      - $ref: '#/components/parameters/Cursor'
+      - name: sort
+        in: query
+        required: false
+        description: 'Сортировка (08 §4.4.2; ядро §19.2): id всегда последний ключ (добавляет сервер); available:desc — по available на складе
+          запроса, товары без снимка остатка — в конце; sku:asc — по артикулу. Неизвестное значение → VALIDATION_FAILED rule sort_field; смена
+          sort при cursor → rule cursor_sort_mismatch.'
+        schema:
+          type: string
+          enum:
+          - price:asc
+          - price:desc
+          - name:asc
+          - name:desc
+          - popularity:desc
+          - updatedAt:desc
+          - available:desc
+          - sku:asc
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Страница товаров (Page<ProductSummary>) + facets; totalEstimate — точный для категории.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: private, max-age=60
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Data-As-Of:
+              $ref: '#/components/headers/XDataAsOf'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ProductSummary'
+                    facets:
+                      $ref: '#/components/schemas/CatalogProductFacets'
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - catalog.read
+      - catalog.prices.read
+      - catalog.prices.read.all
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+  /catalog/products/recent:
+    get:
+      operationId: catalog_products_recent_list
+      tags:
+      - catalog
+      summary: Недавние товары пользователя
+      description: 'Блок «Недавние товары» (SCR-10); только собственный список (recent_products). Cache-Control: no-store. Аудит не пишется (08
+        §4.4.5).'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - name: limit
+        in: query
+        required: false
+        description: 1…50, по умолчанию 20.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+      responses:
+        '200':
+          description: Недавние товары.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: no-store
+            X-Data-As-Of:
+              $ref: '#/components/headers/XDataAsOf'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogRecentProductsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - catalog.read
+      - catalog.prices.read
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+    delete:
+      operationId: catalog_products_recent_clear
+      tags:
+      - catalog
+      summary: Очистить недавние товары
+      description: 'Кнопка «Очистить» (SCR-10; ядро §17.4). Идемпотентен по семантике: повтор → 204. Аудит не пишется (08 §4.4.5).'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '204':
+          description: Список очищен.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: no-store
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - catalog.read
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+  /catalog/products/{id}:
+    get:
+      operationId: catalog_products_get
+      tags:
+      - catalog
+      summary: Карточка товара
+      description: 'SCR-14: фото, описание, характеристики (Q-021), варианты, упаковки, штрихкоды, цены по роли, остатки по складам, минимальная
+        партия. Для customer товар с deletionMark → 404; staff получает его с deletionMark=true. Побочный эффект — асинхронная запись в recent_products
+        (не аудит). ETag, Cache-Control: private, max-age=60 (08 §2.8). customer (R1, ядро §24.2): цена — по виду цены клиента, остатки — по app_settings.customer_stock_display
+        (status — только stockLevel, quantity — плюс available; 08 §3.6). x-permissions: catalog.read — обязательный код операции; catalog.prices.read
+        — цена по правилам роли; catalog.prices.read.all — prices[] всех видов и параметр priceListId (08 §3.15, 11 §4.3).'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - $ref: '#/components/parameters/IdPath'
+      - $ref: '#/components/parameters/CatalogWarehouseIdQuery'
+      - $ref: '#/components/parameters/CatalogPriceListIdQuery'
+      - name: include
+        in: query
+        required: false
+        description: Состав карточки через запятую; по умолчанию все блоки (08 §4.4.3).
+        style: form
+        explode: false
+        schema:
+          type: array
+          items:
+            type: string
+            enum:
+            - variants
+            - prices
+            - stockByWarehouse
+            - images
+          maxItems: 4
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Карточка товара.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: private, max-age=60
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Data-As-Of:
+              $ref: '#/components/headers/XDataAsOf'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - catalog.read
+      - catalog.prices.read
+      - catalog.prices.read.all
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+  /catalog/products/{id}/variants:
+    get:
+      operationId: catalog_products_variants_list
+      tags:
+      - catalog
+      summary: Варианты товара с ценами и остатками
+      description: 'SCR-15 VariantSelector: варианты, остаток и цена каждого на выбранном складе; характеристики 1С — [ТИПОВО, Q-021]. Товар отсутствует
+        или снят (для customer) → 404. ETag, Cache-Control: private, max-age=60 (08 §2.8). customer (R1, ядро §24.2): цена — по виду цены клиента,
+        остатки — по app_settings.customer_stock_display (status — только stockLevel, quantity — плюс available; 08 §3.6). x-permissions: catalog.read
+        — обязательный код операции; catalog.prices.read — цена по правилам роли; catalog.prices.read.all — prices[] всех видов и параметр priceListId
+        (08 §3.15, 11 §4.3).'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - $ref: '#/components/parameters/IdPath'
+      - $ref: '#/components/parameters/CatalogWarehouseIdQuery'
+      - $ref: '#/components/parameters/CatalogPriceListIdQuery'
+      - name: inStockOnly
+        in: query
+        required: false
+        schema:
+          type: boolean
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Варианты и оси выбора.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: private, max-age=60
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Data-As-Of:
+              $ref: '#/components/headers/XDataAsOf'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogVariantsResponse'
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - catalog.read
+      - catalog.prices.read
+      - catalog.prices.read.all
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+  /catalog/units:
+    get:
+      operationId: catalog_units_list
+      tags:
+      - catalog
+      summary: Справочник единиц измерения
+      description: 'Единицы с qtyPrecision (08 §4.4.6). ETag = sha256(snapshotVersion), Cache-Control: private, max-age=300 (08 §2.8).'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Единицы измерения.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: private, max-age=300
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Data-As-Of:
+              $ref: '#/components/headers/XDataAsOf'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogUnitsResponse'
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - catalog.read
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+  /catalog/price-lists:
+    get:
+      operationId: catalog_price_lists_list
+      tags:
+      - catalog
+      summary: Справочник видов цен (только staff)
+      description: 'Справочник для параметра priceListId и меток prices[] (08 §4.4.6; 11 §4.3.1: список видов цен — catalog.prices.read, кроме
+        customer). customer → 403 FORBIDDEN. ETag, Cache-Control: private, max-age=300 (08 §2.8).'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Виды цен.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: private, max-age=300
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Data-As-Of:
+              $ref: '#/components/headers/XDataAsOf'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogPriceListsResponse'
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - catalog.prices.read
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+  /catalog/warehouses:
+    get:
+      operationId: catalog_warehouses_list
+      tags:
+      - catalog
+      summary: Справочник складов
+      description: 'Склады 1С (08 §4.4.6). ETag, Cache-Control: private, max-age=300 (08 §2.8).'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Склады.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: private, max-age=300
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Data-As-Of:
+              $ref: '#/components/headers/XDataAsOf'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogWarehousesResponse'
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - catalog.read
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+  /catalog/sync/{entity}:
+    get:
+      operationId: catalog_sync_get
+      tags:
+      - catalog
+      summary: Выгрузка и инкремент офлайн-кэша каталога
+      description: 'Первичная загрузка — вызовы без since страницами до hasMore=false; инкремент — since = последний сохранённый nextCursor сущности
+        (08 §4.24, ядро §22.7). Курсор непрозрачный (base64url, HMAC) и монотонный по (updated_at, id); подделанный → 400 VALIDATION_FAILED rule
+        cursor; старше срока хранения удалений (30 дней, 07 §11.4) → 409 VERSION_CONFLICT reason cursor_expired — клиент повторяет загрузку сущности
+        без since. Рекомендуемый порядок: units → categories → attributes → warehouses → price_lists → products → variants → packagings → barcodes
+        → prices → stock → images; не более 2 параллельных запросов. Права: catalog.read — все сущности; prices, price_lists — дополнительно catalog.prices.read,
+        только виды цен из price_lists.visible_to_roles (все — при catalog.prices.read.all); stock — дополнительно inventory.read (customer —
+        по customer_stock_display). Токен integration → 403. ETag = хэш (entity, since, nextCursor), Cache-Control: private, no-cache; If-None-Match
+        → 304 — изменений после since нет. Повтор с тем же since → те же строки. Аудит не пишется.'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - name: entity
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/CatalogSyncEntity'
+      - name: since
+        in: query
+        required: false
+        description: Непрозрачный курсор из nextCursor предыдущего ответа; отсутствует — выгрузка с начала.
+        schema:
+          type: string
+          maxLength: 2048
+      - name: limit
+        in: query
+        required: false
+        description: 1…200, по умолчанию 200; > 200 → VALIDATION_FAILED.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 200
+      - name: warehouseId
+        in: query
+        required: false
+        description: Только для entity=stock; по умолчанию — все активные склады.
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Страница выгрузки сущности.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: private, no-cache
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Data-As-Of:
+              $ref: '#/components/headers/XDataAsOf'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogSyncResponse'
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - catalog.read
+      - catalog.prices.read
+      - catalog.prices.read.all
+      - inventory.read
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+  /images/{sha}/{size}:
+    get:
+      operationId: catalog_images_get
+      tags:
+      - catalog
+      summary: Файл изображения (через pos-proxy)
+      description: 'Контент-адресуемое фото WebP: sha — SHA-256 исходника (64 hex), size ∈ thumb (160), card (400), full (1200) (D-30). В R1 —
+        без Bearer (URL непредсказуем, данные не ПДн; 08 §2.2, §3.15, 11 SEC-013). Отдаётся Caddy из images/{sha}/{size}.webp; pos-api — только
+        fallback-генерация размера. Rate limit — на уровне Caddy, не API. Коды 08 §2.4 не применяются; 404 — не problem+json. Подписанные URL
+        (?exp=&sig=) — R2, в контракт R1 не входят. Заголовки X-Device-Id, X-App-Version, X-Platform не требуются: проверку выполняет не pos-api,
+        а pos-proxy, и ответ VALIDATION_FAILED здесь невозможен (08 §4.4.7).'
+      security: []
+      parameters:
+      - name: sha
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+      - name: size
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - thumb
+          - card
+          - full
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Изображение WebP.
+          headers:
+            Cache-Control:
+              description: Неизменяемый контент-адресуемый ресурс (08 §2.8).
+              schema:
+                type: string
+                example: public, max-age=31536000, immutable
+            ETag:
+              description: '"<sha>-<size>" (08 §4.4.7).'
+              schema:
+                type: string
+                example: '"<sha>-thumb"'
+          content:
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '304':
+          description: If-None-Match совпал с ETag; тела нет.
+          headers:
+            ETag:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/CatalogImageNotFound'
+      x-permissions: []
+      x-roles: []
+      x-step-up: false
+      x-idempotent: false
+  /search/products:
+    get:
+      operationId: search_products_list
+      tags:
+      - search
+      summary: Поиск товаров по названию, артикулу, штрихкоду
+      description: 'Строка поиска SCR-10/11; алгоритм D-31: штрихкод (точно) → артикул (prefix) → FTS (russian + unaccent) → триграммы; matchType
+        в каждом элементе. Те же фильтры, что GET /catalog/products (ядро §19.2). Cache-Control: private, max-age=30, без ETag (08 §2.8). NFR:
+        p95 ≤ 300 мс при 50 000 SKU. Клиент — debounce 300 мс. Ошибки: VALIDATION_FAILED (q_too_short, sort_field, cursor_sort_mismatch), FORBIDDEN
+        (priceListId без catalog.prices.read.all). x-permissions: search.read — обязательный код; catalog.prices.read / catalog.prices.read.all
+        — цена и priceListId.'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - name: q
+        in: query
+        required: true
+        description: ≥ 2 символов, для цифровых строк ≥ 1 (rule q_too_short).
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - $ref: '#/components/parameters/CatalogCategoryIdQuery'
+      - $ref: '#/components/parameters/CatalogIncludeSubcategories'
+      - $ref: '#/components/parameters/CatalogWarehouseIdQuery'
+      - $ref: '#/components/parameters/CatalogPriceListIdQuery'
+      - $ref: '#/components/parameters/CatalogInStock'
+      - $ref: '#/components/parameters/CatalogPriceMin'
+      - $ref: '#/components/parameters/CatalogPriceMax'
+      - $ref: '#/components/parameters/CatalogBrand'
+      - $ref: '#/components/parameters/CatalogAttr'
+      - $ref: '#/components/parameters/CatalogFavorite'
+      - $ref: '#/components/parameters/CatalogHasImage'
+      - $ref: '#/components/parameters/CatalogProductsLimit'
+      - $ref: '#/components/parameters/Cursor'
+      - name: sort
+        in: query
+        required: false
+        description: Сортировка (08 §4.5.1; ядро §19.2); id — последний ключ; неизвестное → VALIDATION_FAILED rule sort_field.
+        schema:
+          type: string
+          default: relevance:desc
+          enum:
+          - relevance:desc
+          - price:asc
+          - price:desc
+          - name:asc
+          - available:desc
+          - sku:asc
+      responses:
+        '200':
+          description: Страница результатов (Page<ProductSummary>) + сведения о запросе.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: private, max-age=30
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ProductSummary'
+                    query:
+                      type: string
+                      example: смес
+                    matchTypes:
+                      $ref: '#/components/schemas/SearchMatchTypes'
+                    suggestedQuery:
+                      type: string
+                      nullable: true
+                      example: смеситель
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - search.read
+      - catalog.prices.read
+      - catalog.prices.read.all
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-SEARCH
+  /search/barcode/{value}:
+    get:
+      operationId: search_barcode_get
+      tags:
+      - search
+      summary: Точное совпадение штрихкода для сканера
+      description: 'HID-сканер/камера (SCR-17, D-42): ровно один товар/вариант/упаковка для немедленного добавления в корзину. Нет совпадения
+        → 404 NOT_FOUND (клиент предлагает текстовый поиск). Штрихкод у двух товаров → 200 с более новым DataVersion и предупреждением ambiguous_barcode
+        (sync_errors BARCODE_CONFLICT). Cache-Control: private, max-age=30.'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - name: value
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[0-9A-Za-z-]{3,64}$
+      - $ref: '#/components/parameters/CatalogWarehouseIdQuery'
+      responses:
+        '200':
+          description: Совпадение.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: private, max-age=30
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchBarcodeResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - search.read
+      - catalog.prices.read
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-SEARCH
+  /search/suggest:
+    get:
+      operationId: search_suggest_list
+      tags:
+      - search
+      summary: Подсказки поиска
+      description: 'Подсказки к строке поиска (08 §4.5.3). Cache-Control: private, max-age=30. VALIDATION_FAILED rule q_too_short.'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - name: q
+        in: query
+        required: true
+        description: ≥ 2 символов.
+        schema:
+          type: string
+          minLength: 2
+          maxLength: 200
+      - name: limit
+        in: query
+        required: false
+        description: ≤ 10.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 10
+      responses:
+        '200':
+          description: Подсказки.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: private, max-age=30
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchSuggestResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - search.read
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-SEARCH
+  /search/customers:
+    get:
+      operationId: search_customers_list
+      tags:
+      - search
+      summary: Поиск клиентов
+      description: 'Поле «Введите имя, телефон или часть имени…» (SCR-21/31), CustomerPicker. Глубина поиска и DTO — по customer.receivables.read.summary
+        (ядро §19.4): с ним (cashier, senior_seller, admin, owner) — от 4 цифр телефона или 2 букв имени, по коду клиента и ИНН; без него (seller)
+        — только полный номер (9 цифр / E.164) или код клиента (точно), иначе VALIDATION_FAILED rule search_scope_role; seller получает phoneMasked.
+        customer → 403 FORBIDDEN. По умолчанию элементы без сумм долга (ReceivableBadge); include=receivable — только с customer.receivables.read.summary,
+        для seller параметр игнорируется (ядро §22.13 п.1, 11 SEC-031). Cache-Control: no-store (ПДн). Аудит: ответ с суммами — customer.debt_viewed;
+        поиск по телефону продавцом > 50 запросов/час — customer.phone_lookup. Статус — ПРЕДВАРИТЕЛЬНО (Q-005, Q-017).'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - name: q
+        in: query
+        required: true
+        description: Строка поиска по правилам роли (выше).
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: favorite
+        in: query
+        required: false
+        schema:
+          type: boolean
+      - name: include
+        in: query
+        required: false
+        description: receivable — суммы долга (только customer.receivables.read.summary).
+        schema:
+          type: string
+          enum:
+          - receivable
+      - name: limit
+        in: query
+        required: false
+        description: ≤ 50.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+      - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Page<Customer(role-DTO)> + matchType.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: no-store
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/SearchCustomerItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - search.customers
+      - customer.receivables.read.summary
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-SEARCH
+  /inventory/balances:
+    get:
+      operationId: inventory_balances_list
+      tags:
+      - inventory
+      summary: Актуальные остатки по вариантам
+      description: 'Остатки по списку вариантов (D-22, D-29). customer — по app_settings.customer_stock_display (status — только stockLevel, quantity
+        — плюс available; ядро §24.2). live=true — только staff, синхронная проверка 1С ≤ 2 с; customer → 403. Массовая загрузка в офлайн-кэш
+        — GET /catalog/sync/stock, не этот эндпоинт. Cache-Control: no-store; X-Data-As-Of.'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - name: variantIds
+        in: query
+        required: true
+        description: Список вариантов через запятую, ≤ 200 (rule max_items).
+        style: form
+        explode: false
+        schema:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          maxItems: 200
+      - name: warehouseId
+        in: query
+        required: false
+        description: Склад; не задан — по всем складам.
+        schema:
+          type: string
+          format: uuid
+      - name: live
+        in: query
+        required: false
+        description: Синхронный запрос в 1С (только staff).
+        schema:
+          type: boolean
+          default: false
+      responses:
+        '200':
+          description: Остатки.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: no-store
+            X-Data-As-Of:
+              $ref: '#/components/headers/XDataAsOf'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryBalancesResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - inventory.read
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+  /inventory/check:
+    post:
+      operationId: inventory_check
+      tags:
+      - inventory
+      summary: Пакетная проверка доступности для корзины
+      description: 'Чистая проверка без побочных эффектов, ничего не резервирует (SRC-C-076, D-22); Idempotency-Key не требуется, автоматический
+        повтор допустим (08 §4.6.2). customer — по customer_stock_display (по умолчанию status: в shortages[] только variantId и stockLevel).
+        Cache-Control: no-store. Аудит не пишется.'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - $ref: '#/components/parameters/IdempotencyKeyOptional'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryCheckRequest'
+      responses:
+        '200':
+          description: Результат проверки.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: no-store
+            X-Data-As-Of:
+              $ref: '#/components/headers/XDataAsOf'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryCheckResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - inventory.read
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: true
+      x-rate-limit-group: RL-CART
+  /settings/public:
+    get:
+      operationId: settings_public_get
+      tags:
+      - settings
+      summary: Публичные настройки и флаги функций
+      description: 'Несекретные настройки для клиента всех ролей (ядро §19.2, §24.2, §24.4; 08 §4.23.1): слоты доставки, контакты поддержки и
+        ПДн, порог «мало», минимальная/рекомендуемая версии, customerStockDisplay, features. Скрытие действий по флагам — не защита. Пользователь
+        user_status=pending_activation (статус, не роль) допускается как «*» по правилу profile.manage.own; токен integration → 403 FORBIDDEN;
+        без access JWT → 401 (клиент использует встроенные значения по умолчанию). Секреты, параметры OTP/лимиты и внутренние адреса не отдаются.
+        ETag (хэш значений), Cache-Control: private, max-age=300.'
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Публичные настройки.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              description: Политика кэширования (08 §2.8).
+              schema:
+                type: string
+                example: private, max-age=300
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicSettings'
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-permissions:
+      - settings.public.read
+      x-roles:
+      - seller
+      - cashier
+      - senior_seller
+      - admin
+      - owner
+      - customer
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+components:
+  parameters:
+    CatalogCategoryIdQuery:
+      name: categoryId
+      in: query
+      required: false
+      description: Категория; по умолчанию включая подкатегории (includeSubcategories=true) (08 §4.4.2).
+      schema:
+        type: string
+        format: uuid
+    CatalogIncludeSubcategories:
+      name: includeSubcategories
+      in: query
+      required: false
+      description: Учитывать подкатегории categoryId (08 §4.4.2).
+      schema:
+        type: boolean
+        default: true
+    CatalogWarehouseIdQuery:
+      name: warehouseId
+      in: query
+      required: false
+      description: Склад для цены/остатка; по умолчанию settings.defaultWarehouseId → warehouses.is_default_for_pos (08 §4.4).
+      schema:
+        type: string
+        format: uuid
+    CatalogPriceListIdQuery:
+      name: priceListId
+      in: query
+      required: false
+      description: 'Вид цены. Только при catalog.prices.read.all (cashier, senior_seller, admin, owner — 11 §4.4, 08 §9); seller и customer →
+        403 FORBIDDEN. Для customer вид цены выбирает сервер: соглашение 1С / customers.default_price_list_id (только при customer_links.status=confirmed)
+        → price_lists.is_default → розничный (08 §3.6, ядро §24.2).'
+      schema:
+        type: string
+        format: uuid
+    CatalogInStock:
+      name: inStock
+      in: query
+      required: false
+      description: Только товары с available > 0 на складе запроса (08 §4.4.2).
+      schema:
+        type: boolean
+    CatalogPriceMin:
+      name: priceMin
+      in: query
+      required: false
+      description: Нижняя граница цены, Money-строка (08 §2.6; rule money_format).
+      schema:
+        $ref: '#/components/schemas/MoneyAmount'
+    CatalogPriceMax:
+      name: priceMax
+      in: query
+      required: false
+      description: Верхняя граница цены, Money-строка (08 §2.6; rule money_format).
+      schema:
+        $ref: '#/components/schemas/MoneyAmount'
+    CatalogBrand:
+      name: brand
+      in: query
+      required: false
+      description: Бренды списком через запятую, ≤ 50 значений (08 §2.6, §4.4.2).
+      style: form
+      explode: false
+      schema:
+        type: array
+        items:
+          type: string
+          maxLength: 200
+        maxItems: 50
+    CatalogAttr:
+      name: attr
+      in: query
+      required: false
+      description: 'Фильтр по свойствам: attr[<ключ>]=<значение>, не более 10 пар (08 §2.6, §4.4.2); ключ — product_attributes.code (07 §5.18).'
+      style: deepObject
+      explode: true
+      schema:
+        type: object
+        maxProperties: 10
+        additionalProperties:
+          type: string
+          maxLength: 200
+        example:
+          color: хром
+    CatalogFavorite:
+      name: favorite
+      in: query
+      required: false
+      description: Только избранные товары пользователя (08 §4.4.2).
+      schema:
+        type: boolean
+    CatalogHasImage:
+      name: hasImage
+      in: query
+      required: false
+      description: Только товары с фото (08 §4.4.2).
+      schema:
+        type: boolean
+    CatalogProductsLimit:
+      name: limit
+      in: query
+      required: false
+      description: Размер страницы 1…200, по умолчанию 40 (сетка 5×8 макета; 08 §2.5, §4.4.2); > 200 → VALIDATION_FAILED.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 40
+  responses:
+    CatalogImageNotFound:
+      description: 404 — файла нет; ответ формирует pos-proxy (Caddy), тело — не problem+json; клиент показывает заглушку ProductImage (08 §4.4.7).
+  schemas:
+    CatalogCategoryNode:
+      description: 'Узел дерева категорий: Category + вложенные children (08 §4.4.1).'
+      allOf:
+      - $ref: '#/components/schemas/Category'
+      - type: object
+        properties:
+          children:
+            type: array
+            items:
+              $ref: '#/components/schemas/CatalogCategoryNode'
+    CatalogCategoriesResponse:
+      type: object
+      required:
+      - items
+      description: Ответ GET /catalog/categories (08 §4.4.1).
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogCategoryNode'
+        asOf:
+          type: string
+          format: date-time
+        snapshotVersion:
+          type: string
+          example: cat:2026-10-18T06:30:00Z:48213
+          description: Версия снимка последней успешной синхронизации сущности; основа ETag (08 §2.8).
+    CatalogFacetValue:
+      type: object
+      required:
+      - value
+      - count
+      properties:
+        value:
+          type: string
+          example: Grohe
+        count:
+          type: integer
+          minimum: 0
+          example: 12
+    CatalogProductFacets:
+      type: object
+      description: Необязательные фасеты списка товаров (08 §4.4.2).
+      properties:
+        brands:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogFacetValue'
+        attrs:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/CatalogFacetValue'
+          description: Ключ — код свойства (color, size …).
+        priceRange:
+          $ref: '#/components/schemas/MoneyRange'
+    CatalogAttributeKey:
+      type: object
+      required:
+      - key
+      - name
+      - values
+      description: Ось выбора варианта (08 §4.4.4).
+      properties:
+        key:
+          type: string
+          example: color
+        name:
+          type: string
+          example: Цвет
+        values:
+          type: array
+          items:
+            type: string
+          example:
+          - хром
+          - чёрный
+    CatalogVariantsResponse:
+      type: object
+      required:
+      - items
+      description: Ответ GET /catalog/products/{id}/variants (08 §4.4.4).
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Variant'
+        attributeKeys:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogAttributeKey'
+        asOf:
+          type: string
+          format: date-time
+    CatalogRecentProduct:
+      description: ProductSummary + момент просмотра (08 §4.4.5).
+      allOf:
+      - $ref: '#/components/schemas/ProductSummary'
+      - type: object
+        required:
+        - viewedAt
+        properties:
+          viewedAt:
+            type: string
+            format: date-time
+    CatalogRecentProductsResponse:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogRecentProduct'
+    CatalogUnitsResponse:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Unit'
+    CatalogPriceList:
+      type: object
+      required:
+      - id
+      - name
+      description: 'Вид цены (08 §4.4.6, §4.24 price_lists): isDefault — price_lists.is_default, visibleToRoles — price_lists.visible_to_roles
+        (07 §5.26). Поле isDefaultForRoles прежней редакции не используется.'
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Оптовая
+        code:
+          type: string
+        currency:
+          type: string
+          enum:
+          - KGS
+        isDefault:
+          type: boolean
+        visibleToRoles:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleCode'
+    CatalogPriceListsResponse:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogPriceList'
+    CatalogWarehouse:
+      type: object
+      required:
+      - id
+      - name
+      description: Склад для экранов (08 §4.4.6).
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Основной
+        code:
+          type: string
+        isActive:
+          type: boolean
+        isDefaultForPos:
+          type: boolean
+    CatalogWarehousesResponse:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogWarehouse'
+    CatalogSyncEntity:
+      type: string
+      description: Сущность офлайн-кэша каталога — ровно перечень ядра §22.7 (08 §4.24); иное → VALIDATION_FAILED rule enum. Это не SyncEntity
+        (сущности обмена с 1С).
+      enum:
+      - categories
+      - products
+      - variants
+      - units
+      - packagings
+      - barcodes
+      - price_lists
+      - prices
+      - stock
+      - warehouses
+      - attributes
+      - images
+    CatalogSyncCategory:
+      description: 'Элемент entity=categories: Category + поля дерева и момент изменения (08 §4.24.1 п. 2, EQ-FEF-03; добавлено в 1.1.0).
+        Экранные ответы GET /catalog/categories этих полей не содержат.'
+      allOf:
+      - $ref: '#/components/schemas/Category'
+      - type: object
+        properties:
+          path:
+            type: string
+            pattern: ^(/[0-9a-f-]{36})+$
+            example: /0192d1c3-0000-7000-8000-000000000001/0192d1c3-0000-7000-8000-000000000002
+            description: Materialized path из id предков /{root_id}/{child_id} (07 categories.path).
+          depth:
+            type: integer
+            minimum: 0
+            maximum: 10
+            description: Глубина в дереве, корень — 0 (07 categories.depth).
+          isVisible:
+            type: boolean
+            description: Признак показа категории в каталоге (07 categories.is_visible).
+          updatedAt:
+            type: string
+            format: date-time
+            description: Момент последнего изменения строки сервера (позиция курсора выгрузки).
+    CatalogSyncProduct:
+      type: object
+      required:
+      - id
+      - name
+      description: 'Элемент entity=products: Product без вычисляемых цен и остатков (price, priceRange, stock, stockByWarehouse, prices, availableTotal)
+        и без полей пользователя/запроса (isFavorite, matchType); варианты, упаковки и фото приходят отдельными сущностями; imageIds — ссылки
+        на элементы entity=images (08 §4.24).'
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        sku:
+          type: string
+        categoryId:
+          type: string
+          format: uuid
+        brand:
+          type: string
+        hasVariants:
+          type: boolean
+        defaultVariantId:
+          type: string
+          format: uuid
+        baseUnit:
+          $ref: '#/components/schemas/Unit'
+        description:
+          type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+        imageIds:
+          type: array
+          items:
+            type: string
+        barcodes:
+          type: array
+          items:
+            type: string
+        minQuantity:
+          type: string
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/QuantityValue'
+        multiplicity:
+          type: string
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/QuantityValue'
+          description: Кратность продажи товара в базовых единицах; null — не ведётся (Q-021). 08 §4.24.1 п. 2; добавлено в 1.1.0.
+        isSellable:
+          type: boolean
+          description: Признак «продаётся» (07 products.is_sellable). 08 §4.24.1 п. 2; добавлено в 1.1.0.
+        onecCode:
+          type: string
+        deletionMark:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+    CatalogSyncVariant:
+      type: object
+      required:
+      - id
+      - productId
+      description: 'Элемент entity=variants: Variant без price/stock/stockByWarehouse, с multiplicity и unitId; фото — entity=images (08 §4.24).'
+      properties:
+        id:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        isDefault:
+          type: boolean
+        name:
+          type: string
+        sku:
+          type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+        barcodes:
+          type: array
+          items:
+            type: string
+        multiplicity:
+          type: string
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/QuantityValue'
+          description: Кратность продажи в базовых единицах; null — не ведётся (Q-021).
+        unitId:
+          type: string
+          format: uuid
+        sortOrder:
+          type: integer
+        deletionMark:
+          type: boolean
+    CatalogSyncPackaging:
+      description: 'Элемент entity=packagings: Packaging + variantId (08 §4.24); productId, sortOrder — 08 §4.24.1 п. 2 (добавлены в 1.1.0).'
+      allOf:
+      - $ref: '#/components/schemas/Packaging'
+      - type: object
+        required:
+        - variantId
+        properties:
+          variantId:
+            type: string
+            format: uuid
+          productId:
+            type: string
+            format: uuid
+            description: Товар упаковки (EQ-FEF-02).
+          sortOrder:
+            type: integer
+    CatalogSyncBarcode:
+      type: object
+      required:
+      - barcode
+      - variantId
+      - type
+      description: Элемент entity=barcodes (08 §4.24); id, productId — 08 §4.24.1 п. 2 (добавлены в 1.1.0).
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: uuid строки сервера — ключ сопоставления с deleted[] (08 §4.24.1 п. 1, FIX-EF-01).
+        barcode:
+          type: string
+          example: '4600000000017'
+        variantId:
+          type: string
+          format: uuid
+        packagingId:
+          type: string
+          format: uuid
+          nullable: true
+        type:
+          $ref: '#/components/schemas/BarcodeType'
+        productId:
+          type: string
+          format: uuid
+          description: Товар штрихкода (EQ-FEF-02).
+    CatalogSyncPrice:
+      description: 'Элемент entity=prices: Price + variantId (priceListId — в Price). Только виды цен, видимые роли (price_lists.visible_to_roles);
+        все — при catalog.prices.read.all (08 §4.24); id — 08 §4.24.1 п. 2 (добавлен в 1.1.0).'
+      allOf:
+      - $ref: '#/components/schemas/Price'
+      - type: object
+        required:
+        - variantId
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: uuid строки сервера — ключ сопоставления с deleted[] (08 §4.24.1 п. 1, FIX-EF-01).
+          variantId:
+            type: string
+            format: uuid
+    CatalogSyncWarehouse:
+      type: object
+      required:
+      - id
+      - name
+      description: Элемент entity=warehouses (08 §4.24); shortName, isDefaultForPos, sortOrder — 08 §4.24.1 п. 2 (добавлены в 1.1.0).
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        code:
+          type: string
+        isActive:
+          type: boolean
+        shortName:
+          type: string
+        isDefaultForPos:
+          type: boolean
+          description: Склад по умолчанию для новых корзин (07 warehouses.is_default_for_pos, EQ-FEF-12).
+        sortOrder:
+          type: integer
+    CatalogSyncAttribute:
+      type: object
+      required:
+      - id
+      - code
+      - name
+      description: Элемент entity=attributes (08 §4.24; product_attributes 07 §5.18); valueType, unitLabel, isFilterable, isVariantAxis,
+        sortOrder — 08 §4.24.1 п. 2 (добавлены в 1.1.0).
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          example: color
+        name:
+          type: string
+          example: Цвет
+        values:
+          type: array
+          items:
+            type: string
+        valueType:
+          type: string
+          enum:
+          - text
+          - number
+          - boolean
+          - list
+          description: Тип значения — enum attribute_value_type (07 §6.1, product_attributes.value_type). 08 §4.24.1 п. 2; добавлено в 1.1.0.
+        unitLabel:
+          type: string
+          description: Единица числового свойства («мм», «кг»); нет значения — поле отсутствует.
+        isFilterable:
+          type: boolean
+        isVariantAxis:
+          type: boolean
+        sortOrder:
+          type: integer
+    CatalogSyncImage:
+      description: 'Элемент entity=images: Image + productId/variantId; файлы — GET /images/{sha}/{size} (08 §4.24, §4.4.7); id, sortOrder
+        — 08 §4.24.1 п. 2 (добавлены в 1.1.0).'
+      allOf:
+      - $ref: '#/components/schemas/Image'
+      - type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: uuid строки сервера (product_images) — ключ сопоставления с deleted[] (08 §4.24.1 п. 1, FIX-EF-01).
+          productId:
+            type: string
+            format: uuid
+          variantId:
+            type: string
+            format: uuid
+            nullable: true
+          sortOrder:
+            type: integer
+    CatalogSyncResponse:
+      type: object
+      required:
+      - items
+      - deleted
+      - nextCursor
+      - hasMore
+      - serverTime
+      description: 'Ответ GET /catalog/sync/{entity} — ровно поля ядра §22.7 (08 §4.24). Схема элемента items по entity: categories → CatalogSyncCategory;
+        products → CatalogSyncProduct; variants → CatalogSyncVariant; units → Unit; packagings → CatalogSyncPackaging; barcodes → CatalogSyncBarcode;
+        price_lists → CatalogPriceList; prices → CatalogSyncPrice; stock → StockBalance (для customer — по customer_stock_display); warehouses
+        → CatalogSyncWarehouse; attributes → CatalogSyncAttribute; images → CatalogSyncImage. Машиночитаемое соответствие — x-entity-schema
+        (B-AR-14): клиент декодирует items в одной точке data-слоя по значению entity пути, а не по форме объекта (anyOf без дискриминатора).'
+      x-entity-schema:
+        categories: '#/components/schemas/CatalogSyncCategory'
+        products: '#/components/schemas/CatalogSyncProduct'
+        variants: '#/components/schemas/CatalogSyncVariant'
+        units: '#/components/schemas/Unit'
+        packagings: '#/components/schemas/CatalogSyncPackaging'
+        barcodes: '#/components/schemas/CatalogSyncBarcode'
+        price_lists: '#/components/schemas/CatalogPriceList'
+        prices: '#/components/schemas/CatalogSyncPrice'
+        stock: '#/components/schemas/StockBalance'
+        warehouses: '#/components/schemas/CatalogSyncWarehouse'
+        attributes: '#/components/schemas/CatalogSyncAttribute'
+        images: '#/components/schemas/CatalogSyncImage'
+      properties:
+        items:
+          type: array
+          items:
+            anyOf:
+            - $ref: '#/components/schemas/CatalogSyncCategory'
+            - $ref: '#/components/schemas/CatalogSyncProduct'
+            - $ref: '#/components/schemas/CatalogSyncVariant'
+            - $ref: '#/components/schemas/Unit'
+            - $ref: '#/components/schemas/CatalogSyncPackaging'
+            - $ref: '#/components/schemas/CatalogSyncBarcode'
+            - $ref: '#/components/schemas/CatalogPriceList'
+            - $ref: '#/components/schemas/CatalogSyncPrice'
+            - $ref: '#/components/schemas/StockBalance'
+            - $ref: '#/components/schemas/CatalogSyncWarehouse'
+            - $ref: '#/components/schemas/CatalogSyncAttribute'
+            - $ref: '#/components/schemas/CatalogSyncImage'
+          maxItems: 200
+          description: Полные карточки объектов сущности (upsert по id на клиенте).
+        deleted:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: id объектов, получивших deletion_mark или исчезнувших из среза после since.
+        nextCursor:
+          type: string
+          description: 'Присутствует всегда: при hasMore=true — курсор следующей страницы; при hasMore=false — контрольная точка для следующего
+            инкремента (sync_meta, 07 §11.2).'
+        hasMore:
+          type: boolean
+        serverTime:
+          type: string
+          format: date-time
+    SearchMatchTypes:
+      type: object
+      required:
+      - barcode
+      - sku
+      - fts
+      - trgm
+      description: Число совпадений по ступеням алгоритма D-31.
+      properties:
+        barcode:
+          type: integer
+          minimum: 0
+        sku:
+          type: integer
+          minimum: 0
+        fts:
+          type: integer
+          minimum: 0
+        trgm:
+          type: integer
+          minimum: 0
+    SearchBarcodeResult:
+      type: object
+      required:
+      - product
+      - variant
+      - barcodeType
+      description: Точное совпадение штрихкода (08 §4.5.2).
+      properties:
+        product:
+          $ref: '#/components/schemas/ProductSummary'
+        variant:
+          $ref: '#/components/schemas/Variant'
+        packaging:
+          type: object
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/Packaging'
+          description: Упаковка штрихкода; null — штрихкод варианта без упаковки (barcodes.packaging_id, 07 §5.22).
+        barcodeType:
+          $ref: '#/components/schemas/BarcodeType'
+        suggestedQuantity:
+          $ref: '#/components/schemas/Quantity'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Warning'
+          description: Предупреждения (08 §2.4). Штрихкод у двух товаров → 200 с более новым DataVersion и предупреждением ambiguous_barcode (08
+            §4.5.2) — значения нет в WarningCode, см. заметку в заголовке файла.
+    SearchSuggestion:
+      type: object
+      required:
+      - text
+      - kind
+      properties:
+        text:
+          type: string
+          example: смеситель grohe
+        kind:
+          type: string
+          enum:
+          - product
+          - category
+          - sku
+        id:
+          type: string
+          format: uuid
+          nullable: true
+        count:
+          type: integer
+          minimum: 0
+          example: 12
+    SearchSuggestResponse:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchSuggestion'
+          maxItems: 10
+    SearchCustomerItem:
+      description: 'Элемент GET /search/customers: Customer по allowlist роли (CustomerViewSeller для seller, CustomerViewCashier для cashier/senior_seller,
+        CustomerViewAdmin для admin/owner — 00_root, 08 §3.7) + matchType. По умолчанию без сумм долга — только hasDebt/isOverdue (ReceivableBadge);
+        receivable — только при customer.receivables.read.summary и include=receivable (ядро §22.13 п.1, 11 SEC-031).'
+      allOf:
+      - $ref: '#/components/schemas/Customer'
+      - type: object
+        properties:
+          matchType:
+            type: string
+            enum:
+            - name
+            - phone
+            - code
+            - inn
+    InventoryBalancesResponse:
+      type: object
+      required:
+      - items
+      - source
+      description: Ответ GET /inventory/balances (08 §4.6.1).
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockBalance'
+        asOf:
+          type: string
+          format: date-time
+        source:
+          type: string
+          enum:
+          - snapshot
+          - live
+          description: live — только при live=true (staff), включённой синхронной проверке и ответе 1С ≤ 2 с.
+    InventoryCheckItem:
+      type: object
+      additionalProperties: false
+      required:
+      - variantId
+      - quantity
+      properties:
+        variantId:
+          type: string
+          format: uuid
+        quantity:
+          $ref: '#/components/schemas/Quantity'
+    InventoryCheckRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - warehouseId
+      - items
+      description: Тело POST /inventory/check (08 §4.6.2); items ≤ 200 — максимум строк корзины (ядро §20.2 п.9).
+      properties:
+        warehouseId:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryCheckItem'
+          minItems: 1
+          maxItems: 200
+    InventoryShortage:
+      type: object
+      required:
+      - variantId
+      description: Нехватка по строке. Для customer при customer_stock_display=status (по умолчанию) отдаются только variantId и stockLevel (08
+        §4.6.2, §3.6; ядро §24.2).
+      properties:
+        variantId:
+          type: string
+          format: uuid
+        requestedBase:
+          allOf:
+          - $ref: '#/components/schemas/QuantityValue'
+          description: Запрошено в базовых единицах.
+        available:
+          type: string
+          pattern: ^-?\d{1,11}(\.\d{1,3})?$
+          description: Доступно; customer — только при customer_stock_display=quantity.
+        unitId:
+          type: string
+          format: uuid
+        stockLevel:
+          $ref: '#/components/schemas/StockLevel'
+    InventoryCheckResponse:
+      type: object
+      required:
+      - ok
+      - shortages
+      - unavailable
+      description: Ответ POST /inventory/check; без побочных эффектов, ничего не резервирует (D-22).
+      properties:
+        ok:
+          type: boolean
+        shortages:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryShortage'
+        unavailable:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Варианты, недоступные к продаже (deletion_mark / нет цены).
+        asOf:
+          type: string
+          format: date-time

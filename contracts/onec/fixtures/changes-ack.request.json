@@ -1,0 +1,8 @@
+{
+  "_note": "тестовые данные",
+  "operation": "POST /pos/v1/changes/ack",
+  "kind": "request",
+  "body": {
+    "messageNumber": 5121
+  }
+}

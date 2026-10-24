@@ -1,0 +1,1316 @@
+{
+  "$schema": "./enums.schema.json",
+  "contract": "optomstroy-pos-enums",
+  "version": "1.2.0",
+  "basis": {
+    "kernel": "docs/research/R0_DECISION_KERNEL.md v1.9 (§6, §7, §17.3, §17.4, §18.1, §18.2, §22, §23 п.5, §24)",
+    "dbEnums": "docs/specification/07_DATA_MODEL.md §6.1 (владелец enum-ов, ядро §18.1)",
+    "checkLists": "docs/specification/07_DATA_MODEL.md §6.1.1 (владелец CHECK-перечней, ядро §18.1)",
+    "problemCodes": "docs/specification/08_API_SPECIFICATION.md §2.4 (владелец словаря кодов ошибок, ядро §18.1)",
+    "syncErrorCodes": "docs/specification/08_API_SPECIFICATION.md §2.4, абзац «Коды журнала синхронизации» (ядро §18.1, §18.2 п.10)",
+    "apiEnums": "docs/specification/08_API_SPECIFICATION.md §2.4, §3.8; ядро §23 п.5"
+  },
+  "dbEnums": [
+    {
+      "name": "user_kind",
+      "values": [
+        "staff",
+        "customer"
+      ],
+      "source": "ядро §6",
+      "usage": "users.kind"
+    },
+    {
+      "name": "user_status",
+      "values": [
+        "pending",
+        "pending_activation",
+        "active",
+        "blocked",
+        "deleted"
+      ],
+      "source": "ядро §6",
+      "usage": "users.status"
+    },
+    {
+      "name": "role_code",
+      "values": [
+        "seller",
+        "cashier",
+        "senior_seller",
+        "admin",
+        "owner",
+        "customer",
+        "integration"
+      ],
+      "source": "ядро §6",
+      "usage": "roles.code, user_invitations.role, role_discount_limits.role, price_lists.visible_to_roles[], audit_logs.actor_role"
+    },
+    {
+      "name": "customer_link_status",
+      "values": [
+        "proposed",
+        "confirmed",
+        "rejected",
+        "conflict"
+      ],
+      "source": "ядро §6",
+      "usage": "customer_links.status"
+    },
+    {
+      "name": "cart_status",
+      "values": [
+        "active",
+        "parked",
+        "converted",
+        "cleared"
+      ],
+      "source": "ядро §6",
+      "usage": "carts.status"
+    },
+    {
+      "name": "order_status",
+      "values": [
+        "draft",
+        "submitting",
+        "submit_failed",
+        "pending_approval",
+        "awaiting_payment",
+        "approved",
+        "awaiting_shipment",
+        "shipped",
+        "partially_returned",
+        "closed",
+        "cancelled"
+      ],
+      "source": "D-20",
+      "usage": "orders.status, order_status_history.from_status/to_status"
+    },
+    {
+      "name": "delivery_method",
+      "values": [
+        "pickup",
+        "delivery"
+      ],
+      "source": "ядро §6",
+      "usage": "orders.delivery_method"
+    },
+    {
+      "name": "receiver_kind",
+      "values": [
+        "customer",
+        "other_person"
+      ],
+      "source": "ядро §6",
+      "usage": "orders.receiver_kind"
+    },
+    {
+      "name": "payment_method",
+      "values": [
+        "cash",
+        "qr_bakai",
+        "credit"
+      ],
+      "source": "ядро §6",
+      "usage": "orders.payment_method, payments.method, transactions.payment_method, return_requests.refund_method_expected"
+    },
+    {
+      "name": "payment_status",
+      "values": [
+        "initiated",
+        "cash_pending",
+        "qr_pending",
+        "qr_shown",
+        "qr_expired",
+        "manual_confirm",
+        "credit",
+        "received",
+        "voided",
+        "refunded"
+      ],
+      "source": "D-21",
+      "usage": "payments.status"
+    },
+    {
+      "name": "return_request_status",
+      "values": [
+        "draft",
+        "submitted",
+        "accepted",
+        "rejected",
+        "completed"
+      ],
+      "source": "ядро §6",
+      "usage": "return_requests.status"
+    },
+    {
+      "name": "transaction_kind",
+      "values": [
+        "order_created",
+        "order_cancelled",
+        "payment_received",
+        "payment_voided",
+        "refund",
+        "discount_override",
+        "credit_sale_approved",
+        "manual_qr_confirm",
+        "return_requested"
+      ],
+      "source": "ядро §6 + §17.3, §18.2 п.10 (return_requested — could)",
+      "usage": "transactions.kind"
+    },
+    {
+      "name": "sync_entity",
+      "values": [
+        "categories",
+        "products",
+        "variants",
+        "attributes",
+        "units",
+        "barcodes",
+        "images",
+        "warehouses",
+        "stock",
+        "prices",
+        "customers",
+        "receivables",
+        "sales_history",
+        "order_status",
+        "discounts",
+        "payment_docs",
+        "return_docs"
+      ],
+      "source": "ядро §6 + §17.3",
+      "usage": "sync_runs.entity, sync_state.entity, sync_errors.entity, sync_entity_versions.entity"
+    },
+    {
+      "name": "sync_mode",
+      "values": [
+        "full",
+        "incremental",
+        "manual",
+        "reconcile"
+      ],
+      "source": "ядро §6",
+      "usage": "sync_runs.mode"
+    },
+    {
+      "name": "sync_run_status",
+      "values": [
+        "queued",
+        "running",
+        "success",
+        "partial",
+        "failed"
+      ],
+      "source": "ядро §6",
+      "usage": "sync_runs.status"
+    },
+    {
+      "name": "outbox_status",
+      "values": [
+        "pending",
+        "sending",
+        "sent",
+        "confirmed",
+        "failed",
+        "dead",
+        "cancelled"
+      ],
+      "source": "ядро §6 + v1.7 §22.1 (cancelled)",
+      "usage": "onec_outbox.status; автомат — §6.5"
+    },
+    {
+      "name": "notification_kind",
+      "values": [
+        "sync_error",
+        "order_status",
+        "cart_price_changed",
+        "cart_stock_changed",
+        "credit_blocked",
+        "system",
+        "payment_status",
+        "return_status"
+      ],
+      "source": "ядро §6 + §17.3",
+      "usage": "notifications.kind"
+    },
+    {
+      "name": "invitation_status",
+      "values": [
+        "pending",
+        "accepted",
+        "revoked",
+        "expired"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.3",
+      "usage": "user_invitations.status"
+    },
+    {
+      "name": "device_platform",
+      "values": [
+        "android",
+        "ios",
+        "windows"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.8",
+      "usage": "devices.platform"
+    },
+    {
+      "name": "session_kind",
+      "values": [
+        "standard",
+        "biometric"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.9, R6 §2.2",
+      "usage": "sessions.kind"
+    },
+    {
+      "name": "step_up_method",
+      "values": [
+        "pin",
+        "biometric",
+        "otp"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.9",
+      "usage": "sessions.step_up_method, audit_logs.step_up_method"
+    },
+    {
+      "name": "otp_purpose",
+      "values": [
+        "login_or_register",
+        "step_up",
+        "phone_change_old",
+        "phone_change_new",
+        "customer_link"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3, §18.2 п.7; карточка §5.11",
+      "usage": "otp_challenges.purpose; тело POST /auth/otp/request (08)",
+      "notUsed": [
+        "login"
+      ]
+    },
+    {
+      "name": "otp_status",
+      "values": [
+        "sent",
+        "verified",
+        "expired",
+        "locked",
+        "failed_delivery",
+        "superseded"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.11",
+      "usage": "otp_challenges.status"
+    },
+    {
+      "name": "consent_kind",
+      "values": [
+        "personal_data",
+        "sms",
+        "biometrics_device",
+        "activity_sphere",
+        "face_scan"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3, §19.3; карточка §5.14",
+      "usage": "consents.kind; DTO consents[].kind в POST /registration/complete (08)"
+    },
+    {
+      "name": "attribute_value_type",
+      "values": [
+        "text",
+        "number",
+        "boolean",
+        "list"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.18",
+      "usage": "product_attributes.value_type"
+    },
+    {
+      "name": "barcode_type",
+      "values": [
+        "EAN13",
+        "EAN8",
+        "UPC",
+        "CODE128",
+        "CODE39",
+        "QR",
+        "other"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.22",
+      "usage": "barcodes.type"
+    },
+    {
+      "name": "image_status",
+      "values": [
+        "pending",
+        "downloading",
+        "ready",
+        "failed",
+        "missing_source"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.23",
+      "usage": "product_images.status"
+    },
+    {
+      "name": "customer_source",
+      "values": [
+        "onec",
+        "pos"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.28",
+      "usage": "customers.source"
+    },
+    {
+      "name": "customer_type",
+      "values": [
+        "individual",
+        "entrepreneur",
+        "legal"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3, §19.4; карточка §5.28",
+      "usage": "customers.customer_type"
+    },
+    {
+      "name": "customer_onec_status",
+      "values": [
+        "n_a",
+        "pending",
+        "confirmed",
+        "rejected",
+        "duplicate"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.28",
+      "usage": "customers.onec_status"
+    },
+    {
+      "name": "contact_kind",
+      "values": [
+        "phone",
+        "address",
+        "email",
+        "other"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.29",
+      "usage": "customer_contacts.kind"
+    },
+    {
+      "name": "link_match_method",
+      "values": [
+        "phone",
+        "manual_admin",
+        "onec_created"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.30",
+      "usage": "customer_links.match_method"
+    },
+    {
+      "name": "discount_source",
+      "values": [
+        "onec",
+        "pos"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.33",
+      "usage": "discount_rules.source"
+    },
+    {
+      "name": "discount_kind",
+      "values": [
+        "percent",
+        "fixed_amount",
+        "price_list"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.33",
+      "usage": "discount_rules.kind"
+    },
+    {
+      "name": "status_change_source",
+      "values": [
+        "pos_user",
+        "pos_system",
+        "onec_sync",
+        "onec_response"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.39",
+      "usage": "order_status_history.source"
+    },
+    {
+      "name": "transaction_source",
+      "values": [
+        "pos",
+        "onec"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.44",
+      "usage": "transactions.source"
+    },
+    {
+      "name": "return_reason",
+      "values": [
+        "defect",
+        "wrong_item",
+        "not_suitable",
+        "surplus",
+        "seller_error",
+        "other"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.45, R7 §6, ядро §17.3",
+      "usage": "return_requests.reason, return_request_items.reason_override",
+      "notUsed": [
+        "excess"
+      ]
+    },
+    {
+      "name": "sync_trigger",
+      "values": [
+        "schedule",
+        "manual",
+        "retry",
+        "dependency"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.51",
+      "usage": "sync_runs.trigger"
+    },
+    {
+      "name": "outbox_aggregate",
+      "values": [
+        "order",
+        "payment",
+        "customer",
+        "return_request"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.55, ядро §17.3",
+      "usage": "onec_outbox.aggregate_type (отмена заказа — order + operation='cancel')"
+    },
+    {
+      "name": "idempotency_status",
+      "values": [
+        "in_progress",
+        "completed"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.56",
+      "usage": "idempotency_keys.status"
+    },
+    {
+      "name": "audit_level",
+      "values": [
+        "app",
+        "db"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.57",
+      "usage": "audit_logs.level"
+    },
+    {
+      "name": "print_document_kind",
+      "values": [
+        "invoice",
+        "waybill",
+        "receipt"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.60",
+      "usage": "print_jobs.document_kind"
+    },
+    {
+      "name": "print_job_status",
+      "values": [
+        "queued",
+        "ready",
+        "failed",
+        "unavailable_onec"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.60",
+      "usage": "print_jobs.status"
+    },
+    {
+      "name": "sms_status",
+      "values": [
+        "queued",
+        "sent",
+        "delivered",
+        "failed",
+        "expired"
+      ],
+      "source": "РЕШЕНИЕ: ядро §17.3; карточка §5.61",
+      "usage": "sms_outbox.status"
+    },
+    {
+      "name": "onec_sync_state",
+      "values": [
+        "unknown",
+        "pending",
+        "linked",
+        "missing",
+        "ambiguous"
+      ],
+      "source": "РЕШЕНИЕ: ядро §20.2 п.10; карточка §5.37, §6.5",
+      "usage": "orders.onec_sync_state"
+    }
+  ],
+  "checkLists": [
+    {
+      "name": "locale",
+      "columns": [
+        "user_profiles.locale"
+      ],
+      "values": [
+        "ru",
+        "ky",
+        "en"
+      ],
+      "source": "проектное"
+    },
+    {
+      "name": "invitation_role",
+      "columns": [
+        "user_invitations.role"
+      ],
+      "values": [
+        "seller",
+        "cashier",
+        "senior_seller",
+        "admin",
+        "owner"
+      ],
+      "source": "D-07, D-15"
+    },
+    {
+      "name": "session_revoke_reason",
+      "columns": [
+        "sessions.revoke_reason"
+      ],
+      "values": [
+        "logout",
+        "logout_all",
+        "reuse_detected",
+        "admin",
+        "phone_changed",
+        "role_changed",
+        "expired",
+        "device_revoked",
+        "blocked",
+        "session_limit",
+        "device_mismatch",
+        "biometric_invalidated",
+        "refresh_replay"
+      ],
+      "source": "D-12, ядро §18.2 п.8; 09 §8.3, миграция 0003 (EQ-AUTH-03, ADR-088)"
+    },
+    {
+      "name": "token_kind",
+      "columns": [
+        "token_denylist.token_kind"
+      ],
+      "values": [
+        "access",
+        "registration",
+        "step_up"
+      ],
+      "source": "ядро §17.3, §18.2 п.6"
+    },
+    {
+      "name": "token_deny_reason",
+      "columns": [
+        "token_denylist.reason"
+      ],
+      "values": [
+        "logout",
+        "logout_all",
+        "role_changed",
+        "blocked",
+        "used",
+        "revoked"
+      ],
+      "source": "ядро §18.2 п.6"
+    },
+    {
+      "name": "rate_limit_scope",
+      "columns": [
+        "rate_limit_counters.scope"
+      ],
+      "values": [
+        "otp_phone_15m",
+        "otp_phone_24h",
+        "otp_ip_1h",
+        "otp_device_24h",
+        "login_ip_1h",
+        "step_up_user_1h",
+        "webhook_ip_1m",
+        "otp_ip_10m",
+        "otp_ip_24h",
+        "otp_device_10m",
+        "otp_global_1m",
+        "otp_verify_ip_10m",
+        "pin_user_device_10m",
+        "admin_user_1m"
+      ],
+      "source": "D-10, D-44; миграция 0003 (EQ-AUTH-01, ADR-088)"
+    },
+    {
+      "name": "integration_token_scope",
+      "columns": [
+        "integration_tokens.scope"
+      ],
+      "values": [
+        "onec_inbound"
+      ],
+      "source": "ядро §17.3"
+    },
+    {
+      "name": "integration_token_source",
+      "columns": [
+        "integration_tokens.source"
+      ],
+      "values": [
+        "operator_script"
+      ],
+      "source": "ядро §18.2 п.4"
+    },
+    {
+      "name": "integration_token_revoke_reason",
+      "columns": [
+        "integration_tokens.revoke_reason"
+      ],
+      "values": [
+        "rotated",
+        "incident",
+        "disabled",
+        "expired"
+      ],
+      "source": "ядро §18.2 п.4"
+    },
+    {
+      "name": "receivable_document_kind",
+      "columns": [
+        "receivable_documents.kind"
+      ],
+      "values": [
+        "invoice",
+        "payment",
+        "return",
+        "discount",
+        "adjustment"
+      ],
+      "source": "ядро §19.2"
+    },
+    {
+      "name": "receivable_document_status",
+      "columns": [
+        "receivable_documents.status"
+      ],
+      "values": [
+        "posted",
+        "not_posted",
+        "due"
+      ],
+      "source": "ядро §19.2 (DEBT-003)"
+    },
+    {
+      "name": "review_reason",
+      "columns": [
+        "payments.review_reason"
+      ],
+      "values": [
+        "amount_mismatch",
+        "unknown_reference",
+        "no_webhook",
+        "late_payment"
+      ],
+      "source": "ядро §17.2 (D-21), v1.7 §22.2, v1.8 §23.4"
+    },
+    {
+      "name": "cancel_reason_code",
+      "columns": [
+        "orders.cancel_reason_code"
+      ],
+      "values": [
+        "customer_refused",
+        "duplicate",
+        "error",
+        "other"
+      ],
+      "source": "ядро v1.7 §22.9; DTO reasonCode 08 §4.8.4"
+    },
+    {
+      "name": "refund_intent",
+      "columns": [
+        "orders.refund_intent"
+      ],
+      "values": [
+        "none",
+        "refund",
+        "advance"
+      ],
+      "source": "ядро v1.7 §22.9; DTO refundIntent 08 §4.8.4"
+    },
+    {
+      "name": "order_created_via",
+      "columns": [
+        "orders.created_via"
+      ],
+      "values": [
+        "staff",
+        "customer"
+      ],
+      "source": "ядро v1.9 §24.2"
+    },
+    {
+      "name": "qr_provider_mode",
+      "columns": [
+        "payments.qr_provider"
+      ],
+      "values": [
+        "none",
+        "onec",
+        "bakai"
+      ],
+      "source": "ядро v1.9 §24.4"
+    },
+    {
+      "name": "return_onec_result",
+      "columns": [
+        "return_requests.onec_result"
+      ],
+      "values": [
+        "money_refunded",
+        "offset_against_debt",
+        "pending"
+      ],
+      "source": "R7 §6"
+    },
+    {
+      "name": "return_approval_reason",
+      "columns": [
+        "return_requests.approval_reason"
+      ],
+      "values": [
+        "return_threshold_exceeded"
+      ],
+      "source": "ядро §19.2"
+    },
+    {
+      "name": "notification_severity",
+      "columns": [
+        "notifications.severity"
+      ],
+      "values": [
+        "info",
+        "warning",
+        "error"
+      ],
+      "source": "проектное"
+    },
+    {
+      "name": "sync_error_code",
+      "columns": [
+        "sync_errors.error_code",
+        "onec_outbox.last_error_code",
+        "sync_node_state.last_error_code"
+      ],
+      "values": [
+        "DUPLICATE_SUSPECTED",
+        "OUTBOX_UNCONFIRMED",
+        "BARCODE_CONFLICT",
+        "PAYMENT_DOC_VOIDED",
+        "ORDER_MATCH_AMBIGUOUS",
+        "NO_WRITE_CHANNEL",
+        "QR_PAID_AFTER_VOID",
+        "NOT_FOUND_LOCAL",
+        "VALIDATION",
+        "ONEC_REJECTED",
+        "ONEC_UNAVAILABLE",
+        "IMAGE_DOWNLOAD",
+        "HASH_MISMATCH",
+        "COUNT_MISMATCH",
+        "OTHER"
+      ],
+      "source": "08 §2.4 абзац «Коды журнала синхронизации» (владелец, порядок); 07 §6.1.1 (CHECK); ядро §17.4, §18.2 п.10; перечень в API — 08 §2.4 (отдельный абзац)"
+    },
+    {
+      "name": "sync_error_severity",
+      "columns": [
+        "sync_errors.severity"
+      ],
+      "values": [
+        "warning",
+        "error"
+      ],
+      "source": "проектное"
+    },
+    {
+      "name": "outbox_operation",
+      "columns": [
+        "onec_outbox.operation"
+      ],
+      "values": [
+        "create",
+        "cancel"
+      ],
+      "source": "D-28, ядро v1.7 §22.1",
+      "notUsed": [
+        "update_status"
+      ]
+    },
+    {
+      "name": "audit_result",
+      "columns": [
+        "audit_logs.result"
+      ],
+      "values": [
+        "ok",
+        "denied",
+        "error"
+      ],
+      "source": "D-36"
+    },
+    {
+      "name": "audit_severity",
+      "columns": [
+        "audit_logs.severity"
+      ],
+      "values": [
+        "info",
+        "warning",
+        "critical"
+      ],
+      "source": "D-36"
+    },
+    {
+      "name": "setting_value_type",
+      "columns": [
+        "app_settings.value_type"
+      ],
+      "values": [
+        "boolean",
+        "integer",
+        "string",
+        "json",
+        "duration",
+        "money",
+        "percent"
+      ],
+      "source": "проектное"
+    },
+    {
+      "name": "customer_stock_display",
+      "columns": [
+        "app_settings.customer_stock_display"
+      ],
+      "values": [
+        "status",
+        "quantity"
+      ],
+      "source": "ядро v1.9 §24.2"
+    },
+    {
+      "name": "print_paper",
+      "columns": [
+        "print_jobs.paper"
+      ],
+      "values": [
+        "a4",
+        "thermal80"
+      ],
+      "source": "D-27"
+    },
+    {
+      "name": "sms_template_key",
+      "columns": [
+        "sms_outbox.template_key"
+      ],
+      "values": [
+        "otp_login",
+        "otp_step_up",
+        "otp_phone_change",
+        "otp_customer_link"
+      ],
+      "source": "D-11"
+    },
+    {
+      "name": "sms_provider",
+      "columns": [
+        "sms_outbox.provider"
+      ],
+      "values": [
+        "smspro",
+        "fake"
+      ],
+      "source": "D-11, ядро §17.3"
+    }
+  ],
+  "checkListExclusions": [
+    {
+      "column": "devices.device_key",
+      "reason": "не перечень: CHECK по регулярному выражению (UUID v4 в нижнем регистре)"
+    },
+    {
+      "column": "integration_tokens.expires_at",
+      "reason": "не перечень: ограничение срока (не позже created_at + 180 дней)"
+    },
+    {
+      "column": "orders.onec_sync_state",
+      "reason": "не перечень: CHECK согласованности orders_onec_sync_ref_chk / orders_onec_sync_status_chk; значения enum — dbEnums.onec_sync_state"
+    },
+    {
+      "column": "sms_outbox.provider_message_id",
+      "reason": "не перечень: CHECK по регулярному выражению (12 символов [A-Za-z0-9]), UNIQUE"
+    }
+  ],
+  "apiEnums": [
+    {
+      "name": "credit_reason",
+      "values": [
+        "forbidden_role",
+        "credit_not_allowed",
+        "overdue",
+        "limit_exceeded",
+        "stale_snapshot"
+      ],
+      "source": "08 §3.8 paymentChecks.creditReason (enum CreditReason), §5.5; ядро §22.4 в редакции §23 п.5; владелец правила — 10 PAY-031",
+      "notUsed": [
+        "not_identified",
+        "onec_inbound_mode",
+        "not_allowed",
+        "no_data",
+        "receivables_stale",
+        "onec_unavailable"
+      ]
+    },
+    {
+      "name": "warning_code",
+      "values": [
+        "STALE_DATA",
+        "QR_UNAVAILABLE",
+        "PAYMENT_AMOUNT_MISMATCH"
+      ],
+      "source": "08 §2.4 «Предупреждения (не ошибки)» — warnings[].code успешного ответа; не входят в Problem.code"
+    },
+    {
+      "name": "problem_resource",
+      "values": [
+        "order",
+        "cart",
+        "return_request",
+        "outbox_item"
+      ],
+      "source": "08 §2.4 ORDER_STATE_INVALID — поле resource; 08 §8 Problem.resource"
+    }
+  ],
+  "problemCodes": [
+    {
+      "code": "VALIDATION_FAILED",
+      "http": [
+        400,
+        422
+      ]
+    },
+    {
+      "code": "OTP_INVALID",
+      "http": [
+        422
+      ]
+    },
+    {
+      "code": "OTP_EXPIRED",
+      "http": [
+        422
+      ]
+    },
+    {
+      "code": "OTP_LOCKED",
+      "http": [
+        423
+      ]
+    },
+    {
+      "code": "OTP_RATE_LIMITED",
+      "http": [
+        429
+      ]
+    },
+    {
+      "code": "SMS_PROVIDER_ERROR",
+      "http": [
+        503
+      ]
+    },
+    {
+      "code": "REGISTRATION_TOKEN_INVALID",
+      "http": [
+        401
+      ]
+    },
+    {
+      "code": "PHONE_ALREADY_REGISTERED",
+      "http": [
+        409
+      ]
+    },
+    {
+      "code": "UNAUTHENTICATED",
+      "http": [
+        401
+      ],
+      "tag": "РЕШЕНИЕ: ядро §17.4"
+    },
+    {
+      "code": "TOKEN_STALE",
+      "http": [
+        401
+      ],
+      "tag": "РЕШЕНИЕ: ядро §17.4"
+    },
+    {
+      "code": "SESSION_REVOKED",
+      "http": [
+        401
+      ]
+    },
+    {
+      "code": "DEVICE_MISMATCH",
+      "http": [
+        409
+      ],
+      "tag": "РЕШЕНИЕ: ядро §17.4"
+    },
+    {
+      "code": "STEP_UP_REQUIRED",
+      "http": [
+        403
+      ]
+    },
+    {
+      "code": "FORBIDDEN",
+      "http": [
+        403
+      ]
+    },
+    {
+      "code": "VERSION_CONFLICT",
+      "http": [
+        409
+      ]
+    },
+    {
+      "code": "IDEMPOTENCY_KEY_REUSED",
+      "http": [
+        422
+      ]
+    },
+    {
+      "code": "IDEMPOTENCY_IN_PROGRESS",
+      "http": [
+        409
+      ]
+    },
+    {
+      "code": "PRICE_CHANGED",
+      "http": [
+        422
+      ]
+    },
+    {
+      "code": "STOCK_INSUFFICIENT",
+      "http": [
+        422
+      ]
+    },
+    {
+      "code": "VARIANT_UNAVAILABLE",
+      "http": [
+        422
+      ]
+    },
+    {
+      "code": "QTY_NOT_MULTIPLE",
+      "http": [
+        422
+      ]
+    },
+    {
+      "code": "QTY_BELOW_MIN",
+      "http": [
+        422
+      ]
+    },
+    {
+      "code": "DISCOUNT_LIMIT_EXCEEDED",
+      "http": [
+        422
+      ]
+    },
+    {
+      "code": "CREDIT_BLOCKED",
+      "http": [
+        422
+      ]
+    },
+    {
+      "code": "CREDIT_LIMIT_EXCEEDED",
+      "http": [
+        422
+      ]
+    },
+    {
+      "code": "RECEIVABLES_STALE",
+      "http": [
+        422
+      ]
+    },
+    {
+      "code": "ONEC_UNAVAILABLE",
+      "http": [
+        503
+      ]
+    },
+    {
+      "code": "ONEC_REJECTED",
+      "http": [
+        422
+      ]
+    },
+    {
+      "code": "ORDER_STATE_INVALID",
+      "http": [
+        409
+      ]
+    },
+    {
+      "code": "PAYMENT_STATE_INVALID",
+      "http": [
+        409
+      ]
+    },
+    {
+      "code": "CUSTOMER_LINK_CONFLICT",
+      "http": [
+        409
+      ]
+    },
+    {
+      "code": "CUSTOMER_DUPLICATE_SUSPECTED",
+      "http": [
+        409
+      ]
+    },
+    {
+      "code": "SYNC_ALREADY_RUNNING",
+      "http": [
+        409
+      ]
+    },
+    {
+      "code": "NOT_FOUND",
+      "http": [
+        404
+      ]
+    },
+    {
+      "code": "RATE_LIMITED",
+      "http": [
+        429
+      ]
+    },
+    {
+      "code": "INTERNAL",
+      "http": [
+        500
+      ]
+    },
+    {
+      "code": "APP_UPDATE_REQUIRED",
+      "http": [
+        426
+      ]
+    },
+    {
+      "code": "PAYLOAD_TOO_LARGE",
+      "http": [
+        413
+      ],
+      "tag": "РЕШЕНИЕ: ядро §17.4"
+    },
+    {
+      "code": "UNSUPPORTED_MEDIA_TYPE",
+      "http": [
+        415
+      ],
+      "tag": "РЕШЕНИЕ: ядро §17.4"
+    },
+    {
+      "code": "METHOD_NOT_ALLOWED",
+      "http": [
+        405
+      ],
+      "tag": "РЕШЕНИЕ: ядро §17.4"
+    },
+    {
+      "code": "CUSTOMER_NOT_IDENTIFIED",
+      "http": [
+        422
+      ],
+      "tag": "РЕШЕНИЕ: ядро §17.4"
+    },
+    {
+      "code": "CART_EMPTY",
+      "http": [
+        422
+      ],
+      "tag": "РЕШЕНИЕ: ядро §17.4"
+    },
+    {
+      "code": "PIN_INVALID",
+      "http": [
+        401
+      ],
+      "tag": "РЕШЕНИЕ: ядро §17.4"
+    },
+    {
+      "code": "PIN_LOCKED",
+      "http": [
+        423
+      ],
+      "tag": "РЕШЕНИЕ: ядро §17.4"
+    },
+    {
+      "code": "UNLOCK_REQUIRED",
+      "http": [
+        401
+      ],
+      "tag": "РЕШЕНИЕ: ядро §18.2 п.5 (09 §8.8, SESS-032)"
+    },
+    {
+      "code": "RETURN_QTY_EXCEEDED",
+      "http": [
+        422
+      ],
+      "tag": "НОВОЕ ИМЯ"
+    },
+    {
+      "code": "WEBHOOK_SIGNATURE_INVALID",
+      "http": [
+        401
+      ],
+      "tag": "НОВОЕ ИМЯ"
+    },
+    {
+      "code": "QR_UNAVAILABLE",
+      "http": [
+        503
+      ],
+      "tag": "НОВОЕ ИМЯ"
+    },
+    {
+      "code": "CONSENT_REQUIRED",
+      "http": [
+        422
+      ],
+      "tag": "РЕШЕНИЕ: ядро §17.4"
+    },
+    {
+      "code": "APP_READ_ONLY",
+      "http": [
+        503
+      ],
+      "tag": "РЕШЕНИЕ: ядро §17.4"
+    }
+  ]
+}

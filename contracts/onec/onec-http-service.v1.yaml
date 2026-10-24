@@ -1,0 +1,3731 @@
+openapi: 3.0.3
+# RM-B-004. Контракт HTTP-сервиса расширения 1С «OptomstroyPOS» (POS_HTTPСервисPOS, корневой URL `pos`).
+# Канон методов — 05_ONEC_INTEGRATION §6.3–§6.5 и §6.7 (ядро R0 v1.9 §24.3, §24.4); изложение для
+# специалиста 1С — 18_ONEC_API_REQUEST §3–§5. При расхождении прав 05; решения и расхождения —
+# contracts/onec/NOTES.md. Набор путей сверяет scripts/check_onec_paths.py (0 лишних, 0 недостающих).
+#
+# Расширения (ONEC-071, девять атрибутов контракта на каждый метод):
+#   x-onec-requirements — ID требований 05;   x-priority — must | should | could (05 §6.3, §6.6);
+#   x-idempotency       — правило защиты от дублей (столбец «Идемпотентность» 05 §6.3);
+#   x-retry             — правило повторов backend (05 §6.5, §8.1, SYNC-029, SYNC-044, SYNC-077, SYNC-078);
+#   x-access            — ограничения доступа (ONEC-052, ONEC-053, ONEC-080);
+#   x-error-codes       — коды `POS_E_*`, которые метод может вернуть (05 §6.3 «Ответы», §6.5);
+#   x-status            — proposed: деталь взята из 18 или выведена из словаря 05 §5.3 и ждёт канонизации в 05 §6.4.
+#   x-timeout-ms        — таймаут ожидания ответа на стороне POS, мс (ТЗ для 1С §4.9; = OnecExtensionGateway).
+#   x-pos-*             — как POS обрабатывает значение (описательные атрибуты; 1С по ним не проверяет вход).
+info:
+  title: OptomstroyPOS — HTTP-сервис расширения 1С
+  version: 1.1.0
+  description: |
+    Контракт методов `/pos/v1/*`, которые backend «Оптомстрой POS» вызывает у расширения 1С
+    «OptomstroyPOS» (фаза 1, `ONEC_MODE=extension`). Реализует специалист 1С заказчика
+    по `18_ONEC_API_REQUEST.md` (ядро v1.9 §24.3); владелец содержания методов — 05 §6.
+
+    **Общие правила (05 §6.4, ONEC-058).** Тела — `application/json; charset=utf-8` (кроме `/images`).
+    UUID и ссылки 1С (`Ref_Key`) — строки в нижнем регистре. Деньги — строки `^-?\d+\.\d{2}$`,
+    количества — строки `^-?\d+\.\d{3}$`. Даты — ISO 8601 со смещением `+06:00`.
+    `null` допустим только у необязательных полей. Получатель игнорирует неизвестные поля
+    (forward-compatibility), поэтому схемы объектов не запрещают дополнительные свойства.
+
+    **Версия API (ONEC-033).** Версия — в пути (`v1`) и в заголовке ответа `X-POS-API-Version: 1`.
+    Добавление полей обратно совместимо. Удаление, переименование и смена смысла — только через `v2`
+    при параллельной поддержке `v1` не менее 6 месяцев.
+
+    **Аутентификация (ONEC-032).** Пользователь ИБ `pos_hs` (Basic или JWT — выбор при приёмке,
+    чек-лист 05 §2.2 п. 1) **и** заголовок `X-POS-Client-Key` во всех методах. Без ключа — 401
+    даже при верном пароле. Секреты backend: `ONEC_HS_USER_FILE`, `ONEC_HS_PASSWORD_FILE`,
+    `ONEC_HS_TOKEN_FILE`.
+
+    **Ограничения доступа (ONEC-052, ONEC-053, ONEC-080, ONEC-081).** Роль `POS_ИнтеграцияPOS`
+    назначена только `pos_hs`. Прямых прав записи у неё нет: запись выполняет только код `POS_Сервер`
+    в привилегированном режиме после проверки ключа и схемы. Доступ — только из LAN магазина
+    с адреса backend или из подсети WireGuard. Всегда HTTPS (TLS 1.2+).
+
+    **Формат внешних идентификаторов (ONEC-037, ONEC-040, R0 §22.1).** `externalId` — UUID агрегата POS
+    в нижнем регистре: `orders.id`, `payments.id`, `customers.id`, `return_requests.id`.
+    Расширение хранит его в регистре `POS_ВнешниеИдентификаторыPOS` (`ВнешнийИд` Строка 36 +
+    `ТипОбъекта` ∈ `Заказ | Платеж | Клиент | ЗаявкаНаВозврат`). В реквизит `Комментарий`
+    документа его копирует в виде `POS <uuid>`. Номер заказа POS (`publicNumber`) ключом не является.
+
+    **Журнал запросов (ONEC-054, ONEC-088).** Каждый запрос несёт `X-Request-Id` (UUID).
+    1С записывает его в `POS_ЖурналЗапросовPOS` и возвращает в заголовке ответа и в `requestId`
+    тела ошибки.
+
+    **Таймауты POS (ТЗ для 1С §4.9; атрибут `x-timeout-ms` у каждой операции).** Соединение — 5 с.
+    Ожидание ответа:
+
+    | Вызов | Таймаут POS | Целевое время ответа 1С |
+    |---|---|---|
+    | `POST /check` | 6 с (`ONEC_SYNC_CHECK_TIMEOUT_MS`) | ≤ 3 с для корзины до 100 строк |
+    | `POST /orders` | 6 с | в пределах 6 с |
+    | `GET /customers?phone=`, `GET /customers/{ref}/receivables` | 6 с | в пределах 6 с |
+    | `POST /payments/qr`, `POST /payments/{externalId}/qr/cancel` | 6 с | в пределах 6 с, включая банк |
+    | `GET /payments/{externalId}/status` | 6 с | ≤ 1 с (p95) |
+    | `GET /external-ids` при ручной привязке заказа | 6 с на все страницы (вызывающий код) | страница — быстро |
+    | страница `GET /changes` | 60 с | формирование ≤ 20 с |
+    | `GET /images/{ref}` | 120 с | — |
+    | прочие (`/health`, `/changes/ack`, `/changes/reregister`, статусы и отмена заказа, `POST /customers`, `POST /payments`, `POST /returns`, статус заявки, `/catalog/{ref}`, `/external-ids`) | 30 с (`ONEC_TIMEOUT_MS`) | — |
+
+    Нет ответа за таймаут — результат неизвестен: запись повторяется позже с тем же `externalId`,
+    чтение — при следующем опросе.
+
+    **Повторы POS (ТЗ для 1С §4.7; атрибут `x-retry` у операции — правило конкретного метода).**
+    Два уровня, они не суммируются с повторами 1С:
+
+    1. HTTP-клиент: только `GET` и только при временной ошибке (сеть, таймаут, 5xx, `POS_E_LOCKED`,
+       `POS_E_MAINTENANCE`) — до 3 попыток с паузами 0,5 и 1 с (`x-get-retry`). `POST` клиент сразу
+       не повторяет никогда.
+    2. Уровень вызывающей логики:
+       - запись из очереди outbox (заказ, оплата, клиент, заявка на возврат, отмена заказа) — тот же
+         `externalId` через 1, 2, 5, 15, 60 мин, далее раз в час, не более `OUTBOX_MAX_ATTEMPTS` (20) попыток
+         и `OUTBOX_MAX_AGE_HOURS` (24 ч), затем `dead` и тревога администратору;
+       - чтение по расписанию (`/changes`, статусы, долги) — задание повторяется ещё дважды через 1 и 2 мин,
+         затем следующий плановый запуск;
+       - отмена QR после смены способа, аннулирования платежа или отмены заказа — через 1, 2 мин, далее
+         каждые 5 мин до срока QR (срок неизвестен — не дольше 1 ч);
+       - отмена QR перед перевыпуском — одна синхронная попытка до 6 с, без повторов;
+       - создание QR и `/check` — без автоматических повторов;
+       - 401/403 — без повторов до исправления учётных данных, тревога; следующее чтение — не раньше 15 мин.
+
+    **Фикстуры** ответов — `contracts/onec/fixtures/*.json` (тестовые данные, поле `_note`);
+    `scripts/check_onec_paths.py` проверяет их по схемам этого файла.
+
+    **Статус `x-status: proposed` (B-AR-23).** Схемы и детали с этой пометкой (элементы `/changes`,
+    кроме четырёх типов 05 §6.4, тела ответов ack, статусов, отмены, поиска клиента, долга,
+    `/external-ids`; с 1.1.0 — поля-предложения ТЗ для 1С §5.6, §5.7, §6.10, §6.11, §6.20) — **предмет
+    согласования** в RM-B-014, а не утверждённый канон. Специалист 1С не реализует их как окончательные
+    до утверждения; POS читает поля-предложения, если они пришли, и работает без них. Расхождения
+    05 ↔ 18 (contracts/onec/NOTES.md §4) закрываются по ONEC-074: сначала 05 §6, затем 18, затем этот
+    контракт. Журнал версий — contracts/onec/NOTES.md §6.
+
+    **1.1.0 (2026-10-24).** Контракт приведён к ТЗ для программиста 1С
+    (`docs/integration/1C_API_requirements.md`): `customer.ref = null` для «Розничного покупателя»
+    (бывшее «исключение из контракта v1», Q-026), необязательный `since` у `/external-ids`, у
+    `POST /orders/status` нет ответа 404, таймауты и повторы POS, поля-предложения. Изменения
+    аддитивные или ослабляющие (ONEC-033): `v1` сохраняется.
+  contact:
+    name: Владелец содержания — 05_ONEC_INTEGRATION §6 (роль ONEC)
+  license:
+    name: Проприетарная лицензия (материалы проекта «Оптомстрой POS»)
+  x-canon: 05_ONEC_INTEGRATION.md §6.3 (методы), §6.4 (форматы), §6.5 (ошибки), §6.7 (QR)
+  x-api-version-header: "X-POS-API-Version: 1"
+  x-connect-timeout-ms: 5000
+  x-get-retry:
+    description: Повтор идемпотентного GET HTTP-клиентом POS при временной ошибке (ТЗ для 1С §4.7); POST не повторяется
+    maxAttempts: 3
+    delaysMs: [500, 1000]
+servers:
+  - url: https://{host1c}/{publication}/hs
+    description: Публикация 1С (сегмент `hs` — [ТИПОВО]); доступ только из LAN или туннеля WireGuard (ONEC-080)
+    variables:
+      host1c:
+        default: host-1c
+        description: Адрес веб-сервера 1С в LAN или в подсети WireGuard (`ONEC_BASE_URL`)
+      publication:
+        default: publication
+        description: Имя публикации информационной базы (`ONEC_HS_PATH` — путь до `hs`)
+security:
+  - basicAuth: []
+    clientKey: []
+  - jwtAuth: []
+    clientKey: []
+tags:
+  - name: service
+    description: Доступность и версии (ONEC-051)
+  - name: exchange
+    description: План обмена «POS» — сообщения изменений, подтверждение, перерегистрация (05 §6.2, ONEC-034…036)
+  - name: orders
+    description: Заказ клиента — создание, статус, отмена (ONEC-037…042)
+  - name: payments
+    description: Платёжные документы (ONEC-043)
+  - name: qr
+    description: QR-оплата через интеграцию 1С с банком, `QR_PROVIDER=onec` (05 §6.7, ONEC-075…078)
+  - name: customers
+    description: Клиенты — поиск по телефону, создание с дедупликацией, долг (ONEC-044…047)
+  - name: returns
+    description: Заявки на возврат (ONEC-048, ONEC-067)
+  - name: catalog
+    description: Проверка корзины, картинки, карточка товара (ONEC-049, ONEC-050, ONEC-057)
+  - name: reconcile
+    description: Восстановление связей после аварийного восстановления backend (SYNC-063)
+
+paths:
+  /pos/v1/health:
+    get:
+      tags: [service]
+      operationId: getHealth
+      summary: Проверка доступности, версии и очередь регистраций
+      description: |
+        Версия API и расширения, платформа, конфигурация и релиз, `registrationBacklog`,
+        `lastAckMessageNumber`, `serverTime` (ONEC-051). Без аутентификации — только 401 без сведений
+        о системе (версий, имени конфигурации, числа записей). Тело 401 — единый формат ошибки
+        `POS_E_UNAUTHORIZED`, если отказ формирует код расширения (нет или неверен `X-POS-Client-Key`);
+        если неверный пароль или JWT отклоняет платформа — тела может не быть (ТЗ для 1С §4.6, §6.1).
+        Используется `/health/ready` backend, перед каждым циклом обмена и после `POS_E_ACK_OUT_OF_ORDER`.
+        POS проверяет, что `apiVersion` — строка, а `lastAckMessageNumber` — число.
+        Предупреждения 05 §6.2 п. 3: не подтверждённые сообщения старше 24 ч или более 100 000 записей
+        регистрации.
+      x-onec-requirements: [ONEC-051, ONEC-033]
+      x-priority: must
+      x-timeout-ms: 30000
+      x-idempotency: чтение; безопасный повтор
+      x-retry: pull — SYNC-029; 401/403 — алерт администратору, следующий запрос не раньше чем через 15 мин (05 §6.5)
+      x-access: роль POS_ИнтеграцияPOS (пользователь pos_hs) + X-POS-Client-Key; без аутентификации — 401 без сведений о системе (тело — только Error с POS_E_UNAUTHORIZED, либо без тела, если отвечает платформа)
+      x-error-codes: [POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "200":
+          description: Расширение доступно
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/changes:
+    get:
+      tags: [exchange]
+      operationId: getChanges
+      summary: Страница сообщения обмена `since+1` плана обмена «POS»
+      description: |
+        05 §6.2 п. 1. Запрос **без** `cursor` начинает (или начинает заново) сообщение `N+1`:
+        `ПланыОбмена.ВыбратьИзменения(УзелPOS, N+1)` нумерует **все** непронумерованные регистрации узла.
+        Страницы — из таблиц регистрации узла (номер ≤ `N+1`) в устойчивом порядке.
+        `cursor` — непрозрачный ключ последнего выданного элемента. `hasMore=true`, пока после курсора
+        есть элементы. Объекты передаются в **текущем** состоянии. Удаление — элемент `ObjectDeletion`.
+        Набор записей регистра сведений — с ключом набора в `ref`.
+        Страница — не более `limit` элементов и 20 с формирования (ONEC-036).
+        Повтор до ack выдаёт то же сообщение (ONEC-035). `since` должен равняться `lastAckMessageNumber`
+        (`/health`); меньше или больше — 400 `POS_E_BAD_REQUEST` без изменения регистраций (ТЗ для 1С §6.2 п. 3).
+
+        Как POS ведёт цикл (ТЗ для 1С §5.2):
+        - **Пустое сообщение.** Нет регистраций — ответ 200 с `messageNumber = since+1`, `items = []`,
+          `hasMore = false`, `cursor = null`. Сообщение без элементов на всех страницах POS **не подтверждает**
+          (ack не отправляется) и свой номер не сдвигает; следующий цикл снова запрашивает `since`.
+        - **Уже применённое сообщение.** Если пришло сообщение с `messageNumber` ≤ номера, уже применённого
+          POS, данные повторно не применяются, но ack этого номера отправляется (выравнивание после сбоя ack).
+        - **Ответ не по контракту** (`hasMore=true` без непустого `cursor`, разные `messageNumber` на
+          страницах одного сообщения) — POS откатывает всё сообщение, ack не отправляет и в следующем цикле
+          запрашивает сообщение с начала.
+        - **Неизвестный тип** — предупреждение в журнале POS, элемент пропускается; тип из перечня, который
+          POS пока не применяет, тоже пропускается, а ack снимает его регистрацию (ТЗ для 1С §5.3 п. 10–11).
+      x-onec-requirements: [ONEC-034, ONEC-035, ONEC-036, ONEC-077]
+      x-priority: must
+      x-timeout-ms: 60000
+      x-idempotency: повторная выдача сообщения до ack; backend применяет идемпотентно по ref (SYNC-031)
+      x-retry: pull — SYNC-029 (временные коды); 400 — sync_errors без ретрая; таймаут чтения страницы 60 с (SYNC-030)
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key; чтение таблиц изменений — код POS_Сервер в привилегированном режиме (ONEC-053)
+      x-error-codes: [POS_E_BAD_REQUEST, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_LOCKED, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: since
+          in: query
+          required: true
+          description: Последний подтверждённый номер сообщения `N` (`sync_node_state.last_message_number`); ответ — сообщение `N+1`
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: limit
+          in: query
+          required: false
+          description: Элементов на странице; по умолчанию 1000, максимум 5000 — большее значение расширение ограничивает до 5000 (AC-ONEC-036)
+          schema:
+            type: integer
+            minimum: 1
+            default: 1000
+        - name: cursor
+          in: query
+          required: false
+          description: Непрозрачный ключ продолжения из предыдущей страницы того же сообщения
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Страница сообщения
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangesPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/changes/ack:
+    post:
+      tags: [exchange]
+      operationId: ackChanges
+      summary: Подтверждение полного применения сообщения
+      description: |
+        05 §6.2 п. 2, ядро §22.8. Backend отправляет ack только после применения **всех** страниц
+        сообщения (последняя — `hasMore=false`). Расширение снимает регистрацию **только по номеру**:
+        `ПланыОбмена.УдалитьРегистрациюИзменений(УзелPOS, N+1)`. Снятие по отдельным объектам запрещено.
+        Повтор ack уже подтверждённого номера — 200 без действий.
+        Номер больше выданного — 409 `POS_E_ACK_OUT_OF_ORDER`.
+        POS отправляет ack и для сообщения с номером ≤ уже применённого (данные повторно не применяются),
+        но не отправляет ack для пустого сообщения (`items=[]` на всех страницах) — ТЗ для 1С §5.2 п. 4–5.
+      x-onec-requirements: [ONEC-035, ONEC-036]
+      x-priority: must
+      x-timeout-ms: 30000
+      x-idempotency: повтор ack того же (или меньшего) номера — 200 без действий
+      x-retry: временные коды — повтор с тем же messageNumber (SYNC-029); 409 POS_E_ACK_OUT_OF_ORDER — backend читает /health.lastAckMessageNumber и продолжает с него
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key; снятие регистрации — код POS_Сервер (ONEC-053)
+      x-error-codes: [POS_E_BAD_REQUEST, POS_E_ACK_OUT_OF_ORDER, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_LOCKED, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangesAckRequest"
+      responses:
+        "200":
+          description: Сообщение подтверждено (или уже было подтверждено)
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangesAckResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/changes/reregister:
+    post:
+      tags: [exchange]
+      operationId: reregisterChanges
+      summary: Полная перерегистрация состава плана обмена
+      description: |
+        05 §6.2 п. 4: `ПланыОбмена.ЗарегистрироватьИзменения(УзелPOS, Метаданные.<Объект>)` для каждого
+        объекта состава §6.2. Нужна для полной перезагрузки данных. Работа может идти в фоне.
+        Вызов фиксируется в `POS_ЖурналЗапросовPOS`. Тело запроса не требуется.
+      x-onec-requirements: [ONEC-034]
+      x-priority: must
+      x-timeout-ms: 30000
+      x-idempotency: нет (повтор безопасен — повторная регистрация того же состава)
+      x-retry: вызывается вручную администратором; автоматических повторов нет
+      x-access: только роль POS_ИнтеграцияPOS + X-POS-Client-Key; вызов пишется в POS_ЖурналЗапросовPOS
+      x-error-codes: [POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_LOCKED, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      responses:
+        "202":
+          description: Перерегистрация принята (выполняется в фоне); тела нет
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/orders:
+    post:
+      tags: [orders]
+      operationId: createOrder
+      summary: Создать «Заказ клиента» из заказа POS
+      description: |
+        ONEC-037…040. Документ заполняется типовыми процедурами. Статус при создании — «Не согласован».
+        Строки — «К обеспечению», без резерва. Проведение — в той же транзакции.
+        `totals` — контрольные суммы. Если итог 1С отличается от `totals.total` больше чем на 0,01 KGS,
+        ответ содержит `recalculated=true` и фактические суммы (ONEC-039).
+        В `Комментарий` документа пишется `comment` запроса: он уже начинается с `POS <externalId>`
+        (формат — `OrderCreateRequest.comment`), повторять строку не нужно.
+        Повтор после пометки удаления — 200 с `deletionMark=true` (AC-ONEC-059).
+        «Розничный покупатель» POS (`customer.ref = null`) — 1С подставляет розничного контрагента
+        и соглашение по умолчанию; ответ 400 на такой заказ недопустим (Q-026).
+        Таймаут POS — 6 с (`x-timeout-ms`): документ должен создаваться в пределах 6 с (ТЗ для 1С §4.9).
+      x-onec-requirements: [ONEC-037, ONEC-038, ONEC-039, ONEC-040, ONEC-059]
+      x-priority: must
+      x-timeout-ms: 6000
+      x-idempotency: по externalId через POS_ВнешниеИдентификаторыPOS — повтор → 200 с тем же документом; документ и запись регистра — одна транзакция (10 параллельных POST → один документ)
+      x-retry: outbox (05 §8.1, SYNC-044) — временные коды (POS_E_LOCKED, POS_E_INTERNAL, POS_E_MAINTENANCE, таймаут) → pending с backoff 1, 2, 5, 15, 60 мин, далее раз в час, до OUTBOX_MAX_ATTEMPTS/OUTBOX_MAX_AGE_HOURS, затем dead; 422/409 → failed без ретрая; 401/403 → dead + алерт
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key; создание документа — только код POS_Сервер в привилегированном режиме (ONEC-053), без generic write
+      x-error-codes: [POS_E_BAD_REQUEST, POS_E_VALIDATION, POS_E_STOCK, POS_E_PRICE, POS_E_CREDIT, POS_E_LOCKED, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCreateRequest"
+      responses:
+        "200":
+          description: Заказ с этим externalId уже существует — возвращён существующий документ
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderCreateResponse"
+        "201":
+          description: Заказ создан
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderCreateResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/Validation"
+        "423":
+          $ref: "#/components/responses/Locked"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/orders/{uuid}/status:
+    get:
+      tags: [orders]
+      operationId: getOrderStatus
+      summary: Статус одного заказа POS
+      description: |
+        ONEC-041. Возвращает `Ref_Key`, номер, дату, статус 1С, признак согласования, состояние выполнения,
+        сумму и проведённые реализации. Ответ без кэширования. Состав полей совпадает с элементом
+        `Document_ЗаказКлиента` пакета `/changes`. Значения `status` и `fulfillmentState` — **сырые**
+        значения 1С; проекцию в `order_status` выполняет backend (05 §5.1b, D-20).
+      x-onec-requirements: [ONEC-041, ONEC-021]
+      x-priority: must
+      x-timeout-ms: 30000
+      x-idempotency: чтение
+      x-retry: pull — SYNC-029; 404 → orders.onec_sync_state=missing, статус заказа не меняется, sync_errors OUTBOX_UNCONFIRMED (05 §6.5)
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key
+      x-error-codes: [POS_E_NOT_FOUND, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/OrderUuid"
+      responses:
+        "200":
+          description: Состояние заказа
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/orders/status:
+    post:
+      tags: [orders]
+      operationId: getOrderStatusBatch
+      summary: Статусы заказов пакетом (до 200 externalId)
+      description: |
+        ONEC-041, SYNC-017. Пакетный вариант `GET /pos/v1/orders/{uuid}/status`: до 200 значений
+        `externalIds`. Найденные заказы возвращаются в `items` (формат `OrderStatus`).
+        Не найденные `externalId` возвращаются в `notFound`; для них backend выполняет правило 404 из 05 §6.5.
+        Каждый запрошенный `externalId` попадает либо в `items`, либо в `notFound`. Ответа 404 у пакетного
+        метода нет: даже если не найден ни один заказ — 200 со списком `notFound` (ТЗ для 1С §6.9, А.2).
+      x-onec-requirements: [ONEC-041]
+      x-priority: must
+      x-timeout-ms: 30000
+      x-idempotency: чтение
+      x-retry: pull — SYNC-029; 404 (например, от платформы) — прогон завершается ошибкой «1С недоступна», статусы заказов не меняются
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key
+      x-error-codes: [POS_E_BAD_REQUEST, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderStatusBatchRequest"
+      responses:
+        "200":
+          description: Статусы найденных заказов и список не найденных
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderStatusBatchResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/orders/{uuid}/cancel:
+    post:
+      tags: [orders]
+      operationId: cancelOrder
+      summary: Запрос отмены заказа POS
+      description: |
+        ONEC-042. Устанавливает пометку или причину отмены по типовым правилам — только для заказа без
+        проведённых реализаций. Иначе 409 `POS_E_STATE`, документ не меняется.
+        Вызов выполняет воркер outbox по элементу `operation=cancel` (ядро §22.9, SYNC-042).
+        Ответ 200 — текущее состояние заказа в формате метода статуса с признаком отмены.
+      x-onec-requirements: [ONEC-042]
+      x-priority: must
+      x-timeout-ms: 30000
+      x-idempotency: по externalId заказа — повторная отмена отменённого заказа → 200 с тем же состоянием
+      x-retry: outbox (05 §8.1) — временные коды → pending с backoff; 409 POS_E_STATE → failed без ретрая; 404 → failed без автоповтора, orders.onec_sync_state=missing (05 §6.5)
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key; изменение документа — только код POS_Сервер (ONEC-053)
+      x-error-codes: [POS_E_BAD_REQUEST, POS_E_NOT_FOUND, POS_E_STATE, POS_E_LOCKED, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/OrderUuid"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCancelRequest"
+      responses:
+        "200":
+          description: Заказ отменён (или уже был отменён) — текущее состояние
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderStatus"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/payments:
+    post:
+      tags: [payments]
+      operationId: createPayment
+      summary: Зарегистрировать оплату (ПКО или поступление безнала)
+      description: |
+        ONEC-043. Создаёт платёжный документ по Q-012: `ПриходныйКассовыйОрдер` для `cash`, документ
+        поступления безнала или эквайринга для `qr_bakai`. Основание — заказ или долг клиента.
+        `allocations[]` (необязательно) распределяет оплату долга по документам. Без него распределяет 1С
+        типовым правилом (FIFO). `post` применяется только при `РазрешитьПроведениеПлатежей = Истина`
+        (Q-124), иначе `posted=false`. Если интеграция QR уже создала документ поступления и
+        зарегистрировала его с `externalId` платежа — ответ 200 «уже существует» (ONEC-077).
+        Если `orderRef = null`, заказ-основание ищется по `orderExternalId` в `POS_ВнешниеИдентификаторыPOS`
+        (тип `Заказ`). Заказ-основание не найден — 422 `POS_E_VALIDATION` (текст «Заказ не найден»), а не 404:
+        ответа 404 у метода нет. Ошибки `allocations` (сумма больше `amount`, документ другого клиента,
+        сумма больше остатка долга) — тоже 422.
+        В первой версии POS метод **не вызывает** (ПКО и поступления вводятся в 1С, документ поступления по QR
+        создаёт банковская интеграция; Q-012, ТЗ для 1С §1.2 п. 2, §6.13); метод остаётся в контракте и приёмке.
+      x-onec-requirements: [ONEC-043, ONEC-077]
+      x-priority: must
+      x-timeout-ms: 30000
+      x-idempotency: по externalId платежа — повтор → 200 с тем же документом
+      x-retry: outbox (05 §8.1, SYNC-044) — временные коды → pending с backoff; 422/409 → failed без ретрая; 401/403 → dead + алерт; 404 расширение не возвращает (заказ-основание не найден — 422 POS_E_VALIDATION), 404 платформы → failed без повтора
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key; создание документа — только код POS_Сервер (ONEC-053)
+      x-error-codes: [POS_E_BAD_REQUEST, POS_E_VALIDATION, POS_E_STATE, POS_E_LOCKED, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentCreateRequest"
+      responses:
+        "200":
+          description: Платёжный документ с этим externalId уже существует
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentCreateResponse"
+        "201":
+          description: Платёжный документ создан
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentCreateResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/Validation"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/payments/qr:
+    post:
+      tags: [qr]
+      operationId: createQrPayment
+      summary: Создать динамический QR через интеграцию 1С с банком
+      description: |
+        05 §6.7, ONEC-075, ядро v1.9 §24.4 (`QR_PROVIDER=onec`). Вход — `externalId` платежа,
+        `orderExternalId`, сумма, валюта. Ответ — `qrPayload`, `reference`, `expiresAt`.
+        Документа заказа в 1С может ещё не быть: заказ в состоянии `submitting`, ядро §22.5.
+        `requestedTtlSeconds` = `QR_TTL_MINUTES` × 60. Если срок у банка короче, действует `expiresAt` банка.
+        Если банк отдаёт только картинку, вместо `qrPayload` приходит `qrImagePng` (base64, ответ QR-3).
+        Возможность интеграции — [НЕ ПОДТВЕРЖДЕНО: Q-014, QR-3].
+
+        **Перевыпуск (ТЗ для 1С §6.14, §7.4).** Перед перевыпуском POS синхронно вызывает
+        `/qr/cancel` с `reason=reissue` (одна попытка до 6 с); если отмена вернула `paid`, новый QR не
+        запрашивается. Затем — этот метод с **тем же** `externalId`. Запись `pending` с истёкшим
+        `СрокДействия` считается `expired`: перед перевыпуском по ней 1С проверяет у банка, что оплаты нет
+        (оплата есть — запись `paid`, ответ 409 `POS_E_STATE`). Новый выпуск получает **новый** `reference`;
+        прежние референсы платежа 1С сохраняет (способ — на усмотрение 1С): если деньги придут по прежнему QR,
+        статус `paid` сообщается с `reference` того QR, по которому они пришли (`QrPaymentStatus.reference`).
+        Статус `paid` по этому `externalId` — 409 `POS_E_STATE`, новый QR не создаётся.
+      x-onec-requirements: [ONEC-075]
+      x-priority: must (при QR_PROVIDER=onec, Q-014)
+      x-timeout-ms: 6000
+      x-idempotency: по externalId платежа — пока QR действует, повтор → 200 с тем же QR (банк не вызывается); после expired/cancelled (в том числе pending с истёкшим сроком) — 201 с новым reference при том же externalId (перевыпуск); после paid — 409 POS_E_STATE
+      x-retry: не outbox, без автоматических повторов — синхронный ответ кассиру; 503 POS_E_QR_UNAVAILABLE, 401/403, таймаут ONEC_SYNC_CHECK_TIMEOUT_MS (6 с) → /api/v1 QR_UNAVAILABLE, платёж остаётся qr_pending, кассир повторяет (тот же externalId) или меняет способ (05 §6.5)
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key; запись POS_ОплатыQR — только код POS_Сервер (ONEC-053); ПДн плательщика не передаются
+      x-error-codes: [POS_E_BAD_REQUEST, POS_E_VALIDATION, POS_E_STATE, POS_E_QR_UNAVAILABLE, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QrCreateRequest"
+      responses:
+        "200":
+          description: QR с этим externalId ещё действует — возвращён тот же QR
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QrCreateResponse"
+        "201":
+          description: QR создан (впервые или перевыпуск после expired/cancelled)
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QrCreateResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/Validation"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/payments/{externalId}/status:
+    get:
+      tags: [qr]
+      operationId: getQrPaymentStatus
+      summary: Статус оплаты по QR
+      description: |
+        05 §6.7.2, ONEC-076. Возвращает `status` (`pending | paid | expired | cancelled`), сумму к оплате,
+        зачисленную сумму, время оплаты, референс банка, `reference`, `expiresAt` и ссылку на документ
+        поступления, если он создан. ПДн плательщика не передаются. Время ответа ≤ 1 с (p95).
+        Правила обработки ответа — 05 §6.7.3. Метод только читает `POS_ОплатыQR`: запись `pending` с истёкшим
+        `СрокДействия` возвращается со `status = expired` без перезаписи. При `paid` — `reference` того QR,
+        по которому пришли деньги (может быть прежним, до перевыпуска). Деньги после истечения или отмены QR —
+        всё равно `paid` с фактическими данными (ТЗ для 1С §6.15).
+      x-onec-requirements: [ONEC-076]
+      x-priority: must (при QR_PROVIDER=onec, Q-014)
+      x-timeout-ms: 6000
+      x-idempotency: чтение
+      x-retry: опрос SYNC-077 — каждые QR_ONEC_POLL_SECONDS (5 с), пока платёж в qr_shown, но не дольше expiresAt + 60 с; таймаут/5xx/401/403 — опрос продолжается до этого срока; автоматического перевода «нет ответа → ручное подтверждение» нет — по наступлении expiresAt платёж переводит в qr_expired таймер POS (статус expired от 1С учитывается по тому же сроку); оплата после срока или по прежнему reference — manual_confirm (late_payment); 404 — статус платежа не меняется, ошибка в журнале (ТЗ для 1С §6.15, §7, FQ-PAY-03)
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key
+      x-error-codes: [POS_E_NOT_FOUND, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/PaymentExternalId"
+      responses:
+        "200":
+          description: Текущий статус QR
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QrPaymentStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/payments/{externalId}/qr/cancel:
+    post:
+      tags: [qr]
+      operationId: cancelQrPayment
+      summary: Отменить действующий QR
+      description: |
+        05 §6.7.2, ONEC-078, SYNC-078. Причины — смена способа оплаты, отмена платежа или заказа,
+        перевыпуск. Если интеграция банка отмену не поддерживает (QR-6), QR помечается отменённым только
+        в `POS_ОплатыQR`. Поздняя оплата такого QR всё равно отражается статусом `paid`.
+        Если деньги уже зачислены — 200 со `status=paid` и данными оплаты.
+        Отменяется текущий (последний выданный) QR платежа: поля `reference` в теле нет (отмена конкретного
+        QR по референсу — Q-014, вопрос 66 ТЗ для 1С).
+
+        Правила по состоянию записи `POS_ОплатыQR` (ТЗ для 1С §6.16):
+        - нет записи — 404 `POS_E_NOT_FOUND`;
+        - `paid` — ничего не отменяется, 200 `paid` с данными оплаты;
+        - `pending` (в том числе с истёкшим сроком: банк мог ещё не закрыть QR) — отмена в банке, если интеграция
+          умеет (QR-6), запись → `cancelled`, 200 `cancelled`;
+        - `cancelled` или **`expired`** — 200 `cancelled` без действий (повторная отмена — не ошибка);
+          запись `expired` остаётся `expired`.
+      x-onec-requirements: [ONEC-078]
+      x-priority: must (при QR_PROVIDER=onec, Q-014)
+      x-timeout-ms: 6000
+      x-idempotency: повтор → 200 с текущим статусом
+      x-retry: не операция outbox. Перед перевыпуском (reason=reissue) — одна синхронная попытка до 6 с, без повторов; ошибка не останавливает перевыпуск (прежний reference POS сохраняет в истории и оплату по нему разбирает вручную). После аннулирования, смены способа или отмены заказа (SYNC-078) — фоном, аннулирование в POS не ждёт 1С; при временной ошибке или таймауте повтор через 1 мин, 2 мин, далее каждые 5 мин до expiresAt (срок неизвестен — не дольше 1 ч после аннулирования); 400/404/401/403 — попытки прекращаются
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key; запись POS_ОплатыQR — только код POS_Сервер (ONEC-053)
+      x-error-codes: [POS_E_BAD_REQUEST, POS_E_NOT_FOUND, POS_E_QR_UNAVAILABLE, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/PaymentExternalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QrCancelRequest"
+      responses:
+        "200":
+          description: QR отменён (`cancelled`) либо уже оплачен (`paid` с полями оплаты)
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QrCancelResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/customers:
+    get:
+      tags: [customers]
+      operationId: findCustomersByPhone
+      summary: Найти клиентов по нормализованному телефону
+      description: |
+        ONEC-044. Поиск по контактной информации «Телефон» партнёров и контрагентов. Сравниваются
+        только цифры номера, по последним 9 цифрам: `0700000001` и `+996700000001` — один номер.
+        Возвращаются все кандидаты: 0, 1 или несколько. Поле `НомерТелефона` зависит от версии БСП (Q-125).
+        В журналах backend номер не пишется (AC-ONEC-088).
+      x-onec-requirements: [ONEC-044]
+      x-priority: must
+      x-timeout-ms: 6000
+      x-idempotency: чтение
+      x-retry: синхронный вызов; временные коды — повтор по SYNC-029
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key; телефон в журналах маскируется
+      x-error-codes: [POS_E_BAD_REQUEST, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: phone
+          in: query
+          required: true
+          description: Номер в формате E.164 (`+996700000001`; символ `+` в адресе кодируется как `%2B`)
+          schema:
+            $ref: "#/components/schemas/PhoneE164"
+      responses:
+        "200":
+          description: Кандидаты (пустой массив, если не найдено)
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CustomerCandidate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      tags: [customers]
+      operationId: createCustomer
+      summary: Создать клиента с дедупликацией по телефону
+      description: |
+        ONEC-045, ONEC-046. Создаёт партнёра, контрагента (при раздельном ведении) и контактную информацию
+        «Телефон» типовым программным интерфейсом. В 1С передаются только наименование, телефон, ИНН,
+        вид клиента и комментарий. При `dedupe.failOnDuplicate=true` и найденном **другом** клиенте
+        с тем же телефоном — 409 `POS_E_DUPLICATE` с `details.candidates`; новая карточка не создаётся.
+        При `dedupe.failOnDuplicate=false` (кассир с правом «создать всё равно» указал причину) проверка
+        дублей не выполняется и карточка создаётся — 201 (`x-status: proposed`, допущение Q-025, вопрос 42
+        ТЗ для 1С §6.11). Повтор того же `externalId` отвечает 200, а не 409; проверка дублей при повторе
+        не выполняется.
+      x-onec-requirements: [ONEC-045, ONEC-046, ONEC-105]
+      x-priority: must (условно Q-025)
+      x-timeout-ms: 30000
+      x-idempotency: по externalId клиента — повтор → 200 (created=false); дубль по телефону другого клиента при failOnDuplicate=true → 409 POS_E_DUPLICATE; при failOnDuplicate=false дубли не проверяются (proposed, Q-025)
+      x-retry: outbox (05 §8.1) — временные коды → pending с backoff; 409 POS_E_DUPLICATE → failed, customer_link.status=conflict (SYNC-049); 422 → failed
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key; создание — только код POS_Сервер (ONEC-053); поля профиля приложения не передаются (ONEC-046)
+      x-error-codes: [POS_E_BAD_REQUEST, POS_E_DUPLICATE, POS_E_VALIDATION, POS_E_LOCKED, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerCreateRequest"
+      responses:
+        "200":
+          description: Клиент с этим externalId уже создан
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerCreateResponse"
+        "201":
+          description: Клиент создан
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerCreateResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/Validation"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/customers/{ref}/receivables:
+    get:
+      tags: [customers]
+      operationId: getCustomerReceivables
+      summary: Долг клиента с детализацией и условиями соглашения
+      description: |
+        ONEC-047. Возвращает сальдо, просрочку (сумма и дни), детализацию по документам и условия
+        соглашения (отсрочка, лимит, дни) с меткой `snapshotAt`. Сальдо совпадает с отчётом 1С
+        «Задолженность клиентов» на тот же момент. Вызывается фоново (SYNC-016) и по
+        `POST /api/v1/customers/{id}/receivables/refresh` (SYNC-073) с таймаутом `ONEC_SYNC_CHECK_TIMEOUT_MS`.
+      x-onec-requirements: [ONEC-047]
+      x-priority: must
+      x-timeout-ms: 6000
+      x-idempotency: чтение
+      x-retry: pull — SYNC-029; при ошибке прежний снимок сохраняется (05 §5.3)
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key; суммы долга не пишутся в тексты ошибок и журналы (ONEC-054)
+      x-error-codes: [POS_E_NOT_FOUND, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/CustomerRef"
+      responses:
+        "200":
+          description: Снимок долга
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerReceivables"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/returns:
+    post:
+      tags: [returns]
+      operationId: createReturnRequest
+      summary: Создать заявку на возврат на основании реализации
+      description: |
+        ONEC-048, ONEC-067. Создаёт `ЗаявкаНаВозвратТоваровОтКлиента` [НЕ ПОДТВЕРЖДЕНО: проверить по $metadata]
+        или иной документ по Q-018. Причина обязательна. Количество по строке ≤ «отгружено − уже возвращено»,
+        иначе 409 `POS_E_STATE`. `status` — значение канона `return_request_status`, уже спроецированное
+        расширением. `onecStatus` — исходное значение 1С, только для журнала.
+        Отправка заявок из POS включается флагом `RETURNS_FROM_POS_ENABLED` (SYNC-050).
+        Реализация-основание, клиент или товар по ссылке не найдены, нет причины, не прошла проверка
+        заполнения — 422 `POS_E_VALIDATION` (например, «Реализация не найдена»). Ответа 404 у метода нет
+        (ТЗ для 1С §6.17, А.2). Документ «Возврат товаров от клиента» по заявке желательно вводить на основании
+        заявки с комментарием `POS <externalId заявки>` — так POS свяжет его с заявкой
+        (`ReturnDocumentChange.returnRequestExternalId`).
+      x-onec-requirements: [ONEC-048, ONEC-067]
+      x-priority: must (условно Q-018)
+      x-timeout-ms: 30000
+      x-idempotency: по externalId заявки — повтор → 200 с тем же документом
+      x-retry: outbox (05 §8.1) — временные коды → pending с backoff; 409/422 → failed без ретрая; 404 расширение не возвращает (реализация не найдена — 422 POS_E_VALIDATION), 404 платформы → failed без повтора (ошибка данных)
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key; создание — только код POS_Сервер (ONEC-053)
+      x-error-codes: [POS_E_BAD_REQUEST, POS_E_VALIDATION, POS_E_STATE, POS_E_LOCKED, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReturnCreateRequest"
+      responses:
+        "200":
+          description: Заявка с этим externalId уже существует
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReturnRequestState"
+        "201":
+          description: Заявка создана
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReturnRequestState"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/Validation"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/returns/{uuid}/status:
+    get:
+      tags: [returns]
+      operationId: getReturnRequestStatus
+      summary: Статус заявки на возврат и связанных документов
+      description: |
+        ONEC-067. Возвращает те же поля, что ответ создания. `status` — проекция в `return_request_status`
+        по таблице 05 §6.4. Обратные переходы автоматически не выполняются. Опрос — каждые 5 мин
+        по открытым заявкам (05 §7.3).
+      x-onec-requirements: [ONEC-067, ONEC-015]
+      x-priority: must (условно Q-018)
+      x-timeout-ms: 30000
+      x-idempotency: чтение
+      x-retry: pull — SYNC-029
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key
+      x-error-codes: [POS_E_NOT_FOUND, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: uuid
+          in: path
+          required: true
+          description: externalId заявки на возврат (`return_requests.id`)
+          schema:
+            $ref: "#/components/schemas/ExternalId"
+      responses:
+        "200":
+          description: Состояние заявки
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReturnRequestState"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/images/{ref}:
+    get:
+      tags: [catalog]
+      operationId: getImage
+      summary: Байты присоединённого файла номенклатуры
+      description: |
+        ONEC-049. Отдаёт байты файла из ИБ или тома через программный интерфейс присоединённых файлов.
+        `ETag` = `"<sha256>"` — SHA-256 содержимого в hex в кавычках; совпадает с `product_images.sha256`
+        (SYNC-035, D-30). Если SHA-256 платформы недоступен [ТИПОВО: зависит от 8.3.x], используется
+        `ETag` = `"<ДатаМодификацииУниверсальная>-<Размер>"`, а SHA-256 считает backend.
+        При совпадении `If-None-Match` — 304 без тела. Путь к файлу на диске 1С в ответе запрещён.
+
+        Что POS принимает (ТЗ для 1С §5.4, §6.19): как фото — только файлы с расширениями
+        `x-pos-image-extensions`; прочие присоединённые файлы (PDF, документы) в фото не попадают и
+        помечаются удалёнными в реплике. Исходный файл больше `x-pos-max-source-bytes` (10 МБ) POS не
+        обрабатывает (ошибка позиции). `Content-Length` должен совпадать с `size` элемента
+        `Catalog_НоменклатураПрисоединенныеФайлы`, а `ETag` в виде SHA-256 — с хешем тела, иначе файл
+        отклоняется; при запасном `ETag` хеш считает POS.
+      x-onec-requirements: [ONEC-049, ONEC-006]
+      x-priority: must
+      x-timeout-ms: 120000
+      x-idempotency: условный GET по ETag / If-None-Match
+      x-retry: pull — SYNC-029; таймаут 120 с (SYNC-030); ночное окно SYNC_NIGHT_WINDOW; 404 — картинка недоступна (заглушка), 500/503 — в следующем ночном прогоне
+      x-pos-image-extensions: [jpg, jpeg, jpe, jfif, png, webp, gif, tif, tiff, heic, heif]
+      x-pos-max-source-bytes: 10485760
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key
+      x-error-codes: [POS_E_NOT_FOUND, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: ref
+          in: path
+          required: true
+          description: Ссылка присоединённого файла (`imageFileRef` из `/changes`, `Ref_Key` элемента `НоменклатураПрисоединенныеФайлы`)
+          schema:
+            $ref: "#/components/schemas/OnecRef"
+        - name: If-None-Match
+          in: header
+          required: false
+          description: Значение `ETag` из предыдущего ответа
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Файл картинки
+          headers:
+            ETag:
+              description: '`"<sha256 hex>"` либо fallback `"<ДатаМодификацииУниверсальная>-<Размер>"`'
+              schema:
+                type: string
+            Content-Length:
+              description: Размер тела в байтах
+              schema:
+                type: integer
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "304":
+          description: Файл не изменился (`If-None-Match` совпал с текущим `ETag`); тела нет
+          headers:
+            ETag:
+              description: Текущий `ETag`
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/check:
+    post:
+      tags: [catalog]
+      operationId: checkCart
+      summary: Синхронная проверка корзины
+      description: |
+        ONEC-050, D-29. Для каждой строки возвращает актуальную цену по виду цены или соглашению клиента,
+        свободный остаток по складу с учётом резервов, признак доступности и `issues` с каноническими
+        кодами `/api/v1` (R0 §7). Также возвращаются остатки по всем складам (`warehouses[]`, ONEC-070).
+        При `customerRef` и `paymentMethod=credit` — блок `receivables` с `creditAvailable`.
+        При `calculateDiscounts=true` — `totals` с автоскидками 1С.
+        Замечания — не ошибка: ответ 200. Время ответа ≤ 3 с для корзины до 100 строк.
+      x-onec-requirements: [ONEC-050, ONEC-070]
+      x-priority: must
+      x-timeout-ms: 6000
+      x-idempotency: чтение (ничего не записывает)
+      x-retry: без повторов в рамках оформления — таймаут ONEC_SYNC_CHECK_TIMEOUT_MS (6 с), при недоступности заказ оформляется по снимку с STALE_DATA (05 §9)
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key; чтение — код POS_Сервер (ONEC-053)
+      x-error-codes: [POS_E_BAD_REQUEST, POS_E_VALIDATION, POS_E_LOCKED, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckRequest"
+      responses:
+        "200":
+          description: Результат проверки
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/Validation"
+        "423":
+          $ref: "#/components/responses/Locked"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/catalog/{ref}:
+    get:
+      tags: [catalog]
+      operationId: getCatalogCard
+      summary: Карточка товара одним вызовом (опционально, фаза 1+)
+      description: |
+        ONEC-057 (could). Возвращает реквизиты, характеристики, упаковки, штрихкоды, цены по видам цен
+        и остатки по складам. Реализуется после базовых методов и не является условием приёмки фазы 1.
+        Если метода нет, платформа отвечает `404` без тела расширения — это допустимо.
+        Состав полей — по словарю 05 §5.3 в формате элементов `/changes`.
+        **В R1 backend метод не вызывает:** цены и остатки читаются срезами через OData (ТЗ для 1С §5.5, §6.21;
+        выбор «методы срезов HTTP-сервиса или OData» — Q-319). Формат строк `prices` и `stock` — образец для
+        предлагаемых методов срезов.
+      x-onec-requirements: [ONEC-057]
+      x-priority: could
+      x-timeout-ms: 30000
+      x-status: proposed
+      x-idempotency: чтение
+      x-retry: в R1 backend метод не вызывает (Q-319 открыт); при подключении — pull SYNC-029, 404 (товара нет или метод не реализован) → данные по товару из срезов OData
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key
+      x-error-codes: [POS_E_NOT_FOUND, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: ref
+          in: path
+          required: true
+          description: Ссылка номенклатуры (`Ref_Key`)
+          schema:
+            $ref: "#/components/schemas/OnecRef"
+      responses:
+        "200":
+          description: Карточка товара
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogCard"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /pos/v1/external-ids:
+    get:
+      tags: [reconcile]
+      operationId: listExternalIds
+      summary: Записи регистра внешних идентификаторов после `since`
+      description: |
+        SYNC-063 (could). Возвращает записи `POS_ВнешниеИдентификаторыPOS`, созданные начиная с `since`
+        (по `ДатаСоздания` записи); **без `since` — все записи** (`x-status: proposed`, ТЗ для 1С §6.20,
+        вопрос 56): `externalId`, `objectType`, `ref`, `number`, `date`, `deletionMark`. Ответ постраничный,
+        `limit` ≤ 1000. Порядок выдачи — устойчивый в обоих режимах: по **убыванию** `ДатаСоздания`, затем
+        по `ВнешнийИд` (первыми — новые записи), чтобы курсор не пропускал и не повторял записи.
+        Записи объектов с пометкой удаления возвращаются с `deletionMark: true`.
+        Продолжение страниц по `cursor`/`hasMore` — предложение 18 §4.17 (замечание 18 §12 п. 2),
+        в 05 §6.3 ещё не закреплено.
+
+        Вызовы POS: (1) восстановление после аварии — `since` = дата резервной копии; (2) ручная привязка
+        заказа по номеру 1С — **без `since`**, `type=Заказ`, `limit=500`, далее по `cursor`, не более 20 страниц
+        и 6 с на все страницы. Для заказов старше этого окна предложен отдельный метод поиска по номеру
+        `GET /pos/v1/orders?number={номер}` с ответом в формате `OrderStatus` (`x-proposed-operations`,
+        ждёт согласования; в таблицу 05 §6.3 не внесён).
+      x-onec-requirements: [SYNC-063]
+      x-priority: could
+      x-timeout-ms: 30000
+      x-idempotency: чтение
+      x-retry: восстановление — временные коды, повтор вручную; ручная привязка — без повторов, общий предел 6 с на все страницы, при ошибке администратору «1С не ответила»
+      x-proposed-operations:
+        - method: GET
+          path: /pos/v1/orders?number={номер}
+          x-status: proposed
+          description: Поиск «Заказа клиента» по номеру документа 1С для ручной привязки (ответ — OrderStatus или 404); ТЗ для 1С §6.20
+      x-access: роль POS_ИнтеграцияPOS + X-POS-Client-Key
+      x-error-codes: [POS_E_BAD_REQUEST, POS_E_UNAUTHORIZED, POS_E_FORBIDDEN, POS_E_INTERNAL, POS_E_MAINTENANCE]
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: since
+          in: query
+          required: false
+          x-status: proposed
+          description: Дата и время (ISO 8601, `+06:00`), начиная с которых вернуть записи (по `ДатаСоздания`); без параметра — все записи (ручная привязка заказа вызывает метод без `since`)
+          schema:
+            $ref: "#/components/schemas/DateTime"
+        - name: type
+          in: query
+          required: false
+          description: Тип объекта (значение перечисления `POS_ТипыВнешнихОбъектов`)
+          schema:
+            $ref: "#/components/schemas/ExternalObjectType"
+        - name: limit
+          in: query
+          required: false
+          description: Записей на странице, не более 1000
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 1000
+        - name: cursor
+          in: query
+          required: false
+          x-status: proposed
+          description: Непрозрачный ключ продолжения (предложение 18 §4.17)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Страница записей регистра
+          headers:
+            X-POS-API-Version:
+              $ref: "#/components/headers/XPosApiVersion"
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestIdEcho"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalIdsPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: Пользователь ИБ `pos_hs` с ролью `POS_ИнтеграцияPOS` (`ONEC_HS_USER_FILE`/`ONEC_HS_PASSWORD_FILE`)
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Альтернатива Basic, если платформа поддерживает JWT (чек-лист 05 §2.2 п. 1; выбор — при приёмке)
+    clientKey:
+      type: apiKey
+      in: header
+      name: X-POS-Client-Key
+      description: Второй фактор (секрет `ONEC_HS_TOKEN_FILE`; в 1С — константа расширения с доступом только администратору). Без ключа — 401 (ONEC-032)
+
+  parameters:
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: true
+      description: Сквозной идентификатор запроса backend (UUID); пишется в `POS_ЖурналЗапросовPOS` и возвращается в ответе (ONEC-088)
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    OrderUuid:
+      name: uuid
+      in: path
+      required: true
+      description: externalId заказа POS (`orders.id`)
+      schema:
+        $ref: "#/components/schemas/ExternalId"
+    PaymentExternalId:
+      name: externalId
+      in: path
+      required: true
+      description: externalId платежа POS (`payments.id`) — ключ записи `POS_ОплатыQR`
+      schema:
+        $ref: "#/components/schemas/ExternalId"
+    CustomerRef:
+      name: ref
+      in: path
+      required: true
+      description: Ссылка клиента (партнёра) 1С (`Ref_Key`)
+      schema:
+        $ref: "#/components/schemas/OnecRef"
+
+  headers:
+    XPosApiVersion:
+      description: Версия API расширения (ONEC-033); для v1 — `1`
+      schema:
+        type: string
+        enum: ["1"]
+    XRequestIdEcho:
+      description: Значение `X-Request-Id` запроса
+      schema:
+        $ref: "#/components/schemas/Uuid"
+
+  responses:
+    BadRequest:
+      description: "`POS_E_BAD_REQUEST` — невалидный JSON или параметры (ошибка данных, без ретрая)"
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestIdEcho"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: "`POS_E_UNAUTHORIZED` — неверный пользователь, пароль, JWT или `X-POS-Client-Key`; без аутентификации — никаких сведений о системе"
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestIdEcho"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: "`POS_E_FORBIDDEN` — нет прав роли `POS_ИнтеграцияPOS` на объект"
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestIdEcho"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: "`POS_E_NOT_FOUND` — объект по `ref`/`externalId` не найден"
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestIdEcho"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: |
+        409 — бизнес-отказ или ошибка протокола; конкретный код — в `x-error-codes` метода:
+        `POS_E_DUPLICATE` (другой клиент с тем же телефоном, `details.candidates`), `POS_E_STATE`
+        (недопустимое состояние документа), `POS_E_ACK_OUT_OF_ORDER` (ack невыданного номера),
+        `POS_E_STOCK`/`POS_E_PRICE`/`POS_E_CREDIT` (1С отклонила заказ при включённой проверке)
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestIdEcho"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Validation:
+      description: "`POS_E_VALIDATION` — не прошла проверка заполнения или проведения типовой конфигурации; `details.lines[]` — номер строки и текст"
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestIdEcho"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Locked:
+      description: "`POS_E_LOCKED` — объект заблокирован другим сеансом 1С (временная ошибка; то же — 503)"
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestIdEcho"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Internal:
+      description: "`POS_E_INTERNAL` — исключение встроенного языка (временная ошибка)"
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestIdEcho"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unavailable:
+      description: |
+        503 — временная ошибка: `POS_E_MAINTENANCE` (расширение отключено или идёт обновление),
+        `POS_E_LOCKED` (база в монопольном режиме), `POS_E_QR_UNAVAILABLE` (только методы QR, 05 §6.7)
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestIdEcho"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    # ---------- Примитивы (ONEC-058) ----------
+    Uuid:
+      type: string
+      description: UUID в нижнем регистре (ONEC-058)
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    OnecRef:
+      type: string
+      description: Ссылка 1С — GUID `Ref_Key` в нижнем регистре; устойчивый ключ сопоставления (ONEC-101)
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    ExternalId:
+      type: string
+      description: |
+        Внешний идентификатор POS — UUID агрегата (`orders.id`, `payments.id`, `customers.id`,
+        `return_requests.id`) в нижнем регистре. Ключ идемпотентности для 1С (R0 §22.1). Хранится
+        в `POS_ВнешниеИдентификаторыPOS.ВнешнийИд` (Строка 36) и в `Комментарий` документа как `POS <uuid>`.
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+      x-comment-format: "POS <uuid>"
+    ExternalObjectType:
+      type: string
+      description: Значение перечисления `POS_ТипыВнешнихОбъектов` (05 §6.1)
+      enum: [Заказ, Платеж, Клиент, ЗаявкаНаВозврат]
+    Money:
+      type: string
+      description: Деньги — строка с точкой и двумя знаками (D-19, ONEC-058)
+      pattern: "^-?\\d+\\.\\d{2}$"
+    Quantity:
+      type: string
+      description: Количество — строка с точкой и тремя знаками (D-19, ONEC-058)
+      pattern: "^-?\\d+\\.\\d{3}$"
+    Percent:
+      type: string
+      description: Процент скидки — строка с точкой и двумя знаками (как деньги, 05 §6.4)
+      pattern: "^-?\\d+\\.\\d{2}$"
+    DateTime:
+      type: string
+      format: date-time
+      description: ISO 8601 со смещением `+06:00` (Бишкек, ONEC-058)
+      pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+06:00$"
+    Currency:
+      type: string
+      description: Код валюты ISO 4217; в R1 — `KGS` (цены в другой валюте не загружаются, 05 §5.3)
+      pattern: "^[A-Z]{3}$"
+    PosUserCode:
+      type: string
+      description: |
+        Идентификатор пользователя POS для журнала 1С: внутренний UUID (`users.id`), а **не** логин; `system` —
+        действие системы без пользователя (например, автоматический выпуск QR). В `Комментарий` не дублируется
+        (Q-129; ТЗ для 1С §6.13, §6.14).
+      pattern: "^(system|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+    CustomerKind:
+      type: string
+      description: "Вид клиента: `individual` — физическое лицо, `entrepreneur` — ИП, `legal` — юридическое лицо (канон `customer_type`, Q-025)"
+      enum: [individual, entrepreneur, legal]
+    PhoneE164:
+      type: string
+      description: Телефон в формате E.164 (`+996700000001`)
+      pattern: "^\\+[1-9]\\d{7,14}$"
+    OnecObjectType:
+      type: string
+      description: "Имя типа объекта 1С в нотации стандартного OData (`Catalog_…`, `Document_…`, `InformationRegister_…`) [ТИПОВО: Q-010]"
+      pattern: "^(Catalog|Document|InformationRegister|ChartOfCharacteristicTypes)_\\S+$"
+    PaymentMethod:
+      type: string
+      description: Канон `payment_method` (R0 §6)
+      enum: [cash, qr_bakai, credit]
+    PaymentKind:
+      type: string
+      description: Канон `payment_method` без `credit` — долг не является платёжным документом (ONEC-043)
+      enum: [cash, qr_bakai]
+    IssueCode:
+      type: string
+      description: |
+        Канонические коды замечаний `/api/v1` (R0 §7) — пробрасываются без перекодирования (05 §6.4).
+        `PRICE_CHANGED` для 1С **необязателен**: цены POS в `CheckLineRequest` нет, POS сам сравнивает `price`
+        ответа со своей ценой и выставляет замечание (ТЗ для 1С §6.5). Если 1С код всё же вернёт — он принимается.
+      enum: [PRICE_CHANGED, STOCK_INSUFFICIENT, VARIANT_UNAVAILABLE, QTY_NOT_MULTIPLE, QTY_BELOW_MIN, CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED]
+      x-optional-for-onec: [PRICE_CHANGED]
+    QrStatus:
+      type: string
+      description: Статус QR в `POS_ОплатыQR` (05 §6.1, §6.7)
+      enum: [pending, paid, expired, cancelled]
+
+    # ---------- Ошибки (05 §6.5) ----------
+    ErrorCode:
+      type: string
+      description: Коды ошибок HTTP-сервиса (05 §6.5); временные — POS_E_LOCKED, POS_E_INTERNAL, POS_E_MAINTENANCE, POS_E_QR_UNAVAILABLE (ONEC-055)
+      enum:
+        - POS_E_BAD_REQUEST
+        - POS_E_UNAUTHORIZED
+        - POS_E_FORBIDDEN
+        - POS_E_NOT_FOUND
+        - POS_E_DUPLICATE
+        - POS_E_STATE
+        - POS_E_ACK_OUT_OF_ORDER
+        - POS_E_STOCK
+        - POS_E_PRICE
+        - POS_E_CREDIT
+        - POS_E_VALIDATION
+        - POS_E_LOCKED
+        - POS_E_INTERNAL
+        - POS_E_MAINTENANCE
+        - POS_E_QR_UNAVAILABLE
+    Error:
+      type: object
+      description: Единый формат тела ошибки (05 §6.5); `message` — текст для журнала без ПДн (без телефонов, ИНН, сумм долга)
+      required: [code, message, requestId]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+        details:
+          $ref: "#/components/schemas/ErrorDetails"
+        requestId:
+          $ref: "#/components/schemas/Uuid"
+    ErrorDetails:
+      type: object
+      description: Подробности ошибки; состав зависит от `code`
+      properties:
+        lines:
+          type: array
+          description: Для `POS_E_VALIDATION` — номер строки и текст (05 §6.5)
+          items:
+            $ref: "#/components/schemas/ValidationLine"
+        candidates:
+          type: array
+          description: Для `POS_E_DUPLICATE` — найденные клиенты с тем же телефоном (05 §6.4)
+          items:
+            $ref: "#/components/schemas/DuplicateCandidate"
+    ValidationLine:
+      type: object
+      required: [lineNumber, text]
+      properties:
+        lineNumber:
+          type: integer
+          minimum: 1
+        text:
+          type: string
+    DuplicateCandidate:
+      type: object
+      required: [ref, name, phone]
+      properties:
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        name:
+          type: string
+        phone:
+          $ref: "#/components/schemas/PhoneE164"
+
+    # ---------- health ----------
+    Health:
+      type: object
+      required: [apiVersion, extensionVersion, platform, configuration, configurationVersion, serverTime, exchangeNode, registrationBacklog, lastAckMessageNumber, status]
+      properties:
+        apiVersion:
+          type: string
+          description: Версия API (`POS_НастройкиPOS.ВерсияAPI`), для v1 — `1`
+        extensionVersion:
+          type: string
+          description: Версия расширения «OptomstroyPOS»
+        platform:
+          type: string
+          description: Версия платформы 1С:Предприятие
+        configuration:
+          type: string
+          description: Имя конфигурации (например `УправлениеТорговлей`)
+        configurationVersion:
+          type: string
+          description: Релиз конфигурации
+        serverTime:
+          $ref: "#/components/schemas/DateTime"
+        exchangeNode:
+          type: string
+          description: Имя узла плана обмена (`POS`)
+        registrationBacklog:
+          type: integer
+          minimum: 0
+          description: Число записей регистрации изменений узла «POS»
+        lastAckMessageNumber:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Последний подтверждённый номер сообщения (после `POS_E_ACK_OUT_OF_ORDER` backend продолжает с него)
+        status:
+          type: string
+          description: "`ok`; при предупреждении 05 §6.2 п. 3 (сообщения старше 24 ч, > 100 000 регистраций) — `warning` (18 §4.1)"
+
+    # ---------- план обмена ----------
+    ChangesPage:
+      type: object
+      description: |
+        Страница сообщения обмена. Требования, которые POS проверяет (ТЗ для 1С §5.2 п. 6, §6.2):
+        при `hasMore=true` `cursor` — обязательно непустая строка; `messageNumber` одинаков на всех страницах
+        сообщения. Нарушение — ответ не по контракту: POS откатывает всё сообщение и повторяет его с начала.
+        Пустое сообщение — `items=[]`, `hasMore=false`, `cursor=null`; POS его не подтверждает.
+      required: [messageNumber, hasMore, cursor, generatedAt, items]
+      properties:
+        messageNumber:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Номер выдаваемого сообщения (`since + 1`); одинаков на всех страницах сообщения
+        hasMore:
+          type: boolean
+          description: "`true`, пока после курсора есть элементы; последняя страница — `false`"
+        cursor:
+          type: string
+          nullable: true
+          description: Ключ продолжения для следующей страницы; при `hasMore=true` — непустая строка; `null` на последней странице
+          x-pos-required-when: "hasMore = true → cursor непустой"
+        generatedAt:
+          $ref: "#/components/schemas/DateTime"
+        items:
+          type: array
+          description: Не более `limit` и не более 5000 элементов; может быть пустым (пустое сообщение)
+          maxItems: 5000
+          items:
+            $ref: "#/components/schemas/ChangeItem"
+    ChangeItem:
+      description: |
+        Элемент сообщения: объект в текущем состоянии или удаление. Состав типов — план обмена «POS» (05 §6.2).
+        Имена типов — [ТИПОВО: УТ 11, Q-010]. Поля элемента `Catalog_Номенклатура`,
+        `Document_ЗаказКлиента`, `ObjectDeletion` и `QrPaymentStatus` — по примерам 05 §6.4 и §6.7.2.
+        Поля остальных типов выведены из словаря 05 §5.3 и карты §5.1 (`x-status: proposed`, NOTES.md §4).
+      oneOf:
+        - $ref: "#/components/schemas/NomenclatureChange"
+        - $ref: "#/components/schemas/VariantChange"
+        - $ref: "#/components/schemas/PackagingChange"
+        - $ref: "#/components/schemas/UnitChange"
+        - $ref: "#/components/schemas/WarehouseChange"
+        - $ref: "#/components/schemas/PriceListChange"
+        - $ref: "#/components/schemas/PartnerChange"
+        - $ref: "#/components/schemas/CounterpartyChange"
+        - $ref: "#/components/schemas/AgreementChange"
+        - $ref: "#/components/schemas/DiscountChange"
+        - $ref: "#/components/schemas/ImageFileChange"
+        - $ref: "#/components/schemas/BarcodeChange"
+        - $ref: "#/components/schemas/PriceSettingChange"
+        - $ref: "#/components/schemas/OrderChange"
+        - $ref: "#/components/schemas/ShipmentChange"
+        - $ref: "#/components/schemas/PaymentDocumentChange"
+        - $ref: "#/components/schemas/ReturnDocumentChange"
+        - $ref: "#/components/schemas/QrPaymentStatusChange"
+        - $ref: "#/components/schemas/ObjectDeletion"
+      discriminator:
+        propertyName: type
+        mapping:
+          Catalog_Номенклатура: "#/components/schemas/NomenclatureChange"
+          Catalog_ХарактеристикиНоменклатуры: "#/components/schemas/VariantChange"
+          Catalog_УпаковкиЕдиницыИзмерения: "#/components/schemas/PackagingChange"
+          Catalog_КлассификаторЕдиницИзмерения: "#/components/schemas/UnitChange"
+          Catalog_Склады: "#/components/schemas/WarehouseChange"
+          Catalog_ВидыЦен: "#/components/schemas/PriceListChange"
+          Catalog_Партнеры: "#/components/schemas/PartnerChange"
+          Catalog_Контрагенты: "#/components/schemas/CounterpartyChange"
+          Catalog_СоглашенияСКлиентами: "#/components/schemas/AgreementChange"
+          Catalog_СкидкиНаценки: "#/components/schemas/DiscountChange"
+          Catalog_НоменклатураПрисоединенныеФайлы: "#/components/schemas/ImageFileChange"
+          InformationRegister_ШтрихкодыНоменклатуры: "#/components/schemas/BarcodeChange"
+          Document_УстановкаЦенНоменклатуры: "#/components/schemas/PriceSettingChange"
+          Document_ЗаказКлиента: "#/components/schemas/OrderChange"
+          Document_РеализацияТоваровУслуг: "#/components/schemas/ShipmentChange"
+          Document_ПриходныйКассовыйОрдер: "#/components/schemas/PaymentDocumentChange"
+          Document_ПоступлениеБезналичныхДенежныхСредств: "#/components/schemas/PaymentDocumentChange"
+          Document_ВозвратТоваровОтКлиента: "#/components/schemas/ReturnDocumentChange"
+          QrPaymentStatus: "#/components/schemas/QrPaymentStatusChange"
+          ObjectDeletion: "#/components/schemas/ObjectDeletion"
+    AttributeValue:
+      type: object
+      description: Пара «свойство — значение» из ТЧ `ДополнительныеРеквизиты` (05 §6.4, ONEC-004)
+      required: [propertyRef, name]
+      properties:
+        propertyRef:
+          $ref: "#/components/schemas/OnecRef"
+        name:
+          type: string
+        valueType:
+          type: string
+          nullable: true
+          description: Тип значения (`Значение_Type`), например `Catalog_ЗначенияСвойствОбъектов`
+        valueRef:
+          type: string
+          nullable: true
+          description: Ссылка на значение-элемент справочника (GUID); `null` для примитивных значений
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        valueText:
+          type: string
+          nullable: true
+          description: Представление значения
+    ContactPhone:
+      type: object
+      x-status: proposed
+      description: Телефон из ТЧ `КонтактнаяИнформация` (05 §5.3 `customer_contacts`)
+      required: [presentation]
+      properties:
+        phone:
+          type: string
+          nullable: true
+          description: Нормализованный номер E.164; `null`, если нормализовать нельзя
+          pattern: "^\\+[1-9]\\d{7,14}$"
+        presentation:
+          type: string
+          description: Представление номера как в 1С (`phone_raw`)
+    NomenclatureChange:
+      type: object
+      description: "`Справочник.Номенклатура` — элементы и группы (категории) (05 §6.4, ONEC-001…004)"
+      required: [type, ref, dataVersion, deletionMark, isFolder, description]
+      properties:
+        type:
+          type: string
+          enum: [Catalog_Номенклатура]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+          description: "`DataVersion` объекта 1С"
+        deletionMark:
+          type: boolean
+        isFolder:
+          type: boolean
+          description: "`true` — группа (категория витрины)"
+        code:
+          type: string
+          nullable: true
+        description:
+          type: string
+          description: Наименование (`Description`)
+        fullName:
+          type: string
+          nullable: true
+        sku:
+          type: string
+          nullable: true
+          description: Артикул (`Артикул`)
+        parentRef:
+          type: string
+          nullable: true
+          description: Родительская группа (`Parent_Key`)
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        baseUnitRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        kindRef:
+          type: string
+          nullable: true
+          description: Вид номенклатуры (`ВидНоменклатуры_Key`) — не категория витрины
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        descriptionText:
+          type: string
+          nullable: true
+          description: Описание (`Описание`) как plain text
+        imageFileRef:
+          type: string
+          nullable: true
+          description: |
+            Основная картинка (`ФайлКартинки_Key`); байты — `GET /pos/v1/images/{ref}`. POS делает главным фото товара
+            этот файл, если он присоединён к этому же товару (`ImageFileChange.ownerRef` — товар или его
+            характеристика); иначе главное фото выбирается по признаку `isMain` и порядку файлов.
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        brand:
+          type: string
+          nullable: true
+          x-status: proposed
+          description: |
+            Предложение (ТЗ для 1С 5.4, вопрос 31): бренд — представление реквизита «Производитель» или «Марка»,
+            если он ведётся (строка). Необязательное: нет поля или `null` — бренд не задан.
+        isWeighted:
+          type: boolean
+          nullable: true
+          description: Весовой (`Весовой`)
+        attributes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttributeValue"
+    VariantChange:
+      type: object
+      x-status: proposed
+      description: "`Справочник.ХарактеристикиНоменклатуры` (ONEC-005, 05 §5.3)"
+      required: [type, ref, dataVersion, deletionMark, description, ownerRef]
+      properties:
+        type:
+          type: string
+          enum: [Catalog_ХарактеристикиНоменклатуры]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        code:
+          type: string
+          nullable: true
+        description:
+          type: string
+        ownerRef:
+          $ref: "#/components/schemas/OnecRef"
+        ownerType:
+          type: string
+          nullable: true
+          description: |
+            `Owner_Type` — `Catalog_Номенклатура` (индивидуальные характеристики) или `Catalog_ВидыНоменклатуры`
+            (общие для вида номенклатуры, Q-021). **Ограничение R1:** POS применяет только характеристики,
+            владелец которых — номенклатура; характеристику с другим `ownerType` POS не применяет (ошибка
+            позиции `VALIDATION`), остальные элементы сообщения применяются (ТЗ для 1С §5.4).
+          x-pos-accepted-values: [Catalog_Номенклатура]
+        sku:
+          type: string
+          nullable: true
+          description: Артикул характеристики, если ведётся в 1С [ТИПОВО, Q-021] (ONEC-073)
+        attributes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttributeValue"
+    PackagingChange:
+      type: object
+      x-status: proposed
+      description: "`Справочник.УпаковкиЕдиницыИзмерения` (ONEC-018, 05 §5.3 `packagings`)"
+      required: [type, ref, dataVersion, deletionMark, description, ownerRef, factor]
+      properties:
+        type:
+          type: string
+          enum: [Catalog_УпаковкиЕдиницыИзмерения]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        description:
+          type: string
+        ownerRef:
+          $ref: "#/components/schemas/OnecRef"
+        ownerType:
+          type: string
+          nullable: true
+          description: "`Owner_Type` — номенклатура или вид номенклатуры (набор упаковок)"
+        unitRef:
+          type: string
+          nullable: true
+          description: |
+            `ЕдиницаИзмерения_Key`. В схеме необязателен, но **ограничение R1:** упаковку без `unitRef` POS не
+            применяет (ошибка позиции `VALIDATION`), с неизвестной POS единицей — тоже (`NOT_FOUND_LOCAL`);
+            заполняйте всегда, когда реквизит есть в 1С (ТЗ для 1С §5.4, Q-021).
+          x-pos-required: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        factor:
+          $ref: "#/components/schemas/Quantity"
+    UnitChange:
+      type: object
+      x-status: proposed
+      description: "`Справочник.КлассификаторЕдиницИзмерения` (ONEC-018, 05 §5.3 `units`)"
+      required: [type, ref, dataVersion, deletionMark, description]
+      properties:
+        type:
+          type: string
+          enum: [Catalog_КлассификаторЕдиницИзмерения]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        code:
+          type: string
+          nullable: true
+        description:
+          type: string
+    WarehouseChange:
+      type: object
+      x-status: proposed
+      description: "`Справочник.Склады` (ONEC-019, 05 §5.3 `warehouses`)"
+      required: [type, ref, dataVersion, deletionMark, description]
+      properties:
+        type:
+          type: string
+          enum: [Catalog_Склады]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        isFolder:
+          type: boolean
+          nullable: true
+        code:
+          type: string
+          nullable: true
+        description:
+          type: string
+    PriceListChange:
+      type: object
+      x-status: proposed
+      description: "`Справочник.ВидыЦен` (ONEC-007, ONEC-022, 05 §5.3 `price_lists`)"
+      required: [type, ref, dataVersion, deletionMark, description]
+      properties:
+        type:
+          type: string
+          enum: [Catalog_ВидыЦен]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        code:
+          type: string
+          nullable: true
+        description:
+          type: string
+        currency:
+          type: string
+          nullable: true
+          description: |
+            Код валюты ISO вида цены (`ВалютаЦены_Key` → код) [НЕ ПОДТВЕРЖДЕНО]. `null` — POS считает `KGS`.
+            Вид цены в другой валюте POS не загружает (ошибка позиции `VALIDATION`, администратору — ошибка);
+            цены по нему тоже не загружаются (05 §5.3, ТЗ для 1С §5.4). Для OData — `Catalog_Валюты`
+            (предложение allow-list, `odata-allowlist.yaml` → `proposedAdditions`).
+          x-pos-accepted-values: [KGS]
+          pattern: "^[A-Z]{3}$"
+        usedForSales:
+          type: boolean
+          nullable: true
+          description: "`ИспользоватьПриПродаже` [НЕ ПОДТВЕРЖДЕНО]"
+        priceIncludesVat:
+          type: boolean
+          nullable: true
+          description: "`ЦенаВключаетНДС` [НЕ ПОДТВЕРЖДЕНО]"
+    PartnerChange:
+      type: object
+      x-status: proposed
+      description: "`Справочник.Партнеры` (ONEC-011, ONEC-012). Для карточки, созданной из POS, — `externalId` (05 §6.4, SYNC-005)"
+      required: [type, ref, dataVersion, deletionMark, description]
+      properties:
+        type:
+          type: string
+          enum: [Catalog_Партнеры]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        externalId:
+          type: string
+          nullable: true
+          description: externalId из `POS_ВнешниеИдентификаторыPOS` (`customers.id`), если карточка создана из POS
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        code:
+          type: string
+          nullable: true
+        description:
+          type: string
+        fullName:
+          type: string
+          nullable: true
+        isClient:
+          type: boolean
+          nullable: true
+          description: Признак `Клиент` [НЕ ПОДТВЕРЖДЕНО]
+        mainAgreementRef:
+          type: string
+          nullable: true
+          description: "`ОсновноеСоглашение_Key` [НЕ ПОДТВЕРЖДЕНО]"
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        phones:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactPhone"
+    CounterpartyChange:
+      type: object
+      x-status: proposed
+      description: "`Справочник.Контрагенты` (ONEC-011; `onec_counterparty_ref`, ИНН)"
+      required: [type, ref, dataVersion, deletionMark, description]
+      properties:
+        type:
+          type: string
+          enum: [Catalog_Контрагенты]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        code:
+          type: string
+          nullable: true
+        description:
+          type: string
+        partnerRef:
+          type: string
+          nullable: true
+          description: "`Партнер_Key`"
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        taxId:
+          type: string
+          nullable: true
+          description: ИНН. POS принимает ИНН из 14 цифр (`x-pos-accepted-pattern`); иное значение не записывает (ошибка позиции `VALIDATION`), карточка контрагента при этом применяется (ТЗ для 1С §5.6)
+          x-pos-accepted-pattern: "^\\d{14}$"
+        kind:
+          x-status: proposed
+          description: |
+            Предложение (ТЗ для 1С §5.6, Q-025, вопрос 39): вид клиента — `individual` (физлицо),
+            `entrepreneur` (ИП), `legal` (юрлицо); те же значения, что в `POST /pos/v1/customers`. POS переносит
+            его на партнёра контрагента. Поля нет — POS считает карточку юрлицом (`legal`).
+          allOf:
+            - $ref: "#/components/schemas/CustomerKind"
+        phones:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactPhone"
+    AgreementChange:
+      type: object
+      x-status: proposed
+      description: "`Справочник.СоглашенияСКлиентами` — вид цены и условия долга (05 §5.3 `customers`; D-24)"
+      required: [type, ref, dataVersion, deletionMark, description]
+      properties:
+        type:
+          type: string
+          enum: [Catalog_СоглашенияСКлиентами]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        description:
+          type: string
+        partnerRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        priceListRef:
+          type: string
+          nullable: true
+          description: Вид цены соглашения (`ВидЦены`)
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        creditAllowed:
+          type: boolean
+          nullable: true
+          description: Отсрочка (продажа в долг) разрешена
+        creditLimit:
+          type: string
+          nullable: true
+          description: Допустимая сумма задолженности
+          pattern: "^-?\\d+\\.\\d{2}$"
+        creditDays:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: Отсрочка, дней
+        discountPercent:
+          type: string
+          nullable: true
+          x-status: proposed
+          description: |
+            Предложение (ТЗ для 1С §5.6, Q-015, вопрос 75): скидка клиента по соглашению, строка-процент
+            (`"5.00"`). Поля нет — скидка клиента в предрасчёте приложения не показывается, итог определяет 1С
+            при создании заказа.
+          pattern: "^-?\\d+\\.\\d{2}$"
+    DiscountConditions:
+      type: object
+      x-status: proposed
+      description: Условия правила скидки (предложение, ТЗ для 1С §5.6)
+      properties:
+        minTotal:
+          type: string
+          nullable: true
+          description: Минимальная сумма заказа, строка-деньги
+          pattern: "^\\d+\\.\\d{2}$"
+        partnerRefs:
+          type: array
+          nullable: true
+          description: Партнёры, к которым относится правило; нет — правило для всех
+          items:
+            $ref: "#/components/schemas/OnecRef"
+    DiscountChange:
+      type: object
+      x-status: proposed
+      description: |
+        `Справочник.СкидкиНаценки` (ONEC-008); условия применения скидок в R1 считает 1С (`/check`, ONEC-039),
+        POS показывает перечень правил для справки (Q-015). Поля `kind`, `value`, `isActive`,
+        `appliesAutomatically`, `validFrom`, `validTo`, `conditions` — предложения (ТЗ для 1С §5.6, вопрос 75):
+        POS читает их, если они есть; без них правило показывается наименованием с `kind=percent`, `value=0`.
+        Пометка удаления или `ObjectDeletion` — правило неактивно.
+      required: [type, ref, dataVersion, deletionMark, description]
+      properties:
+        type:
+          type: string
+          enum: [Catalog_СкидкиНаценки]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        code:
+          type: string
+          nullable: true
+        description:
+          type: string
+        kind:
+          type: string
+          x-status: proposed
+          description: "`percent` (процент), `fixed_amount` (сумма) или `price_list` (вид цены); поля нет — `percent`"
+          enum: [percent, fixed_amount, price_list]
+        value:
+          type: string
+          nullable: true
+          x-status: proposed
+          description: Значение скидки ≥ 0 — процент (не больше 100) или сумма с точкой (`"3.00"`); нет — 0
+          pattern: "^\\d+\\.\\d{2}$"
+        isActive:
+          type: boolean
+          nullable: true
+          x-status: proposed
+          description: Правило действует
+        appliesAutomatically:
+          type: boolean
+          nullable: true
+          x-status: proposed
+          description: Применяется автоматически
+        validFrom:
+          type: string
+          nullable: true
+          x-status: proposed
+          description: Начало периода действия — дата-время с `+06:00` или дата `YYYY-MM-DD`; POS использует календарную дату
+          pattern: "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}:\\d{2}\\+06:00)?$"
+        validTo:
+          type: string
+          nullable: true
+          x-status: proposed
+          description: Конец периода действия — дата-время с `+06:00` или дата `YYYY-MM-DD`; POS использует календарную дату
+          pattern: "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}:\\d{2}\\+06:00)?$"
+        conditions:
+          type: object
+          x-status: proposed
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/DiscountConditions"
+    ImageFileChange:
+      type: object
+      x-status: proposed
+      description: |
+        `Справочник.НоменклатураПрисоединенныеФайлы` (ONEC-006; 05 §5.3 `product_images`: версия =
+        `ДатаМодификацииУниверсальная` + `Размер`). Связь фото с товаром — только по `ownerRef`.
+        Как фото POS принимает файлы с расширениями `x-pos-image-extensions` у `GET /pos/v1/images/{ref}`
+        (`jpg`, `jpeg`, `jpe`, `jfif`, `png`, `webp`, `gif`, `tif`, `tiff`, `heic`, `heif`; регистр не важен);
+        элемент с другим расширением в фото не попадает и помечается в реплике удалённым. Исходный файл больше
+        10 МБ POS не обрабатывает (ошибка позиции). `size` должен совпадать с числом байт ответа
+        `/images/{ref}` (ТЗ для 1С §5.4, §6.19).
+      required: [type, ref, dataVersion, deletionMark, size, extension, modifiedAt]
+      properties:
+        type:
+          type: string
+          enum: [Catalog_НоменклатураПрисоединенныеФайлы]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        ownerRef:
+          type: string
+          nullable: true
+          description: "`ВладелецФайла_Key` [НЕ ПОДТВЕРЖДЕНО]"
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        size:
+          type: integer
+          minimum: 0
+          description: "`Размер`, байт"
+        extension:
+          type: string
+          description: "`Расширение` файла без точки (`jpg`); не из списка картинок — не фото"
+        modifiedAt:
+          $ref: "#/components/schemas/DateTime"
+        isMain:
+          type: boolean
+          nullable: true
+          x-status: proposed
+          description: |
+            Предложение (ТЗ для 1С 5.4, вопрос 32): признак главной картинки владельца. Необязательное: нет поля или
+            `null` — признак не передан (прежнее значение в POS сохраняется). `imageFileRef` товара имеет приоритет.
+    BarcodeChange:
+      type: object
+      x-status: proposed
+      description: |
+        Набор записей `РегистрСведений.ШтрихкодыНоменклатуры` с ключом набора — значением штрихкода
+        (05 §6.2 п. 1, ONEC-017). Пустой набор (штрихкод удалён) передаётся как `ObjectDeletion`
+        с `ref` = штрихкод.
+      required: [type, ref, barcode, productRef]
+      properties:
+        type:
+          type: string
+          enum: [InformationRegister_ШтрихкодыНоменклатуры]
+        ref:
+          type: string
+          description: Ключ набора — значение штрихкода
+        barcode:
+          type: string
+        productRef:
+          $ref: "#/components/schemas/OnecRef"
+        variantRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        packagingRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        barcodeType:
+          type: string
+          nullable: true
+          description: "`ТипШтрихкода` [НЕ ПОДТВЕРЖДЕНО]"
+    PriceSettingChange:
+      type: object
+      x-status: proposed
+      description: "`Документ.УстановкаЦенНоменклатуры` — сигнал изменения цен; backend перечитывает срез по затронутым видам цен (05 §6.2)"
+      required: [type, ref, dataVersion, deletionMark, number, date, posted, priceListRefs]
+      properties:
+        type:
+          type: string
+          enum: [Document_УстановкаЦенНоменклатуры]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        number:
+          type: string
+        date:
+          $ref: "#/components/schemas/DateTime"
+        posted:
+          type: boolean
+        priceListRefs:
+          type: array
+          description: Затронутые виды цен
+          items:
+            $ref: "#/components/schemas/OnecRef"
+    ShipmentRef:
+      type: object
+      description: Проведённая реализация по заказу (ONEC-041, 18 §4.7)
+      required: [ref, number, date, posted, total]
+      properties:
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        number:
+          type: string
+        date:
+          $ref: "#/components/schemas/DateTime"
+        posted:
+          type: boolean
+        total:
+          $ref: "#/components/schemas/Money"
+    OrderChange:
+      type: object
+      description: "`Документ.ЗаказКлиента` (05 §6.4); `status`/`fulfillmentState` — сырые значения 1С (ONEC-021)"
+      required: [type, ref, dataVersion, deletionMark, number, date, status, approved, total, shipments]
+      properties:
+        type:
+          type: string
+          enum: [Document_ЗаказКлиента]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        externalId:
+          type: string
+          nullable: true
+          description: externalId заказа POS; `null` — заказ создан не из POS (состав настраивается, 05 §6.2)
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        number:
+          type: string
+        date:
+          $ref: "#/components/schemas/DateTime"
+        status:
+          type: string
+          description: Значение `Перечисление.СтатусыЗаказовКлиентов` [ТИПОВО]
+        approved:
+          type: boolean
+          description: "`Согласован`"
+        fulfillmentState:
+          type: string
+          nullable: true
+          description: "Состояние выполнения [НЕ ПОДТВЕРЖДЕНО: проверить по $metadata]"
+        total:
+          $ref: "#/components/schemas/Money"
+        shipments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShipmentRef"
+    ShipmentLine:
+      type: object
+      x-status: proposed
+      description: Строка ТЧ `Товары` реализации или возврата (07 §5.43 `shipment_items`)
+      required: [lineNumber, productRef, quantity]
+      properties:
+        lineNumber:
+          type: integer
+          minimum: 1
+        productRef:
+          $ref: "#/components/schemas/OnecRef"
+        variantRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        packagingRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        productName:
+          type: string
+          nullable: true
+        quantity:
+          $ref: "#/components/schemas/Quantity"
+        price:
+          type: string
+          nullable: true
+          pattern: "^-?\\d+\\.\\d{2}$"
+        amount:
+          type: string
+          nullable: true
+          pattern: "^-?\\d+\\.\\d{2}$"
+        discountAmount:
+          type: string
+          nullable: true
+          pattern: "^-?\\d+\\.\\d{2}$"
+        returnedQuantity:
+          type: string
+          nullable: true
+          description: Уже возвращено по строке (реализация; ONEC-048)
+          pattern: "^-?\\d+\\.\\d{3}$"
+    ShipmentChange:
+      type: object
+      x-status: proposed
+      description: "`Документ.РеализацияТоваровУслуг` (ONEC-013; 07 §5.42 `shipments`)"
+      required: [type, ref, dataVersion, deletionMark, number, date, posted]
+      properties:
+        type:
+          type: string
+          enum: [Document_РеализацияТоваровУслуг]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        number:
+          type: string
+        date:
+          $ref: "#/components/schemas/DateTime"
+        posted:
+          type: boolean
+        customerRef:
+          type: string
+          nullable: true
+          description: "`Партнер_Key`"
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        orderRef:
+          type: string
+          nullable: true
+          description: "`ЗаказКлиента_Key`"
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        orderExternalId:
+          type: string
+          nullable: true
+          description: externalId заказа-основания из `POS_ВнешниеИдентификаторыPOS`
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        warehouseRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        total:
+          type: string
+          nullable: true
+          description: "`СуммаДокумента` [НЕ ПОДТВЕРЖДЕНО] — при отсутствии backend считает Σ строк (ONEC-106)"
+          pattern: "^-?\\d+\\.\\d{2}$"
+        discountTotal:
+          type: string
+          nullable: true
+          pattern: "^-?\\d+\\.\\d{2}$"
+        currency:
+          type: string
+          nullable: true
+          pattern: "^[A-Z]{3}$"
+        paymentDueDate:
+          type: string
+          nullable: true
+          format: date-time
+          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+06:00$"
+        returnedTotal:
+          type: string
+          nullable: true
+          pattern: "^-?\\d+\\.\\d{2}$"
+        comment:
+          type: string
+          nullable: true
+        lines:
+          type: array
+          description: Строки ТЧ «Товары», набор полностью; `lineNumber` — номер строки реализации, его POS передаёт в заявке на возврат как `shipmentLineNumber`
+          items:
+            $ref: "#/components/schemas/ShipmentLine"
+    PaymentDocumentChange:
+      type: object
+      x-status: proposed
+      description: "`Документ.ПриходныйКассовыйОрдер` / `Документ.ПоступлениеБезналичныхДенежныхСредств` (ONEC-016; состав — Q-012)"
+      required: [type, ref, dataVersion, deletionMark, number, date, posted]
+      properties:
+        type:
+          type: string
+          enum: [Document_ПриходныйКассовыйОрдер, Document_ПоступлениеБезналичныхДенежныхСредств]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        externalId:
+          type: string
+          nullable: true
+          description: externalId платежа POS, если документ создан из POS или зарегистрирован интеграцией QR (ONEC-077)
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        number:
+          type: string
+        date:
+          $ref: "#/components/schemas/DateTime"
+        posted:
+          type: boolean
+        customerRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        amount:
+          type: string
+          nullable: true
+          description: "`СуммаДокумента`"
+          pattern: "^-?\\d+\\.\\d{2}$"
+    ReturnDocumentChange:
+      type: object
+      x-status: proposed
+      description: |
+        `Документ.ВозвратТоваровОтКлиента` (ONEC-015). Документ возврата и возврат денег оформляются только в 1С
+        (Q-018); POS обновляет историю покупок и количества частичного возврата по заявке; каждый проведённый
+        документ — одна операция возврата в журнале POS (по `ref`).
+        Как POS находит заявку (ТЗ для 1С §5.7): сейчас — по реализации-основанию (`shipmentRef`), товару и
+        характеристике строк. Если 1С передаёт `returnRequestExternalId` (предложение), POS сможет связывать
+        документ с заявкой напрямую.
+      required: [type, ref, dataVersion, deletionMark, number, date, posted]
+      properties:
+        type:
+          type: string
+          enum: [Document_ВозвратТоваровОтКлиента]
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        dataVersion:
+          type: string
+        deletionMark:
+          type: boolean
+        number:
+          type: string
+        date:
+          $ref: "#/components/schemas/DateTime"
+        posted:
+          type: boolean
+        customerRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        shipmentRef:
+          type: string
+          nullable: true
+          description: Реализация-основание (`ДокументОснование` [НЕ ПОДТВЕРЖДЕНО])
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        returnRequestExternalId:
+          type: string
+          nullable: true
+          x-status: proposed
+          description: |
+            Предложение (ТЗ для 1С §5.7, Q-018, вопрос 79): `externalId` заявки POS на возврат из
+            `POS_ВнешниеИдентификаторыPOS` (тип `ЗаявкаНаВозврат`), если документ введён по заявке; иначе `null`
+            или поле не передаётся.
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        total:
+          type: string
+          nullable: true
+          pattern: "^-?\\d+\\.\\d{2}$"
+        lines:
+          type: array
+          description: |
+            Строки возврата, набор полностью; формат — как у строк реализации (`ShipmentLine`). `lineNumber` —
+            номер строки самого документа возврата (ТЧ «Товары» возврата), а не строки реализации; строку
+            реализации POS находит по товару и характеристике.
+          items:
+            $ref: "#/components/schemas/ShipmentLine"
+    QrPaymentStatusChange:
+      type: object
+      description: Событие QR-оплаты — изменение записи `POS_ОплатыQR` (05 §6.7.2, ONEC-077)
+      required: [type, ref, externalId, status, reference]
+      properties:
+        type:
+          type: string
+          enum: [QrPaymentStatus]
+        ref:
+          $ref: "#/components/schemas/ExternalId"
+        externalId:
+          $ref: "#/components/schemas/ExternalId"
+        status:
+          $ref: "#/components/schemas/QrStatus"
+        reference:
+          type: string
+          description: Референс QR у банка, выданный при создании; при `paid` — референс того QR, по которому пришли деньги (может быть прежним, до перевыпуска), а не всегда последнего (ТЗ для 1С §5.7, §7.4)
+        paidAmount:
+          type: string
+          nullable: true
+          pattern: "^-?\\d+\\.\\d{2}$"
+        paidAt:
+          type: string
+          nullable: true
+          format: date-time
+          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+06:00$"
+        bankReference:
+          type: string
+          nullable: true
+        documentRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    ObjectDeletion:
+      type: object
+      description: Физическое удаление объекта или очистка набора записей (05 §6.2 п. 1, ONEC-034)
+      required: [type, objectType, ref]
+      properties:
+        type:
+          type: string
+          enum: [ObjectDeletion]
+        objectType:
+          $ref: "#/components/schemas/OnecObjectType"
+        ref:
+          type: string
+          description: "`Ref_Key` удалённого объекта или ключ набора записей регистра"
+    ChangesAckRequest:
+      type: object
+      required: [messageNumber]
+      properties:
+        messageNumber:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Номер полностью применённого сообщения (`N+1`)
+    ChangesAckResponse:
+      type: object
+      x-status: proposed
+      description: Тело ответа ack — по 18 §4.2 (в 05 §6.3 указан только код 200)
+      required: [messageNumber]
+      properties:
+        messageNumber:
+          type: integer
+          format: int64
+          minimum: 1
+        removedRegistrations:
+          type: integer
+          minimum: 0
+          description: Число снятых регистраций (для журнала; необязательно)
+
+    # ---------- заказы ----------
+    OrderCustomer:
+      type: object
+      description: |
+        Клиент заказа. Для нового клиента POS ссылки подставляет из ответа `POST /customers` в момент отправки
+        (заказ уходит только после создания клиента в 1С).
+      required: [ref, contractorRef, agreementRef]
+      properties:
+        ref:
+          type: string
+          nullable: true
+          description: |
+            Партнёр 1С. `null` — системный «Розничный покупатель» POS без карточки 1С (так же, как
+            `customerRef = null` в `/check`): 1С подставляет розничного контрагента и соглашение по умолчанию;
+            ответ 400 на такой заказ недопустим. Ссылка розничного контрагента — настройка 1С
+            ([ТРЕБУЕТ РЕШЕНИЯ ЗАКАЗЧИКА: Q-026], вопрос 44 ТЗ для 1С). С 1.1.0 (было — обязательная ссылка без `null`).
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        contractorRef:
+          type: string
+          nullable: true
+          description: Контрагент; `null` — 1С подставляет по умолчанию
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        agreementRef:
+          type: string
+          nullable: true
+          description: Соглашение; `null` — 1С подставляет по умолчанию
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    OrderDelivery:
+      type: object
+      description: Канон `delivery_method` (`pickup | delivery`); реквизиты доставки — если есть в документе (Q-122)
+      required: [method, address, receiverName, receiverPhone, desiredFrom, desiredTo, courierComment]
+      properties:
+        method:
+          type: string
+          enum: [pickup, delivery]
+        address:
+          type: string
+          nullable: true
+        receiverName:
+          type: string
+          nullable: true
+        receiverPhone:
+          type: string
+          nullable: true
+          pattern: "^\\+[1-9]\\d{7,14}$"
+        desiredFrom:
+          type: string
+          nullable: true
+          format: date-time
+          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+06:00$"
+        desiredTo:
+          type: string
+          nullable: true
+          format: date-time
+          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+06:00$"
+        courierComment:
+          type: string
+          nullable: true
+    OrderLine:
+      type: object
+      required: [lineNumber, productRef, variantRef, packagingRef, quantity, packQuantity, price, discountPercent, amount, supplyOption]
+      properties:
+        lineNumber:
+          type: integer
+          minimum: 1
+          description: Номер строки; его же 1С указывает в `details.lines[]` при ошибке
+        productRef:
+          $ref: "#/components/schemas/OnecRef"
+        variantRef:
+          type: string
+          nullable: true
+          description: Характеристика; `null` — без характеристики
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        packagingRef:
+          type: string
+          nullable: true
+          description: Упаковка; `null` — базовая единица
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        quantity:
+          description: Количество **в базовой единице хранения**
+          allOf:
+            - $ref: "#/components/schemas/Quantity"
+        packQuantity:
+          type: string
+          nullable: true
+          description: Количество в упаковках, если указана `packagingRef`; иначе `null`
+          pattern: "^-?\\d+\\.\\d{3}$"
+        price:
+          description: Цена POS за единицу — контрольное значение
+          allOf:
+            - $ref: "#/components/schemas/Money"
+        discountPercent:
+          description: |
+            Процент **ручной** скидки продавца — тот же, что `OrderCreateRequest.discountPercent`. Скидки клиента
+            из 1С в этом поле нет; отдельного поля скидки клиента или суммы скидки строки в v1 нет (предложение,
+            Q-015, вопрос 76 ТЗ для 1С).
+          allOf:
+            - $ref: "#/components/schemas/Percent"
+        amount:
+          description: |
+            Сумма строки POS **после обеих скидок** — скидки клиента из 1С и ручной (10 DISC), поэтому может не
+            равняться `price × quantity × (1 − discountPercent/100)`. Контрольное значение: суммы документа
+            считает 1С.
+          allOf:
+            - $ref: "#/components/schemas/Money"
+        supplyOption:
+          type: string
+          description: Вариант обеспечения; по умолчанию `КОбеспечению` — без резерва (D-22) [ТИПОВО]
+    Totals:
+      type: object
+      required: [subtotal, discount, total, currency]
+      properties:
+        subtotal:
+          $ref: "#/components/schemas/Money"
+        discount:
+          $ref: "#/components/schemas/Money"
+        total:
+          $ref: "#/components/schemas/Money"
+        currency:
+          $ref: "#/components/schemas/Currency"
+    OrderClientChecks:
+      type: object
+      required: [pricesSnapshotAt, stockSnapshotAt]
+      properties:
+        pricesSnapshotAt:
+          type: string
+          nullable: true
+          format: date-time
+          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+06:00$"
+        stockSnapshotAt:
+          type: string
+          nullable: true
+          format: date-time
+          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+06:00$"
+    OrderCreateRequest:
+      type: object
+      description: Тело `POST /pos/v1/orders` (05 §6.4)
+      required: [externalId, createdAt, createdByUserCode, customer, warehouseRef, organizationRef, priceListRef, paymentMethod, paymentTerms, delivery, discountPercent, comment, lines, totals, clientChecks]
+      properties:
+        externalId:
+          $ref: "#/components/schemas/ExternalId"
+        createdAt:
+          $ref: "#/components/schemas/DateTime"
+        createdByUserCode:
+          type: string
+          description: |
+            Внутренний идентификатор (UUID `users.id`) пользователя POS, оформившего заказ (продавец, кассир или
+            покупатель в приложении), а **не** логин. В `Комментарий` не дублируется. Отражать ли сотрудника
+            в реквизите «Менеджер» и сопоставлять ли с пользователями 1С — Q-129 (вопрос 47 ТЗ для 1С).
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        customer:
+          $ref: "#/components/schemas/OrderCustomer"
+        warehouseRef:
+          $ref: "#/components/schemas/OnecRef"
+        organizationRef:
+          type: string
+          nullable: true
+          description: Организация; `null` — 1С подставляет организацию по умолчанию (Q-128). Сейчас POS всегда передаёт `null`
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        priceListRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        paymentMethod:
+          $ref: "#/components/schemas/PaymentMethod"
+        paymentTerms:
+          type: string
+          enum: [prepayment, credit]
+          description: Условия оплаты соглашения или заказа (по Q-012)
+        delivery:
+          $ref: "#/components/schemas/OrderDelivery"
+        discountPercent:
+          description: "**Ручная** скидка продавца на документ; тот же процент POS передаёт в каждой строке. `\"0.00\"` — без скидки. Передаётся типовым механизмом ручных скидок"
+          allOf:
+            - $ref: "#/components/schemas/Percent"
+        comment:
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: |
+            Комментарий документа (`x-comment-format`): `POS <полный externalId> · <номер заказа POS>`, для заявки
+            покупателя из приложения — ` · заявка клиента`, затем ` · <комментарий продавца>` (если есть);
+            разделитель — ` · `. Не длиннее 1000 символов (POS обрезает). 1С записывает строку в «Комментарий»
+            как есть — `POS <externalId>` повторять не нужно (ONEC-040; ТЗ для 1С §6.6). Код пользователя POS
+            в комментарий не пишется.
+          x-comment-format: "POS <externalId> · <publicNumber>[ · заявка клиента][ · <комментарий>]"
+          x-comment-pattern: "^POS [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} · POS-\\d{4}-\\d{6}( · .+)?$"
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/OrderLine"
+        totals:
+          description: "**Контрольные** суммы POS (`subtotal`, `discount`, `total`, `currency`); итог 1С — истина (`recalculated`, ONEC-039)"
+          allOf:
+            - $ref: "#/components/schemas/Totals"
+        clientChecks:
+          description: Время данных, по которым POS проверял корзину — только для журнала. Сейчас POS передаёт оба значения `null`
+          allOf:
+            - $ref: "#/components/schemas/OrderClientChecks"
+    OrderCreateResponse:
+      type: object
+      description: Ответ `POST /pos/v1/orders` (05 §6.4); `deletionMark` — пометка удаления документа на момент ответа (AC-ONEC-059)
+      required: [externalId, ref, number, date, status, approved, posted, deletionMark, recalculated, totals, warnings]
+      properties:
+        externalId:
+          $ref: "#/components/schemas/ExternalId"
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        number:
+          type: string
+        date:
+          $ref: "#/components/schemas/DateTime"
+        status:
+          type: string
+          description: Сырое значение статуса 1С (при создании — `НеСогласован` или эквивалент)
+        approved:
+          type: boolean
+        posted:
+          type: boolean
+        deletionMark:
+          type: boolean
+        recalculated:
+          type: boolean
+          description: "`true` — итог 1С отличается от `totals.total` более чем на 0,01 KGS (ONEC-039)"
+        totals:
+          $ref: "#/components/schemas/Totals"
+        warnings:
+          type: array
+          description: Предупреждения 1С для журнала
+          items:
+            type: string
+    OrderStatus:
+      type: object
+      description: Состояние заказа (ONEC-041; формат — как элемент `Document_ЗаказКлиента` без служебных полей пакета, 18 §4.7)
+      required: [externalId, ref, number, date, status, approved, deletionMark, total, shipments]
+      properties:
+        externalId:
+          $ref: "#/components/schemas/ExternalId"
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        number:
+          type: string
+        date:
+          $ref: "#/components/schemas/DateTime"
+        status:
+          type: string
+          description: Значение `Перечисление.СтатусыЗаказовКлиентов` [ТИПОВО]
+        approved:
+          type: boolean
+        fulfillmentState:
+          type: string
+          nullable: true
+          description: Состояние выполнения [НЕ ПОДТВЕРЖДЕНО]
+        deletionMark:
+          type: boolean
+        total:
+          $ref: "#/components/schemas/Money"
+        shipments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShipmentRef"
+    OrderStatusBatchRequest:
+      type: object
+      required: [externalIds]
+      properties:
+        externalIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/ExternalId"
+    OrderStatusBatchResponse:
+      type: object
+      x-status: proposed
+      description: Формат пакетного ответа — по 18 §4.7 (в 05 §6.3 — «статус заказа(ов)»)
+      required: [items, notFound]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderStatus"
+        notFound:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExternalId"
+    OrderCancelRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          description: Причина отмены (текст для документа 1С)
+
+    # ---------- платежи ----------
+    PaymentAllocation:
+      type: object
+      required: [documentRef, amount]
+      properties:
+        documentRef:
+          $ref: "#/components/schemas/OnecRef"
+        amount:
+          $ref: "#/components/schemas/Money"
+    PaymentCreateRequest:
+      type: object
+      description: Тело `POST /pos/v1/payments` (05 §6.4); Σ `allocations[].amount` ≤ `amount`
+      required: [externalId, kind, amount, currency, customerRef, orderExternalId, orderRef, receivedAt, cashierUserCode, post, bankReference]
+      properties:
+        externalId:
+          $ref: "#/components/schemas/ExternalId"
+        kind:
+          $ref: "#/components/schemas/PaymentKind"
+        amount:
+          $ref: "#/components/schemas/Money"
+        currency:
+          $ref: "#/components/schemas/Currency"
+        customerRef:
+          $ref: "#/components/schemas/OnecRef"
+        orderExternalId:
+          type: string
+          nullable: true
+          description: Заказ-основание; `null` — оплата долга без заказа (10 PAY-040…043)
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        orderRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
+        cashierUserCode:
+          $ref: "#/components/schemas/PosUserCode"
+        post:
+          type: boolean
+          description: Проводить документ; применяется только при `РазрешитьПроведениеПлатежей = Истина` (Q-124)
+        bankReference:
+          type: string
+          nullable: true
+          description: Референс банка для оплаты по QR
+        allocations:
+          type: array
+          description: Необязательное распределение оплаты долга по документам (ядро §22.8)
+          items:
+            $ref: "#/components/schemas/PaymentAllocation"
+    PaymentCreateResponse:
+      type: object
+      required: [ref, number, date, posted, documentType]
+      properties:
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        number:
+          type: string
+        date:
+          $ref: "#/components/schemas/DateTime"
+        posted:
+          type: boolean
+          description: "`false` — документ записан непроведённым («ожидает проведения в 1С»)"
+        documentType:
+          $ref: "#/components/schemas/OnecObjectType"
+
+    # ---------- QR (05 §6.7) ----------
+    QrCreateRequest:
+      type: object
+      required: [externalId, orderExternalId, orderRef, customerRef, amount, currency, purpose, requestedTtlSeconds, cashierUserCode]
+      properties:
+        externalId:
+          $ref: "#/components/schemas/ExternalId"
+        orderExternalId:
+          $ref: "#/components/schemas/ExternalId"
+        orderRef:
+          type: string
+          nullable: true
+          description: Документ заказа в 1С, если уже создан
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        customerRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        amount:
+          $ref: "#/components/schemas/Money"
+        currency:
+          $ref: "#/components/schemas/Currency"
+        purpose:
+          type: string
+          description: Назначение платежа — «Оплата заказа <номер заказа POS>», например «Оплата заказа POS-2026-000123» (ТЗ для 1С §6.14)
+          x-purpose-format: "Оплата заказа <publicNumber>"
+        requestedTtlSeconds:
+          type: integer
+          minimum: 1
+          description: "`QR_TTL_MINUTES` × 60 (по умолчанию 900)"
+        cashierUserCode:
+          $ref: "#/components/schemas/PosUserCode"
+    QrCreateResponse:
+      type: object
+      description: Ответ создания QR; `qrPayload` или (по ответу QR-3) `qrImagePng`
+      required: [externalId, status, reference, amount, createdAt, expiresAt]
+      properties:
+        externalId:
+          $ref: "#/components/schemas/ExternalId"
+        status:
+          $ref: "#/components/schemas/QrStatus"
+        qrPayload:
+          type: string
+          nullable: true
+          description: Непрозрачная строка для отрисовки QR в формате банка; backend её не разбирает
+        qrImagePng:
+          type: string
+          nullable: true
+          format: byte
+          x-status: proposed
+          description: PNG в base64 — только если банк отдаёт картинку вместо строки [НОВОЕ ИМЯ, ответ QR-3]
+        reference:
+          type: string
+          description: Идентификатор QR или операции у банка; у каждого выпуска свой (перевыпуск — новый `reference`, прежние 1С сохраняет)
+        amount:
+          $ref: "#/components/schemas/Money"
+        createdAt:
+          $ref: "#/components/schemas/DateTime"
+        expiresAt:
+          description: |
+            До какого момента QR принимает оплату — **должен быть в будущем**. POS принимает `expiresAt`, только
+            если он позже момента выдачи; иначе считает срок «момент выдачи + `QR_TTL_MINUTES`» (15 мин). Поэтому
+            возвращайте настоящий срок QR у банка (QR-5; ТЗ для 1С §6.14).
+          allOf:
+            - $ref: "#/components/schemas/DateTime"
+    QrPaymentStatus:
+      type: object
+      description: Ответ `GET /pos/v1/payments/{externalId}/status` (05 §6.7.2)
+      required: [externalId, status, reference, amount, paidAmount, paidAt, bankReference, expiresAt, documentRef, documentType]
+      properties:
+        externalId:
+          $ref: "#/components/schemas/ExternalId"
+        status:
+          $ref: "#/components/schemas/QrStatus"
+        reference:
+          type: string
+          description: |
+            Референс QR. При `paid` — референс того QR, по которому пришли деньги, в том числе прежнего (до
+            перевыпуска): POS по истории референсов платежа отправляет такую оплату на ручную проверку как позднюю.
+            Поэтому при перевыпуске 1С хранит прежние референсы платежа (ТЗ для 1С §6.14 п. 4, §7.4; 05 §6.7).
+        amount:
+          $ref: "#/components/schemas/Money"
+        paidAmount:
+          type: string
+          nullable: true
+          pattern: "^-?\\d+\\.\\d{2}$"
+        paidAt:
+          type: string
+          nullable: true
+          format: date-time
+          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+06:00$"
+        bankReference:
+          type: string
+          nullable: true
+        expiresAt:
+          $ref: "#/components/schemas/DateTime"
+        documentRef:
+          type: string
+          nullable: true
+          description: Документ поступления, если его создала интеграция 1С (QR-7)
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        documentType:
+          type: string
+          nullable: true
+          description: "Имя типа документа поступления [НЕ ПОДТВЕРЖДЕНО: проверить по $metadata]"
+    QrCancelRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [method_changed, voided, order_cancelled, reissue]
+    QrCancelResponse:
+      type: object
+      description: |
+        `cancelled`, либо `paid` с полями оплаты, если деньги уже зачислены (05 §6.7.2). Для записи `cancelled`
+        или `expired` (истёкший QR) — `cancelled` без действий; запись `expired` не меняется; `pending` с истёкшим
+        сроком отменяется как `pending` (ТЗ для 1С §6.16 п. 4). `paid` при перевыпуске — POS применяет оплату
+        как статус `paid`, новый QR не выдаётся; `paid` после аннулирования — статус платежа не меняется, разбор вручную.
+      required: [externalId, status]
+      properties:
+        externalId:
+          $ref: "#/components/schemas/ExternalId"
+        status:
+          type: string
+          enum: [cancelled, paid]
+        reference:
+          type: string
+          nullable: true
+        paidAmount:
+          type: string
+          nullable: true
+          pattern: "^-?\\d+\\.\\d{2}$"
+        paidAt:
+          type: string
+          nullable: true
+          format: date-time
+          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+06:00$"
+        bankReference:
+          type: string
+          nullable: true
+        documentRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+
+    # ---------- клиенты ----------
+    CustomerCandidate:
+      type: object
+      x-status: proposed
+      description: Кандидат поиска по телефону (формат — 18 §4.8)
+      required: [ref, contractorRef, code, name, phone, deletionMark]
+      properties:
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        contractorRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        code:
+          type: string
+          nullable: true
+        name:
+          type: string
+        phone:
+          description: Найденный номер, приведённый к E.164
+          allOf:
+            - $ref: "#/components/schemas/PhoneE164"
+        deletionMark:
+          type: boolean
+          description: Пометка удаления; кандидатов с пометкой POS кассиру не предлагает
+        kind:
+          x-status: proposed
+          description: |
+            Предложение (ТЗ для 1С §6.10, Q-025, вопрос 39): вид клиента, те же значения, что в
+            `POST /pos/v1/customers`. Поля нет — POS считает найденного клиента юрлицом (`legal`).
+          allOf:
+            - $ref: "#/components/schemas/CustomerKind"
+    CustomerCreateRequest:
+      type: object
+      description: Тело `POST /pos/v1/customers` (05 §6.4); только поля ONEC-046 — поля профиля приложения запрещены
+      required: [externalId, name, phone, kind, dedupe]
+      properties:
+        externalId:
+          $ref: "#/components/schemas/ExternalId"
+        name:
+          type: string
+        fullName:
+          type: string
+          nullable: true
+        phone:
+          $ref: "#/components/schemas/PhoneE164"
+        taxId:
+          type: string
+          nullable: true
+          description: ИНН (если есть)
+        kind:
+          description: Вид клиента — `individual`, `entrepreneur` или `legal`; соответствие реквизитам базы 1С (например, «Юр./физ. лицо» контрагента) — Q-025 (ТЗ для 1С §6.11)
+          allOf:
+            - $ref: "#/components/schemas/CustomerKind"
+        priceListRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        comment:
+          type: string
+          nullable: true
+        dedupe:
+          $ref: "#/components/schemas/CustomerDedupe"
+    CustomerDedupe:
+      type: object
+      required: [byPhone, failOnDuplicate]
+      properties:
+        byPhone:
+          type: boolean
+          description: Искать дубли по телефону (партнёры и контрагенты, последние 9 цифр, без помеченных на удаление). POS всегда передаёт `true`
+        failOnDuplicate:
+          type: boolean
+          description: |
+            `true` — при найденном **другом** клиенте с тем же телефоном отказать 409 `POS_E_DUPLICATE`
+            (`details.candidates`), карточку не создавать. `false` — кассир с правом «создать всё равно»
+            указал причину и подтвердил создание: проверка дублей не выполняется, карточка создаётся (201).
+            Поведение при `false` — допущение Q-025 до ответа 1С (вопрос 42 ТЗ для 1С §6.11).
+          x-status: proposed
+    CustomerCreateResponse:
+      type: object
+      required: [externalId, ref, contractorRef, code, created]
+      properties:
+        externalId:
+          $ref: "#/components/schemas/ExternalId"
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        contractorRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        code:
+          type: string
+          nullable: true
+        created:
+          type: boolean
+          description: "`false` — повтор того же externalId (ответ 200)"
+    ReceivablesSummary:
+      type: object
+      description: Блок долга в `/check` (05 §6.4)
+      required: [snapshotAt, balance, overdueAmount, overdueDays, creditAllowed, creditLimit, creditDays, creditAvailable]
+      properties:
+        snapshotAt:
+          $ref: "#/components/schemas/DateTime"
+        balance:
+          $ref: "#/components/schemas/Money"
+        overdueAmount:
+          type: string
+          nullable: true
+          description: "`null` — просрочка неизвестна (ядро §22.4)"
+          pattern: "^-?\\d+\\.\\d{2}$"
+        overdueDays:
+          type: integer
+          nullable: true
+          minimum: 0
+        creditAllowed:
+          type: boolean
+        creditLimit:
+          type: string
+          nullable: true
+          pattern: "^-?\\d+\\.\\d{2}$"
+        creditDays:
+          type: integer
+          nullable: true
+          minimum: 0
+        creditAvailable:
+          type: string
+          nullable: true
+          pattern: "^-?\\d+\\.\\d{2}$"
+    ReceivableDocument:
+      type: object
+      description: |
+        Детализация долга по документу (ONEC-047; 05 §5.3 `receivable_documents`). Передаются **только
+        проведённые** документы: отдельных полей вида и статуса строки нет, POS вычисляет их сам (ТЗ для 1С §6.12).
+        Статус строки в POS: `due` («к оплате») — `dueDate` не позже даты снимка (`snapshotAt`, Бишкек) и
+        `remaining` > 0; иначе `posted` («проведён»).
+      required: [documentRef, documentType, number, date, amount, paid, remaining, dueDate, overdueDays]
+      properties:
+        documentRef:
+          description: Ссылка документа расчётов; внутри одного ответа документы не повторяются
+          allOf:
+            - $ref: "#/components/schemas/OnecRef"
+        documentType:
+          description: |
+            Вид документа — имя типа в нотации OData. Вид строки в POS (`x-pos-kind-by-type`):
+            `Document_РеализацияТоваровУслуг`, `Document_ЗаказКлиента` — начисление (`invoice`);
+            `Document_ПриходныйКассовыйОрдер`, `Document_ПоступлениеБезналичныхДенежныхСредств`,
+            `Document_ОплатаПлатежнойКартой` — оплата (`payment`); `Document_ВозвратТоваровОтКлиента` — возврат
+            (`return`); тип, в имени которого есть «Скидк», — скидка (`discount`); прочие (корректировки долга,
+            ввод остатков) — корректировка (`adjustment`). Если долг ведётся другими документами — сообщите имена.
+          x-pos-kind-by-type:
+            Document_РеализацияТоваровУслуг: invoice
+            Document_ЗаказКлиента: invoice
+            Document_ПриходныйКассовыйОрдер: payment
+            Document_ПоступлениеБезналичныхДенежныхСредств: payment
+            Document_ОплатаПлатежнойКартой: payment
+            Document_ВозвратТоваровОтКлиента: return
+            "*Скидк*": discount
+            "*": adjustment
+          allOf:
+            - $ref: "#/components/schemas/OnecObjectType"
+        number:
+          type: string
+          minLength: 1
+          description: Номер документа, не пустой
+        date:
+          $ref: "#/components/schemas/DateTime"
+        amount:
+          $ref: "#/components/schemas/Money"
+        paid:
+          $ref: "#/components/schemas/Money"
+        remaining:
+          $ref: "#/components/schemas/Money"
+        dueDate:
+          type: string
+          nullable: true
+          format: date-time
+          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+06:00$"
+        overdueDays:
+          type: integer
+          minimum: 0
+    CustomerReceivables:
+      type: object
+      x-status: proposed
+      description: |
+        Ответ `GET /pos/v1/customers/{ref}/receivables` — поля ONEC-047; формат — 18 §4.10. Сальдо совпадает с
+        отчётом «Задолженность клиентов»; `balance` > 0 — клиент должен магазину, < 0 — аванс.
+
+        Ответ 200 POS **не применяет** (прежний снимок сохраняется, ответ считается не по контракту), если
+        (ТЗ для 1С §6.12; `x-pos-rejects`):
+        - `customerRef` не совпадает с `ref` в пути;
+        - `overdueAmount` < 0 или больше `max(balance, 0)`;
+        - `creditLimit` отрицательный;
+        - `documentRef` повторяется в `documents`;
+        - `number` документа пустой;
+        - `snapshotAt` позже момента ответа больше чем на 5 минут (часы или часовой пояс сервера 1С);
+        - нарушена схема (деньги не строкой, дата без `+06:00` и т. п.).
+      x-pos-rejects:
+        - customerRef ≠ ref пути
+        - overdueAmount < 0 или > max(balance, 0)
+        - creditLimit < 0
+        - documents[].documentRef повторяется
+        - documents[].number пустой
+        - snapshotAt > момент ответа + 5 мин
+      required: [customerRef, snapshotAt, balance, overdueAmount, overdueDays, creditAllowed, creditLimit, creditDays, creditAvailable, documents]
+      properties:
+        customerRef:
+          $ref: "#/components/schemas/OnecRef"
+        snapshotAt:
+          $ref: "#/components/schemas/DateTime"
+        balance:
+          $ref: "#/components/schemas/Money"
+        overdueAmount:
+          type: string
+          nullable: true
+          pattern: "^-?\\d+\\.\\d{2}$"
+        overdueDays:
+          type: integer
+          nullable: true
+          minimum: 0
+        creditAllowed:
+          type: boolean
+        creditLimit:
+          type: string
+          nullable: true
+          pattern: "^-?\\d+\\.\\d{2}$"
+        creditDays:
+          type: integer
+          nullable: true
+          minimum: 0
+        creditAvailable:
+          type: string
+          nullable: true
+          pattern: "^-?\\d+\\.\\d{2}$"
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReceivableDocument"
+
+    # ---------- возвраты ----------
+    ReturnLine:
+      type: object
+      required: [shipmentLineNumber, productRef, variantRef, quantity]
+      properties:
+        shipmentLineNumber:
+          type: integer
+          minimum: 1
+          description: Номер строки ТЧ «Товары» реализации-основания (`lineNumber` строки `Document_РеализацияТоваровУслуг` из `/changes`)
+        productRef:
+          $ref: "#/components/schemas/OnecRef"
+        variantRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        quantity:
+          $ref: "#/components/schemas/Quantity"
+    ReturnCreateRequest:
+      type: object
+      description: Тело `POST /pos/v1/returns` (05 §6.4)
+      required: [externalId, shipmentRef, orderExternalId, customerRef, reasonCode, reasonText, requestedAt, lines]
+      properties:
+        externalId:
+          $ref: "#/components/schemas/ExternalId"
+        shipmentRef:
+          description: |
+            Реализация-основание заявки. POS берёт **последнюю проведённую** реализацию заказа с тем же товаром
+            (и упаковкой); как выбирать реализацию при нескольких отгрузках одного заказа — Q-018, вопрос 80
+            ТЗ для 1С §6.17. Не найдена — 422 `POS_E_VALIDATION`.
+          allOf:
+            - $ref: "#/components/schemas/OnecRef"
+        orderExternalId:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        customerRef:
+          $ref: "#/components/schemas/OnecRef"
+        reasonCode:
+          type: string
+          description: Канон `return_reason` (R0 §6, 07 §6)
+          enum: [defect, wrong_item, not_suitable, surplus, seller_error, other]
+        reasonText:
+          type: string
+          nullable: true
+        requestedAt:
+          $ref: "#/components/schemas/DateTime"
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ReturnLine"
+    ReturnRequestState:
+      type: object
+      description: Ответ создания и статуса заявки (05 §6.4, ONEC-067)
+      required: [ref, number, status, onecStatus]
+      properties:
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        number:
+          type: string
+        status:
+          type: string
+          description: Спроецированное значение `return_request_status` (`draft` расширение не возвращает)
+          enum: [submitted, accepted, rejected, completed]
+        onecStatus:
+          type: string
+          nullable: true
+          description: "Исходное значение статуса заявки в 1С — только для журнала [НЕ ПОДТВЕРЖДЕНО: имя перечисления]"
+
+    # ---------- проверка корзины ----------
+    CheckLineRequest:
+      type: object
+      required: [productRef, variantRef, packagingRef, quantity]
+      properties:
+        productRef:
+          $ref: "#/components/schemas/OnecRef"
+        variantRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        packagingRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        quantity:
+          $ref: "#/components/schemas/Quantity"
+    CheckRequest:
+      type: object
+      description: Тело `POST /pos/v1/check` (05 §6.4)
+      required: [customerRef, priceListRef, warehouseRef, paymentMethod, calculateDiscounts, lines]
+      properties:
+        customerRef:
+          type: string
+          nullable: true
+          description: "`null` — розничный покупатель"
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        priceListRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        warehouseRef:
+          $ref: "#/components/schemas/OnecRef"
+        paymentMethod:
+          $ref: "#/components/schemas/PaymentMethod"
+        calculateDiscounts:
+          type: boolean
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/CheckLineRequest"
+    Issue:
+      type: object
+      description: Замечание проверки — канонический код `/api/v1` (05 §6.4)
+      required: [code]
+      properties:
+        code:
+          $ref: "#/components/schemas/IssueCode"
+    WarehouseStock:
+      type: object
+      required: [warehouseRef, available]
+      properties:
+        warehouseRef:
+          $ref: "#/components/schemas/OnecRef"
+        available:
+          $ref: "#/components/schemas/Quantity"
+    CheckLineResult:
+      type: object
+      required: [productRef, variantRef, price, available, onHand, reserved, isAvailable, warehouses, issues]
+      properties:
+        productRef:
+          $ref: "#/components/schemas/OnecRef"
+        variantRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        price:
+          type: string
+          nullable: true
+          description: Актуальная цена; `null` — цены нет (замечание в `issues`)
+          pattern: "^-?\\d+\\.\\d{2}$"
+        available:
+          $ref: "#/components/schemas/Quantity"
+        onHand:
+          $ref: "#/components/schemas/Quantity"
+        reserved:
+          $ref: "#/components/schemas/Quantity"
+        isAvailable:
+          type: boolean
+        warehouses:
+          type: array
+          description: Свободный остаток по всем складам (ONEC-070)
+          items:
+            $ref: "#/components/schemas/WarehouseStock"
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/Issue"
+    CheckResponse:
+      type: object
+      required: [checkedAt, lines, receivables, totals, issues]
+      properties:
+        checkedAt:
+          $ref: "#/components/schemas/DateTime"
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/CheckLineResult"
+        receivables:
+          description: Только при `customerRef` и `paymentMethod=credit`, иначе `null`
+          type: object
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ReceivablesSummary"
+        totals:
+          description: Итог 1С с автоскидками — только при `calculateDiscounts=true`, иначе `null`
+          type: object
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Totals"
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/Issue"
+
+    # ---------- карточка товара (could) ----------
+    CatalogPrice:
+      type: object
+      required: [priceListRef, variantRef, packagingRef, price]
+      properties:
+        priceListRef:
+          $ref: "#/components/schemas/OnecRef"
+        variantRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        packagingRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        price:
+          $ref: "#/components/schemas/Money"
+    CatalogStock:
+      type: object
+      required: [warehouseRef, variantRef, onHand, reserved, available]
+      properties:
+        warehouseRef:
+          $ref: "#/components/schemas/OnecRef"
+        variantRef:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        onHand:
+          $ref: "#/components/schemas/Quantity"
+        reserved:
+          $ref: "#/components/schemas/Quantity"
+        available:
+          $ref: "#/components/schemas/Quantity"
+    CatalogCard:
+      type: object
+      x-status: proposed
+      description: Карточка товара (ONEC-057); элементы — в формате элементов `/changes`, срезы — как `prices`/`stock_balances` 05 §5.3
+      required: [product, variants, packagings, barcodes, prices, stock, snapshotAt]
+      properties:
+        product:
+          $ref: "#/components/schemas/NomenclatureChange"
+        variants:
+          type: array
+          items:
+            $ref: "#/components/schemas/VariantChange"
+        packagings:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackagingChange"
+        barcodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/BarcodeChange"
+        prices:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogPrice"
+        stock:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogStock"
+        snapshotAt:
+          $ref: "#/components/schemas/DateTime"
+
+    # ---------- внешние идентификаторы (could) ----------
+    ExternalIdRecord:
+      type: object
+      required: [externalId, objectType, ref, number, date, deletionMark]
+      properties:
+        externalId:
+          $ref: "#/components/schemas/ExternalId"
+        objectType:
+          $ref: "#/components/schemas/ExternalObjectType"
+        ref:
+          $ref: "#/components/schemas/OnecRef"
+        number:
+          type: string
+          nullable: true
+          description: Номер документа или код справочника
+        date:
+          type: string
+          nullable: true
+          format: date-time
+          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+06:00$"
+        deletionMark:
+          type: boolean
+    ExternalIdsPage:
+      type: object
+      required: [items, hasMore, cursor]
+      properties:
+        items:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/ExternalIdRecord"
+        hasMore:
+          type: boolean
+          x-status: proposed
+        cursor:
+          type: string
+          nullable: true
+          x-status: proposed

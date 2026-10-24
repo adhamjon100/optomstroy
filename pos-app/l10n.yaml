@@ -1,0 +1,14 @@
+# gen-l10n (RM-C-002). Источник строк — contracts/l10n (RM-B-007); копия в lib/l10n
+# делается только скриптом: python -I -X utf8 scripts/sync_contracts.py
+# gen-l10n читает lib/l10n/gen_input/ — ту же копию, где плейсхолдеры-ключевые слова
+# Dart (`new`) переименованы в `<имя>Value` (pos-app/NOTES.md §3); скрипт создаёт её сам.
+# Сгенерированный код — lib/core/l10n/ (06 §6.2: core/l10n), в git не правится руками.
+arb-dir: lib/l10n/gen_input
+template-arb-file: app_ru.arb
+output-dir: lib/core/l10n
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+preferred-supported-locales: [ru]
+nullable-getter: false
+required-resource-attributes: false
+untranslated-messages-file: build/l10n_untranslated.json

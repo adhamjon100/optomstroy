@@ -1,0 +1,1263 @@
+# =====================================================================================
+# Optomstroy POS API — фрагмент модулей payments (/payments*), pos (/pos/dashboard), returns (/returns*)
+# RM-B-003. Источник истины: 08_API_SPECIFICATION.md v1.9 — §4.9 (payments), §4.10 (pos), §4.15 (returns),
+# §6 и §6.1 (вебхук банка / QR через 1С), §2.7–§2.9, §2.12, §3.15 (коды прав), §9 (матрица), §10 (реестр статусов);
+# права — 11 §4.3–§4.4 (+ §4.3.1); ядро R0 v1.9 §19.2, §22.2, §22.11, §23 п.3/п.4/п.7/п.8, §24.4 (приоритет).
+# Правила оформления — ../NOTES.md; общие компоненты — 00_root.yaml (ссылки пишутся как в собранном документе).
+#
+# Решения автора фрагмента (ТЗ/постановка неоднозначны — выбран вариант владельца словаря):
+#  1. operationId — `<module>_<action>` в snake_case (владелец — 08 §8 «Правила генерации», API-122, 12 T-API-001;
+#     так же NOTES §3 п.2). Постановка задачи называла camelCase; принят вариант владельца.
+#  2. Расширение прав — `x-permissions: [...]` (массив; 08 §8, NOTES §5 п.1), а не `x-permission`.
+#  3. Ключи `openapi` и `info` оставлены по постановке задачи (файл разбирается как самостоятельный YAML);
+#     сборщик берёт из фрагмента только `paths` и `components` (NOTES §1).
+#  4. Условные элементы (13 §5.4 п.5; NOTES §4):
+#     - POST /payments — x-feature-flag DEBT_PAYMENTS_FROM_POS, x-status proposed (Q-152; при false → 403, 08 API-087);
+#     - GET /payments/{id}/documents/receipt.pdf — часть того же условного элемента (13 RM-G-013; 08 §10:
+#       при DEBT_PAYMENTS_FROM_POS=false квитанция не выдаётся) — тот же флаг, x-status proposed;
+#     - POST /payments/qr/webhook — только QR_PROVIDER=bakai (R2, ядро §24.4; 13 RM-F-014 «место в контракте
+#       со статусом ПРЕДВАРИТЕЛЬНО»): x-feature-flag QR_PROVIDER=bakai, x-status proposed; при onec/none → 404;
+#     - /returns* — x-feature-flag returns_enabled (app_settings, Q-018; RET-012) — сам модуль не условен;
+#       POST /returns/{id}/accept — x-feature-flag RETURNS_FROM_POS_ENABLED=false (08 §4.15.6).
+#  5. `awaitingPayment[]` дашборда — `OrderSummary` (имя 08 §4.8.2, определяет фрагмент orders; NOTES §3 п.8 —
+#     имена 08 сохраняются). В этом файле схема НЕ определяется, чтобы не было двойного определения при сборке.
+#  6. `GET /returns` — `Page<ReturnRequest>`: отдельной схемы «ReturnRequest(summary)» в 08 нет (NOTES §2: XxxPage не создаются).
+#  7. Подмножества enum (`method` ∈ cash|qr_bakai в POST /payments) не копируются (NOTES §2): `$ref PaymentMethod`,
+#     ограничение — в description (иное значение → 400 VALIDATION_FAILED).
+#  8. `maxLength` там, где 08 не задаёт длину: `allocation[].documentNumber` — 64 (как `bankReference` 08 §8),
+#     `comment` — 200, `reason`/`reasonComment` — 500 (08 §2.14 «Строки»).
+#  9. `POST /payments/{id}/void`: `reason` и `reasonCode` обязательны (07 §5.40: ручная отмена — с причиной;
+#     значения `reasonCode` — карточка 08 §4.9.4, владелец DTO; в 07 `void_reason` — text, не enum).
+# 10. Вебхук: тело — ПРЕДПОЛОЖЕНИЕ 08 §6 (Q-014); `X-Timestamp` — вариант (а) §6, `required: false` до контракта банка.
+#     Заголовки X-Device-Id / X-App-Version / X-Platform / X-Request-Id / Accept-Language к вебхуку не применяются.
+# =====================================================================================
+openapi: 3.0.3
+info:
+  title: Optomstroy POS API — фрагмент payments, pos, returns
+  version: "1.0.0"
+paths:
+  # ===================================================================================
+  # payments (08 §4.9, §6)
+  # ===================================================================================
+  /payments:
+    post:
+      tags: [payments]
+      operationId: payments_create
+      summary: Платёж в счёт долга без заказа (условно, Q-152)
+      description: >
+        SCR-38 «Приём оплаты по долгу» (08 §4.9.1): кассир выбирает клиента, документы долга (или FIFO по настройке 1С)
+        и способ; сумму формирует сервер из allocation[] или amountRequested (POS-056); результат — документ оплаты в 1С
+        через outbox, сальдо обновляется после подтверждения 1С (D-24). Ответ 201 — Payment с orderId=null, allocation[],
+        qr (только для qr_bakai и при payment.qr.show — у ролей этой операции оно есть).
+        QR: при QR_PROVIDER=onec недоступность 1С — 201 с платежом qr_pending без qr + warnings[QR_UNAVAILABLE]
+        (далее ручное подтверждение, ядро §24.4; QR через 1С для платежа без заказа передаёт customerExternalId);
+        503 QR_UNAVAILABLE — только QR_PROVIDER=bakai (R2). Повтор с тем же Idempotency-Key возвращает текущее
+        представление платежа (с QR, выданным после COMMIT; B-AR-04).
+        Условный элемент R1: при DEBT_PAYMENTS_FROM_POS=false → 403 FORBIDDEN (08 API-087, §10; заглушка-guard 13 §5.4 п.5).
+        После перезапуска приложения не повторяется автоматически — только по решению кассира после проверки статуса
+        (ядро §19.2, §22.6). Аудит payment.received; транзакция payment_received. Cache-Control: no-store.
+      security:
+        - bearerAuth: []
+      x-permissions: [payment.debt.receive]
+      x-roles: [cashier, senior_seller]
+      x-step-up: false
+      x-idempotent: required
+      x-feature-flag: DEBT_PAYMENTS_FROM_POS
+      x-status: proposed
+      x-rate-limit-group: RL-FIN
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentsCreateRequest" }
+      responses:
+        "201":
+          description: "Платёж создан (Payment: orderId=null, allocation[], qr для QR; warnings[QR_UNAVAILABLE] при недоступности 1С и QR_PROVIDER=onec)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payment" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /payments/{id}:
+    get:
+      tags: [payments]
+      operationId: payments_get
+      summary: Платёж (с допустимыми действиями; опрос статуса QR)
+      description: >
+        08 §4.9.2. payment.read.all (cashier, senior_seller, owner) — любой платёж; payment.read.own — seller (платёж
+        своего заказа, без externalRef) и customer (свой платёж). admin → 403 FORBIDDEN (11 §4.4, SEC-036). Чужой платёж
+        при payment.read.own → 404 NOT_FOUND. Поле qr сериализуется только при payment.qr.show (08 §3.15).
+        refreshStatus=true — для qr_shown/qr_expired синхронно опросить провайдера QR: при QR_PROVIDER=onec — метод 1С
+        GET /pos/v1/payments/{externalId}/status (таймаут ONEC_SYNC_CHECK_TIMEOUT_MS; при недоступности 1С — текущее
+        состояние + warnings[STALE_DATA], ядро §24.4); при bakai (R2) — [НЕ ПОДТВЕРЖДЕНО: Q-014].
+        Для qr_shown клиент опрашивает каждые 3 с до expiresAt либо long-polling ?wait=25 (сервер держит запрос до N с и
+        отвечает при смене статуса; необходимость — Q-167). Cache-Control: no-store. Аудит не пишется.
+      security:
+        - bearerAuth: []
+      x-permissions: [payment.read.all, payment.read.own]
+      x-roles: [seller, cashier, senior_seller, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+        - name: refreshStatus
+          in: query
+          required: false
+          description: "true — для qr_shown/qr_expired синхронно опросить провайдера QR (08 §4.9.2, §6.1)."
+          schema: { type: boolean, default: false }
+        - name: wait
+          in: query
+          required: false
+          description: "Long-polling, секунды 1…25 (ядро §17.4; Q-167): не более одного ожидающего запроса на платёж и пользователя; вне диапазона → 400 VALIDATION_FAILED."
+          schema: { type: integer, minimum: 1, maximum: 25 }
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      responses:
+        "200":
+          description: "Payment + allowedActions (08 §4.9.2)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentsGetResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /payments/{id}/confirm-manual:
+    post:
+      tags: [payments]
+      operationId: payments_confirm_manual
+      summary: Ручное подтверждение QR-оплаты кассиром (step-up, аудит)
+      description: >
+        08 §4.9.3 (D-21): обязательный путь при QR_PROVIDER=none, запасной при QR_PROVIDER=onec (ядро §24.4), разбор
+        платежей manual_confirm. Переходы — только по ядру §22.2 и §23 п.4: из qr_shown — qr_shown → manual_confirm →
+        received в одной транзакции (reviewReason=no_webhook); из manual_confirm — manual_confirm → received. Переход в
+        received — только если receivedAmount = amount; иначе тоже 200: платёж в manual_confirm, reviewReason=amount_mismatch,
+        bankAmount = receivedAmount, warnings[PAYMENT_AMOUNT_MISMATCH], заказ не закрывается (POS-054); выход — повтор
+        с полной суммой (новый Idempotency-Key) или void со step-up. Из qr_expired ручного перехода нет — 409
+        PAYMENT_STATE_INVALID (reason: qr_expired_reissue_required); received, voided, credit, refunded, cash_pending,
+        qr_pending → 409 PAYMENT_STATE_INVALID. Поля acceptMismatch и reason прежней редакции → 400 VALIDATION_FAILED.
+        Обязателен в R1 независимо от Q-014 и QR_PROVIDER. Аудит payment.manual_qr_confirmed; транзакция manual_qr_confirm.
+        Ключ — только в памяти клиента, после перезапуска автоповтора нет (ядро §22.6). Cache-Control: no-store.
+      security:
+        - bearerAuth: []
+          stepUpToken: []
+      x-permissions: [payment.qr.confirm_manual]
+      x-roles: [cashier, senior_seller]
+      x-step-up: true
+      x-step-up-operation: [payment.qr.confirm_manual]
+      x-idempotent: required
+      x-rate-limit-group: RL-FIN
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/StepUpToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentsConfirmManualRequest" }
+      responses:
+        "200":
+          description: "Payment: received (confirmationKind=manual, confirmedBy, bankAmount) либо manual_confirm с reviewReason=amount_mismatch и warnings[PAYMENT_AMOUNT_MISMATCH] (ядро §22.2, 07 §6.4 п.6)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payment" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /payments/{id}/void:
+    post:
+      tags: [payments]
+      operationId: payments_void
+      summary: Аннулировать неполученный платёж (ручная отмена, step-up)
+      description: >
+        08 §4.9.4: отмена платежа до получения денег по ядру §22.2 — cash_pending, qr_pending, qr_shown, qr_expired,
+        manual_confirm → voided; не возврат денег (возврат — документом 1С, D-25). received (любой способ, включая
+        наличные), credit, refunded, voided → 409 PAYMENT_STATE_INVALID («оформите исправление/возврат в 1С»; ядро §19.2,
+        §22.2). Ручная отмена пользователем — всегда step-up; системное аннулирование при смене способа оплаты выполняется
+        в POST /orders/{id}/payments без step-up (ядро §23 п.3). Object-level ограничения «своя смена» в R1 нет.
+        admin → 403 (ядро §17.2). Повтор для уже voided с тем же ключом → сохранённый ответ. Аудит payment.voided;
+        транзакция payment_voided. Cache-Control: no-store.
+      security:
+        - bearerAuth: []
+          stepUpToken: []
+      x-permissions: [payment.void]
+      x-roles: [cashier, senior_seller]
+      x-step-up: true
+      x-step-up-operation: [payment.void]
+      x-idempotent: required
+      x-rate-limit-group: RL-FIN
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/StepUpToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentsVoidRequest" }
+      responses:
+        "200":
+          description: "Payment (status=voided)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payment" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /payments/qr/webhook:
+    post:
+      tags: [payments]
+      operationId: payments_qr_webhook
+      summary: Вебхук банка о зачислении — только QR_PROVIDER=bakai (R2; контракт банка НЕ ПОДТВЕРЖДЁН, Q-014)
+      description: >
+        08 §4.9.5, §6. Маршрут регистрируется только при QR_PROVIDER=bakai (R2, ядро §24.4) и QR_WEBHOOK_ENABLED=true
+        (ядро §17.7; 13 RM-F-014); при QR_PROVIDER=onec (основной R1) и none → 404 NOT_FOUND, оплату подтверждает 1С
+        (§6.1) или кассир (POST /payments/{id}/confirm-manual). Вызывает только банк: пользовательских ролей нет,
+        Authorization: Bearer не используется; аутентификация — подпись тела X-Signature = HMAC-SHA256(secret,
+        timestamp + "." + rawBody) + X-Timestamp (±5 мин) — ИЛИ mTLS, ИЛИ Basic/API-key + allowlist IP, по возможностям
+        банка (секрет — QR_WEBHOOK_SECRET_FILE). Провал подписи → 401 WEBHOOK_SIGNATURE_INVALID (минимальное тело);
+        IP вне QR_WEBHOOK_ALLOWED_IPS → 403 FORBIDDEN (обязательная проверка в pos-api, ядро §18.2 п.13); 429 RATE_LIMITED;
+        5xx — только при недоступной БД (банк повторит). Бизнес-расхождения ошибкой не являются: 200, платёж → manual_confirm
+        с reviewReason (amount_mismatch, unknown_reference, late_payment) или запись сверки. Идемпотентность — по
+        (reference, eventId) в payment_webhook_events: повтор → 200 без побочных эффектов (заголовок Idempotency-Key не
+        применяется). Ответ всегда быстрый (≤ 2 с), обработка — в фоне. Тело — ПРЕДПОЛОЖЕНИЕ для проектирования.
+        Аудит payment.webhook_rejected / payment.webhook_received / payment.received (confirmationKind=webhook).
+      security:
+        - webhookSignature: []
+      x-permissions: []
+      x-roles: []
+      x-step-up: false
+      x-idempotent: false
+      x-feature-flag: QR_PROVIDER=bakai
+      x-status: proposed
+      x-rate-limit-group: RL-WEBHOOK
+      parameters:
+        - name: X-Timestamp
+          in: header
+          required: false
+          description: "Метка времени подписи (вариант (а) 08 §6, допуск ±5 мин — защита от replay). [НЕ ПОДТВЕРЖДЕНО: контракт банка, Q-014]"
+          schema: { type: string, maxLength: 64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentsQrWebhookEvent" }
+      responses:
+        "200":
+          description: "Принято (идемпотентно), включая неизвестный референс и расхождение суммы."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentsQrWebhookAck" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /payments/{id}/documents/receipt.pdf:
+    get:
+      tags: [payments]
+      operationId: payments_receipt_get
+      summary: Квитанция об оплате долга без заказа (PDF, нефискальная)
+      description: >
+        08 §4.9.6 (путь — ядро §19.2): квитанция о принятом платеже в счёт долга (orderId = null) — клиент, сумма,
+        способ, allocation[], принял, дата/время, «Нефискальный документ» (D-26, PAY-043); PdfRenderer, вид документа
+        payment_receipt. Право: order.documents.print И доступ к платежу (payment.read.all / payment.read.own; 11 §4.3.1);
+        по 11 §4.4 — cashier, senior_seller, owner; customer, admin, seller → 403 FORBIDDEN. Нет платежа или чужой при
+        payment.read.own → 404. Платёж не received → 409 PAYMENT_STATE_INVALID (ядро §19.4); платёж с orderId ≠ null →
+        409 PAYMENT_STATE_INVALID (reason: order_payment — печатать чек заказа GET /orders/{id}/documents/receipt.pdf).
+        Условный элемент вместе с POST /payments: при DEBT_PAYMENTS_FROM_POS=false квитанция не выдаётся (08 §10, 13 RM-G-013).
+        Cache-Control: private, no-cache + ETag (SHA-256 содержимого) — исключение из правила /payments* (08 §2.8).
+        Аудит не пишется; факт рендера — print_jobs.
+      security:
+        - bearerAuth: []
+      x-permissions: [order.documents.print, payment.read.all, payment.read.own]
+      x-roles: [cashier, senior_seller, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-feature-flag: DEBT_PAYMENTS_FROM_POS
+      x-status: proposed
+      x-rate-limit-group: RL-PDF
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+        - name: format
+          in: query
+          required: false
+          description: "Бумага (значения print_jobs.paper 07): a4 (по умолчанию) или thermal80."
+          schema:
+            allOf: [ { $ref: "#/components/schemas/PrintPaper" } ]
+            default: a4
+        - name: copy
+          in: query
+          required: false
+          description: "true — пометка «Копия»."
+          schema: { type: boolean, default: false }
+        - $ref: "#/components/parameters/IfNoneMatch"
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      responses:
+        "200":
+          description: "PDF квитанции (A4 или 80 мм)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            ETag: { $ref: "#/components/headers/ETag" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Content-Disposition:
+              description: 'inline; filename="payment-receipt-<id>.pdf" (08 §4.9.6).'
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # ===================================================================================
+  # pos — дашборд кассира (08 §4.10)
+  # ===================================================================================
+  /pos/dashboard:
+    get:
+      tags: [pos]
+      operationId: pos_dashboard_get
+      summary: Дашборд кассира (SCR-30)
+      description: >
+        08 §4.10.1: сводка смены — суммы за день по способам оплаты, ожидающие оплаты заказы (submitting,
+        pending_approval, approved, awaiting_payment с открытым платежом — ядро §22.5, §23 п.7), QR в ожидании,
+        платежи manual_confirm, просроченные долги (топ), избранные клиенты, последние операции, свежесть данных 1С.
+        Состав ответа — field-level по кодам (11 SEC-031, SEC-036; allowlist — поле, не разрешённое роли, ОТСУТСТВУЕТ):
+        qrPending[], manualConfirm[] и платёжные поля recentTransactions[] (externalRef, суммы платежей) — только при
+        payment.read.all (без него, у admin — только счётчики qrPendingCount, manualConfirmCount); overdue[] — только при
+        customer.receivables.read.summary; favoriteCustomers[] — только при favorites.customers.manage (owner — нет).
+        seller, customer → 403 FORBIDDEN. Клиент обновляет при открытии и каждые 60 с. Cache-Control: no-store.
+        Аудит receivables.overdue_viewed — при каждом ответе с непустым overdue[] (раз на запрос).
+      security:
+        - bearerAuth: []
+      x-permissions: [dashboard.cashier.read]
+      x-roles: [cashier, senior_seller, admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: "Дата сводки; по умолчанию — сегодня в Asia/Bishkek."
+          schema: { type: string, format: date }
+        - name: warehouseId
+          in: query
+          required: false
+          description: "Склад (по умолчанию — склад пользователя)."
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      responses:
+        "200":
+          description: "Дашборд кассира; поля по правам роли (allowlist)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PosDashboard" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # ===================================================================================
+  # returns — заявки на возврат (08 §4.15)
+  # ===================================================================================
+  /returns:
+    post:
+      tags: [returns]
+      operationId: returns_create
+      summary: Создать черновик заявки на возврат
+      description: >
+        08 §4.15.1 (SCR-39): заявка по исходной продаже — заказ shipped/partially_returned с shipmentRef 1С («нет возврата
+        в никуда», R7 §6); причина обязательна; количество ≤ отгружено − возвращено (POS-080). Суммы клиент не передаёт:
+        сумма строки возврата = сумма строки реализации с учётом скидки пропорционально количеству. Ошибки:
+        409 ORDER_STATE_INVALID (resource: return_request, reason: order_not_shipped), 422 RETURN_QTY_EXCEEDED,
+        400 VALIDATION_FAILED (reasonCode обязателен, items ≥ 1, reasonComment обязателен при reasonCode=other),
+        IDEMPOTENCY_* (409/422). Модуль отключается только app_settings.returns_enabled=false (RET-012): все /returns*
+        → 403 FORBIDDEN, reason: returns_disabled (после RBAC, до проверки Idempotency-Key). Аудит return.requested. Cache-Control: no-store.
+      security:
+        - bearerAuth: []
+      x-permissions: [return.create]
+      x-roles: [cashier, senior_seller, admin]
+      x-step-up: false
+      x-idempotent: required
+      x-feature-flag: returns_enabled
+      x-rate-limit-group: RL-FIN
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReturnsCreateRequest" }
+      responses:
+        "201":
+          description: "ReturnRequest (status=draft)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReturnRequest" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+    get:
+      tags: [returns]
+      operationId: returns_list
+      summary: Список заявок на возврат
+      description: >
+        08 §4.15.2: Page<ReturnRequest> (курсорная пагинация 08 §2.5; limit ≤ 200). return.read — cashier, senior_seller,
+        admin, owner (owner — только чтение). Cache-Control: no-store. Аудит не пишется.
+      security:
+        - bearerAuth: []
+      x-permissions: [return.read]
+      x-roles: [cashier, senior_seller, admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-feature-flag: returns_enabled
+      x-rate-limit-group: RL-READ
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: "Фильтр по статусу заявки (return_request_status 07)."
+          schema: { $ref: "#/components/schemas/ReturnRequestStatus" }
+        - name: orderId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: customerId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      responses:
+        "200":
+          description: "Page<ReturnRequest>."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        maxItems: 200
+                        items: { $ref: "#/components/schemas/ReturnRequest" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /returns/{id}:
+    get:
+      tags: [returns]
+      operationId: returns_get
+      summary: Заявка на возврат
+      description: "08 §4.15.2: ReturnRequest по return.read (cashier, senior_seller, admin, owner). Cache-Control: no-store."
+      security:
+        - bearerAuth: []
+      x-permissions: [return.read]
+      x-roles: [cashier, senior_seller, admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-feature-flag: returns_enabled
+      x-rate-limit-group: RL-READ
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      responses:
+        "200":
+          description: "ReturnRequest."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReturnRequest" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      tags: [returns]
+      operationId: returns_update
+      summary: Изменить черновик заявки на возврат
+      description: >
+        08 §4.15.2 (ядро §17.4): только status=draft; оптимистическая блокировка по rowVersion (повтор применённого →
+        409 VERSION_CONFLICT). Object-level 11 SEC-030 (г): автор черновика; senior_seller, admin — также чужой черновик
+        (CASH-007; аудит фиксирует initiator_id автора); cashier на чужой черновик → 404 NOT_FOUND. Ошибки:
+        409 VERSION_CONFLICT, 409 ORDER_STATE_INVALID (resource: return_request, reason: not_draft, currentStatus),
+        422 RETURN_QTY_EXCEEDED. Аудит return.updated. Cache-Control: no-store.
+      security:
+        - bearerAuth: []
+      x-permissions: [return.create]
+      x-roles: [cashier, senior_seller, admin]
+      x-step-up: false
+      x-idempotent: true
+      x-feature-flag: returns_enabled
+      x-rate-limit-group: RL-FIN
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKeyOptional"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReturnsUpdateRequest" }
+      responses:
+        "200":
+          description: "ReturnRequest (status=draft, новый rowVersion)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReturnRequest" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      tags: [returns]
+      operationId: returns_delete
+      summary: Удалить черновик заявки на возврат
+      description: >
+        08 §4.15.4 (путь — ядро §19.2): физическое удаление черновика (status=draft; строки заявки — каскадом, 07 §5.45),
+        не отправленного в 1С; outbox не затрагивается. Автор черновика; senior_seller, admin — также чужой (SEC-030 (г),
+        CASH-007); cashier на чужой → 404; owner, seller, customer → 403. Идемпотентен: повтор для уже удалённого
+        черновика → 204 (по следу в аудите return.updated); Idempotency-Key не требуется (вне перечня 08 §2.7). Ошибки: 404 NOT_FOUND, 409 ORDER_STATE_INVALID
+        (resource: return_request, reason: not_draft, currentStatus), 409 VERSION_CONFLICT (rowVersion устарел).
+        Аудит return.updated (after: { deleted: true }, rowVersion). Cache-Control: no-store.
+      security:
+        - bearerAuth: []
+      x-permissions: [return.create]
+      x-roles: [cashier, senior_seller, admin]
+      x-step-up: false
+      x-idempotent: false
+      x-feature-flag: returns_enabled
+      x-rate-limit-group: RL-FIN
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+        - name: rowVersion
+          in: query
+          required: true
+          description: "Текущая версия черновика (оптимистическая блокировка, 08 §2.8)."
+          schema: { type: integer }
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      responses:
+        "204":
+          description: "Черновик удалён (или уже был удалён)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /returns/{id}/submit:
+    post:
+      tags: [returns]
+      operationId: returns_submit
+      summary: Отправить заявку на возврат (draft → submitted; step-up)
+      description: >
+        08 §4.15.3 (критическая операция, ядро §3.3): draft → submitted + onec_outbox(return_request) → «Заявка на возврат
+        товаров от клиента» в 1С [ТИПОВО: УТ 11.5]; при RETURNS_FROM_POS_ENABLED=false (по умолчанию, ядро §21 п.1) элемент
+        outbox не создаётся — заявка остаётся submitted и оформляется в 1С вручную. Право return.submit с object-level
+        SEC-030 (г) (автор; senior_seller/admin — и чужой черновик; cashier на чужой → 404). Если сумма заявки выше
+        app_settings.return_approval_threshold (по умолчанию 10 000 сом; approvalReason = return_threshold_exceeded) —
+        отправку выполняет держатель return.approve (senior_seller, admin) со step-up (ядро §22.11): cashier → 403 FORBIDDEN
+        (reason: return_threshold_exceeded), черновик остаётся draft. Ошибки: 409 ORDER_STATE_INVALID (resource:
+        return_request, reason: not_draft), 422 RETURN_QTY_EXCEEDED (перепроверка), 403 STEP_UP_REQUIRED, 403 FORBIDDEN,
+        409 VERSION_CONFLICT. Аудит return.submitted (stepUpMethod, totalAmount); транзакция refund — только при completed
+        из 1С. Cache-Control: no-store.
+      security:
+        - bearerAuth: []
+          stepUpToken: []
+      x-permissions: [return.submit, return.approve]
+      x-roles: [cashier, senior_seller, admin]
+      x-step-up: true
+      x-step-up-operation: [return.submit, return.approve]
+      x-idempotent: required
+      x-feature-flag: returns_enabled
+      x-rate-limit-group: RL-FIN
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/StepUpToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReturnsSubmitRequest" }
+      responses:
+        "200":
+          description: "ReturnRequest (status=submitted)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReturnRequest" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /returns/{id}/reject:
+    post:
+      tags: [returns]
+      operationId: returns_reject
+      summary: Отклонить заявку на возврат в POS (step-up)
+      description: >
+        08 §4.15.5 (ядро §22.11): submitted или accepted → rejected, пока заявка не передана в 1С: при
+        RETURNS_FROM_POS_ENABLED=false — submitted и accepted (согласована старшим в POS); при true — submitted с элементом
+        outbox return_request в pending/failed/dead (элемент → cancelled, ядро §22.1). Заявка, уже переданная в 1С (outbox
+        sending/sent/confirmed, а также accepted из 1С) → 409 ORDER_STATE_INVALID (reason: already_in_onec). draft, completed,
+        rejected → 409 ORDER_STATE_INVALID (reason: invalid_transition); черновик удаляется DELETE /returns/{id}.
+        Только return.approve (senior_seller, admin — в собственной сессии, CASH-007); cashier, owner, seller, customer →
+        403 FORBIDDEN. Ошибки также 403 STEP_UP_REQUIRED, 409 VERSION_CONFLICT, 400 VALIDATION_FAILED (reason), 404 NOT_FOUND.
+        Аудит return.status_changed (from → rejected, reason, stepUpMethod). Cache-Control: no-store.
+      security:
+        - bearerAuth: []
+          stepUpToken: []
+      x-permissions: [return.approve]
+      x-roles: [senior_seller, admin]
+      x-step-up: true
+      x-step-up-operation: [return.approve]
+      x-idempotent: required
+      x-feature-flag: returns_enabled
+      x-rate-limit-group: RL-FIN
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/StepUpToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReturnsRejectRequest" }
+      responses:
+        "200":
+          description: "ReturnRequest (status=rejected)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReturnRequest" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /returns/{id}/accept:
+    post:
+      tags: [returns]
+      operationId: returns_accept
+      summary: Согласовать заявку на возврат в POS (только RETURNS_FROM_POS_ENABLED=false; step-up)
+      description: >
+        08 §4.15.6 (ядро §22.11, §23 п.8): submitted → accepted — заявка согласована старшим в POS, когда передача в 1С
+        через outbox выключена (RETURNS_FROM_POS_ENABLED=false, по умолчанию): заявка печатается и оформляется в 1С вручную,
+        completed придёт проекцией документа возврата 1С. При RETURNS_FROM_POS_ENABLED=true accepted ставит только 1С →
+        409 ORDER_STATE_INVALID (reason: already_in_onec). Не submitted → 409 ORDER_STATE_INVALID (reason: invalid_transition).
+        Только return.approve (senior_seller, admin); cashier, owner, seller, customer → 403 FORBIDDEN. Ошибки также
+        403 STEP_UP_REQUIRED, 409 VERSION_CONFLICT, 404 NOT_FOUND. Модуль в целом — по returns_enabled (RET-012).
+        Аудит return.status_changed (submitted → accepted, stepUpMethod). Cache-Control: no-store.
+      security:
+        - bearerAuth: []
+          stepUpToken: []
+      x-permissions: [return.approve]
+      x-roles: [senior_seller, admin]
+      x-step-up: true
+      x-step-up-operation: [return.approve]
+      x-idempotent: required
+      x-feature-flag: RETURNS_FROM_POS_ENABLED=false
+      x-rate-limit-group: RL-FIN
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/StepUpToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReturnsAcceptRequest" }
+      responses:
+        "200":
+          description: "ReturnRequest (status=accepted)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReturnRequest" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+components:
+  schemas:
+    # ===== payments: запросы (08 §4.9) =====
+    PaymentsAllocationInput:
+      type: object
+      required: [documentNumber, amount]
+      additionalProperties: false
+      description: "Строка распределения оплаты долга по документу 1С (08 §4.9.1; ответная форма — PaymentAllocation)."
+      properties:
+        documentNumber: { type: string, minLength: 1, maxLength: 64, example: "УТ-000123" }
+        amount: { $ref: "#/components/schemas/Money" }
+    PaymentsCreateRequest:
+      type: object
+      required: [customerId, method]
+      additionalProperties: false
+      description: >
+        Тело POST /payments (08 §4.9.1). Сумму платежа формирует сервер: из allocation[] (allocationMode=explicit) или
+        из amountRequested (allocationMode=fifo — распределение FIFO по сроку / решает 1С, Q-177). amountRequested не может
+        превышать receivable.balance (иначе 422 VALIDATION_FAILED, rule exceeds_balance; переплата/аванс — Q-012).
+        Клиент не указан или «Розничный покупатель» → 422 CUSTOMER_NOT_IDENTIFIED; снимок долга старше 60 мин и 1С
+        недоступна → 422 RECEIVABLES_STALE (fail-closed, POS-063).
+      properties:
+        customerId: { type: string, format: uuid }
+        method:
+          allOf: [ { $ref: "#/components/schemas/PaymentMethod" } ]
+          description: "Только cash или qr_bakai; credit → 400 VALIDATION_FAILED (08 §4.9.1)."
+        allocation:
+          type: array
+          nullable: true
+          maxItems: 500
+          description: "Явное распределение по документам 1С; null — FIFO (решение 1С, ядро §22.8)."
+          items: { $ref: "#/components/schemas/PaymentsAllocationInput" }
+        amountRequested:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          description: "Сумма оплаты долга при распределении FIFO; только для платежа по долгу (не по заказу)."
+        allocationMode:
+          type: string
+          enum: [explicit, fifo]
+          description: "Режим распределения (08 §4.9.1)."
+        receivedAmount:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          description: "Полученные наличные (для расчёта сдачи changeAmount); только method=cash."
+        comment: { type: string, maxLength: 200 }
+    PaymentsConfirmManualRequest:
+      type: object
+      required: [bankReference, receivedAmount]
+      additionalProperties: false
+      description: "Тело POST /payments/{id}/confirm-manual (08 §4.9.3, §8). Поля acceptMismatch и reason удалены — в теле → 400 VALIDATION_FAILED."
+      properties:
+        bankReference:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: "Референс / номер из выписки BAKAI Business (обязателен)."
+          example: "BK-77123"
+        receivedAmount:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          description: "Подтверждённая сумма по выписке; ≠ amount → 200 с manual_confirm и warnings[PAYMENT_AMOUNT_MISMATCH]."
+        receivedAt: { type: string, format: date-time, example: "2026-10-18T09:20:00Z" }
+        comment: { type: string, maxLength: 200, example: "выписка 09:20" }
+    PaymentsVoidReasonCode:
+      type: string
+      enum: [cashier_error, customer_refused, duplicate, other]
+      description: "Код причины ручного аннулирования (08 §4.9.4). Системное аннулирование при смене способа (void_reason=method_changed) этим маршрутом не выполняется."
+    PaymentsVoidRequest:
+      type: object
+      required: [reason, reasonCode]
+      additionalProperties: false
+      description: "Тело POST /payments/{id}/void (08 §4.9.4)."
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500, example: "ошибка кассира" }
+        reasonCode: { $ref: "#/components/schemas/PaymentsVoidReasonCode" }
+
+    # ===== payments: ответы =====
+    PaymentsAllowedAction:
+      type: string
+      enum: [confirm_manual, void, reissue_qr]
+      description: "Действия, доступные пользователю над платежом в текущем статусе (08 §4.9.2)."
+    PaymentsGetResponse:
+      description: "Ответ GET /payments/{id}: Payment + allowedActions (08 §4.9.2)."
+      allOf:
+        - $ref: "#/components/schemas/Payment"
+        - type: object
+          required: [allowedActions]
+          properties:
+            allowedActions:
+              type: array
+              items: { $ref: "#/components/schemas/PaymentsAllowedAction" }
+
+    # ===== payments: вебхук банка (08 §6 — ПРЕДПОЛОЖЕНИЕ, Q-014; только QR_PROVIDER=bakai, R2) =====
+    PaymentsQrWebhookEvent:
+      type: object
+      required: [eventId, eventType, reference, amount, currency]
+      additionalProperties: false
+      description: "Тело вебхука банка — проектное предположение 08 §6 [НЕ ПОДТВЕРЖДЕНО: Q-014]; заменяется контрактом банка (13 RM-F-014)."
+      properties:
+        eventId: { type: string, maxLength: 128, example: "evt-0001" }
+        eventType:
+          type: string
+          enum: [payment.succeeded, payment.failed, payment.expired]
+        reference: { type: string, maxLength: 64, description: "= payment.qr.bankReference.", example: "BK-77123" }
+        merchantOrderId: { type: string, maxLength: 64, description: "Публичный номер заказа POS (сопоставление вторым ключом).", example: "POS-2026-000123" }
+        amount: { $ref: "#/components/schemas/MoneyAmount" }
+        currency: { type: string, enum: [KGS] }
+        paidAt: { type: string, format: date-time, example: "2026-10-18T09:20:11Z" }
+        payer:
+          type: object
+          additionalProperties: false
+          description: "Без ПДн плательщика в логах (NFR-LOG-001)."
+          properties:
+            masked: { type: string, maxLength: 64 }
+    PaymentsQrWebhookAck:
+      type: object
+      required: [received]
+      description: "Быстрый ответ банку (≤ 2 с): 200 {received: true}; неизвестный референс — status=unknown_reference + запись сверки (08 §6)."
+      properties:
+        received: { type: boolean, enum: [true] }
+        status:
+          type: string
+          enum: [unknown_reference]
+          description: "Присутствует только когда платёж не сопоставлен (запись в payment_webhook_events, отчёт qr-reconciliation со status=unmatched)."
+
+    # ===== pos: дашборд кассира (08 §4.10.1) =====
+    PosDashboardTotals:
+      type: object
+      required: [cash, qr, credit, ordersCount, paymentsCount]
+      description: "Суммы за день по способам оплаты и счётчики (UI-30-014)."
+      properties:
+        cash: { $ref: "#/components/schemas/Money" }
+        qr: { $ref: "#/components/schemas/Money" }
+        credit: { $ref: "#/components/schemas/Money" }
+        ordersCount: { type: integer, minimum: 0 }
+        paymentsCount: { type: integer, minimum: 0 }
+    PosDashboardOverdueItem:
+      type: object
+      required: [customer, overdueAmount, overdueDays, asOf]
+      description: "Строка «Топ просрочек» — суммы из снимка 1С с датой (D-24)."
+      properties:
+        customer:
+          allOf: [ { $ref: "#/components/schemas/Customer" } ]
+          description: "Ролевое представление Customer (08 §3.7)."
+        overdueAmount: { $ref: "#/components/schemas/Money" }
+        overdueDays: { type: integer, minimum: 0, example: 12 }
+        asOf: { type: string, format: date-time }
+    PosDashboardSync:
+      type: object
+      required: [overall]
+      description: "Свежесть финансовых данных 1С (SRC-C-112) и общий статус обмена; детали — GET /sync/status."
+      properties:
+        receivablesAsOf: { type: string, format: date-time, nullable: true }
+        stockAsOf: { type: string, format: date-time, nullable: true }
+        overall: { type: string, enum: [ok, degraded, failed] }
+    PosDashboard:
+      type: object
+      required: [date, totals, awaitingPayment, recentTransactions, sync, notificationsUnread, qrPendingCount, manualConfirmCount]
+      description: >
+        Ответ GET /pos/dashboard (08 §4.10.1). Поля с x-roles сериализуются только ролям из списка (allowlist 11 SEC-031,
+        12 T-SEC-017); неразрешённое поле отсутствует, а не равно null.
+      properties:
+        date: { type: string, format: date, example: "2026-10-18" }
+        totals: { $ref: "#/components/schemas/PosDashboardTotals" }
+        awaitingPayment:
+          type: array
+          maxItems: 20
+          description: "Заказы submitting, pending_approval, approved, awaiting_payment с открытым платежом (ядро §22.5, §23 п.7). OrderSummary — схема фрагмента orders (08 §4.8.2)."
+          items: { $ref: "#/components/schemas/OrderSummary" }
+        qrPending:
+          type: array
+          description: "QR-платежи в ожидании; только при payment.read.all."
+          items: { $ref: "#/components/schemas/Payment" }
+          x-roles: [cashier, senior_seller, owner]
+        manualConfirm:
+          type: array
+          description: "Платежи manual_confirm, ожидающие разбора (ядро §22.2); только при payment.read.all."
+          items: { $ref: "#/components/schemas/Payment" }
+          x-roles: [cashier, senior_seller, owner]
+        qrPendingCount: { type: integer, minimum: 0 }
+        manualConfirmCount: { type: integer, minimum: 0 }
+        overdue:
+          type: array
+          maxItems: 10
+          description: "Топ просрочек; только при customer.receivables.read.summary; при непустом — аудит receivables.overdue_viewed."
+          items: { $ref: "#/components/schemas/PosDashboardOverdueItem" }
+          x-roles: [cashier, senior_seller, admin, owner]
+        favoriteCustomers:
+          type: array
+          maxItems: 12
+          description: "Избранные клиенты (≤ 12, ядро §19.2) — DTO без сумм долга (флаги hasDebt/isOverdue); только при favorites.customers.manage."
+          items: { $ref: "#/components/schemas/Customer" }
+          x-roles: [cashier, senior_seller, admin]
+        recentTransactions:
+          type: array
+          maxItems: 10
+          description: "Последние операции за день; платёжные поля (externalRef, суммы платежей) — только при payment.read.all."
+          items: { $ref: "#/components/schemas/Transaction" }
+        sync: { $ref: "#/components/schemas/PosDashboardSync" }
+        notificationsUnread: { type: integer, minimum: 0 }
+
+    # ===== returns: запросы (08 §4.15) =====
+    ReturnsItemInput:
+      type: object
+      required: [orderLineNo, quantity]
+      additionalProperties: false
+      description: "Строка заявки: номер строки заказа и количество (≤ отгружено − возвращено, POS-080; иначе 422 RETURN_QTY_EXCEEDED). Сумму считает сервер."
+      properties:
+        orderLineNo: { type: integer, minimum: 1 }
+        quantity: { $ref: "#/components/schemas/Quantity" }
+    ReturnsCreateRequest:
+      type: object
+      required: [orderId, reasonCode, items]
+      additionalProperties: false
+      description: "Тело POST /returns (08 §4.15.1); суммы клиент не передаёт."
+      properties:
+        orderId: { type: string, format: uuid }
+        reasonCode: { $ref: "#/components/schemas/ReturnReason" }
+        reasonComment:
+          type: string
+          maxLength: 500
+          description: "Обязателен при reasonCode=other (иначе 400 VALIDATION_FAILED)."
+        items:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { $ref: "#/components/schemas/ReturnsItemInput" }
+        refundKind:
+          type: string
+          nullable: true
+          allOf: [ { $ref: "#/components/schemas/PaymentMethod" } ]
+          description: "Пожелание способа возврата; credit — зачёт в счёт долга; null — не указано."
+    ReturnsUpdateRequest:
+      type: object
+      required: [rowVersion]
+      additionalProperties: false
+      description: "Тело PATCH /returns/{id} (08 §4.15.2) — только для status=draft; передаются изменяемые поля и rowVersion."
+      properties:
+        reasonCode: { $ref: "#/components/schemas/ReturnReason" }
+        reasonComment:
+          type: string
+          maxLength: 500
+          description: "Обязателен при reasonCode=other."
+        items:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { $ref: "#/components/schemas/ReturnsItemInput" }
+        refundKind:
+          type: string
+          nullable: true
+          allOf: [ { $ref: "#/components/schemas/PaymentMethod" } ]
+        rowVersion: { type: integer }
+    ReturnsSubmitRequest:
+      type: object
+      required: [rowVersion]
+      additionalProperties: false
+      description: "Тело POST /returns/{id}/submit (08 §4.15.3)."
+      properties:
+        rowVersion: { type: integer, example: 2 }
+        comment: { type: string, maxLength: 200 }
+    ReturnsRejectRequest:
+      type: object
+      required: [reason, rowVersion]
+      additionalProperties: false
+      description: "Тело POST /returns/{id}/reject (08 §4.15.5); причина обязательна (SEC-076)."
+      properties:
+        reason: { type: string, minLength: 5, maxLength: 500 }
+        rowVersion: { type: integer, example: 3 }
+    ReturnsAcceptRequest:
+      type: object
+      required: [rowVersion]
+      additionalProperties: false
+      description: "Тело POST /returns/{id}/accept (08 §4.15.6)."
+      properties:
+        comment: { type: string, maxLength: 500, nullable: true }
+        rowVersion: { type: integer, example: 3 }

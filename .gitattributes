@@ -1,0 +1,37 @@
+# RM-C-001: в репозитории — LF и UTF-8 (см. также .editorconfig).
+# Нормализация: текстовые файлы хранятся в git с LF и извлекаются с LF на всех ОС.
+* text=auto eol=lf
+
+# Скрипты Windows требуют CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Двоичные файлы — без нормализации и без текстового diff
+*.png binary
+*.PNG binary
+*.jpg binary
+*.JPG binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.riv binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.docx binary
+*.xlsx binary
+*.zip binary
+*.jar binary
+*.so binary
+*.dll binary
+*.exe binary
+*.cfe binary
+*.epf binary
+
+# Сгенерированные файлы (свёртка в diff на GitHub)
+pubspec.lock linguist-generated=true
+package-lock.json linguist-generated=true

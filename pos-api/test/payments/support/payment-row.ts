@@ -1,0 +1,42 @@
+import type { PaymentRow } from '../../../src/payments/infra/payments.repository.js';
+
+/** Строка `payments` для тестов без БД (**тестовые данные**): наличный платёж `cash_pending` на 100.00. */
+export function paymentRow(over: Partial<PaymentRow> = {}): PaymentRow {
+  return {
+    id: '0192f3a1-0000-7000-8000-0000000000a1',
+    publicNumber: 'PAY-2026-000001',
+    orderId: '0192f3a1-0000-7000-8000-0000000000b1',
+    customerId: null,
+    method: 'cash',
+    qrProvider: null,
+    status: 'cash_pending',
+    amount: '100.00',
+    createdByUserId: '0192f3a1-0000-7000-8000-0000000000c1',
+    receivedByUserId: null,
+    receivedAt: null,
+    receivedAmount: null,
+    changeAmount: null,
+    bankAmount: null,
+    qrPayload: null,
+    qrExpiresAt: null,
+    qrIssuedAt: null,
+    qrProviderRef: null,
+    qrRefHistory: [],
+    bankReference: null,
+    qrStatusCheckedAt: null,
+    qrProviderStatusRaw: null,
+    manualConfirmedByUserId: null,
+    manualConfirmedAt: null,
+    manualReason: null,
+    reviewReason: null,
+    voidedByUserId: null,
+    voidedAt: null,
+    voidReason: null,
+    onecRef: null,
+    onecDocType: null,
+    idempotencyKey: 'k',
+    rowVersion: 1,
+    createdAt: new Date('2026-10-23T00:00:00Z'),
+    ...over,
+  };
+}

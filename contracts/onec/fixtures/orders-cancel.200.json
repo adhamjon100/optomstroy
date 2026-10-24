@@ -1,0 +1,18 @@
+{
+  "_note": "тестовые данные",
+  "operation": "POST /pos/v1/orders/{uuid}/cancel",
+  "kind": "response",
+  "status": 200,
+  "body": {
+    "externalId": "0192f5a0-7c2e-7d3b-9a1f-3c4d5e6f7a8c",
+    "ref": "b2c3d4e5-0000-4000-8000-000000000011",
+    "number": "ОС00-004513",
+    "date": "2026-10-21T13:50:00+06:00",
+    "status": "Закрыт",
+    "approved": false,
+    "fulfillmentState": null,
+    "deletionMark": true,
+    "total": "4324.00",
+    "shipments": []
+  }
+}

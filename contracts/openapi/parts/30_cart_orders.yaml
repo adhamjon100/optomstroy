@@ -1,0 +1,1595 @@
+# =====================================================================================
+# Optomstroy POS API — фрагмент модулей cart и orders (RM-B-003)
+# Источник истины: docs/specification/08_API_SPECIFICATION.md v1.9 — §4.7 (cart), §4.8 (orders), §2.7 (идемпотентность),
+# §2.8 (кэширование), §2.9 (rate limit), §2.12 (step-up), §2.14 (валидация), §3.8–§3.10 (DTO), §3.15 (коды прав), §8 (скелет),
+# §9 (матрица); права и роли — 11 §4.3–§4.4 (владелец; при расхождении с 08 §9 действует 11); ядро R0 v1.9 §19.2, §22, §23, §24.
+# Общие компоненты — parts/00_root.yaml; правила фрагментов — ../NOTES.md. Ссылки пишутся как в собранном документе.
+#
+# Решения автора фрагмента (NOTES.md в задаче не назначен на запись — решения записаны здесь, перенос в NOTES.md — при сборке):
+#  F1. Формат файла по постановке задачи: openapi + минимальный info + paths + components. По NOTES §1 фрагменты не содержат
+#      openapi/info — сборщик берёт эти ключи только из 00_root.yaml; здесь они нужны лишь для самостоятельного разбора файла.
+#  F2. operationId — по владельцу правил генерации 08 §8 / API-122 и NOTES §3 п.2: `<module>_<action>` в snake_case
+#      (orders_create), а не camelCase из постановки. Права — `x-permissions` (массив кодов 11 §4.3), как решено в NOTES §5 п.1.
+#  F3. Условный step-up (скидка с override, POST /orders с discountOverride/creditOverride, отмена по order.cancel.request.any)
+#      выражен двумя альтернативами security: [ {bearerAuth}, {bearerAuth + stepUpToken} ]; безусловный (onec-link) —
+#      одной парой { bearerAuth, stepUpToken } (NOTES §3 п.3).
+#  F4. PUT /cart/items/{variantId}: ключ обязателен только при mode=increment (08 §2.7) — параметр IdempotencyKeyOptional,
+#      x-idempotent: true, условие — в description (машинно условную обязательность OAS 3.0 не выражает).
+#  F5. Печатные формы — три конкретных пути (invoice.pdf, receipt.pdf, waybill.pdf), а не шаблон {kind}.pdf: у них разные
+#      права (order.documents.print vs order.read.*), роли и тип ответа (waybill в R1 — JSON).
+#  F6. Ответ GET /orders/{id}/payments в 08 §4.8.6 не задан; принят объект { items: Payment[] } (OrdersPaymentsListResponse)
+#      без пагинации (платежей у заказа единицы). Состав OrderSummary.paymentsSummary в 08 §4.8.2 не раскрыт — открытый объект.
+#  F7. OrdersCreateRequest.comment — maxLength 500 по скелету 08 §8 и 07 orders.comment (≤ 500); правило 08 §2.14 «comment ≤ 200»
+#      относится к полю макета. CartParkRequest.name — maxLength 80 (07 carts.name). Комментарий оплаты — 200 (08 §2.14).
+#  F8. OrdersCancelRequest: reason и reasonCode обязательны — CHECK 07 (cancel_requested_by_user_id ⇒ cancel_reason_code)
+#      не позволяет запрос отмены без кода; refundIntent — обязателен по условию (полученные платежи), проверяет сервер.
+#  F9. Параметр strict для POST /cart/checkout-preview (08 §4.7.7, §3.8 — «если клиент запросил strict=true») — поле тела,
+#      т. к. запрос — POST с additionalProperties:false; в скелете 08 §8 поля нет.
+#  F10. POST /orders/{id}/payments: x-permissions = [payment.cash.receive, payment.qr.show]. 11 §4.3.1 дополнительно называет
+#      credit.sale.create (method=credit), но 08 §4.8.6/§3.15 запрещают долг этой операцией (409 ORDER_STATE_INVALID,
+#      payment_method_mismatch) — код не проверяется; поле method — PaymentMethod целиком, чтобы credit давал 409, а не 400.
+#  F11. Для customer доступ к QR (payment.qr.show own) — по 11 §4.4: только при QR_PROVIDER=onec (08 пишет «≠none»; в R1 это
+#      то же самое, bakai — R2). Доступ роли customer к корзине и заказам зависит от CUSTOMER_SELF_SERVICE (11 §4.4, 16 §4.3).
+#  F12. DELETE /cart/customer и DELETE /cart/items/{variantId} — без rowVersion (08 задаёт rowVersion только для DELETE /cart),
+#      поэтому 409 у них не перечислен. Waybill — без параметров format/copy (PDF накладной в R1 не формируется).
+#  R2 не включено: merge корзин при resume (CART-032), Delivery.geo, actAs/supervisor, QR_PROVIDER=bakai-специфика (только в описаниях).
+# =====================================================================================
+openapi: 3.0.3
+info:
+  title: Optomstroy POS API — cart, orders (fragment)
+  version: "1.0.0"
+paths:
+  # ===================================================================================
+  # Модуль cart (08 §4.7). Rate limit — RL-CART для всех методов. Кэширование — no-store.
+  # ===================================================================================
+  /cart:
+    get:
+      tags: [cart]
+      operationId: cart_get
+      summary: Активная корзина с актуализацией цен и остатков
+      description: >
+        200: при отсутствии активной корзины сервер создаёт пустую `active` и возвращает её с `items: []`
+        (одна `active` на пользователя). Исключение — 503 ONEC_UNAVAILABLE reason=catalog_not_loaded с Retry-After: 60,
+        если реплика каталога 1С ещё не загружена (нет склада или вида цены по умолчанию; 08 §4.7.1 «Уточнения» п. 2,
+        FIX-F-07; с 1.2.0). Только своя корзина. Для `customer` (R1, ядро §24.2; при CUSTOMER_SELF_SERVICE=true)
+        цены — по виду цены своей `confirmed`-карточки, иначе розничный; остатки — по `customer_stock_display` (08 §3.6).
+        08 §4.7.1.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [cart.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-CART
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - name: revalidate
+          in: query
+          required: false
+          description: "Пересчитать цены/остатки по снимку и пометить warnings (по умолчанию true)."
+          schema: { type: boolean, default: true }
+      responses:
+        "200":
+          description: "Cart (полная, с warnings[])."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503":
+          description: >
+            ONEC_UNAVAILABLE, reason=catalog_not_loaded: реплика каталога 1С не загружена (нет активного склада или вида цены
+            по умолчанию, до первичной загрузки RM-E-011); Retry-After: 60 (08 §4.7.1 «Уточнения» п. 2; FIX-F-07). Остальные
+            маршруты корзины в этом состоянии отвечают так же (ответ default). Добавлено в 1.2.0.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            Retry-After: { $ref: "#/components/headers/RetryAfter" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [cart]
+      operationId: cart_update
+      summary: Сменить склад активной корзины с пересчётом доступности
+      description: >
+        Единственное изменяемое поле — `warehouseId` (иные поля → 400 VALIDATION_FAILED, rule forbidden_field). Склад должен
+        быть активным. Сервер пересчитывает available/remainingAvailable/stockLevel/warnings; позиции не удаляются.
+        Тот же warehouseId → 200 без изменения rowVersion. Ошибки: 409 VERSION_CONFLICT (current: Cart); 404 NOT_FOUND
+        (склад не существует/неактивен); 403 FORBIDDEN (склад недоступен); 400 VALIDATION_FAILED. 08 §4.7.8 [ядро §19.2].
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [cart.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, customer]
+      x-step-up: false
+      x-idempotent: true
+      x-rate-limit-group: RL-CART
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CartUpdateRequest" }
+      responses:
+        "200":
+          description: "Cart (новый warehouseId, rowVersion+1; конфликты — в warnings[])."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        default: { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [cart]
+      operationId: cart_clear
+      summary: Очистить активную корзину
+      description: >
+        200 Cart с `items: []`, `status: active`; отложенные корзины не затрагиваются. Повтор для уже пустой корзины → 200
+        без проверки rowVersion. Ошибки: 409 VERSION_CONFLICT; 400 VALIDATION_FAILED. Аудит `cart.cleared`. 08 §4.7.3.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [cart.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-CART
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - name: rowVersion
+          in: query
+          required: true
+          description: "rowVersion активной корзины (оптимистическая блокировка)."
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: "Cart (items: [], status: active)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /cart/items/{variantId}:
+    put:
+      tags: [cart]
+      operationId: cart_items_put
+      summary: Установить или увеличить количество/упаковку позиции (0 = удалить)
+      description: >
+        mode=set — установить value; mode=increment — прибавить value к текущему («+ Добавить» без гонок). Idempotency-Key
+        ОБЯЗАТЕЛЕН при mode=increment (08 §2.7; без ключа → 400 VALIDATION_FAILED rule idempotency_key_required), при
+        mode=set — допускается. Клиент не передаёт цены: price/unitPrice → 400 forbidden_field + аудит price.override_attempt;
+        priceSnapshot — цена, которую видел пользователь (только для предупреждения). Превышение остатка — не ошибка, а
+        warnings: [stock_insufficient]; увеличение при неизвестном остатке → 422 STOCK_INSUFFICIENT (conflicts[].available: null,
+        reason: stock_unknown). Ошибки: 409 VERSION_CONFLICT (current: Cart), IDEMPOTENCY_IN_PROGRESS; 422 VARIANT_UNAVAILABLE,
+        QTY_NOT_MULTIPLE, QTY_BELOW_MIN, STOCK_INSUFFICIENT, IDEMPOTENCY_KEY_REUSED; 400 VALIDATION_FAILED (forbidden_field,
+        max_items — 201-я строка, idempotency_key_required). 08 §4.7.2.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [cart.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, customer]
+      x-step-up: false
+      x-idempotent: true
+      x-rate-limit-group: RL-CART
+      parameters:
+        - { $ref: "#/components/parameters/CartVariantIdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CartPutItemRequest" }
+      responses:
+        "200":
+          description: "Cart (rowVersion+1)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        default: { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [cart]
+      operationId: cart_items_delete
+      summary: Удалить позицию корзины
+      description: >
+        С packagingId удаляется строка варианта с этой упаковкой; без параметра — все строки варианта [ядро §19.2].
+        Удаление отсутствующей строки → 200 с текущей корзиной. Ошибки: 400 VALIDATION_FAILED (packagingId не uuid).
+        08 §4.7.3.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [cart.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-CART
+      parameters:
+        - { $ref: "#/components/parameters/CartVariantIdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - name: packagingId
+          in: query
+          required: false
+          description: "Упаковка удаляемой строки; без параметра удаляются все строки варианта."
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: "Cart без удалённой позиции."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /cart/customer:
+    post:
+      tags: [cart]
+      operationId: cart_customer_set
+      summary: Привязать клиента к корзине (пересчёт вида цены, скидки 1С, флагов долга)
+      description: >
+        Цены пересчитываются по priceListId клиента; warnings при изменении цен. `customer` — только своя
+        `confirmed`-карточка (чужая → 403 FORBIDDEN). Ошибки: 404 NOT_FOUND (клиент); 409 VERSION_CONFLICT;
+        403 FORBIDDEN; 400 VALIDATION_FAILED (other_person без name/phone). 08 §4.7.4; «Розничный клиент» — Q-026.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [cart.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, customer]
+      x-step-up: false
+      x-idempotent: true
+      x-rate-limit-group: RL-CART
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CartCustomerSetRequest" }
+      responses:
+        "200":
+          description: "Cart с клиентом (ролевое представление без сумм долга)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        default: { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [cart]
+      operationId: cart_customer_unset
+      summary: Отвязать клиента от корзины
+      description: "Идемпотентен по семантике. 08 §4.7.4 [ядро §17.4]."
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [cart.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-CART
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+      responses:
+        "200":
+          description: "Cart без клиента (customer: null), цены пересчитаны."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /cart/discount:
+    post:
+      tags: [cart]
+      operationId: cart_discount_apply
+      summary: Запросить ручную скидку на корзину
+      description: >
+        В пределах лимита роли — discount.apply.within_limit; сверх лимита — `override` из СВОЕЙ сессии с
+        discount.approve.over_limit и X-Step-Up-Token (step-up только при override; 403 STEP_UP_REQUIRED,
+        operation discount.approve.over_limit). `customer` → 403 FORBIDDEN. Ошибки: 422 DISCOUNT_LIMIT_EXCEEDED (limitPercent,
+        requiresRole); 403 STEP_UP_REQUIRED / FORBIDDEN; 409 VERSION_CONFLICT; 400 VALIDATION_FAILED (percent_range).
+        Аудит discount.applied, discount.over_limit_approved. 08 §4.7.5; лимиты — Q-015.
+      security:
+        - { bearerAuth: [] }
+        - { bearerAuth: [], stepUpToken: [] }
+      x-permissions: [discount.apply.within_limit, discount.approve.over_limit]
+      x-roles: [seller, cashier, senior_seller, admin]
+      x-step-up: true
+      x-step-up-operation: [discount.approve.over_limit]
+      x-idempotent: true
+      x-rate-limit-group: RL-CART
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+        - { $ref: "#/components/parameters/StepUpToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CartDiscountRequest" }
+      responses:
+        "200":
+          description: "Cart (appliedDiscountPercent, discountTotal, распределение по строкам)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /cart/park:
+    post:
+      tags: [cart]
+      operationId: cart_park
+      summary: Отложить активную корзину и создать новую пустую
+      description: >
+        Idempotency-Key обязателен (08 §2.7: операция создаёт новую active корзину). `customer` → 403 FORBIDDEN.
+        Срок хранения expiresAt = 7 дней [НЕ ПОДТВЕРЖДЕНО]. Ошибки: 409 VERSION_CONFLICT, IDEMPOTENCY_IN_PROGRESS;
+        422 IDEMPOTENCY_KEY_REUSED; 400 VALIDATION_FAILED. Аудит cart.parked. 08 §4.7.6.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [cart.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin]
+      x-step-up: false
+      x-idempotent: required
+      x-rate-limit-group: RL-CART
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CartParkRequest" }
+      responses:
+        "201":
+          description: "{ parked: Cart (status=parked), active: Cart (новая пустая) }."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CartParkResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /cart/parked:
+    get:
+      tags: [cart]
+      operationId: cart_parked_list
+      summary: Список отложенных корзин (свои или все)
+      description: >
+        scope=own (по умолчанию) — cart.manage.own; scope=all — cart.parked.read.all (senior_seller, admin, owner —
+        только чтение). Элементы — корзина без items (CartParkedSummary). Ошибки: 403 FORBIDDEN (scope=all без права);
+        400 VALIDATION_FAILED (limit, cursor). 08 §4.7.6.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [cart.manage.own, cart.parked.read.all]
+      x-roles: [seller, cashier, senior_seller, admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-CART
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - name: scope
+          in: query
+          required: false
+          description: "own — свои отложенные; all — все (требует cart.parked.read.all)."
+          schema: { type: string, enum: [own, all], default: own }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200":
+          description: "Page<CartParkedSummary>."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Page" }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/CartParkedSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /cart/parked/{id}/resume:
+    post:
+      tags: [cart]
+      operationId: cart_parked_resume
+      summary: Возобновить отложенную корзину
+      description: >
+        Своя — cart.manage.own; чужая — cart.parked.resume.any (senior_seller, admin; аудит cart.resumed_foreign).
+        Текущая active не пуста и replaceActive=false → 409 ORDER_STATE_INVALID (resource: cart, reason: active_not_empty);
+        replaceActive=true — текущая паркуется как «Автосохранение <время>». Возобновлённая проходит полную перепроверку
+        цен/остатков (warnings[]). Resume уже активной → 200 с текущей корзиной. Объединение корзин (merge) — R2, параметра
+        нет. Ошибки: 404 NOT_FOUND (чужая без права); 409 VERSION_CONFLICT / ORDER_STATE_INVALID. 08 §4.7.6.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [cart.manage.own, cart.parked.resume.any]
+      x-roles: [seller, cashier, senior_seller, admin]
+      x-step-up: false
+      x-idempotent: true
+      x-rate-limit-group: RL-CART
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CartParkedResumeRequest" }
+      responses:
+        "200":
+          description: "Cart (status=active, warnings[])."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /cart/parked/{id}:
+    delete:
+      tags: [cart]
+      operationId: cart_parked_delete
+      summary: Удалить отложенную корзину
+      description: >
+        Мягкое удаление (carts.status=cleared). Своя — cart.manage.own; чужая — cart.parked.resume.any (senior_seller, admin);
+        owner и customer → 403 FORBIDDEN; чужая без права → 404 NOT_FOUND (существование не раскрывается). Повтор для уже
+        удалённой → 204. Ошибки: 404 NOT_FOUND; 409 ORDER_STATE_INVALID (resource: cart, reason: not_parked). Аудит cart.cleared
+        (parked: true; foreign: true для чужой). 08 §4.7.9 [ядро §19.2].
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [cart.manage.own, cart.parked.resume.any]
+      x-roles: [seller, cashier, senior_seller, admin]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-CART
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+      responses:
+        "204":
+          description: "Удалено (или уже было удалено)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /cart/checkout-preview:
+    post:
+      tags: [cart]
+      operationId: cart_checkout_preview
+      summary: Полная серверная проверка корзины без создания заказа
+      description: >
+        Перепроверка цен, остатков, прав, скидок, способа оплаты (долг — fail-closed, порядок ядра §22.4 / 08 §5.5),
+        доставки/получателя; итоги и previewToken (5 мин). Конфликты — 200 с ok=false и conflicts[] (не ошибка).
+        Строгие коды долга (RECEIVABLES_STALE, CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED; 403 FORBIDDEN при forbidden_role) —
+        только при strict=true, иначе — paymentChecks.creditReason. `customer`: credit → creditAllowed:false
+        (forbidden_role; при strict=true — 403); qr_bakai при QR_PROVIDER=none → 422 VALIDATION_FAILED
+        (rule payment_method_unavailable); manualDiscountPercent ≠ 0 → 403. Побочных эффектов нет; синхронная проверка 1С
+        (syncCheckWithOnec, 6 с) — в onecCheck. Ошибки: 422 CART_EMPTY, CUSTOMER_NOT_IDENTIFIED, RECEIVABLES_STALE,
+        CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED, VALIDATION_FAILED; 409 VERSION_CONFLICT; 403 FORBIDDEN; 400 VALIDATION_FAILED
+        (forbidden_field — попытка передать цену, аудит price.override_attempt). 08 §4.7.7.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [cart.manage.own, order.create]
+      x-roles: [seller, cashier, senior_seller, admin, customer]
+      x-step-up: false
+      x-idempotent: true
+      x-feature-flag: QR_PROVIDER
+      x-rate-limit-group: RL-CART
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CartCheckoutPreviewRequest" }
+      responses:
+        "200":
+          description: "CheckoutPreview (ok=false с conflicts[] — не ошибка; permissions.needsOverride ∈ [discount, credit])."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckoutPreview" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ===================================================================================
+  # Модуль orders (08 §4.8). Кэширование — no-store (кроме PDF: private, no-cache + ETag).
+  # ===================================================================================
+  /orders:
+    post:
+      tags: [orders]
+      operationId: orders_create
+      summary: Создать заказ из корзины (Idempotency-Key обязателен; цены клиент не передаёт)
+      description: >
+        Сервер повторяет проверки checkout-preview, вне транзакции БД — синхронная проверка 1С /check (6000 мс), затем одна
+        короткая транзакция (orders submitting + order_items + начальный платёж + onec_outbox pending + история + transactions +
+        audit + корзина converted). Документ 1С создаёт воркер из outbox; 503 ONEC_UNAVAILABLE не возвращается.
+        201 — /check выполнен; 202 — /check не выполнен (1С недоступна или вариант C-2), warnings[STALE_DATA], Location.
+        Начальный платёж: cash → cash_pending; qr_bakai → qr_shown с QrInfo при payment.qr.show (QR_PROVIDER=onec — QR от 1С,
+        autoConfirm: true; недоступность 1С → qr_pending без qr + warnings[QR_UNAVAILABLE]; QR_PROVIDER=none — elqr_static/none,
+        autoConfirm: false), без payment.qr.show (admin; customer при QR_PROVIDER≠onec) — qr_pending без поля qr; credit → credit.
+        Права по способу: credit — дополнительно credit.sale.create (иначе 403, creditReason: forbidden_role); creditOverride —
+        credit.sale.approve + step-up (только senior_seller); discountOverride — discount.approve.over_limit + step-up.
+        Режим клиента (customer, R1, ядро §24.2; CUSTOMER_SELF_SERVICE=true): paymentMethod cash | qr_bakai (только при
+        QR_PROVIDER=onec, иначе 422 VALIDATION_FAILED rule payment_method_unavailable); credit, manualDiscountPercent ≠ "0.00",
+        discountOverride, creditOverride, чужой customerId → 403 FORBIDDEN; delivery обязателен.
+        Ошибки: 422 CART_EMPTY, PRICE_CHANGED / STOCK_INSUFFICIENT / VARIANT_UNAVAILABLE / QTY_NOT_MULTIPLE (conflicts[] — все
+        конфликты одним ответом; корзина не конвертируется), DISCOUNT_LIMIT_EXCEEDED, CUSTOMER_NOT_IDENTIFIED, CREDIT_BLOCKED,
+        CREDIT_LIMIT_EXCEEDED, RECEIVABLES_STALE, ONEC_REJECTED, IDEMPOTENCY_KEY_REUSED, VALIDATION_FAILED; 409 VERSION_CONFLICT
+        (current: Cart; items не совпадают с корзиной), ORDER_STATE_INVALID (reason: possible_duplicate, possibleDuplicateOrderId;
+        обход — confirmDuplicate=true), IDEMPOTENCY_IN_PROGRESS; 403 FORBIDDEN, STEP_UP_REQUIRED; 400 VALIDATION_FAILED
+        (forbidden_field — price/unitPrice/total/subtotal/amount, аудит price.override_attempt). 08 §4.8.1 [ядро §22.3, §22.4, §24.4].
+        Повтор с тем же Idempotency-Key (Idempotent-Replayed: true) возвращает текущее представление созданного заказа с тем
+        же статусом 201/202, в том числе QR начального платежа, сформированный после COMMIT (B-AR-04).
+      security:
+        - { bearerAuth: [] }
+        - { bearerAuth: [], stepUpToken: [] }
+      x-permissions: [order.create, credit.sale.create, credit.sale.approve, discount.approve.over_limit, payment.qr.show]
+      x-roles: [seller, cashier, senior_seller, admin, customer]
+      x-step-up: true
+      x-step-up-operation: [discount.approve.over_limit, credit.sale.approve]
+      x-idempotent: required
+      x-feature-flag: QR_PROVIDER
+      x-rate-limit-group: RL-FIN
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+        - { $ref: "#/components/parameters/StepUpToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrdersCreateRequest" }
+      responses:
+        "201":
+          description: "Order (status=submitting, onecSyncState=pending, onec.number=null; payments[0] — начальный платёж); /check выполнен."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "202":
+          description: "Order (status=submitting) + warnings[STALE_DATA]: /check не выполнен, проверки по последнему снимку (D-29); клиент опрашивает GET /orders/{id} (3 с, до 60 с)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+            Location: { $ref: "#/components/headers/Location" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        default: { $ref: "#/components/responses/Problem" }
+    get:
+      tags: [orders]
+      operationId: orders_list
+      summary: Список заказов
+      description: >
+        order.read.own — seller (созданные им), customer (созданные аккаунтом и заказы своей карточки при
+        customer_links.status=confirmed); order.read.all — cashier, senior_seller, admin, owner. idempotencyKey — поиск заказа по
+        ключу POST /orders после перезапуска приложения (только заказы текущего пользователя; 0 или 1 элемент; ядро §22.6).
+        include=statusCounts — счётчики по order_status при всех фильтрах, кроме status, в пределах видимости роли [ядро §19.2];
+        totalEstimate — точное число по фильтру. Ошибки: 400 VALIDATION_FAILED (sort_field, date_range, limit, cursor);
+        403 FORBIDDEN (createdBy без order.read.all). 08 §4.8.2.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [order.read.own, order.read.all]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - name: status
+          in: query
+          required: false
+          description: "Фильтр по статусам заказа (список через запятую)."
+          style: form
+          explode: false
+          schema:
+            type: array
+            maxItems: 11
+            items: { $ref: "#/components/schemas/OrderStatus" }
+        - name: customerId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: createdBy
+          in: query
+          required: false
+          description: "Автор заказа (users.id); только при order.read.all, иначе 403 FORBIDDEN."
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/From" }
+        - { $ref: "#/components/parameters/To" }
+        - name: paymentMethod
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/PaymentMethod" }
+        - name: isPaid
+          in: query
+          required: false
+          schema: { type: boolean }
+        - { $ref: "#/components/parameters/Q" }
+        - name: idempotencyKey
+          in: query
+          required: false
+          description: "Ключ Idempotency-Key запроса POST /orders; только заказы текущего пользователя (08 §2.7, ядро §22.6)."
+          schema: { type: string, format: uuid }
+        - name: include
+          in: query
+          required: false
+          description: "statusCounts — счётчики по статусам для чипов SCR-25 [ядро §19.2]."
+          schema: { type: string, enum: [statusCounts] }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - name: sort
+          in: query
+          required: false
+          description: "Сортировка (08 §4.8.2); последний ключ — id (08 §2.6)."
+          schema: { type: string, enum: ["createdAt:desc", "total:desc", "status:asc"], default: "createdAt:desc" }
+      responses:
+        "200":
+          description: "Page<OrderSummary> (+ statusCounts при include=statusCounts)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Page" }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/OrderSummary" }
+                      statusCounts:
+                        type: object
+                        description: "Только при include=statusCounts: число заказов по каждому order_status (ключ — значение OrderStatus)."
+                        additionalProperties: { type: integer, minimum: 0 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /orders/{id}:
+    get:
+      tags: [orders]
+      operationId: orders_get
+      summary: Заказ — детали, статус 1С, платежи, документы
+      description: >
+        Владелец (order.read.own) или order.read.all; customer — заказ своего аккаунта или своей карточки при
+        customer_links.status=confirmed; иначе 404 NOT_FOUND. Поле payments[].qr — только при payment.qr.show (08 §3.15).
+        refreshFromOnec=true (staff) — синхронный запрос статуса в 1С (getOrderStatus, 6000 мс); при недоступности 1С и в C-2 —
+        последний снимок + onec.lastSyncAt + warnings[STALE_DATA]. allowedActions вычислены по статусу и правам (сервер всё
+        равно проверяет). 08 §4.8.3.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [order.read.own, order.read.all]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - name: include
+          in: query
+          required: false
+          description: "Состав ответа (список через запятую); по умолчанию — все."
+          style: form
+          explode: false
+          schema:
+            type: array
+            maxItems: 4
+            items: { type: string, enum: [items, payments, history, documents] }
+        - name: refreshFromOnec
+          in: query
+          required: false
+          description: "Только staff: синхронно запросить статус заказа из 1С (05 §6.3; [ТИПОВО])."
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: "Order + allowedActions."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrdersGetResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /orders/{id}/cancel:
+    post:
+      tags: [orders]
+      operationId: orders_cancel
+      summary: Отменить заказ или запросить отмену в 1С
+      description: >
+        (а) Немедленная отмена → status: cancelled — заказ submitting, документ 1С ещё не создан (outbox create в pending/dead);
+        неполученные платежи → voided, состав восстанавливается в корзину. (б) Запрос отмены → прежний статус +
+        cancelRequested: true — outbox create в sending/sent или заказ уже в 1С (pending_approval, awaiting_payment, approved,
+        awaiting_shipment); cancelled — только по ответу 1С. order.cancel.own — создатель, свой заказ в
+        submitting/pending_approval/awaiting_payment без полученных платежей, без step-up (seller, cashier, senior_seller, admin,
+        customer); order.cancel.request.any + step-up (operation order.cancel.request.any) — чужой заказ, approved/awaiting_shipment
+        или с платежами received (cashier, senior_seller, admin). refundIntent обязателен при полученных платежах.
+        Ошибки: 409 ORDER_STATE_INVALID (resource: order; reason: invalid_transition — submit_failed, shipped, closed, cancelled,
+        partially_returned; cancel_already_requested; allowedActions), PAYMENT_STATE_INVALID (reason: open_payment_exists,
+        openPaymentId — платёж в manual_confirm), IDEMPOTENCY_IN_PROGRESS; 404 NOT_FOUND (заказ не виден по order.read.*);
+        403 FORBIDDEN, STEP_UP_REQUIRED; 422 IDEMPOTENCY_KEY_REUSED; 400 VALIDATION_FAILED (reason ≤ 500, refundIntent).
+        ONEC_UNAVAILABLE не возвращается (запрос уходит в outbox). 08 §4.8.4 [ядро §22.9]; Q-012.
+      security:
+        - { bearerAuth: [] }
+        - { bearerAuth: [], stepUpToken: [] }
+      x-permissions: [order.cancel.own, order.cancel.request.any]
+      x-roles: [seller, cashier, senior_seller, admin, customer]
+      x-step-up: true
+      x-step-up-operation: [order.cancel.request.any]
+      x-idempotent: required
+      x-rate-limit-group: RL-FIN
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+        - { $ref: "#/components/parameters/StepUpToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrdersCancelRequest" }
+      responses:
+        "200":
+          description: "Order: (а) status: cancelled; (б) прежний статус + cancelRequested: true, cancelRequestedAt."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /orders/{id}/documents/invoice.pdf:
+    get:
+      tags: [orders]
+      operationId: orders_document_invoice
+      summary: Счёт на оплату (PDF, A4 или 80 мм)
+      description: >
+        PDF на backend (PdfRenderer). order.documents.print — seller (свои), cashier, senior_seller, admin, owner; customer —
+        счёт своего заказа. Ошибки: 409 ORDER_STATE_INVALID (resource: order — submitting/submit_failed: нет номера 1С, Q-024);
+        404 NOT_FOUND. Кэш: private, no-cache + ETag (SHA-256 PDF) → 304. Факт рендера — print_jobs. 08 §4.8.5; Q-013, Q-019.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [order.documents.print]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-PDF
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IfNoneMatch" }
+        - { $ref: "#/components/parameters/OrdersDocumentFormat" }
+        - { $ref: "#/components/parameters/OrdersDocumentCopy" }
+      responses:
+        "200":
+          description: "PDF счёта (Content-Disposition: inline; filename=\"invoice-<publicNumber>.pdf\")."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            ETag: { $ref: "#/components/headers/ETag" }
+            Content-Disposition: { $ref: "#/components/headers/OrdersContentDisposition" }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "304": { $ref: "#/components/responses/NotModified" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /orders/{id}/documents/receipt.pdf:
+    get:
+      tags: [orders]
+      operationId: orders_document_receipt
+      summary: Товарный чек (нефискальный PDF, A4 или 80 мм)
+      description: >
+        Нефискальный документ с пометкой (приложение не ККМ, D-26). order.documents.print — seller (свои), cashier,
+        senior_seller, admin, owner; customer — только счёт (receipt → 403). Ошибки: 409 ORDER_STATE_INVALID (resource: order —
+        нет полученного платежа); 404 NOT_FOUND. Кэш: private, no-cache + ETag → 304. 08 §4.8.5; Q-013, Q-019.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [order.documents.print]
+      x-roles: [seller, cashier, senior_seller, admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-PDF
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IfNoneMatch" }
+        - { $ref: "#/components/parameters/OrdersDocumentFormat" }
+        - { $ref: "#/components/parameters/OrdersDocumentCopy" }
+      responses:
+        "200":
+          description: "PDF товарного чека (Content-Disposition: inline; filename=\"receipt-<publicNumber>.pdf\")."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            ETag: { $ref: "#/components/headers/ETag" }
+            Content-Disposition: { $ref: "#/components/headers/OrdersContentDisposition" }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "304": { $ref: "#/components/responses/NotModified" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /orders/{id}/documents/waybill.pdf:
+    get:
+      tags: [orders]
+      operationId: orders_document_waybill
+      summary: Накладная — статус/ссылка документа 1С (в R1 PDF в POS не формируется)
+      description: >
+        По умолчанию в R1 (D-27, PRINT-004) — 200 application/json { available: false, reason: waybill_from_onec, onecNumber }
+        по праву чтения заказа (order.read.own / order.read.all); печати накладной в POS нет ни у одной роли. Только при
+        включённой выдаче печатной формы из 1С (onec-extension, Q-019; с изменением 10 §3 строки 34 и 11 §4.4) — 200
+        application/pdf, а при недоступности 1С в этом режиме — 503 ONEC_UNAVAILABLE. customer — 403. 08 §4.8.5.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [order.read.own, order.read.all]
+      x-roles: [seller, cashier, senior_seller, admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-PDF
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IfNoneMatch" }
+      responses:
+        "200":
+          description: "R1 по умолчанию — JSON-статус документа 1С; PDF — только при выдаче формы из 1С (Q-019)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrdersWaybillStatus" }
+            application/pdf:
+              schema: { type: string, format: binary }
+        "304": { $ref: "#/components/responses/NotModified" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /orders/{id}/payments:
+    get:
+      tags: [orders]
+      operationId: orders_payments_list
+      summary: Платежи заказа
+      description: >
+        Владелец заказа (order.read.own) или order.read.all; поле qr — только при payment.qr.show (08 §3.15). Используется
+        кассиром для проверки статуса перед повтором приёма денег после перезапуска (ядро §19.2, §22.6). Ошибки: 404 NOT_FOUND.
+        08 §4.8.6.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [order.read.own, order.read.all]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+      responses:
+        "200":
+          description: "{ items: Payment[] }."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrdersPaymentsListResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      tags: [orders]
+      operationId: orders_payments_create
+      summary: Принять оплату по заказу (наличные, QR, «Обновить QR»)
+      description: >
+        Для заказов paymentMethod ∈ cash | qr_bakai в статусах submitting, pending_approval, approved, awaiting_payment
+        (ядро §22.5); иначе или isPaid → 409 ORDER_STATE_INVALID. Сумму клиент не передаёт: amount = totalToPay − paidAmount;
+        receivedAmount — только для сдачи наличными. 200 — действие над открытым платежом того же способа (приём наличных по
+        cash_pending; reissueQr или формирование QR на том же id); 201 — новый платёж (в т. ч. смена cash ↔ qr_bakai с
+        автоматическим voided прежнего cash_pending/qr_pending/qr_shown, voidReason=method_changed, без step-up — ядро §23 п.3).
+        QR_PROVIDER=onec: QR — новый запрос к 1С с тем же paymentExternalId; недоступность 1С → не 503, а 200/201 с qr_pending
+        без qr (у перевыпускаемого — прежний статус и QR) + warnings[QR_UNAVAILABLE]; запасной путь — manualOnly: true и
+        confirm-manual. Права по способу: cash — payment.cash.receive (cashier, senior_seller); qr_bakai — payment.qr.show
+        (cashier, senior_seller; seller — свой заказ при оформлении; customer — только qr_bakai по своему неоплаченному заказу
+        и только при QR_PROVIDER=onec, 11 §4.4); admin, owner → 403. method=credit или заказ в долг → 409 ORDER_STATE_INVALID
+        (reason: payment_method_mismatch). Ошибки: 409 ORDER_STATE_INVALID, PAYMENT_STATE_INVALID (reissueQr не из
+        qr_pending/qr_shown/qr_expired; reason: open_payment_exists + openPaymentId — открыт qr_expired/manual_confirm),
+        IDEMPOTENCY_IN_PROGRESS; 422 VALIDATION_FAILED (received_less_than_due), IDEMPOTENCY_KEY_REUSED; 403 FORBIDDEN;
+        404 NOT_FOUND; 400 VALIDATION_FAILED; 503 QR_UNAVAILABLE — только QR_PROVIDER=bakai (R2), как у POST /payments
+        (B-AR-13). Повтор с тем же Idempotency-Key возвращает текущее представление платежа (с QR, выданным после COMMIT;
+        B-AR-04). Ключ живёт только в памяти — после перезапуска автоповтора нет. 08 §4.8.6; Q-012, Q-014, Q-016.
+      security: [ { bearerAuth: [] } ]
+      x-permissions: [payment.cash.receive, payment.qr.show]
+      x-roles: [seller, cashier, senior_seller, customer]
+      x-step-up: false
+      x-idempotent: required
+      x-feature-flag: QR_PROVIDER
+      x-rate-limit-group: RL-FIN
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrdersPaymentCreateRequest" }
+      responses:
+        "200":
+          description: "Payment — действие над существующим открытым платежом (тот же id) + обновлённые order.paidAmount/isPaid."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrdersPaymentResult" }
+        "201":
+          description: "Payment — новый платёж + обновлённые order.paidAmount/isPaid."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrdersPaymentResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /orders/{id}/onec-link:
+    post:
+      tags: [orders]
+      operationId: orders_onec_link
+      summary: Ручная привязка заказа к документу «Заказ клиента» 1С по номеру
+      description: >
+        При ORDER_MATCH_AMBIGUOUS и ручном оформлении в 1С в фазе 0: backend синхронно ищет документ в 1С по номеру (6000 мс)
+        и выполняет действия как при POS_E_DUPLICATE — элемент outbox create pending | failed | dead → sent, заказ получает
+        onec_ref/номер и статус по проекции 10 §2.2, history (source: onec_sync), onecSyncState: linked [ядро §23 п.1].
+        Step-up обязателен (operation order.onec_link). Повтор привязки того же документа к тому же заказу с другим ключом → 200
+        без изменений. Ошибки: 403 STEP_UP_REQUIRED, FORBIDDEN (seller, cashier, customer); 404 NOT_FOUND (заказ / документ 1С —
+        различает detail); 409 ORDER_STATE_INVALID (resource: order — already_linked, invalid_transition,
+        document_linked_elsewhere; resource: outbox_item — in_progress), IDEMPOTENCY_IN_PROGRESS; 503 ONEC_UNAVAILABLE (1С не
+        ответила; в C-2 — всегда); 422 IDEMPOTENCY_KEY_REUSED; 400 VALIDATION_FAILED (onecNumber, reason). Аудит
+        order.onec_linked. 08 §4.8.7 [ядро §19.2]; поиск по номеру — [ТИПОВО: Q-010].
+      security: [ { bearerAuth: [], stepUpToken: [] } ]
+      x-permissions: [order.onec_link]
+      x-roles: [senior_seller, admin, owner]
+      x-step-up: true
+      x-step-up-operation: [order.onec_link]
+      x-idempotent: required
+      x-rate-limit-group: RL-ADMIN
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+        - { $ref: "#/components/parameters/StepUpToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrdersOnecLinkRequest" }
+      responses:
+        "200":
+          description: "Order (onec.number/ref/date, статус по проекции 1С, history с source: onec_sync, onecSyncState: linked)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Problem" }
+
+components:
+  parameters:
+    CartVariantIdPath:
+      name: variantId
+      in: path
+      required: true
+      description: "UUID варианта товара (строка корзины)."
+      schema: { type: string, format: uuid }
+    OrdersDocumentFormat:
+      name: format
+      in: query
+      required: false
+      description: "Формат бумаги — значения print_jobs.paper 07 (a4 по умолчанию, thermal80)."
+      schema:
+        type: string
+        allOf: [ { $ref: "#/components/schemas/PrintPaper" } ]
+        default: a4
+    OrdersDocumentCopy:
+      name: copy
+      in: query
+      required: false
+      description: "Пометка «Копия» на документе."
+      schema: { type: boolean, default: false }
+
+  headers:
+    OrdersContentDisposition:
+      description: "inline; filename=\"<kind>-<publicNumber>.pdf\" (08 §4.8.5)."
+      schema: { type: string, example: "inline; filename=\"invoice-POS-2026-000123.pdf\"" }
+
+  schemas:
+    # ===== cart: тела запросов и ответы (08 §4.7) =====
+    CartUpdateRequest:
+      type: object
+      required: [warehouseId, rowVersion]
+      additionalProperties: false
+      description: "PATCH /cart — единственное изменяемое поле warehouseId (08 §4.7.8)."
+      properties:
+        warehouseId: { type: string, format: uuid }
+        rowVersion: { type: integer, minimum: 0 }
+    CartPutItemRequest:
+      type: object
+      required: [quantity, rowVersion]
+      additionalProperties: false
+      description: "PUT /cart/items/{variantId} (08 §4.7.2). Цены (price, unitPrice) запрещены — forbidden_field."
+      properties:
+        quantity: { $ref: "#/components/schemas/Quantity" }
+        priceSnapshot:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          description: "Цена, которую видел пользователь — только для предупреждения price_changed, не для расчёта."
+        rowVersion: { type: integer, minimum: 0 }
+        mode:
+          type: string
+          enum: [set, increment]
+          default: set
+          description: "set — установить value (0 = удалить строку); increment — прибавить value (Idempotency-Key обязателен)."
+    CartCustomerSetRequest:
+      type: object
+      required: [customerId, rowVersion]
+      additionalProperties: false
+      description: "POST /cart/customer (08 §4.7.4). receiver.kind=other_person требует name и phone."
+      properties:
+        customerId: { type: string, format: uuid }
+        receiver: { $ref: "#/components/schemas/Receiver" }
+        rowVersion: { type: integer, minimum: 0 }
+    CartOverride:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      description: "Подтверждение сверх лимита / при блокировке долга из своей сессии со step-up: причина (08 §4.7.5, §4.8.1)."
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500, example: "постоянный клиент" }
+    CartDiscountRequest:
+      type: object
+      required: [percent, rowVersion]
+      additionalProperties: false
+      description: "POST /cart/discount (08 §4.7.5). override — только при discount.approve.over_limit + X-Step-Up-Token."
+      properties:
+        percent: { $ref: "#/components/schemas/Percent" }
+        ruleId: { type: string, format: uuid, nullable: true }
+        rowVersion: { type: integer, minimum: 0 }
+        override:
+          type: object
+          nullable: true
+          allOf: [ { $ref: "#/components/schemas/CartOverride" } ]
+    CartParkRequest:
+      type: object
+      required: [rowVersion]
+      additionalProperties: false
+      description: "POST /cart/park (08 §4.7.6). name — подпись отложенной корзины (07 carts.name ≤ 80; по умолчанию «Клиент · время»)."
+      properties:
+        name: { type: string, maxLength: 80, example: "Иван, доставка завтра" }
+        rowVersion: { type: integer, minimum: 0 }
+    CartParkResponse:
+      type: object
+      required: [parked, active]
+      description: "Ответ 201 POST /cart/park (08 §4.7.6)."
+      properties:
+        parked:
+          allOf: [ { $ref: "#/components/schemas/Cart" } ]
+          description: "Отложенная корзина (status=parked)."
+        active:
+          allOf: [ { $ref: "#/components/schemas/Cart" } ]
+          description: "Новая пустая активная корзина."
+    CartParkedSummary:
+      type: object
+      required: [id, status, rowVersion]
+      description: >
+        Элемент GET /cart/parked — Cart без items (с itemsCount, total, customer, name, parkedAt, owner; 08 §4.7.6).
+        Поля — подмножество Cart (08 §3.8) + owner.
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/CartStatus" }
+        name: { type: string, nullable: true }
+        ownerId: { type: string, format: uuid }
+        owner:
+          allOf: [ { $ref: "#/components/schemas/UserRef" } ]
+          description: "Владелец отложенной корзины (для scope=all)."
+        customer:
+          allOf: [ { $ref: "#/components/schemas/Customer" } ]
+          type: object
+          nullable: true
+          description: "Ролевое представление Customer без сумм долга (только флаги)."
+        warehouseId: { type: string, format: uuid }
+        priceListId: { type: string, format: uuid }
+        itemsCount: { type: integer, minimum: 0 }
+        unitsCount: { $ref: "#/components/schemas/QuantityValue" }
+        subtotal: { $ref: "#/components/schemas/Money" }
+        discountTotal: { $ref: "#/components/schemas/Money" }
+        total: { $ref: "#/components/schemas/Money" }
+        restoredFromOrderId: { type: string, format: uuid, nullable: true }
+        rowVersion: { type: integer }
+        parkedAt: { type: string, format: date-time, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        audit: { $ref: "#/components/schemas/AuditMeta" }
+    CartParkedResumeRequest:
+      type: object
+      additionalProperties: false
+      description: "POST /cart/parked/{id}/resume (08 §4.7.6). merge — R2 (ядро §19.2), поля нет."
+      properties:
+        replaceActive:
+          type: boolean
+          default: false
+          description: "true — непустая текущая active паркуется как «Автосохранение <время>»; false — 409 active_not_empty."
+    CartCheckoutPreviewRequest:
+      type: object
+      required: [cartId, cartRowVersion, paymentMethod, delivery, receiver]
+      additionalProperties: false
+      description: "POST /cart/checkout-preview (08 §4.7.7, §8). Цены и итоги клиент не передаёт (08 §2.14)."
+      properties:
+        cartId: { type: string, format: uuid }
+        cartRowVersion: { type: integer, minimum: 0 }
+        paymentMethod: { $ref: "#/components/schemas/PaymentMethod" }
+        delivery: { $ref: "#/components/schemas/Delivery" }
+        receiver: { $ref: "#/components/schemas/Receiver" }
+        manualDiscountPercent: { $ref: "#/components/schemas/Percent" }
+        creditOverride:
+          type: object
+          nullable: true
+          allOf: [ { $ref: "#/components/schemas/CartOverride" } ]
+        syncCheckWithOnec: { type: boolean, default: true, description: "Синхронная проверка 1С (таймаут 6 с) — результат в onecCheck." }
+        strict:
+          type: boolean
+          default: false
+          description: "true — блокировки долга возвращаются строгими кодами (403/422), а не в paymentChecks.creditReason (08 §3.8)."
+
+    # ===== orders: тела запросов и ответы (08 §4.8) =====
+    OrdersCreateItem:
+      type: object
+      required: [variantId, quantity]
+      additionalProperties: false
+      properties:
+        variantId: { type: string, format: uuid }
+        quantity: { $ref: "#/components/schemas/Quantity" }
+    OrdersCreateRequest:
+      type: object
+      required: [cartId, cartRowVersion, paymentMethod, delivery, receiver, items]
+      additionalProperties: false
+      description: >
+        POST /orders (08 §4.8.1, §8). Запрещены price, unitPrice, total, subtotal, amount (→ 400 forbidden_field + аудит
+        price.override_attempt); clientTotalSnapshot удалён (ядро §19.2); delivery.geo — R2. items[] обязан совпадать с
+        корзиной cartRowVersion (иначе 409 VERSION_CONFLICT с current: Cart).
+      properties:
+        cartId: { type: string, format: uuid }
+        cartRowVersion: { type: integer, minimum: 0 }
+        previewToken: { type: string, maxLength: 512, description: "Из POST /cart/checkout-preview (HMAC, 5 мин); расхождение итогов → PRICE_CHANGED." }
+        customerId: { type: string, format: uuid, nullable: true }
+        receiver: { $ref: "#/components/schemas/Receiver" }
+        delivery: { $ref: "#/components/schemas/Delivery" }
+        paymentMethod: { $ref: "#/components/schemas/PaymentMethod" }
+        manualDiscountPercent: { $ref: "#/components/schemas/Percent" }
+        discountOverride:
+          type: object
+          nullable: true
+          allOf: [ { $ref: "#/components/schemas/CartOverride" } ]
+          description: "discount.approve.over_limit + X-Step-Up-Token."
+        creditOverride:
+          type: object
+          nullable: true
+          allOf: [ { $ref: "#/components/schemas/CartOverride" } ]
+          description: "credit.sale.approve + credit.sale.create + X-Step-Up-Token; снимает только шаг (2) ядра §22.4."
+        printOptions: { $ref: "#/components/schemas/PrintOptions" }
+        comment: { type: string, maxLength: 500 }
+        confirmDuplicate: { type: boolean, default: false, description: "Обход мягкой защиты от дубля (409 possible_duplicate, 08 §2.7)." }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { $ref: "#/components/schemas/OrdersCreateItem" }
+    OrderSummary:
+      type: object
+      required: [id, publicNumber, status, total, paymentMethod]
+      description: >
+        Элемент GET /orders (08 §4.8.2): Order без items/history/payments, с itemsCount и paymentsSummary. Поля — подмножество
+        Order (08 §3.9). Состав paymentsSummary 08 не раскрывает — открытый объект до уточнения владельцем DTO.
+      properties:
+        id: { type: string, format: uuid }
+        publicNumber: { type: string, example: "POS-2026-000123" }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        onec: { $ref: "#/components/schemas/OrderOnecInfo" }
+        onecSyncState: { $ref: "#/components/schemas/OnecSyncState" }
+        onecTotal:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          type: object
+          nullable: true
+        totalsDiffer: { type: boolean }
+        customer:
+          allOf: [ { $ref: "#/components/schemas/Customer" } ]
+          type: object
+          nullable: true
+          description: "Ролевое представление Customer без сумм долга (только флаги)."
+        receiver: { $ref: "#/components/schemas/Receiver" }
+        delivery: { $ref: "#/components/schemas/Delivery" }
+        warehouseId: { type: string, format: uuid }
+        priceListId: { type: string, format: uuid }
+        itemsCount: { type: integer, minimum: 0 }
+        subtotal: { $ref: "#/components/schemas/Money" }
+        discountPercent: { $ref: "#/components/schemas/Percent" }
+        customerDiscountTotal: { $ref: "#/components/schemas/Money" }
+        discountTotal: { $ref: "#/components/schemas/Money" }
+        total: { $ref: "#/components/schemas/Money" }
+        cashRounding: { type: string, pattern: '^-?\d{1,12}\.\d{2}$', default: "0.00" }
+        totalToPay: { $ref: "#/components/schemas/Money" }
+        paymentMethod: { $ref: "#/components/schemas/PaymentMethod" }
+        paidAmount: { $ref: "#/components/schemas/Money" }
+        isPaid: { type: boolean }
+        paymentDueDate: { type: string, format: date, nullable: true }
+        paidAt: { type: string, format: date-time, nullable: true }
+        paymentsSummary:
+          type: object
+          additionalProperties: true
+          description: "Сводка платежей заказа (08 §4.8.2); состав полей в 08 не задан."
+        documents: { $ref: "#/components/schemas/OrderDocuments" }
+        printOptions: { $ref: "#/components/schemas/PrintOptions" }
+        comment: { type: string }
+        cancelReason: { type: string, nullable: true }
+        cancelReasonCode:
+          allOf: [ { $ref: "#/components/schemas/CancelReasonCode" } ]
+          type: string
+          nullable: true
+        refundIntent:
+          allOf: [ { $ref: "#/components/schemas/RefundIntent" } ]
+          type: string
+          nullable: true
+        cancelRequested: { type: boolean }
+        cancelRequestedAt: { type: string, format: date-time, nullable: true }
+        submitError:
+          type: object
+          nullable: true
+          properties:
+            code: { type: string, example: "ONEC_REJECTED" }
+            message: { type: string }
+        createdFromCartId: { type: string, format: uuid }
+        idempotencyKey: { type: string, format: uuid }
+        audit: { $ref: "#/components/schemas/AuditMeta" }
+    OrdersAllowedAction:
+      type: string
+      enum: [cancel, pay, print_invoice, print_receipt, return_request]
+      description: "Действие, доступное по статусу и правам (08 §4.8.3); неизвестное значение клиент обрабатывает как unknown."
+    OrdersGetResponse:
+      description: "GET /orders/{id}: Order + allowedActions (08 §4.8.3)."
+      allOf:
+        - { $ref: "#/components/schemas/Order" }
+        - type: object
+          properties:
+            allowedActions:
+              type: array
+              maxItems: 500
+              items: { $ref: "#/components/schemas/OrdersAllowedAction" }
+    OrdersCancelRequest:
+      type: object
+      required: [reason, reasonCode]
+      additionalProperties: false
+      description: >
+        POST /orders/{id}/cancel (08 §4.8.4). refundIntent обязателен, если есть полученные платежи (проверяет сервер →
+        400 VALIDATION_FAILED). Хранение — orders.cancel_reason, cancel_reason_code, refund_intent (07, ядро §22.9).
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500, example: "Клиент передумал" }
+        reasonCode: { $ref: "#/components/schemas/CancelReasonCode" }
+        refundIntent: { $ref: "#/components/schemas/RefundIntent" }
+    OrdersWaybillStatus:
+      type: object
+      required: [available, reason]
+      description: "GET /orders/{id}/documents/waybill.pdf в R1 (D-27): статус документа 1С вместо PDF (08 §4.8.5)."
+      properties:
+        available: { type: boolean, example: false }
+        reason: { type: string, example: "waybill_from_onec" }
+        onecNumber: { type: string, nullable: true, example: "УТ-0001234" }
+    OrdersPaymentCreateRequest:
+      type: object
+      required: [method]
+      additionalProperties: false
+      description: >
+        POST /orders/{id}/payments (08 §4.8.6). Сумму платежа клиент не передаёт (amount = totalToPay − paidAmount).
+        Варианты: { method: cash, receivedAmount, comment } / { method: qr_bakai, reissueQr: true } /
+        { method: qr_bakai, manualOnly: true }. method=credit → 409 ORDER_STATE_INVALID (payment_method_mismatch).
+      properties:
+        method: { $ref: "#/components/schemas/PaymentMethod" }
+        receivedAmount:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          description: "Только для cash — получено от покупателя (для сдачи); < amount → 422 received_less_than_due."
+        comment: { type: string, maxLength: 200 }
+        reissueQr: { type: boolean, default: false, description: "«Обновить QR» на том же payment_id (ядро §19.2, §24.4)." }
+        manualOnly: { type: boolean, default: false, description: "Запасной путь: QR без автоматического подтверждения, далее confirm-manual." }
+    OrdersPaymentOrderState:
+      type: object
+      required: [paidAmount, isPaid]
+      description: "Обновлённые после операции поля заказа (08 §4.8.6)."
+      properties:
+        paidAmount: { $ref: "#/components/schemas/Money" }
+        isPaid: { type: boolean }
+    OrdersPaymentResult:
+      description: "Ответ POST /orders/{id}/payments: Payment + order { paidAmount, isPaid } (08 §4.8.6)."
+      allOf:
+        - { $ref: "#/components/schemas/Payment" }
+        - type: object
+          required: [order]
+          properties:
+            order: { $ref: "#/components/schemas/OrdersPaymentOrderState" }
+    OrdersPaymentsListResponse:
+      type: object
+      required: [items]
+      description: "GET /orders/{id}/payments — платежи заказа (08 §4.8.6); поле qr — только при payment.qr.show."
+      properties:
+        items:
+          type: array
+          maxItems: 500
+          items: { $ref: "#/components/schemas/Payment" }
+    OrdersOnecLinkRequest:
+      type: object
+      required: [onecNumber, reason]
+      additionalProperties: false
+      description: "POST /orders/{id}/onec-link (08 §4.8.7)."
+      properties:
+        onecNumber: { type: string, minLength: 1, maxLength: 32, example: "УТ-0001234", description: "Номер документа 1С как есть." }
+        onecDate: { type: string, format: date, nullable: true, description: "Для однозначности, если номера 1С повторяются по годам." }
+        reason: { type: string, minLength: 5, maxLength: 500, example: "документ оформлен вручную в 1С" }

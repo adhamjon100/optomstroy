@@ -1,0 +1,12 @@
+{
+  "_note": "тестовые данные",
+  "operation": "POST /pos/v1/returns",
+  "kind": "response",
+  "status": 201,
+  "body": {
+    "ref": "f1e2d3c4-0000-4000-8000-000000000071",
+    "number": "ЗВ00-000017",
+    "status": "submitted",
+    "onecStatus": "НаРассмотрении"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "_note": "тестовые данные",
+  "operation": "POST /pos/v1/payments/qr",
+  "kind": "response",
+  "status": 503,
+  "body": {
+    "code": "POS_E_QR_UNAVAILABLE",
+    "message": "Банк недоступен",
+    "requestId": "0192f5c3-0000-7000-8000-000000000001"
+  }
+}

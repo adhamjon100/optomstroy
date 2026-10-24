@@ -1,0 +1,2275 @@
+# =====================================================================================
+# Optomstroy POS API — корень и общие компоненты (RM-B-003, часть 1)
+# Источник истины: docs/specification/08_API_SPECIFICATION.md v1.9 §2 (конвенции), §3 (общие схемы),
+# §8 (скелет OpenAPI); словари — 07 §6 (enum), 11 §4.3 (permissions), 08 §2.4 (коды ошибок),
+# 08 §2.12 (значения operation step-up). Ядро R0 v1.9 (§24) имеет приоритет.
+# Пути (paths) добавляют авторы модулей в parts/NN_<module>.yaml — правила в ../NOTES.md.
+# Имена схем — PascalCase как в 08; поля — camelCase; enum-значения — snake_case ровно как 07 §6.
+# =====================================================================================
+openapi: 3.0.3
+info:
+  title: Optomstroy POS API
+  version: "1.2.0"
+  description: >
+    REST/JSON API pos-api (NestJS) для pos-app (Flutter: Android, Windows, iOS) — сотрудники и (R1, ядро §24.2)
+    клиенты-покупатели, а также входящий обмен 1С (вариант C-2) и вебхук банка (только QR_PROVIDER=bakai, R2).
+    Ошибки — RFC 9457 application/problem+json с машинным полем code (закрытый перечень 08 §2.4).
+    Деньги — строки с 2 знаками + currency KGS; количества — строки с точностью единицы (≤ 3 знаков);
+    время — UTC ISO-8601 с суффиксом Z; идентификаторы — UUID в нижнем регистре.
+    Клиент никогда не передаёт цены, суммы и итоги (08 §2.14). Права проверяются сервером (deny by default).
+  contact:
+    name: Optomstroy POS team
+servers:
+  - url: https://api.{domain}/api/v1
+    description: production (домен — плейсхолдер <домен>, ядро §16 п.1, Q-032)
+    variables:
+      domain:
+        default: "<домен>"
+        description: домен заказчика (Q-032)
+  - url: https://api-test.{domain}/api/v1
+    description: test (домен — плейсхолдер <домен>, Q-032)
+    variables:
+      domain:
+        default: "<домен>"
+        description: домен заказчика (Q-032)
+security:
+  - bearerAuth: []
+tags:
+  - name: auth
+    description: "Вход по OTP, refresh, сессии, step-up, unlock (08 §4.1). Модуль D-06: auth."
+    x-module: auth
+  - name: registration
+    description: "Регистрация по registration_token, привязка к клиенту 1С (08 §4.2). Модуль D-06: registration."
+    x-module: registration
+  - name: me
+    description: "Профиль, настройки, PIN, биометрия, согласия — /me* (08 §4.3). Модуль D-06: profile."
+    x-module: profile
+  - name: catalog
+    description: "Категории, товары, варианты, справочники, изображения, офлайн-выгрузка (08 §4.4, §4.24). Модуль D-06: catalog."
+    x-module: catalog
+  - name: search
+    description: "Поиск товаров, штрихкодов, подсказки, поиск клиентов (08 §4.5). Модуль D-06: catalog (+search)."
+    x-module: catalog
+  - name: inventory
+    description: "Остатки и пакетная проверка доступности (08 §4.6). Модуль D-06: catalog (+inventory)."
+    x-module: catalog
+  - name: cart
+    description: "Активная и отложенные корзины, скидка, checkout-preview (08 §4.7). Модуль D-06: cart."
+    x-module: cart
+  - name: orders
+    description: "Заказы, отмена, печатные формы, платежи заказа, привязка к 1С (08 §4.8). Модуль D-06: orders."
+    x-module: orders
+  - name: payments
+    description: "Платежи, ручное подтверждение QR, аннулирование, вебхук банка (08 §4.9, §6). Модуль D-06: payments."
+    x-module: payments
+  - name: pos
+    description: "Дашборд кассира /pos/dashboard (08 §4.10). Модуль D-06: payments (11 §4.3 №39)."
+    x-module: payments
+  - name: customers
+    description: "Клиенты, история, долг, скидки клиента, привязки (08 §4.11). Модуль D-06: customers."
+    x-module: customers
+  - name: receivables
+    description: "Просроченные долги (08 §4.12.1). Модуль D-06: customers (+receivables)."
+    x-module: customers
+  - name: discounts
+    description: "Правила скидок и потолок роли (08 §4.12.2). Модуль D-06: customers (+discounts)."
+    x-module: customers
+  - name: favorites
+    description: "Избранные товары и клиенты (08 §4.13). Модуль D-06: customers (+favorites)."
+    x-module: customers
+  - name: transactions
+    description: "Журнал операций, read-model (08 §4.14). Модуль D-06: transactions."
+    x-module: transactions
+  - name: returns
+    description: "Заявки на возврат (08 §4.15). Модуль D-06: returns."
+    x-module: returns
+  - name: notifications
+    description: "Центр in-app уведомлений (08 §4.16). Модуль D-06: notifications."
+    x-module: notifications
+  - name: sync
+    description: "Статус синхронизации, ручной запуск, очередь outbox (08 §4.17). Модуль D-06: sync."
+    x-module: sync
+  - name: admin
+    description: "Пользователи, роли, приглашения, лимиты скидок, настройки, аудит, отчёты (08 §4.18). Модуль D-06: admin."
+    x-module: admin
+  - name: health
+    description: "Liveness/readiness и /openapi.json (08 §4.19). Модуль D-06: health."
+    x-module: health
+  - name: integrations
+    description: "Входящий обмен 1С /integrations/onec/* (вариант C-2, 08 §4.21) и push-DLR SMSPro (08 §4.22). Модули D-06: sync, auth."
+    x-module: sync
+  - name: settings
+    description: "Публичные настройки и флаги функций /settings/public (08 §4.23). Модуль D-06: admin (settings)."
+    x-module: admin
+paths: {}
+components:
+  # -----------------------------------------------------------------------------------
+  # Схемы безопасности (08 §2.2, §8, §4.21)
+  # -----------------------------------------------------------------------------------
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Access JWT (EdDSA/ES256, kid; TTL 15 мин для всех ролей; iss=optomstroy-pos, aud=optomstroy-api).
+        Нет/невалиден → 401 UNAUTHENTICATED; отозванная сессия → 401 SESSION_REVOKED; устаревшие права → 401 TOKEN_STALE (08 §2.2).
+    stepUpToken:
+      type: apiKey
+      in: header
+      name: X-Step-Up-Token
+      description: >
+        stepUpToken из POST /auth/step-up (JWT 15 мин, purpose=step_up, привязан к sid и deviceId; многоразовый в своей
+        области scope). Отсутствие/просрочка/чужая область → 403 STEP_UP_REQUIRED (08 §2.12).
+    integrationToken:
+      type: http
+      scheme: bearer
+      description: >
+        Непрозрачный технический токен роли integration (256 бит, только таблица integration_tokens; выпуск — скриптом
+        bin/issue_integration_token). Только для /integrations/onec/*; пользовательский JWT там → 403 FORBIDDEN (08 §4.21).
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-Signature
+      description: "Подпись банка для POST /payments/qr/webhook — только QR_PROVIDER=bakai (R2). [НЕ ПОДТВЕРЖДЕНО: контракт банка, Q-014]"
+
+  # -----------------------------------------------------------------------------------
+  # Параметры (08 §2.3, §2.5, §2.6, §2.7, §2.8, §2.13)
+  # -----------------------------------------------------------------------------------
+  parameters:
+    DeviceId:
+      name: X-Device-Id
+      in: header
+      required: true
+      description: "UUID устройства из secure storage; обязателен на всех запросах, кроме /health* и вебхука (08 §2.3); иной формат → VALIDATION_FAILED rule uuid."
+      schema: { type: string, format: uuid }
+    AppVersion:
+      name: X-App-Version
+      in: header
+      required: false
+      description: "Семантическая версия сборки; обязателен с R2, в R1 — мягкий режим (08 §2.11, Q-153). Не применяется к вебхуку и /integrations/onec/*."
+      schema: { type: string, example: "1.4.2+87" }
+    Platform:
+      name: X-Platform
+      in: header
+      required: false
+      description: "Платформа клиента; обязателен с R2, в R1 — мягкий режим (08 §2.11, Q-153); иное значение → VALIDATION_FAILED rule platform."
+      schema: { $ref: "#/components/schemas/DevicePlatform" }
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: "Сквозной UUID запроса; сервер возвращает эхом, иначе генерирует UUIDv7 (08 §2.3)."
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >
+        UUID v4; ОБЯЗАТЕЛЕН для операций единственного перечня 08 §2.7 «Где обязателен» (отсутствие → 400 VALIDATION_FAILED
+        rule idempotency_key_required). Повтор с тем же ключом и телом → тот же ответ + Idempotent-Replayed: true (24 ч);
+        другое тело → 422 IDEMPOTENCY_KEY_REUSED; параллельный повтор → 409 IDEMPOTENCY_IN_PROGRESS + Retry-After: 2.
+        Скоуп ключа — (key, субъект, маршрут): субъект — пользователь access-токена; у публичного
+        POST /registration/complete, где пользователя ещё нет, — SHA-256 от jti registrationToken (B-AR-01; БД —
+        idempotency_keys.subject_key). Операции с шагом после COMMIT (формирование QR: POST /orders, POST /orders/{id}/payments,
+        POST /payments) при повторе возвращают ТЕКУЩЕЕ представление созданного ресурса (по сохранённому идентификатору) с
+        тем же HTTP-статусом и Idempotent-Replayed: true, а не снимок на момент COMMIT — иначе повтор показал бы платёж
+        без QR, выданного после COMMIT (B-AR-04). Правила — предложение владельцу 08 §2.7 (contracts/openapi/NOTES.md §8).
+      schema: { $ref: "#/components/schemas/IdempotencyKeyValue" }
+    IdempotencyKeyOptional:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: "UUID v4; допускается на любом другом POST/PUT/PATCH (08 §2.7 «Где допускается»), при наличии — та же обработка."
+      schema: { $ref: "#/components/schemas/IdempotencyKeyValue" }
+    StepUpToken:
+      name: X-Step-Up-Token
+      in: header
+      required: false
+      description: >
+        stepUpToken из POST /auth/step-up для критических операций 08 §2.12. В схеме required: false, потому что на части
+        операций заголовок нужен не во всех ветках (только чужая сессия, только include=documents, только override); там,
+        где карточка 08 называет его обязательным (x-step-up: true без условия в description), запрос без заголовка или
+        с просроченным/чужим токеном получает 403 STEP_UP_REQUIRED (stepUp.operation из x-step-up-operation,
+        allowedMethods) — обязательность выражена этим ответом, а не валидацией схемы (B-AR-16). Клиент получает
+        токен заранее по x-step-up-operation.
+      schema: { type: string }
+    AcceptLanguage:
+      name: Accept-Language
+      in: header
+      required: false
+      description: "Язык title/detail/errors[].message; в R1 локализован только ru (08 §2.13, D-38); неизвестный → ru."
+      schema: { $ref: "#/components/schemas/Locale" }
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: "Значение ETag предыдущего ответа; совпадение → 304 Not Modified без тела (08 §2.8)."
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: "Размер страницы 1…200 (максимум 200 для всех списков, ядро §19.2); по умолчанию 50 (для /catalog/products — 40, для /catalog/sync/{entity} — 200 — задаётся в карточке); > 200 → VALIDATION_FAILED."
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: "Непрозрачный курсор keyset-пагинации (base64url, HMAC) из nextCursor; подделанный → VALIDATION_FAILED rule cursor; при смене sort — rule cursor_sort_mismatch (08 §2.5)."
+      schema: { type: string }
+    Sort:
+      name: sort
+      in: query
+      required: false
+      description: "Сортировка field:dir через запятую; допустимые поля — в карточке эндпоинта; неизвестное поле → VALIDATION_FAILED rule sort_field; последний ключ — id (08 §2.6)."
+      schema: { type: string, example: "price:asc,id:asc" }
+    Q:
+      name: q
+      in: query
+      required: false
+      description: "Поиск внутри списка: минимум 2 символа (для штрихкода/артикула — любой) (08 §2.6)."
+      schema: { type: string, maxLength: 200 }
+    From:
+      name: from
+      in: query
+      required: false
+      description: "Начало периода, ISO-8601 UTC; from ≤ to; период ≤ 366 дней (rule date_range, 08 §2.14)."
+      schema: { type: string, format: date-time }
+    To:
+      name: to
+      in: query
+      required: false
+      description: "Конец периода, ISO-8601 UTC (08 §2.6, §2.14)."
+      schema: { type: string, format: date-time }
+    IdPath:
+      name: id
+      in: path
+      required: true
+      description: "UUID ресурса (v7, нижний регистр)."
+      schema: { type: string, format: uuid }
+
+  # -----------------------------------------------------------------------------------
+  # Заголовки ответов (08 §2.3, §2.7–§2.9, §2.11)
+  # -----------------------------------------------------------------------------------
+  headers:
+    XRequestId:
+      description: "Сквозной идентификатор запроса; всегда в ответе; = instance в problem+json (08 §2.3)."
+      schema: { type: string, format: uuid }
+    RetryAfter:
+      description: "Секунды до повтора; при 429, 503 и 409 IDEMPOTENCY_IN_PROGRESS (08 §2.3)."
+      schema: { type: integer, minimum: 0 }
+    IdempotentReplayed:
+      description: >
+        true — ответ на повтор по Idempotency-Key (08 §2.7): тело — сохранённый ответ, а для операций с шагом после COMMIT
+        (формирование QR) — текущее представление того же ресурса (B-AR-04; см. параметр Idempotency-Key).
+      schema: { type: boolean }
+    XDataAsOf:
+      description: "Момент снимка данных 1С (onec_snapshot_at, UTC) на /inventory/*, /customers/{id}/receivables, /catalog/products* (08 §2.3)."
+      schema: { type: string, format: date-time }
+    XMinAppVersion:
+      description: "Минимальная версия клиента, platform=semver через запятую; на КАЖДОМ ответе, включая ошибки и 426 (ядро §18.2 п.12; 08 §2.11)."
+      schema: { type: string, example: "android=1.2.0,windows=1.2.0,ios=1.2.0" }
+    XRecommendedAppVersion:
+      description: "Рекомендуемая версия клиента (мягкий баннер, D-46), тот же формат; на каждом ответе, если задана (08 §2.11)."
+      schema: { type: string, example: "android=1.3.0,windows=1.3.0" }
+    ETag:
+      description: "Тег версии представления для условных запросов If-None-Match → 304 (08 §2.8)."
+      schema: { type: string }
+    CacheControl:
+      description: "По умолчанию no-store; явно кэшируемые ресурсы — по 08 §2.8."
+      schema: { type: string, example: "no-store" }
+    ContentLanguage:
+      description: "Фактический язык сообщений (08 §2.3, §2.13)."
+      schema: { $ref: "#/components/schemas/Locale" }
+    Location:
+      description: "URI созданного/принятого ресурса (например, 202 POST /orders, 202 POST /sync/runs)."
+      schema: { type: string }
+    XRateLimitLimit:
+      description: "Информационный: лимит группы (08 §2.9); клиент не обязан читать."
+      schema: { type: integer }
+    XRateLimitRemaining:
+      description: "Информационный: остаток запросов в окне (08 §2.9)."
+      schema: { type: integer }
+    XRateLimitReset:
+      description: "Информационный: секунды до сброса окна (08 §2.9)."
+      schema: { type: integer }
+
+  # -----------------------------------------------------------------------------------
+  # Стандартные ответы: problem+json по HTTP-классам 08 §2.4 + 304
+  # -----------------------------------------------------------------------------------
+  responses:
+    Problem:
+      description: "Ошибка (RFC 9457 problem+json, поле code — 08 §2.4). Общий ответ для любого HTTP-статуса ошибки."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+        Content-Language: { $ref: "#/components/headers/ContentLanguage" }
+        X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+        X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    BadRequest:
+      description: "400 — VALIDATION_FAILED (синтаксис/схема, лишние поля, forbidden_field, limit>200, idempotency_key_required)."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+        X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+        X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Unauthorized:
+      description: "401 — UNAUTHENTICATED, TOKEN_STALE, SESSION_REVOKED, REGISTRATION_TOKEN_INVALID, PIN_INVALID, UNLOCK_REQUIRED (reason: idle_lock | refresh_replay | emergency_code — 08 §2.4), WEBHOOK_SIGNATURE_INVALID."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+        X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+        X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: "403 — FORBIDDEN (нет permission, чужой объект, роль не допускает поле/действие) или STEP_UP_REQUIRED (stepUp.operation, stepUp.allowedMethods)."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+        X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+        X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFound:
+      description: "404 — NOT_FOUND (ресурс отсутствует или недоступен по владению; выключенный маршрут — например, вебхук при QR_PROVIDER≠bakai)."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+        X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+        X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    MethodNotAllowed:
+      description: "405 — METHOD_NOT_ALLOWED (метод вне allowlist маршрута; заголовок Allow)."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+        Allow:
+          description: "Допустимые методы маршрута."
+          schema: { type: string }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Conflict:
+      description: "409 — VERSION_CONFLICT, IDEMPOTENCY_IN_PROGRESS (Retry-After), ORDER_STATE_INVALID, PAYMENT_STATE_INVALID, PHONE_ALREADY_REGISTERED, DEVICE_MISMATCH, CUSTOMER_LINK_CONFLICT, CUSTOMER_DUPLICATE_SUSPECTED, SYNC_ALREADY_RUNNING."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+        X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+        X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    PayloadTooLarge:
+      description: "413 — PAYLOAD_TOO_LARGE (тело > 1 MB; /integrations/onec/* — > 10 MB)."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    UnsupportedMediaType:
+      description: "415 — UNSUPPORTED_MEDIA_TYPE (Content-Type ≠ application/json)."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    UnprocessableEntity:
+      description: "422 — бизнес-валидация: VALIDATION_FAILED (семантика), OTP_INVALID, OTP_EXPIRED, IDEMPOTENCY_KEY_REUSED, PRICE_CHANGED, STOCK_INSUFFICIENT, VARIANT_UNAVAILABLE, QTY_NOT_MULTIPLE, QTY_BELOW_MIN, DISCOUNT_LIMIT_EXCEEDED, CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED, RECEIVABLES_STALE, ONEC_REJECTED, CUSTOMER_NOT_IDENTIFIED, CART_EMPTY, RETURN_QTY_EXCEEDED, CONSENT_REQUIRED."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+        X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+        X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Locked:
+      description: "423 — OTP_LOCKED, PIN_LOCKED (retryAfter — до разблокировки; PIN_LOCKED несёт until — 08 §2.4)."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    UpgradeRequired:
+      description: "426 — APP_UPDATE_REQUIRED (X-App-Version ниже минимальной для X-Platform; проверка до аутентификации; minVersion, storeUrl)."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+        X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+        X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    TooManyRequests:
+      description: "429 — RATE_LIMITED (группа 08 §2.9) или OTP_RATE_LIMITED (RL-OTP-SEND*); Retry-After обязателен."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+        X-RateLimit-Limit: { $ref: "#/components/headers/XRateLimitLimit" }
+        X-RateLimit-Remaining: { $ref: "#/components/headers/XRateLimitRemaining" }
+        X-RateLimit-Reset: { $ref: "#/components/headers/XRateLimitReset" }
+        X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    InternalError:
+      description: "500 — INTERNAL (detail: «Внутренняя ошибка. Код обращения: <requestId>»; без стек-трейсов)."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ServiceUnavailable:
+      description: "503 — SMS_PROVIDER_ERROR, ONEC_UNAVAILABLE, QR_UNAVAILABLE (только bakai, R2), APP_READ_ONLY; Retry-After при наличии."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+        X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotModified:
+      description: "304 Not Modified — If-None-Match совпал с ETag; тела нет (08 §2.8)."
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+        X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+
+  # -----------------------------------------------------------------------------------
+  # Схемы
+  # -----------------------------------------------------------------------------------
+  schemas:
+    # ===== Примитивы (08 §2.1, §2.14, §3.1, §3.2) =====
+    MoneyAmount:
+      type: string
+      pattern: '^-?\d{1,12}\.\d{2}$'
+      description: "Денежная сумма строкой, 2 знака (rule money_format, 08 §2.14). Используется в query (priceMin/priceMax) и как amount в Money."
+      example: "16007.50"
+    QuantityValue:
+      type: string
+      pattern: '^\d{1,11}(\.\d{1,3})?$'
+      description: "Количество строкой, ≤ 3 знаков после точки (08 §2.14; точность ≤ unit.qtyPrecision)."
+      example: "124.000"
+    Percent:
+      type: string
+      pattern: '^(\d{1,2}(\.\d{1,2})?|100\.00)$'
+      description: "Процент 0…100 строкой (rule percent_range, 08 §2.14)."
+      example: "5.00"
+    PhoneE164:
+      type: string
+      pattern: '^\+996\d{9}$'
+      description: "Телефон E.164 КР (rule phone_e164, 08 §2.14)."
+      example: "+996700000001"
+    PhoneMasked:
+      type: string
+      description: "Маскированный номер: первая цифра абонентского номера и две последние, остальное * (ядро §19.2; 08 §2.14)."
+      example: "+996 7** *** *01"
+    IdempotencyKeyValue:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      description: "UUID v4 в нижнем регистре (rule idempotency_key_format, 08 §2.7)."
+    SemVerByPlatform:
+      type: string
+      description: "Версии клиента по платформам: platform=semver через запятую (08 §2.3, §2.11)."
+      example: "android=1.2.0,windows=1.2.0"
+
+    # ===== Деньги, количество (08 §3.1, §3.2) =====
+    Money:
+      type: object
+      required: [amount, currency]
+      additionalProperties: false
+      description: "Деньги (D-19): HALF_UP до 0.01 на сервере; клиент хранит int тыйынов."
+      properties:
+        amount: { $ref: "#/components/schemas/MoneyAmount" }
+        currency: { type: string, enum: [KGS] }
+      example: { amount: "16007.50", currency: KGS }
+    Quantity:
+      type: object
+      required: [value, unitId]
+      additionalProperties: false
+      description: "Количество в единицах выбранной упаковки; baseValue = value × packaging.factor считает сервер (POS-004); клиент хранит int milli-units (D-19)."
+      properties:
+        value: { $ref: "#/components/schemas/QuantityValue" }
+        unitId: { type: string, format: uuid }
+        packagingId: { type: string, format: uuid, nullable: true }
+        baseValue:
+          allOf: [ { $ref: "#/components/schemas/QuantityValue" } ]
+          readOnly: true
+
+    # ===== Ошибки, предупреждения (08 §2.4, §3.3) =====
+    ProblemCode:
+      type: string
+      description: >
+        Машинный код ошибки — ПОЛНЫЙ закрытый перечень 08 §2.4 (ядро §7, §16 п.4, §17.4, §18.2 п.5 + [НОВОЕ ИМЯ]
+        RETURN_QTY_EXCEEDED, WEBHOOK_SIGNATURE_INVALID, QR_UNAVAILABLE). Клиент ветвится только по code и status;
+        неизвестный code обрабатывается как INTERNAL того же HTTP-класса (совместимость вперёд).
+      enum:
+        - VALIDATION_FAILED
+        - OTP_INVALID
+        - OTP_EXPIRED
+        - OTP_LOCKED
+        - OTP_RATE_LIMITED
+        - SMS_PROVIDER_ERROR
+        - REGISTRATION_TOKEN_INVALID
+        - PHONE_ALREADY_REGISTERED
+        - UNAUTHENTICATED
+        - TOKEN_STALE
+        - SESSION_REVOKED
+        - DEVICE_MISMATCH
+        - STEP_UP_REQUIRED
+        - FORBIDDEN
+        - VERSION_CONFLICT
+        - IDEMPOTENCY_KEY_REUSED
+        - IDEMPOTENCY_IN_PROGRESS
+        - PRICE_CHANGED
+        - STOCK_INSUFFICIENT
+        - VARIANT_UNAVAILABLE
+        - QTY_NOT_MULTIPLE
+        - QTY_BELOW_MIN
+        - DISCOUNT_LIMIT_EXCEEDED
+        - CREDIT_BLOCKED
+        - CREDIT_LIMIT_EXCEEDED
+        - RECEIVABLES_STALE
+        - ONEC_UNAVAILABLE
+        - ONEC_REJECTED
+        - ORDER_STATE_INVALID
+        - PAYMENT_STATE_INVALID
+        - CUSTOMER_LINK_CONFLICT
+        - CUSTOMER_DUPLICATE_SUSPECTED
+        - SYNC_ALREADY_RUNNING
+        - NOT_FOUND
+        - RATE_LIMITED
+        - INTERNAL
+        - APP_UPDATE_REQUIRED
+        - PAYLOAD_TOO_LARGE
+        - UNSUPPORTED_MEDIA_TYPE
+        - METHOD_NOT_ALLOWED
+        - CUSTOMER_NOT_IDENTIFIED
+        - CART_EMPTY
+        - PIN_INVALID
+        - PIN_LOCKED
+        - UNLOCK_REQUIRED
+        - RETURN_QTY_EXCEEDED
+        - WEBHOOK_SIGNATURE_INVALID
+        - QR_UNAVAILABLE
+        - CONSENT_REQUIRED
+        - APP_READ_ONLY
+    ProblemFieldError:
+      type: object
+      required: [field, message, rule]
+      properties:
+        field: { type: string, description: "JSON-pointer-подобный путь (items[1].quantity)." }
+        message: { type: string, description: "Локализовано по Accept-Language." }
+        rule: { type: string, description: "Машинное правило (money_format, qty_multiple, forbidden_field, …); не локализуется." }
+        params:
+          type: object
+          additionalProperties: true
+          description: "Параметры правила (например, { factor: \"6\" })."
+    Problem:
+      type: object
+      required: [type, title, status, code, requestId]
+      description: >
+        RFC 9457 problem+json (08 §2.4, §3.3). type — https://api.<домен>/problems/<code-kebab>; instance — urn:request:<requestId>.
+        errors[] — только VALIDATION_FAILED и бизнес-валидации; conflicts[] — только PRICE_CHANGED/STOCK_INSUFFICIENT/VARIANT_UNAVAILABLE.
+        Стек-трейсы, SQL, имена таблиц — никогда. Прочие поля — по коду ошибки (08 §2.4).
+      properties:
+        type: { type: string, format: uri, description: "URI вида https://api.<домен>/problems/<code-kebab> (например, …/problems/price-changed); может не резолвиться — это идентификатор (08 §2.4)." }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        instance: { type: string, example: "urn:request:0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4f55" }
+        code: { $ref: "#/components/schemas/ProblemCode" }
+        requestId: { type: string }
+        errors:
+          type: array
+          items: { $ref: "#/components/schemas/ProblemFieldError" }
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/CartConflict" }
+        retryAfter: { type: integer, minimum: 0, description: "Дублирует заголовок Retry-After." }
+        attemptsLeft: { type: integer, minimum: 0, description: "OTP_INVALID, PIN_INVALID." }
+        stepUp:
+          type: object
+          description: "STEP_UP_REQUIRED: клиент передаёт operation в POST /auth/step-up без изменений (08 §2.12)."
+          properties:
+            operation: { $ref: "#/components/schemas/StepUpOperation" }
+            allowedMethods:
+              type: array
+              description: "В R1 — только pin, otp (ядро §19.3); biometric добавится в R2 аддитивно."
+              items: { type: string, enum: [pin, otp] }
+        current:
+          type: object
+          additionalProperties: true
+          description: "VERSION_CONFLICT: текущее состояние объекта."
+        currentStatus: { type: string, description: "ORDER_STATE_INVALID / PAYMENT_STATE_INVALID." }
+        allowedActions:
+          type: array
+          items: { type: string }
+        resource: { $ref: "#/components/schemas/ProblemResource" }
+        reason:
+          type: string
+          description: >
+            Машинная причина (cancel_already_requested, possible_duplicate, open_payment_exists, owner_role_reserved, cursor_expired, …).
+            Для 422 PRICE_CHANGED по previewToken — preview_token_invalid, preview_cart_changed, preview_payment_method_changed,
+            preview_total_changed (08 §2.4 «Уточнения … этапа F» п. 1); для 503 ONEC_UNAVAILABLE корзины — catalog_not_loaded
+            (08 §4.7.1 «Уточнения» п. 2). Значения перечислены справочно (с 1.2.0); поле остаётся строкой.
+            Для 401 UNLOCK_REQUIRED (08 §2.4, «Расширения Problem по реализации»; 09 §8.3, §8.8, §6.13): idle_lock — idle-блокировка
+            staff на Windows; refresh_replay — поздний повтор refresh у пользователя с PIN (standard-сессия; пользователю без PIN
+            приходит 401 SESSION_REVOKED с reason refresh_replay и сессия отзывается, 09 §8.3); emergency_code — сессия аварийного кода
+            (первый запрос до разблокировки PIN). Клиент на любое значение показывает SCR-08 и вызывает POST /auth/unlock;
+            неизвестное значение обрабатывается так же (совместимость вперёд). Список — x-unlock-required-reasons.
+          x-unlock-required-reasons: [idle_lock, refresh_replay, emergency_code]
+        until:
+          type: string
+          format: date-time
+          description: "423 PIN_LOCKED: момент снятия блокировки PIN (ISO-8601); до него вход только по OTP (08 §2.4, «Расширения Problem по реализации»; 09 §9.6). Добавлено в 1.1.0."
+        possibleDuplicateOrderId: { type: string, format: uuid }
+        possibleDuplicatePublicNumber:
+          type: string
+          example: "POS-2026-000122"
+          description: >
+            409 ORDER_STATE_INVALID reason=possible_duplicate: номер POS похожего заказа для текста UI-21-029 (08 §4.8.1
+            «Уточнения POST /orders» п. 4; FQ-CHK-04). Сервер передаёт вместе с possibleDuplicateOrderId; поле
+            необязательное — при его отсутствии клиент получает номер чтением заказа или опускает. Добавлено в 1.2.0.
+        possibleDuplicateCreatedAt:
+          type: string
+          format: date-time
+          description: >
+            409 ORDER_STATE_INVALID reason=possible_duplicate: момент создания похожего заказа («N минут назад», UI-21-029;
+            08 §4.8.1 «Уточнения POST /orders» п. 4; FQ-CHK-04). Необязательно (см. possibleDuplicatePublicNumber). Добавлено в 1.2.0.
+        previewTotal:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          description: >
+            422 PRICE_CHANGED при несовпадении с previewToken (08 §2.4 «Уточнения кодов ошибок по реализации этапа F» п. 1,
+            §4.8.1 п. 2; FIX-F-03, ADR-100): итог, подписанный в previewToken предпросмотра. Передаётся вместе с total только при
+            reason=preview_total_changed; при preview_token_invalid (токен не прочитан), preview_cart_changed и
+            preview_payment_method_changed полей previewTotal/total нет. conflicts[] при этом пуст, если цены строк не
+            расходятся. Добавлено в 1.2.0; уточнено по реализации (ревью закрытия F, RS-3).
+        total:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          description: >
+            422 PRICE_CHANGED при несовпадении с previewToken: итог по текущему серверному пересчёту корзины (08 §2.4
+            «Уточнения кодов ошибок по реализации этапа F» п. 1; FIX-F-03). Только при reason=preview_total_changed, вместе с
+            previewTotal. Добавлено в 1.2.0.
+        openPaymentId: { type: string, format: uuid }
+        limitPercent: { $ref: "#/components/schemas/Percent" }
+        requiresRole: { $ref: "#/components/schemas/RoleCode" }
+        creditReason: { $ref: "#/components/schemas/CreditReason" }
+        limitRemaining: { $ref: "#/components/schemas/Money" }
+        overdueAmount: { $ref: "#/components/schemas/Money" }
+        asOf: { type: string, format: date-time, nullable: true, description: "Момент снимка долга (CREDIT_*, RECEIVABLES_STALE)." }
+        candidates:
+          type: array
+          description: "CUSTOMER_DUPLICATE_SUSPECTED: кандидаты с ограниченным набором полей."
+          items: { type: object, additionalProperties: true }
+        runId: { type: string, format: uuid, description: "SYNC_ALREADY_RUNNING." }
+        minVersion: { type: string, description: "APP_UPDATE_REQUIRED (дублирует X-Min-App-Version)." }
+        storeUrl: { type: string }
+        onec:
+          type: object
+          description: "ONEC_REJECTED: ответ 1С без внутренних данных."
+          properties:
+            code: { type: string }
+            message: { type: string }
+    ProblemResource:
+      type: string
+      enum: [order, cart, return_request, outbox_item]
+      description: "ORDER_STATE_INVALID: чьё состояние не допускает действие (08 §2.4)."
+    WarningCode:
+      type: string
+      enum: [STALE_DATA, QR_UNAVAILABLE, PAYMENT_AMOUNT_MISMATCH]
+      description: "Коды предупреждений успешного ответа — НЕ входят в ProblemCode (08 §2.4)."
+    Warning:
+      type: object
+      required: [code, message]
+      description: "Предупреждение в warnings[] успешного ответа 200/201/202: операция применена, клиент её не повторяет."
+      properties:
+        code: { $ref: "#/components/schemas/WarningCode" }
+        message: { type: string }
+    SyncErrorCode:
+      type: string
+      description: >
+        Коды журнала синхронизации (sync_errors.error_code / onec_outbox.last_error_code), 15 значений; НЕ значения Problem.code
+        (08 §2.4, 07 §6.1.1). QR_PAID_AFTER_VOID — оплата QR после аннулирования платежа (05 §6.7.3, SYNC-078; 07 §5.53 FIX-F-06),
+        добавлен в 1.2.0 вместе с expand CHECK (migrations/0013); сервер пишет этот код. Записи прежних версий с
+        error_code=OTHER и payload.code=QR_PAID_AFTER_VOID остаются допустимыми (миграция 0013 — expand-only, ADR-103).
+      enum: [DUPLICATE_SUSPECTED, OUTBOX_UNCONFIRMED, BARCODE_CONFLICT, PAYMENT_DOC_VOIDED, ORDER_MATCH_AMBIGUOUS, NO_WRITE_CHANNEL, QR_PAID_AFTER_VOID, NOT_FOUND_LOCAL, VALIDATION, ONEC_REJECTED, ONEC_UNAVAILABLE, IMAGE_DOWNLOAD, HASH_MISMATCH, COUNT_MISMATCH, OTHER]
+
+    # ===== Пагинация, аудит (08 §2.5, §3.4, §3.5) =====
+    Page:
+      type: object
+      required: [items, nextCursor, hasMore]
+      description: >
+        Page<T> (курсорная пагинация, 08 §2.5). Конкретизация в модулях:
+        allOf: [ {$ref: Page}, {type: object, properties: {items: {type: array, items: {$ref: T}}}} ].
+      properties:
+        items:
+          type: array
+          items: {}
+        nextCursor: { type: string, nullable: true }
+        hasMore: { type: boolean }
+        totalEstimate: { type: integer, nullable: true }
+        isEstimate: { type: boolean }
+        asOf: { type: string, format: date-time, nullable: true }
+    UserRef:
+      type: object
+      required: [id, displayName]
+      description: "Ссылка на пользователя без телефона (минимизация ПДн, 08 §3.5)."
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string, example: "Продавец 1" }
+        role: { $ref: "#/components/schemas/RoleCode" }
+    AuditMeta:
+      type: object
+      description: "Встраивается в документы POS (08 §3.5)."
+      properties:
+        createdAt: { type: string, format: date-time }
+        createdBy: { $ref: "#/components/schemas/UserRef" }
+        updatedAt: { type: string, format: date-time }
+        updatedBy: { $ref: "#/components/schemas/UserRef" }
+        rowVersion: { type: integer }
+        deviceId: { type: string }
+
+    # ===== Enum-ы (владелец значений — 07 §6.1 / §6.1.1; 08 §3) =====
+    UserKind: { type: string, enum: [staff, customer] }
+    UserStatus: { type: string, enum: [pending, pending_activation, active, blocked, deleted] }
+    RoleCode: { type: string, enum: [seller, cashier, senior_seller, admin, owner, customer, integration] }
+    CustomerLinkStatus: { type: string, enum: [proposed, confirmed, rejected, conflict] }
+    CartStatus: { type: string, enum: [active, parked, converted, cleared] }
+    OrderStatus:
+      type: string
+      enum: [draft, submitting, submit_failed, pending_approval, awaiting_payment, approved, awaiting_shipment, shipped, partially_returned, closed, cancelled]
+    DeliveryMethod: { type: string, enum: [pickup, delivery] }
+    ReceiverKind: { type: string, enum: [customer, other_person] }
+    PaymentMethod: { type: string, enum: [cash, qr_bakai, credit] }
+    PaymentStatus:
+      type: string
+      enum: [initiated, cash_pending, qr_pending, qr_shown, qr_expired, manual_confirm, credit, received, voided, refunded]
+    ReturnRequestStatus: { type: string, enum: [draft, submitted, accepted, rejected, completed] }
+    TransactionKind:
+      type: string
+      enum: [order_created, order_cancelled, payment_received, payment_voided, refund, discount_override, credit_sale_approved, manual_qr_confirm, return_requested]
+    TransactionSource: { type: string, enum: [pos, onec] }
+    TransactionStatusGroup:
+      type: string
+      enum: [received, pending, voided, returned, onec_error]
+      description: "Группа статуса транзакции для фильтра GET /transactions?status= (ядро §19.2; 08 §3.11)."
+    SyncEntity:
+      type: string
+      enum: [categories, products, variants, attributes, units, barcodes, images, warehouses, stock, prices, customers, receivables, sales_history, order_status, discounts, payment_docs, return_docs]
+    SyncMode: { type: string, enum: [full, incremental, manual, reconcile] }
+    SyncRunStatus: { type: string, enum: [queued, running, success, partial, failed] }
+    SyncTrigger: { type: string, enum: [schedule, manual, retry, dependency] }
+    OutboxStatus: { type: string, enum: [pending, sending, sent, confirmed, failed, dead, cancelled] }
+    OutboxAggregate: { type: string, enum: [order, payment, customer, return_request] }
+    OutboxOperation: { type: string, enum: [create, cancel] }
+    NotificationKind:
+      type: string
+      enum: [sync_error, order_status, cart_price_changed, cart_stock_changed, credit_blocked, system, payment_status, return_status]
+    NotificationSeverity: { type: string, enum: [info, warning, error] }
+    InvitationStatus: { type: string, enum: [pending, accepted, revoked, expired] }
+    DevicePlatform: { type: string, enum: [android, ios, windows] }
+    SessionKind: { type: string, enum: [standard, biometric] }
+    StepUpMethod:
+      type: string
+      enum: [pin, biometric, otp]
+      description: "step_up_method 07; в R1 биометрия как метод step-up не принимается (ядро §19.3)."
+    OtpPurpose:
+      type: string
+      enum: [login_or_register, step_up, phone_change_old, phone_change_new, customer_link]
+    ConsentKind:
+      type: string
+      enum: [personal_data, sms, biometrics_device, activity_sphere, face_scan]
+      description: "consent_kind 07; face_scan — R2."
+    CustomerSource: { type: string, enum: [onec, pos] }
+    CustomerType: { type: string, enum: [individual, entrepreneur, legal] }
+    CustomerOnecStatus: { type: string, enum: [n_a, pending, confirmed, rejected, duplicate] }
+    ContactKind: { type: string, enum: [phone, address, email, other] }
+    LinkMatchMethod: { type: string, enum: [phone, manual_admin, onec_created] }
+    DiscountSource: { type: string, enum: [onec, pos] }
+    DiscountKind: { type: string, enum: [percent, fixed_amount, price_list] }
+    StatusChangeSource: { type: string, enum: [pos_user, pos_system, onec_sync, onec_response] }
+    ReturnReason: { type: string, enum: [defect, wrong_item, not_suitable, surplus, seller_error, other] }
+    OnecSyncState: { type: string, enum: [unknown, pending, linked, missing, ambiguous] }
+    PrintDocumentKind: { type: string, enum: [invoice, waybill, receipt] }
+    PrintPaper:
+      type: string
+      enum: [a4, thermal80]
+      description: "print_jobs.paper 07; Settings.printer.defaultFormat и параметр format печатных форм."
+    BarcodeType: { type: string, enum: [EAN13, EAN8, UPC, CODE128, CODE39, QR, other] }
+    ReviewReason:
+      type: string
+      enum: [amount_mismatch, unknown_reference, no_webhook, late_payment]
+      description: "payments.review_reason — причина входа в manual_confirm (ядро §22.2, §23 п.4)."
+    CancelReasonCode: { type: string, enum: [customer_refused, duplicate, error, other] }
+    RefundIntent: { type: string, enum: [none, refund, advance] }
+    ReceivableDocumentKind: { type: string, enum: [invoice, payment, return, discount, adjustment] }
+    ReceivableDocumentStatus: { type: string, enum: [posted, not_posted, due] }
+    QrProvider:
+      type: string
+      enum: [onec, bakai, elqr_static, none]
+      description: "QrInfo.provider — свойство показанного QR; env QR_PROVIDER = none|onec|bakai (ядро §24.4)."
+    QrProviderMode:
+      type: string
+      enum: [none, onec, bakai]
+      description: "Значение env QR_PROVIDER (ядро §17.7, §24.4; 07 payments.qr_provider): onec — основной R1, none — запасной, bakai — R2."
+    CustomerStockDisplay:
+      type: string
+      enum: [status, quantity]
+      description: "app_settings.customer_stock_display (ядро §24.2), по умолчанию status."
+    StockLevel:
+      type: string
+      enum: [in_stock, low, out, unknown]
+      description: "in_stock — available ≥ порога low_stock_threshold; low — 0 < available < порог; out — ≤ 0; unknown — нет снимка (08 §3.6)."
+    CreditReason:
+      type: string
+      enum: [forbidden_role, credit_not_allowed, overdue, limit_exceeded, stale_snapshot]
+      description: "Причина отказа в продаже в долг — ровно пять значений ядра §22.4 в редакции §23 п.5 (08 §3.8)."
+    CartConflictKind: { type: string, enum: [price_changed, stock_insufficient, variant_unavailable, qty_not_multiple, qty_below_min] }
+    Locale: { type: string, enum: [ru, ky, en], default: ru }
+    PermissionCode:
+      type: string
+      description: "Канонический словарь permissions — 11 §4.3 (77 кодов: №1–76 и 42a). customer.update и reports.export в R1 зарезервированы."
+      enum:
+        - catalog.read
+        - catalog.prices.read
+        - catalog.cost_price.read
+        - inventory.read
+        - search.read
+        - search.customers
+        - cart.manage.own
+        - cart.parked.read.all
+        - cart.parked.resume.any
+        - order.create
+        - order.read.own
+        - order.read.all
+        - order.cancel.own
+        - order.cancel.request.any
+        - order.documents.print
+        - payment.cash.receive
+        - payment.qr.show
+        - payment.qr.confirm_manual
+        - payment.void
+        - payment.read.all
+        - credit.sale.create
+        - credit.sale.approve
+        - discount.apply.within_limit
+        - discount.approve.over_limit
+        - discount.rules.read
+        - customer.read.basic
+        - customer.create
+        - customer.update
+        - customer.history.read
+        - customer.receivables.read.summary
+        - customer.receivables.read.detail
+        - customer.link.resolve
+        - favorites.products.manage
+        - favorites.customers.manage
+        - transactions.read.own
+        - transactions.read.all
+        - return.create
+        - return.read
+        - dashboard.cashier.read
+        - sync.status.read
+        - sync.runs.read
+        - sync.run.incremental.limited
+        - sync.run.full
+        - sync.outbox.manage
+        - sync.exchange
+        - notifications.read.own
+        - profile.manage.own
+        - session.manage.own
+        - session.revoke.any
+        - users.read
+        - users.manage
+        - users.roles.assign
+        - invitations.manage
+        - settings.discount_limits.update
+        - settings.app.update
+        - settings.app.read
+        - audit.read
+        - reports.sales.read
+        - reports.receivables.read
+        - reports.qr_reconciliation.read
+        - reports.export
+        - customer.self.read
+        - customer.self.receivables.read
+        - catalog.prices.read.all
+        - payment.read.own
+        - payment.debt.receive
+        - customer.create.force
+        - customer.link.read
+        - return.submit
+        - users.pin.reset
+        - system.openapi.read
+        - order.onec_link
+        - settings.public.read
+        - customer.link.conflicts.read
+        - return.approve
+        - customer.link.self_resolve
+        - users.emergency_code.issue
+    StepUpOperation:
+      type: string
+      description: "Значения operation step-up (08 §2.12): узкие profile.*/session.* + коды 11 §4.3 с собственным step-up. Клиент не составляет operation сам."
+      enum:
+        - profile.phone.change
+        - profile.pin.set
+        - profile.biometrics.toggle
+        - profile.consent.revoke
+        - session.logout_all
+        - session.revoke.other
+        - order.cancel.request.any
+        - payment.qr.confirm_manual
+        - payment.void
+        - discount.approve.over_limit
+        - credit.sale.approve
+        - return.submit
+        - return.approve
+        - customer.receivables.read.detail
+        - customer.link.resolve
+        - order.onec_link
+        - sync.run.full
+        - users.manage
+        - users.roles.assign
+        - users.pin.reset
+        - users.emergency_code.issue
+        - session.revoke.any
+        - invitations.manage
+        - settings.app.update
+        - settings.discount_limits.update
+
+    # ===== Каталог (08 §3.6) =====
+    Category:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        parentId: { type: string, format: uuid, nullable: true }
+        name: { type: string, example: "Смесители" }
+        code: { type: string, example: "000124" }
+        productCount: { type: integer, minimum: 0 }
+        sortOrder: { type: integer }
+        iconKey: { type: string, example: "faucet" }
+        imageUrl: { type: string, nullable: true }
+        hasChildren: { type: boolean }
+        deletionMark: { type: boolean }
+        onecRef: { type: string, format: uuid }
+    Unit:
+      type: object
+      required: [id, name, qtyPrecision]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, example: "796" }
+        name: { type: string, example: "шт" }
+        shortName: { type: string, example: "шт" }
+        qtyPrecision: { type: integer, minimum: 0, maximum: 3 }
+    Packaging:
+      type: object
+      required: [id, unitId, factor]
+      properties:
+        id: { type: string, format: uuid }
+        unitId: { type: string, format: uuid }
+        name: { type: string, example: "кор 6 шт" }
+        factor: { $ref: "#/components/schemas/QuantityValue" }
+        isDefault: { type: boolean }
+        allowFraction: { type: boolean }
+        barcode: { type: string, nullable: true, example: "4607012345678" }
+    Price:
+      type: object
+      required: [priceListId, price]
+      description: "Цену выбирает сервер по правилу 08 §3.6 (вид цены клиента → is_default → розничный); prices[] всех видов — только cashier, senior_seller, admin, owner."
+      properties:
+        priceListId: { type: string, format: uuid }
+        priceListName: { type: string, example: "Оптовая" }
+        packagingId: { type: string, format: uuid, nullable: true }
+        price: { $ref: "#/components/schemas/Money" }
+        validFrom: { type: string, format: date-time }
+        asOf: { type: string, format: date-time }
+    StockBalance:
+      type: object
+      required: [variantId, warehouseId, stockLevel]
+      description: >
+        Остаток (available считает 1С/backend, никогда клиент — D-22). Для роли customer поля количеств
+        отсутствуют (а не null) при customer_stock_display=status; при quantity — только available
+        (quantity и reserved видят только staff) (08 §3.6, ядро §24.2).
+      properties:
+        variantId: { type: string, format: uuid }
+        warehouseId: { type: string, format: uuid }
+        warehouseName: { type: string, example: "Основной" }
+        quantity:
+          allOf: [ { $ref: "#/components/schemas/QuantityValue" } ]
+          x-roles: [seller, cashier, senior_seller, admin, owner]
+        reserved:
+          allOf: [ { $ref: "#/components/schemas/QuantityValue" } ]
+          x-roles: [seller, cashier, senior_seller, admin, owner]
+        available:
+          type: string
+          pattern: '^-?\d{1,11}(\.\d{1,3})?$'
+          description: "Доступно (может быть ≤ 0 → stockLevel=out). customer — только при customer_stock_display=quantity."
+          example: "124.000"
+        unitId: { type: string, format: uuid }
+        asOf: { type: string, format: date-time }
+        stockLevel: { $ref: "#/components/schemas/StockLevel" }
+    Image:
+      type: object
+      required: [sha256]
+      description: "Фото отсутствует → images: [] (заглушка на клиенте; никогда фото другого товара, D-30)."
+      properties:
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        thumbUrl: { type: string, example: "/images/{sha}/thumb", description: "Путь фото через pos-proxy (Caddy), не под /api/v1 (08 §4.4.7, 16 §4.5; EQ-IMG-06)." }
+        cardUrl: { type: string, example: "/images/{sha}/card" }
+        fullUrl: { type: string, example: "/images/{sha}/full" }
+        isPrimary: { type: boolean }
+        width: { type: integer }
+        height: { type: integer }
+    MoneyRange:
+      type: object
+      required: [min, max]
+      properties:
+        min: { $ref: "#/components/schemas/Money" }
+        max: { $ref: "#/components/schemas/Money" }
+    ProductSummary:
+      type: object
+      required: [id, name]
+      description: "Карточка в списке/сетке (SCR-10/11/12)."
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: "Смеситель для кухни Grohe Eurosmart" }
+        sku: { type: string, example: "GR-33281" }
+        categoryId: { type: string, format: uuid }
+        brand: { type: string, example: "Grohe" }
+        hasVariants: { type: boolean }
+        defaultVariantId: { type: string, format: uuid }
+        baseUnit: { $ref: "#/components/schemas/Unit" }
+        primaryImage: { $ref: "#/components/schemas/Image" }
+        price: { $ref: "#/components/schemas/Price" }
+        priceRange: { $ref: "#/components/schemas/MoneyRange" }
+        stock: { $ref: "#/components/schemas/StockBalance" }
+        isFavorite: { type: boolean }
+        matchType: { type: string, enum: [barcode, sku, fts, trgm, null], nullable: true }
+        updatedAt: { type: string, format: date-time }
+    Product:
+      description: "Карточка товара (SCR-14): ProductSummary + детали."
+      allOf:
+        - $ref: "#/components/schemas/ProductSummary"
+        - type: object
+          properties:
+            description: { type: string }
+            attributes:
+              type: object
+              additionalProperties: { type: string }
+              example: { "Материал": "латунь", "Гарантия": "5 лет" }
+            images:
+              type: array
+              items: { $ref: "#/components/schemas/Image" }
+            variants:
+              type: array
+              items: { $ref: "#/components/schemas/Variant" }
+            packagings:
+              type: array
+              items: { $ref: "#/components/schemas/Packaging" }
+            barcodes:
+              type: array
+              items: { type: string }
+            stockByWarehouse:
+              type: array
+              items: { $ref: "#/components/schemas/StockBalance" }
+            prices:
+              type: array
+              description: "Все виды цен — только cashier, senior_seller, admin, owner (catalog.prices.read.all)."
+              items: { $ref: "#/components/schemas/Price" }
+              x-roles: [cashier, senior_seller, admin, owner]
+            availableTotal:
+              type: string
+              nullable: true
+              pattern: '^-?\d{1,11}(\.\d{1,3})?$'
+              description: "Сумма available по складам, доступным роли, считает сервер; null — нет снимка (ядро §19.2)."
+            minQuantity:
+              allOf: [ { $ref: "#/components/schemas/QuantityValue" } ]
+              type: string
+              nullable: true
+            onecCode: { type: string, example: "00001234" }
+            deletionMark: { type: boolean }
+    Variant:
+      type: object
+      required: [id, productId]
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        isDefault: { type: boolean }
+        name: { type: string, example: "Хром, 35 мм" }
+        sku: { type: string, example: "GR-33281-CH" }
+        attributes:
+          type: object
+          additionalProperties: { type: string }
+        price: { $ref: "#/components/schemas/Price" }
+        stock: { $ref: "#/components/schemas/StockBalance" }
+        stockByWarehouse:
+          type: array
+          items: { $ref: "#/components/schemas/StockBalance" }
+        barcodes:
+          type: array
+          items: { type: string }
+        images:
+          type: array
+          items: { $ref: "#/components/schemas/Image" }
+        multiplicity:
+          allOf: [ { $ref: "#/components/schemas/QuantityValue" } ]
+          type: string
+          nullable: true
+          description: "Кратность продажи в базовых единицах; null — не ведётся (Q-021; ядро §19.2)."
+        sortOrder: { type: integer }
+        deletionMark: { type: boolean }
+
+    # ===== Клиенты (08 §3.7) — ролевые представления =====
+    CustomerPhone:
+      type: object
+      required: [value, verified]
+      properties:
+        value: { $ref: "#/components/schemas/PhoneE164" }
+        verified: { type: boolean }
+    CustomerContact:
+      type: object
+      required: [kind, value]
+      properties:
+        kind: { $ref: "#/components/schemas/ContactKind" }
+        value: { type: string }
+        name: { type: string }
+    PriceListRef:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: "Оптовая" }
+    ReceivableBadge:
+      type: object
+      required: [hasDebt, isOverdue]
+      description: "Индикатор долга без сумм — для поиска и списков всех ролей (ядро §22.13 п.1; 08 §3.7)."
+      properties:
+        hasDebt: { type: boolean }
+        isOverdue: { type: boolean }
+    ReceivableSummary:
+      type: object
+      required: [balance, asOf]
+      description: "Суммы долга в Customer.receivable — только GET /customers/{id}?include=receivable (аудит customer.debt_viewed)."
+      properties:
+        balance: { $ref: "#/components/schemas/Money" }
+        overdueAmount: { $ref: "#/components/schemas/Money" }
+        creditLimit: { $ref: "#/components/schemas/Money" }
+        limitRemaining: { $ref: "#/components/schemas/Money" }
+        asOf: { type: string, format: date-time }
+    Customer:
+      type: object
+      required: [id, name]
+      description: >
+        Клиент — НАДМНОЖЕСТВО полей (08 §3.7). Сервер сериализует по allowlist роли (field-level, ASVS 8.2.3):
+        поля, не разрешённые роли, ОТСУТСТВУЮТ (а не null). Разрешённые роли поля — расширение x-roles; отсутствие
+        x-roles — поле видят все роли. Строгие представления по ролям — CustomerViewSeller, CustomerViewCashier,
+        CustomerViewAdmin, CustomerViewSelf. В списках (GET /customers, /search/customers, /favorites/customers,
+        Cart.customer, Order.customer) receivable не отдаётся — только флаги hasDebt/isOverdue.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        displayName: { type: string }
+        customerType: { $ref: "#/components/schemas/CustomerType" }
+        onecCode: { type: string }
+        isRetailDefault: { type: boolean }
+        phoneMasked:
+          allOf: [ { $ref: "#/components/schemas/PhoneMasked" } ]
+          x-roles: [seller]
+        phones:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerPhone" }
+          x-roles: [cashier, senior_seller, admin, owner, customer]
+        inn:
+          type: string
+          x-roles: [cashier, senior_seller, admin, owner, customer]
+        priceList: { $ref: "#/components/schemas/PriceListRef" }
+        discountPercent: { $ref: "#/components/schemas/Percent" }
+        creditAllowed: { type: boolean }
+        hasDebt: { type: boolean }
+        isOverdue: { type: boolean }
+        receivable:
+          allOf: [ { $ref: "#/components/schemas/ReceivableSummary" } ]
+          x-roles: [cashier, senior_seller, admin, owner, customer]
+        ordersCount: { type: integer, minimum: 0 }
+        lastOrderAt: { type: string, format: date-time, nullable: true }
+        discounts:
+          allOf: [ { $ref: "#/components/schemas/CustomersDiscountsResponse" } ]
+          description: "Только при include=discounts и праве discount.rules.read (customer — своя карточка): тот же состав, что ответ GET /customers/{id}/discounts (08 §4.11.6, SCR-35) — B-AR-06, предложение владельцу 08 §3.7."
+        addresses:
+          type: array
+          items: { type: string }
+          x-roles: [cashier, senior_seller, admin, owner, customer]
+        contacts:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerContact" }
+          x-roles: [cashier, senior_seller, admin, owner, customer]
+        links:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerLink" }
+          x-roles: [admin, owner, customer]
+        isFavorite:
+          type: boolean
+          x-roles: [cashier, senior_seller, admin, owner]
+        source:
+          allOf: [ { $ref: "#/components/schemas/CustomerSource" } ]
+          x-roles: [seller, cashier, senior_seller, admin, owner]
+        onecStatus:
+          allOf: [ { $ref: "#/components/schemas/CustomerOnecStatus" } ]
+          x-roles: [seller, cashier, senior_seller, admin, owner]
+        onecRef:
+          type: string
+          format: uuid
+          nullable: true
+          x-roles: [seller, cashier, senior_seller, admin, owner]
+        syncedAt:
+          type: string
+          format: date-time
+          nullable: true
+          x-roles: [seller, cashier, senior_seller, admin, owner]
+    CustomerViewSeller:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      description: "Customer для роли seller (08 §3.7): маскированный телефон, только флаги долга; allowlist (лишних полей нет)."
+      x-roles: [seller]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        displayName: { type: string }
+        customerType: { $ref: "#/components/schemas/CustomerType" }
+        onecCode: { type: string }
+        isRetailDefault: { type: boolean }
+        phoneMasked: { $ref: "#/components/schemas/PhoneMasked" }
+        priceList: { $ref: "#/components/schemas/PriceListRef" }
+        discountPercent: { $ref: "#/components/schemas/Percent" }
+        creditAllowed: { type: boolean }
+        hasDebt: { type: boolean }
+        isOverdue: { type: boolean }
+        ordersCount: { type: integer, minimum: 0 }
+        lastOrderAt: { type: string, format: date-time, nullable: true }
+        discounts: { $ref: "#/components/schemas/CustomersDiscountsResponse" }
+        source: { $ref: "#/components/schemas/CustomerSource" }
+        onecStatus: { $ref: "#/components/schemas/CustomerOnecStatus" }
+        onecRef: { type: string, format: uuid, nullable: true }
+        syncedAt: { type: string, format: date-time, nullable: true }
+    CustomerViewCashier:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      description: "Customer для ролей cashier, senior_seller (08 §3.7): полные телефоны, ИНН, адреса, контакты, избранное; receivable — только при include=receivable (детализация — через /receivables со step-up)."
+      x-roles: [cashier, senior_seller]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        displayName: { type: string }
+        customerType: { $ref: "#/components/schemas/CustomerType" }
+        onecCode: { type: string }
+        isRetailDefault: { type: boolean }
+        phones:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerPhone" }
+        inn: { type: string }
+        priceList: { $ref: "#/components/schemas/PriceListRef" }
+        discountPercent: { $ref: "#/components/schemas/Percent" }
+        creditAllowed: { type: boolean }
+        hasDebt: { type: boolean }
+        isOverdue: { type: boolean }
+        receivable: { $ref: "#/components/schemas/ReceivableSummary" }
+        ordersCount: { type: integer, minimum: 0 }
+        lastOrderAt: { type: string, format: date-time, nullable: true }
+        discounts: { $ref: "#/components/schemas/CustomersDiscountsResponse" }
+        addresses:
+          type: array
+          items: { type: string }
+        contacts:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerContact" }
+        isFavorite: { type: boolean }
+        source: { $ref: "#/components/schemas/CustomerSource" }
+        onecStatus: { $ref: "#/components/schemas/CustomerOnecStatus" }
+        onecRef: { type: string, format: uuid, nullable: true }
+        syncedAt: { type: string, format: date-time, nullable: true }
+    CustomerViewAdmin:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      description: "Customer для ролей admin, owner (08 §3.7): как cashier + привязки links[]."
+      x-roles: [admin, owner]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        displayName: { type: string }
+        customerType: { $ref: "#/components/schemas/CustomerType" }
+        onecCode: { type: string }
+        isRetailDefault: { type: boolean }
+        phones:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerPhone" }
+        inn: { type: string }
+        priceList: { $ref: "#/components/schemas/PriceListRef" }
+        discountPercent: { $ref: "#/components/schemas/Percent" }
+        creditAllowed: { type: boolean }
+        hasDebt: { type: boolean }
+        isOverdue: { type: boolean }
+        receivable: { $ref: "#/components/schemas/ReceivableSummary" }
+        ordersCount: { type: integer, minimum: 0 }
+        lastOrderAt: { type: string, format: date-time, nullable: true }
+        discounts: { $ref: "#/components/schemas/CustomersDiscountsResponse" }
+        addresses:
+          type: array
+          items: { type: string }
+        contacts:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerContact" }
+        links:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerLink" }
+        isFavorite: { type: boolean }
+        source: { $ref: "#/components/schemas/CustomerSource" }
+        onecStatus: { $ref: "#/components/schemas/CustomerOnecStatus" }
+        onecRef: { type: string, format: uuid, nullable: true }
+        syncedAt: { type: string, format: date-time, nullable: true }
+    CustomerViewSelf:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      description: "Customer для роли customer — только своя карточка при customer_links.status=confirmed (08 §3.7, ядро §24.2); без source/onecStatus/onecRef/syncedAt и isFavorite."
+      x-roles: [customer]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        displayName: { type: string }
+        customerType: { $ref: "#/components/schemas/CustomerType" }
+        onecCode: { type: string }
+        isRetailDefault: { type: boolean }
+        phones:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerPhone" }
+        inn: { type: string }
+        priceList: { $ref: "#/components/schemas/PriceListRef" }
+        discountPercent: { $ref: "#/components/schemas/Percent" }
+        creditAllowed: { type: boolean }
+        hasDebt: { type: boolean }
+        isOverdue: { type: boolean }
+        receivable: { $ref: "#/components/schemas/ReceivableSummary" }
+        ordersCount: { type: integer, minimum: 0 }
+        lastOrderAt: { type: string, format: date-time, nullable: true }
+        discounts: { $ref: "#/components/schemas/CustomersDiscountsResponse" }
+        addresses:
+          type: array
+          items: { type: string }
+        contacts:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerContact" }
+        links:
+          type: array
+          items: { $ref: "#/components/schemas/CustomerLink" }
+    CustomerLink:
+      type: object
+      required: [id, customerId, status]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/CustomerLinkStatus" }
+        matchedBy: { $ref: "#/components/schemas/LinkMatchMethod" }
+        createdAt: { type: string, format: date-time }
+        resolvedBy:
+          allOf: [ { $ref: "#/components/schemas/UserRef" } ]
+          type: object
+          nullable: true
+        resolvedAt: { type: string, format: date-time, nullable: true }
+    ReceivableDocument:
+      type: object
+      required: [kind, status, amount]
+      description: "Строка детализации долга (только из 1С; состав — [ТИПОВО: Q-010])."
+      properties:
+        kind: { $ref: "#/components/schemas/ReceivableDocumentKind" }
+        status: { $ref: "#/components/schemas/ReceivableDocumentStatus" }
+        number: { type: string, example: "УТ-000123" }
+        date: { type: string, format: date }
+        amount: { $ref: "#/components/schemas/Money" }
+        paid: { $ref: "#/components/schemas/Money" }
+        remaining: { $ref: "#/components/schemas/Money" }
+        dueDate: { type: string, format: date, nullable: true }
+        overdueDays: { type: integer, minimum: 0 }
+        onecRef: { type: string, format: uuid }
+    Receivable:
+      type: object
+      required: [customerId, balance, asOf]
+      description: >
+        Сальдо и детализация — только из 1С, с asOf (D-24); backend долг не вычисляет. documents[] — только
+        ?include=documents со step-up. Клиент source=pos, ещё не созданный в 1С (onecStatus ≠ confirmed): 200 с
+        balance: null, asOf: null и reason: not_in_onec (08 §4.11.5) — снимка нет, прочие суммы не передаются (B-AR-06).
+        Клиент 1С, по которому снимка долга ещё нет: 200 с balance: null, overdueAmount: null, asOf: null, isStale: true
+        без reason (08 §3.7 «Уточнения», DEBT-009 — «Нет данных из 1С», не 0 сом).
+      properties:
+        customerId: { type: string, format: uuid }
+        balance:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          type: object
+          nullable: true
+          description: "null — при reason=not_in_onec (08 §4.11.5) или когда снимка 1С по клиенту ещё нет (reason отсутствует, isStale: true; 08 §3.7)."
+        reason:
+          type: string
+          nullable: true
+          enum: [not_in_onec, null]
+          description: "Причина отсутствия сальдо: not_in_onec — клиент source=pos ещё не создан в 1С (08 §4.11.5); иначе поле отсутствует или null."
+        overdueAmount:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          type: object
+          nullable: true
+          description: "null — просрочка неизвестна (неполный снимок, шаг (3) ядра §22.4)."
+        overdueDays: { type: integer, minimum: 0 }
+        creditLimit: { $ref: "#/components/schemas/Money" }
+        openOrdersAmount: { $ref: "#/components/schemas/Money" }
+        limitRemaining: { $ref: "#/components/schemas/Money" }
+        creditAllowed: { type: boolean }
+        paymentTermDays: { type: integer, minimum: 0 }
+        asOf: { type: string, format: date-time, nullable: true, description: "Дата снимка 1С; null — при reason=not_in_onec или когда снимка 1С ещё нет (08 §3.7)." }
+        isStale: { type: boolean }
+        staleAfterMinutes: { type: integer, example: 60 }
+        refreshed: { type: boolean, description: "Только в ответе POST /customers/{id}/receivables/refresh (§4.11.8)." }
+        documents:
+          type: array
+          items: { $ref: "#/components/schemas/ReceivableDocument" }
+    DiscountRule:
+      type: object
+      required: [id, source, kind]
+      properties:
+        id: { type: string, format: uuid }
+        source: { $ref: "#/components/schemas/DiscountSource" }
+        name: { type: string, example: "Скидка клиента 5%" }
+        kind: { $ref: "#/components/schemas/DiscountKind" }
+        value: { type: string, example: "5.00" }
+        requiresApproval: { type: boolean }
+        isActive: { type: boolean }
+        conditions:
+          type: object
+          properties:
+            minTotal:
+              allOf: [ { $ref: "#/components/schemas/Money" } ]
+              type: object
+              nullable: true
+            categoryIds:
+              type: array
+              items: { type: string, format: uuid }
+            customerIds:
+              type: array
+              items: { type: string, format: uuid }
+
+    # ===== Корзина (08 §3.8) =====
+    CartItemWarning:
+      type: string
+      enum: [price_changed, stock_insufficient, variant_unavailable, qty_not_multiple]
+    CartItem:
+      type: object
+      required: [variantId, quantity]
+      properties:
+        variantId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        productName: { type: string }
+        variantName: { type: string }
+        sku: { type: string }
+        image: { $ref: "#/components/schemas/Image" }
+        quantity: { $ref: "#/components/schemas/Quantity" }
+        packaging: { $ref: "#/components/schemas/Packaging" }
+        unitPrice: { $ref: "#/components/schemas/Money" }
+        priceSnapshot: { $ref: "#/components/schemas/Money" }
+        lineTotal: { $ref: "#/components/schemas/Money" }
+        lineDiscount: { $ref: "#/components/schemas/Money" }
+        available:
+          type: string
+          pattern: '^-?\d{1,11}(\.\d{1,3})?$'
+          description: "Для customer при customer_stock_display=status отсутствует (08 §3.6)."
+        remainingAvailable:
+          allOf: [ { $ref: "#/components/schemas/QuantityValue" } ]
+          type: string
+          nullable: true
+          description: "Сколько ещё базовых единиц можно добавить (available − quantity.baseValue, ≥ 0); null — остаток неизвестен, добавление запрещено (ядро §19.2)."
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/CartItemWarning" }
+        addedAt: { type: string, format: date-time }
+    CartConflict:
+      type: object
+      required: [variantId, kind]
+      properties:
+        variantId: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/CartConflictKind" }
+        oldPrice:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          type: object
+          nullable: true
+        newPrice:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          type: object
+          nullable: true
+        requested:
+          allOf: [ { $ref: "#/components/schemas/Quantity" } ]
+          type: object
+          nullable: true
+        available:
+          type: string
+          nullable: true
+          description: "Для customer при customer_stock_display=status отсутствует; присутствует stockLevel (08 §3.6)."
+        stockLevel: { $ref: "#/components/schemas/StockLevel" }
+        factor: { type: string, nullable: true }
+    Cart:
+      type: object
+      required: [id, status, items, rowVersion]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/CartStatus" }
+        name: { type: string, nullable: true }
+        ownerId: { type: string, format: uuid }
+        customer:
+          allOf: [ { $ref: "#/components/schemas/Customer" } ]
+          type: object
+          nullable: true
+          description: "Ролевое представление Customer без сумм долга (только флаги)."
+        receiver: { $ref: "#/components/schemas/Receiver" }
+        warehouseId: { type: string, format: uuid }
+        priceListId: { type: string, format: uuid }
+        items:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/CartItem" }
+        itemsCount: { type: integer, minimum: 0 }
+        unitsCount: { $ref: "#/components/schemas/QuantityValue" }
+        subtotal: { $ref: "#/components/schemas/Money" }
+        requestedDiscountPercent: { $ref: "#/components/schemas/Percent" }
+        appliedDiscountPercent: { $ref: "#/components/schemas/Percent" }
+        discountTotal: { $ref: "#/components/schemas/Money" }
+        customerDiscountPercent: { $ref: "#/components/schemas/Percent" }
+        total: { $ref: "#/components/schemas/Money" }
+        discountLimitPercent: { $ref: "#/components/schemas/Percent" }
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/CartConflict" }
+        restoredFromOrderId: { type: string, format: uuid, nullable: true }
+        restoredFromOrder:
+          type: object
+          nullable: true
+          required: [number]
+          description: >
+            Заказ, из которого восстановлена корзина (отказ 1С, 10 ORD-027), для баннера cart_banner_restored_from_order
+            (02 §7): номер и причина отказа 1С (08 §3.8 «Уточнения CheckoutPreview и Cart» п. 4; FQ-CART-05 (fe)).
+            Сервер передаёт, если корзина восстановлена из заказа и номер известен (иначе null); поле необязательное — при его
+            отсутствии клиент берёт номер из Cart.name и опускает причину. Добавлено в 1.2.0.
+          properties:
+            number: { type: string, example: "POS-2026-000123", description: "Номер заказа POS (publicNumber)." }
+            reason: { type: string, nullable: true, description: "Причина отказа 1С (текст без внутренних данных 1С); null — неизвестна." }
+        rowVersion: { type: integer }
+        parkedAt: { type: string, format: date-time, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        audit: { $ref: "#/components/schemas/AuditMeta" }
+    CheckoutPreview:
+      type: object
+      required: [cartId, cartRowVersion, ok]
+      description: "Результат POST /cart/checkout-preview; ok=false с conflicts — не ошибка (08 §3.8)."
+      properties:
+        cartId: { type: string, format: uuid }
+        cartRowVersion: { type: integer }
+        ok: { type: boolean }
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/CartConflict" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/OrderItem" }
+        subtotal: { $ref: "#/components/schemas/Money" }
+        discountPercent: { $ref: "#/components/schemas/Percent" }
+        discountTotal: { $ref: "#/components/schemas/Money" }
+        customerDiscountTotal: { $ref: "#/components/schemas/Money" }
+        total: { $ref: "#/components/schemas/Money" }
+        cashRounding: { type: string, pattern: '^-?\d{1,12}\.\d{2}$', default: "0.00", description: "Округление наличных (Q-016)." }
+        totalToPay: { $ref: "#/components/schemas/Money" }
+        paymentMethod: { $ref: "#/components/schemas/PaymentMethod" }
+        paymentChecks:
+          type: object
+          properties:
+            creditAllowed: { type: boolean }
+            creditReason:
+              allOf: [ { $ref: "#/components/schemas/CreditReason" } ]
+              type: string
+              nullable: true
+              description: "Только при paymentMethod=credit; null при creditAllowed=true."
+            limitRemaining: { $ref: "#/components/schemas/Money" }
+            receivablesAsOf: { type: string, format: date-time, nullable: true }
+            receivablesStale: { type: boolean }
+        permissions:
+          type: object
+          properties:
+            canCreateOrder: { type: boolean }
+            canApplyDiscount: { type: boolean }
+            discountLimitPercent: { $ref: "#/components/schemas/Percent" }
+            canSellOnCredit: { type: boolean }
+            needsOverride:
+              type: array
+              items: { type: string }
+            allowedPaymentMethods:
+              type: array
+              items: { $ref: "#/components/schemas/PaymentMethod" }
+        onecCheck:
+          type: object
+          properties:
+            performed: { type: boolean }
+            at: { type: string, format: date-time, nullable: true }
+            result: { type: string, enum: [ok, unavailable, rejected] }
+        validUntil: { type: string, format: date-time }
+        previewToken:
+          type: string
+          description: >
+            Непрозрачный для клиента токен: HMAC от cartRowVersion + итогов + validUntil (5 мин, 08 §3.8); передаётся в
+            POST /orders. Предложение владельцу 08 §3.8 (B-AR-07): включить в подпись onecCheck.at и хэш результата onecCheck,
+            чтобы POST /orders в пределах 60 с (05 SYNC-071) использовал тот же результат /check; клиентский контракт не меняется.
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/Warning" }
+
+    # ===== Заказ (08 §3.9) =====
+    OrderItem:
+      type: object
+      required: [lineNo, variantId, quantity]
+      properties:
+        lineNo: { type: integer, minimum: 1 }
+        variantId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        productName: { type: string, description: "snapshot" }
+        variantName: { type: string, description: "snapshot" }
+        sku: { type: string, description: "snapshot" }
+        quantity: { $ref: "#/components/schemas/Quantity" }
+        baseQuantity: { $ref: "#/components/schemas/QuantityValue" }
+        unitPrice: { $ref: "#/components/schemas/Money" }
+        discountPercent: { $ref: "#/components/schemas/Percent" }
+        discountAmount: { $ref: "#/components/schemas/Money" }
+        lineTotal: { $ref: "#/components/schemas/Money" }
+        shippedQuantity:
+          allOf: [ { $ref: "#/components/schemas/QuantityValue" } ]
+          type: string
+          nullable: true
+        returnedQuantity:
+          allOf: [ { $ref: "#/components/schemas/QuantityValue" } ]
+          type: string
+          nullable: true
+    Delivery:
+      type: object
+      required: [method]
+      additionalProperties: false
+      description: "Используется в запросах (POST /orders, checkout-preview) и ответах. geo («Выбрать на карте») — R2 (Q-178): в R1 в теле → VALIDATION_FAILED rule forbidden_field (ядро §19.4)."
+      properties:
+        method: { $ref: "#/components/schemas/DeliveryMethod" }
+        address: { type: string, maxLength: 300 }
+        recipientPhone: { $ref: "#/components/schemas/PhoneE164" }
+        courierComment: { type: string, maxLength: 200 }
+        desiredDate: { type: string, format: date }
+        timeFrom: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$', example: "14:00" }
+        timeTo: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$', example: "18:00" }
+    Receiver:
+      type: object
+      required: [kind]
+      additionalProperties: false
+      description: "Получатель; ПДн получателя клиент не сохраняет в checkout_draft (ядро §19.4)."
+      properties:
+        kind: { $ref: "#/components/schemas/ReceiverKind" }
+        name: { type: string, maxLength: 150, nullable: true }
+        phone:
+          allOf: [ { $ref: "#/components/schemas/PhoneE164" } ]
+          type: string
+          nullable: true
+    PrintOptions:
+      type: object
+      additionalProperties: false
+      properties:
+        invoice: { type: boolean }
+        waybill: { type: boolean }
+        receipt: { type: boolean }
+    OrderOnecInfo:
+      type: object
+      description: "Проекция документа 1С (D-20)."
+      properties:
+        number: { type: string, nullable: true, example: "УТ-0001234" }
+        date: { type: string, format: date-time, nullable: true }
+        ref: { type: string, format: uuid, nullable: true }
+        status: { type: string, nullable: true, example: "Не согласован" }
+        lastSyncAt: { type: string, format: date-time, nullable: true }
+    OrderDocumentAvailability:
+      type: object
+      required: [available]
+      properties:
+        available: { type: boolean }
+        reason: { type: string, example: "waybill_from_onec" }
+    OrderDocuments:
+      type: object
+      properties:
+        invoice: { type: string, nullable: true, example: "/api/v1/orders/{id}/documents/invoice.pdf" }
+        receipt: { type: string, nullable: true }
+        waybill: { $ref: "#/components/schemas/OrderDocumentAvailability" }
+    OrderStatusHistoryEntry:
+      type: object
+      required: [status, at, source]
+      properties:
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        at: { type: string, format: date-time }
+        by:
+          allOf: [ { $ref: "#/components/schemas/UserRef" } ]
+          type: object
+          nullable: true
+        source: { $ref: "#/components/schemas/StatusChangeSource" }
+    Order:
+      type: object
+      required: [id, publicNumber, status, items, total, paymentMethod]
+      description: "Статусы — проекция 1С (D-20); isPaid/paidAmount — флаг платежа, не статус (08 §3.9)."
+      properties:
+        id: { type: string, format: uuid }
+        publicNumber: { type: string, example: "POS-2026-000123" }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        onec: { $ref: "#/components/schemas/OrderOnecInfo" }
+        onecSyncState: { $ref: "#/components/schemas/OnecSyncState" }
+        onecTotal:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          type: object
+          nullable: true
+        totalsDiffer: { type: boolean }
+        customer:
+          allOf: [ { $ref: "#/components/schemas/Customer" } ]
+          type: object
+          nullable: true
+          description: "Ролевое представление Customer без сумм долга (только флаги)."
+        receiver: { $ref: "#/components/schemas/Receiver" }
+        delivery: { $ref: "#/components/schemas/Delivery" }
+        warehouseId: { type: string, format: uuid }
+        priceListId: { type: string, format: uuid }
+        items:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/OrderItem" }
+        subtotal: { $ref: "#/components/schemas/Money" }
+        discountPercent: { $ref: "#/components/schemas/Percent" }
+        customerDiscountTotal: { $ref: "#/components/schemas/Money" }
+        discountTotal: { $ref: "#/components/schemas/Money" }
+        total: { $ref: "#/components/schemas/Money" }
+        cashRounding: { type: string, pattern: '^-?\d{1,12}\.\d{2}$', default: "0.00" }
+        totalToPay: { $ref: "#/components/schemas/Money" }
+        paymentMethod: { $ref: "#/components/schemas/PaymentMethod" }
+        paidAmount: { $ref: "#/components/schemas/Money" }
+        isPaid: { type: boolean }
+        paymentDueDate: { type: string, format: date, nullable: true }
+        paidAt: { type: string, format: date-time, nullable: true }
+        payments:
+          type: array
+          items: { $ref: "#/components/schemas/Payment" }
+        documents: { $ref: "#/components/schemas/OrderDocuments" }
+        printOptions: { $ref: "#/components/schemas/PrintOptions" }
+        comment: { type: string }
+        cancelReason: { type: string, nullable: true }
+        cancelReasonCode:
+          allOf: [ { $ref: "#/components/schemas/CancelReasonCode" } ]
+          type: string
+          nullable: true
+        refundIntent:
+          allOf: [ { $ref: "#/components/schemas/RefundIntent" } ]
+          type: string
+          nullable: true
+        cancelRequested: { type: boolean }
+        cancelRequestedAt: { type: string, format: date-time, nullable: true }
+        submitError:
+          type: object
+          nullable: true
+          properties:
+            code: { type: string, example: "ONEC_REJECTED" }
+            message: { type: string }
+        history:
+          type: array
+          items: { $ref: "#/components/schemas/OrderStatusHistoryEntry" }
+        createdFromCartId: { type: string, format: uuid }
+        idempotencyKey: { type: string, format: uuid }
+        audit: { $ref: "#/components/schemas/AuditMeta" }
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/Warning" }
+
+    # ===== Платёж (08 §3.10) =====
+    QrInfo:
+      type: object
+      required: [provider, issuedAt, autoConfirm]
+      description: "Сериализуется только при payment.qr.show (08 §3.15). provider=onec — QR от 1С (основной R1); elqr_static — без суммы и срока; none — ручное подтверждение."
+      properties:
+        provider: { $ref: "#/components/schemas/QrProvider" }
+        payload: { type: string, nullable: true, description: "EMVCo/ELQR payload." }
+        imageUrl: { type: string, nullable: true }
+        bankReference: { type: string, nullable: true }
+        amount: { $ref: "#/components/schemas/Money" }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        issuedAt: { type: string, format: date-time }
+        autoConfirm: { type: boolean }
+    PaymentAllocation:
+      type: object
+      required: [documentNumber, amount]
+      properties:
+        documentNumber: { type: string, example: "УТ-000123" }
+        amount: { $ref: "#/components/schemas/Money" }
+    PaymentOnecInfo:
+      type: object
+      properties:
+        ref: { type: string, format: uuid, nullable: true }
+        docType:
+          type: string
+          nullable: true
+          description: "[ТИПОВО: УТ 11.5, Q-012]"
+          enum: [ПриходныйКассовыйОрдер, ПоступлениеБезналичныхДенежныхСредств, null]
+        status: { $ref: "#/components/schemas/OutboxStatus" }
+    Payment:
+      type: object
+      required: [id, method, status, amount]
+      description: "amount формирует сервер; клиент сумму платежа по заказу не передаёт. Автомат payment_status — 07 §6.4, ядро §22.2."
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid, nullable: true }
+        customerId: { type: string, format: uuid, nullable: true }
+        method: { $ref: "#/components/schemas/PaymentMethod" }
+        status: { $ref: "#/components/schemas/PaymentStatus" }
+        amount: { $ref: "#/components/schemas/Money" }
+        receivedAmount:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          type: object
+          nullable: true
+        changeAmount:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          type: object
+          nullable: true
+        qr:
+          allOf: [ { $ref: "#/components/schemas/QrInfo" } ]
+          type: object
+          nullable: true
+        externalRef:
+          type: string
+          nullable: true
+          description: "Не отдаётся по payment.read.own (11 §4.3 №64)."
+        confirmedBy:
+          allOf: [ { $ref: "#/components/schemas/UserRef" } ]
+          type: object
+          nullable: true
+        confirmedAt: { type: string, format: date-time, nullable: true }
+        confirmationKind: { type: string, enum: [webhook, manual, cash, null], nullable: true }
+        reviewReason:
+          allOf: [ { $ref: "#/components/schemas/ReviewReason" } ]
+          type: string
+          nullable: true
+        bankAmount:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          type: object
+          nullable: true
+        voidReason: { type: string, nullable: true }
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/Warning" }
+        allocation:
+          type: array
+          items: { $ref: "#/components/schemas/PaymentAllocation" }
+        onec: { $ref: "#/components/schemas/PaymentOnecInfo" }
+        idempotencyKey: { type: string, format: uuid }
+        transactionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            Транзакция журнала, связанная с платежом, — переход UI-24-008 к SCR-37 (08 §3.10 «Уточнения Payment по реализации»;
+            02 SCR-24 «Уточнения» п. 5; FQ-FEORD-12). Необязательно: до правки реализации (вместе с SCR-37, этап G) сервер
+            поле не передаёт — клиент переход не показывает. Добавлено в 1.2.0.
+        audit: { $ref: "#/components/schemas/AuditMeta" }
+
+    # ===== Транзакция (08 §3.11) =====
+    TransactionRelated:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [order, payment, return_request, onec_document] }
+        id: { type: string, format: uuid, nullable: true }
+        number: { type: string }
+        url: { type: string, example: "/api/v1/orders/{id}" }
+    Transaction:
+      type: object
+      required: [id, kind, number, occurredAt, amount, status, related]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/TransactionKind" }
+        number: { type: string, example: "POS-2026-000123 / УТ-0001234" }
+        occurredAt: { type: string, format: date-time }
+        amount: { $ref: "#/components/schemas/Money" }
+        sign: { type: string, enum: ["+", "-"] }
+        status: { type: string, description: "Статус связанного документа как есть." }
+        statusGroup: { $ref: "#/components/schemas/TransactionStatusGroup" }
+        customer:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string, format: uuid }
+            displayName: { type: string }
+        actor: { $ref: "#/components/schemas/UserRef" }
+        source: { $ref: "#/components/schemas/TransactionSource" }
+        related:
+          type: array
+          items: { $ref: "#/components/schemas/TransactionRelated" }
+
+    # ===== Возврат (08 §3.12) =====
+    ReturnRequestItem:
+      type: object
+      required: [orderLineNo, variantId, quantity]
+      properties:
+        orderLineNo: { type: integer, minimum: 1 }
+        variantId: { type: string, format: uuid }
+        quantity: { $ref: "#/components/schemas/Quantity" }
+        maxReturnable: { $ref: "#/components/schemas/QuantityValue" }
+        amount: { $ref: "#/components/schemas/Money" }
+    ReturnRequest:
+      type: object
+      required: [id, status, orderId, items, rowVersion]
+      description: "Заявка на возврат; документ возврата и деньги — в 1С (D-25). Автомат — ядро §22.11."
+      properties:
+        id: { type: string, format: uuid }
+        publicNumber: { type: string, example: "RET-2026-000012" }
+        status: { $ref: "#/components/schemas/ReturnRequestStatus" }
+        orderId: { type: string, format: uuid }
+        shipmentRef: { type: string, format: uuid, nullable: true }
+        shipmentNumber: { type: string, example: "УТ-0001234" }
+        customerId: { type: string, format: uuid }
+        reasonCode: { $ref: "#/components/schemas/ReturnReason" }
+        reasonComment: { type: string, maxLength: 500 }
+        items:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/ReturnRequestItem" }
+        totalAmount: { $ref: "#/components/schemas/Money" }
+        refundKind:
+          allOf: [ { $ref: "#/components/schemas/PaymentMethod" } ]
+          type: string
+          nullable: true
+          description: "Пожелание способа возврата; credit — зачёт в счёт долга."
+        approvalReason: { type: string, enum: [return_threshold_exceeded, null], nullable: true }
+        onec:
+          type: object
+          properties:
+            ref: { type: string, format: uuid, nullable: true }
+            status: { type: string, nullable: true }
+        rowVersion: { type: integer }
+        audit: { $ref: "#/components/schemas/AuditMeta" }
+
+    # ===== Уведомления, синхронизация (08 §3.13) =====
+    Notification:
+      type: object
+      required: [id, kind, title, createdAt, severity]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/NotificationKind" }
+        title: { type: string }
+        body: { type: string }
+        payload:
+          type: object
+          additionalProperties: true
+          properties:
+            orderId: { type: string, format: uuid }
+            target:
+              type: string
+              nullable: true
+              enum: [sessions, profile, customer_link, update, cart_parked, null]
+              description: >
+                Цель перехода для kind=system (ядро §19.2); null — без перехода. cart_parked — истечение отложенной корзины,
+                переход SCR-44 → SCR-23 по cartId (08 §3.13 «Ключи Notification.payload»; 02 §8 п. 27; FQ-NOTIF-07; с 1.2.0).
+                Других значений сервер не передаёт: переход уведомлений kind=sync_error строится по kind (SCR-44 → SCR-43),
+                а не по target (08 §3.13; ревью закрытия F, RS-2).
+            paymentId: { type: string, format: uuid, description: "kind=payment_status (08 §3.13 «Ключи Notification.payload»; FQ-FND-09). С 1.2.0." }
+            status:
+              type: string
+              description: >
+                Статус объекта уведомления для StatusChip (08 §3.13; FQ-NOTIF-06): kind=order_status — OrderStatus заказа;
+                kind=payment_status — только вместе с task=refund_or_advance: OrderStatus заказа (cancelled — заказ отклонён 1С
+                после получения денег, 10 ORD-035); в остальных уведомлениях payment_status ключа нет — состояние платежа клиент
+                читает GET /payments/{id} по paymentId. Уведомления синхронизации ключ не содержат. Строка: набор зависит от kind,
+                неизвестное значение клиент игнорирует (08 §2.11). С 1.2.0; уточнено по реализации (ревью закрытия F, RS-1).
+            cartId: { type: string, format: uuid, description: "Уведомления корзины, в т. ч. target=cart_parked (08 §3.13). С 1.2.0." }
+            entity: { $ref: "#/components/schemas/SyncEntity" }
+            runId: { type: string, format: uuid, description: "Уведомления синхронизации: прогон (08 §3.13). С 1.2.0." }
+            task:
+              type: string
+              description: >
+                Задача для получателя: refund_or_advance — «деньги: возврат / аванс» (10 ORD-035; 08 §3.13; FIX-F-09). Набор
+                значений расширяемый — неизвестное значение клиент игнорирует (08 §2.11). С 1.2.0.
+            outboxId: { type: string, format: uuid, description: "Элемент outbox 1С, к которому относится уведомление (08 §3.13). С 1.2.0." }
+        createdAt: { type: string, format: date-time }
+        readAt: { type: string, format: date-time, nullable: true }
+        severity: { $ref: "#/components/schemas/NotificationSeverity" }
+    SyncCounts:
+      type: object
+      properties:
+        fetched: { type: integer, minimum: 0 }
+        upserted: { type: integer, minimum: 0 }
+        deleted: { type: integer, minimum: 0 }
+        errors: { type: integer, minimum: 0 }
+        sourceTotal: { type: integer, minimum: 0 }
+    SyncEntityStatus:
+      type: object
+      required: [entity]
+      description: "lastErrorAt, paused — только в полном ответе (sync.runs.read); consecutiveErrors — и в кратком (sync.status.read)."
+      properties:
+        entity: { $ref: "#/components/schemas/SyncEntity" }
+        lastSuccessAt: { type: string, format: date-time, nullable: true }
+        lastRunAt: { type: string, format: date-time, nullable: true }
+        running: { type: boolean }
+        runId: { type: string, format: uuid, nullable: true }
+        consecutiveErrors: { type: integer, minimum: 0 }
+        lastErrorAt: { type: string, format: date-time, nullable: true }
+        paused: { type: boolean }
+        nextRunAt: { type: string, format: date-time, nullable: true }
+        intervalSec: { type: integer, minimum: 0 }
+        ageSec: { type: integer, minimum: 0 }
+        isStale: { type: boolean }
+        counts: { $ref: "#/components/schemas/SyncCounts" }
+    SyncStatus:
+      type: object
+      required: [onecReachable, checkedAt, overall]
+      properties:
+        onecReachable: { type: boolean }
+        checkedAt: { type: string, format: date-time }
+        overall: { type: string, enum: [ok, degraded, failed] }
+        entities:
+          type: array
+          items: { $ref: "#/components/schemas/SyncEntityStatus" }
+        outbox:
+          type: object
+          properties:
+            pending: { type: integer, minimum: 0 }
+            failed: { type: integer, minimum: 0 }
+            dead: { type: integer, minimum: 0 }
+        pendingManualOrders:
+          type: object
+          description: "Только полный ответ (sync.runs.read); slaMin = MANUAL_ORDER_SLA_MIN."
+          properties:
+            count: { type: integer, minimum: 0 }
+            oldestAt: { type: string, format: date-time, nullable: true }
+            slaMin: { type: integer, minimum: 0 }
+            overSla: { type: boolean }
+    SyncRun:
+      type: object
+      required: [id, entity, mode, trigger, status]
+      properties:
+        id: { type: string, format: uuid }
+        entity: { $ref: "#/components/schemas/SyncEntity" }
+        mode: { $ref: "#/components/schemas/SyncMode" }
+        trigger: { $ref: "#/components/schemas/SyncTrigger" }
+        status: { $ref: "#/components/schemas/SyncRunStatus" }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        triggeredBy:
+          allOf: [ { $ref: "#/components/schemas/UserRef" } ]
+          type: object
+          nullable: true
+        counts: { $ref: "#/components/schemas/SyncCounts" }
+        errorSummary: { type: string, nullable: true }
+    OutboxItem:
+      type: object
+      required: [id, aggregateType, aggregateId, status, operation]
+      description: "Автомат outbox_status — 07 §6.5, ядро §22.1; ручной повтор — только failed/dead → pending."
+      properties:
+        id: { type: string, format: uuid }
+        aggregateType: { $ref: "#/components/schemas/OutboxAggregate" }
+        aggregateId: { type: string, format: uuid }
+        publicNumber: { type: string, example: "POS-2026-000123" }
+        status: { $ref: "#/components/schemas/OutboxStatus" }
+        attempts: { type: integer, minimum: 0 }
+        nextAttemptAt: { type: string, format: date-time, nullable: true }
+        lastErrorCode:
+          allOf: [ { $ref: "#/components/schemas/SyncErrorCode" } ]
+          type: string
+          nullable: true
+        lastError: { type: string, nullable: true }
+        onecResponse:
+          type: object
+          nullable: true
+          properties:
+            ref: { type: string, format: uuid }
+            number: { type: string }
+        createdAt: { type: string, format: date-time }
+        sentAt: { type: string, format: date-time, nullable: true }
+        operation: { $ref: "#/components/schemas/OutboxOperation" }
+
+    # ===== Пользователь и профиль (08 §3.14, §2.11) =====
+    Profile:
+      type: object
+      properties:
+        fullName: { type: string, example: "Тестов Тест" }
+        phone: { $ref: "#/components/schemas/PhoneE164" }
+        birthYear: { type: integer, minimum: 1920, maximum: 2100, nullable: true, description: "07 user_profiles.birth_year CHECK 1920…2100; запись — 1920…текущий−14 (rule birth_year_range)." }
+        activitySphere: { type: string, nullable: true, description: "Код справочника сфер деятельности." }
+        avatarUrl: { type: string, nullable: true }
+        rowVersion: { type: integer }
+    Settings:
+      type: object
+      description: "Настройки интерфейса пользователя (PUT /me/settings; проекция user_profiles.settings 07)."
+      properties:
+        locale: { $ref: "#/components/schemas/Locale" }
+        scanner:
+          type: object
+          properties:
+            mode: { type: string, enum: [hid, camera] }
+            suffix: { type: string, enum: [enter, tab, none] }
+        scanAddsToCart: { type: boolean, description: "По умолчанию cashier — true, seller — false." }
+        printer:
+          type: object
+          properties:
+            defaultFormat: { $ref: "#/components/schemas/PrintPaper" }
+            autoPrint: { type: boolean }
+        catalogView: { type: string, enum: [grid, list, compact] }
+        defaultWarehouseId: { type: string, format: uuid, nullable: true }
+        idleLockMinutes: { type: integer, minimum: 1, example: 30 }
+        rowVersion: { type: integer }
+    Consent:
+      type: object
+      required: [kind, version, granted]
+      properties:
+        kind: { $ref: "#/components/schemas/ConsentKind" }
+        version: { type: string, example: "2026-10-01" }
+        granted: { type: boolean }
+        grantedAt: { type: string, format: date-time, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+    Session:
+      type: object
+      required: [id, deviceId, platform, kind, isCurrent]
+      properties:
+        id: { type: string, format: uuid }
+        deviceId: { type: string, format: uuid }
+        deviceName: { type: string, maxLength: 60, example: "Samsung SM-A525F" }
+        platform: { $ref: "#/components/schemas/DevicePlatform" }
+        appVersion: { type: string, example: "1.4.2+87" }
+        kind: { $ref: "#/components/schemas/SessionKind" }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+        ipLast: { type: string, example: "212.***.***.12" }
+        isCurrent: { type: boolean }
+    MeCustomerLink:
+      type: object
+      required: [status]
+      description: "До confirmed — только linkId, status, displayNameMasked; customerId и displayName — только при confirmed (09 REG-032)."
+      properties:
+        linkId: { type: string, format: uuid, nullable: true }
+        status: { type: string, enum: [none, proposed, confirmed, rejected, conflict] }
+        displayNameMasked: { type: string, example: "ОсОО «Стр***»" }
+        customerId: { type: string, format: uuid }
+        displayName: { type: string }
+    Me:
+      type: object
+      required: [id, kind, status, roles, permissions, permissionsVersion]
+      description: "GET /me — источник правды клиента о ролях и правах; permissions[] — для скрытия кнопок, НЕ защита (SRC-C-133)."
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/UserKind" }
+        status: { $ref: "#/components/schemas/UserStatus" }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/RoleCode" }
+        permissions:
+          type: array
+          items: { $ref: "#/components/schemas/PermissionCode" }
+        permissionsVersion: { type: integer, minimum: 0 }
+        discountLimitPercent: { $ref: "#/components/schemas/Percent" }
+        profile: { $ref: "#/components/schemas/Profile" }
+        customerLink: { $ref: "#/components/schemas/MeCustomerLink" }
+        settings: { $ref: "#/components/schemas/Settings" }
+        security:
+          type: object
+          properties:
+            pinSet: { type: boolean }
+            biometricsEnabled: { type: boolean }
+            biometricsPlatform: { type: string, enum: [android_class3, ios, windows_hello_gate, none] }
+        consents:
+          type: array
+          items: { $ref: "#/components/schemas/Consent" }
+        session:
+          type: object
+          properties:
+            sid: { type: string, format: uuid }
+            deviceId: { type: string, format: uuid }
+            deviceName: { type: string, example: "Касса-2 (Windows)" }
+            createdAt: { type: string, format: date-time }
+            amr:
+              type: array
+              items: { type: string, enum: [sms, bio, pin] }
+            expiresAt: { type: string, format: date-time }
+        appVersion:
+          type: object
+          description: "[НОВОЕ ИМЯ поля] 08 §2.11: дублирует X-Min-App-Version / X-Recommended-App-Version."
+          properties:
+            min: { type: string, example: "1.4.0" }
+            recommended: { type: string, nullable: true, example: "1.5.0" }
+        apiVersion: { type: string, example: "1.0" }
+        serverTime: { type: string, format: date-time }
+
+    # ===== Приглашения, публичные настройки (08 §4.18.4, §4.23.1) =====
+    Invitation:
+      type: object
+      required: [id, phoneMasked, roles, status, createdAt]
+      description: "Приглашение сотрудника по телефону (D-07; 08 §4.18.4). expiresAt по умолчанию — 30 дней от создания (Q-141)."
+      properties:
+        id: { type: string, format: uuid }
+        phoneMasked: { $ref: "#/components/schemas/PhoneMasked" }
+        roles:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [seller, cashier, senior_seller, admin, owner]
+            description: "user_invitations.role (07 §6.1.1)."
+        status: { $ref: "#/components/schemas/InvitationStatus" }
+        createdBy: { $ref: "#/components/schemas/UserRef" }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        acceptedAt: { type: string, format: date-time, nullable: true }
+        appliedToUserId: { type: string, format: uuid, nullable: true }
+    DeliverySlot:
+      type: object
+      required: [from, to]
+      properties:
+        from: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$', example: "10:00" }
+        to: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$', example: "14:00" }
+    SupportContact:
+      type: object
+      required: [kind, value]
+      properties:
+        kind: { type: string, example: "phone" }
+        value: { type: string, example: "+996700000005" }
+        label: { type: string, example: "Поддержка" }
+    PublicSettings:
+      type: object
+      description: "GET /settings/public (ядро §19.2; 08 §4.23.1): несекретные настройки и флаги функций; скрытие — не защита."
+      properties:
+        deliverySlots:
+          type: array
+          items: { $ref: "#/components/schemas/DeliverySlot" }
+        supportContacts:
+          type: array
+          items: { $ref: "#/components/schemas/SupportContact" }
+        privacyContact: { type: string, nullable: true }
+        lowStockThreshold: { type: integer, minimum: 0, example: 5 }
+        minAppVersion: { $ref: "#/components/schemas/SemVerByPlatform" }
+        recommendedAppVersion:
+          allOf: [ { $ref: "#/components/schemas/SemVerByPlatform" } ]
+          type: string
+          nullable: true
+        customerStockDisplay: { $ref: "#/components/schemas/CustomerStockDisplay" }
+        features:
+          type: object
+          properties:
+            customerSelfService: { type: boolean, description: "env CUSTOMER_SELF_SERVICE (по умолчанию true, ядро §24.2)." }
+            returnsFromPos: { type: boolean, description: "app_settings.returns_enabled (Q-018)." }
+            qrProvider: { $ref: "#/components/schemas/QrProviderMode" }
+            qrWebhook: { type: boolean, description: "QR_PROVIDER=bakai (R2) и qr.enabled." }
+            debtPaymentsFromPos: { type: boolean, description: "env DEBT_PAYMENTS_FROM_POS (Q-152)." }

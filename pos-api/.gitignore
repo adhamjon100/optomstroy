@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.tmp/
+*.log
+.env
+secrets/
+.dist-worker-entry/
+.dist-worker-entry-*/

@@ -1,0 +1,16 @@
+{
+  "_note": "тестовые данные",
+  "description": "Оплата прошла до отмены — 200 со status=paid",
+  "operation": "POST /pos/v1/payments/{externalId}/qr/cancel",
+  "kind": "response",
+  "status": 200,
+  "body": {
+    "externalId": "0192f5a1-2b3c-7d4e-8f50-6a7b8c9d0e1f",
+    "status": "paid",
+    "reference": "QR-7F3A9C21",
+    "paidAmount": "16007.50",
+    "paidAt": "2026-10-21T14:07:12+06:00",
+    "bankReference": "BK-20261021-000123",
+    "documentRef": null
+  }
+}

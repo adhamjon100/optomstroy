@@ -1,0 +1,212 @@
+# Тестовый контур «Оптомстрой POS» (RM-C-012; ядро D-33, R0 §16 п. 6; 16 §4.1–§4.4, §11).
+# Сервисы: caddy, api, worker, migrate, postgres, backup. Сети: optomstroy_test_edge и optomstroy_test_backend
+# (internal: true). Порты публикует ТОЛЬКО caddy (80/443); api, worker, postgres, migrate, backup — без ports:.
+#
+# Запуск (из корня репозитория; нужны Docker Engine + Compose v2):
+#   make test-up      # секреты → сборка образов → migrate (DDL RM-B-005 + seed RM-B-008/RM-C-006) → up -d → ожидание
+#   make test-smoke   # smoke e2e через Caddy (pos-api/test/e2e/smoke.e2e-spec.ts)
+#   make test-down    # остановка и удаление контейнеров, сетей и томов контура
+# Без make: см. docs/ci.md §3. Без Docker — инструкция с локальным PostgreSQL 17: docs/ci.md §4.
+#
+# Секреты — одноразовые файлы infra/secrets/* (вне git: .gitignore `**/secrets/`), их создаёт
+# infra/docker/scripts/gen-test-secrets.sh. Значений секретов в этом файле нет (16 §4.3).
+# Отличия от прод-спецификации 16 §4.4 перечислены в docs/ci.md §5 (тестовые режимы, наборы секретов, лимиты).
+name: optomstroy-test
+
+x-common: &common
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+  security_opt: [ "no-new-privileges:true" ]
+
+# Несекретная конфигурация api/worker тестового контура (имена — 16 §4.3; значения — профиль staging, 12 §2.11 E3).
+x-app-env: &app-env
+  APP_ENV: ${APP_ENV:-staging}
+  PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://localhost}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  TZ: Asia/Bishkek
+  OPENAPI_PUBLIC: "true"
+  MIN_APP_VERSION: ${MIN_APP_VERSION:-android=0.1.0,windows=0.1.0}
+  ONEC_MODE: fixtures            # FakeOnecGateway (RM-C-008); рабочая 1С к тестовому контуру не подключается (16 §11)
+  SMS_PROVIDER: fake             # реальные SMS не отправляются
+  QR_PROVIDER: none
+  JWT_KEY_ID: test-1
+  MEDIA_DIR: /data/media
+
+# Указатели на секреты, общие для api и worker (16 §4.4 x-secret-env; слияние якорей поверхностное — см. 16 §4.4 прим. 6).
+x-secret-env: &secret-env   # check-secrets: allow (якорь указателей *_FILE, значений секретов нет)
+  DATABASE_URL_FILE: /run/secrets/database_url
+  JWT_PUBLIC_KEY_FILE: /run/secrets/jwt_public.json
+
+x-app: &app
+  <<: *common
+  image: optomstroy/api:${API_TAG:-test}
+  build:
+    context: ..
+    dockerfile: infra/docker/api/Dockerfile
+    # Стадия с фикстурами 1С для ONEC_MODE=fixtures (FQ-INT-08; 16 §4.4 прим. (2)): /contracts/onec/fixtures в образе.
+    target: test-fixtures
+  user: "10001:10001"
+  read_only: true
+  tmpfs: [ "/tmp" ]
+  cap_drop: [ "ALL" ]
+  volumes:
+    - media:/data/media
+    # Фикстуры 1С (ONEC_MODE=fixtures) — слой образа стадии test-fixtures (/contracts/onec/fixtures), не bind-mount:
+    # контур не зависит от рабочей копии на хосте Docker (FQ-INT-08). В прод-образ (стадия release) не входят.
+
+services:
+  caddy:
+    <<: *common
+    image: caddy:2.11.6-alpine
+    ports:
+      - "${TEST_HTTP_PORT:-80}:80"
+      - "${TEST_HTTPS_PORT:-443}:443"
+    environment:
+      CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:-localhost}
+      CADDY_TLS: internal
+      API_UPSTREAM: api:3000
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - media:/srv/media:ro
+    networks: [ edge ]
+    # Намеренно без depends_on: api и без healthcheck через /health (16 §4.4 прим. 7).
+
+  migrate:
+    <<: *app
+    command: [ "node", "dist/migrate.js", "--seed" ]
+    restart: "no"
+    environment:
+      APP_ENV: ${APP_ENV:-staging}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL_FILE: /run/secrets/database_url              # хост/порт/БД (пользователь заменяется на pos_migrate)
+      DB_MIGRATOR_PASSWORD_FILE: /run/secrets/db_migrator_password
+      WORKERS_ENABLED: "false"
+    secrets: [ database_url, db_migrator_password ]
+    # dev-миграции (dev_outbox, 07 §5.63) в образ не входят (AC-DATA-169, RM-C-006 п. 6): каталог монтируется только
+    # для чтения и применяется мигратором лишь при APP_ENV=dev; при staging (по умолчанию) игнорируется.
+    volumes:
+      - ../pos-api/db/migrations-dev:/app/db/migrations-dev:ro
+    networks: [ backend ]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *app
+    command: [ "node", "dist/main.js" ]
+    environment:
+      <<: [ *app-env, *secret-env ]
+      JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private.pem
+      OTP_HMAC_SECRET_FILE: /run/secrets/otp_pepper
+      PIN_PEPPER_FILE: /run/secrets/pin_pepper
+      WORKERS_ENABLED: "false"
+    secrets: [ database_url, jwt_private.pem, jwt_public.json, otp_pepper, pin_pepper ]
+    expose: [ "3000" ]                                          # без ports: — доступен только из сетей compose
+    networks: [ edge, backend ]
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://127.0.0.1:3000/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+
+  worker:
+    <<: *app
+    command: [ "node", "dist/worker.js" ]
+    environment:
+      <<: [ *app-env, *secret-env ]
+      WORKERS_ENABLED: "true"
+      # 16 §4.4, EQ-AUTH-08: тот же HMAC OTP, что у api — текст задания sms.send и возврат квоты номера (INT-01).
+      # Ключ подписи JWT и pepper PIN worker'у не передаются (минимум прав, 16 §4.4 прим. 6).
+      OTP_HMAC_SECRET_FILE: /run/secrets/otp_pepper
+    secrets: [ database_url, jwt_public.json, otp_pepper ]
+    networks: [ edge, backend ]
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+
+  postgres:
+    <<: *common
+    image: postgres:17.10
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-optomstroy_test}
+      POSTGRES_DB: ${POSTGRES_DB:-optomstroy_test}
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+      # UTF-8 LC_CTYPE обязателен (16 §4.4, 07 §10.1, EQ-SRCH-01): pg_trgm и FTS по-русски; --locale задаёт и LC_CTYPE.
+      POSTGRES_INITDB_ARGS: "--data-checksums --encoding=UTF8 --locale=C.UTF-8"
+    command: >
+      postgres -c shared_buffers=256MB -c work_mem=8MB
+               -c log_min_duration_statement=500ms
+               -c shared_preload_libraries=pg_stat_statements
+               -c timezone=UTC
+    # pg_password — суперпользователь образа; db_migrator_password и database_url читает только initdb-скрипт
+    # (пароли ролей pos_migrate и pos_app, infra/docker/postgres/initdb/10-roles.sh).
+    secrets: [ pg_password, db_migrator_password, database_url ]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    networks: [ backend ]                                       # только internal-сеть, порты НЕ публикуются
+    healthcheck:
+      # -h 127.0.0.1: TCP, а не unix-сокет — временный сервер initdb (listen_addresses='') не считается готовым.
+      test: [ "CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    shm_size: 256m
+
+  backup:
+    <<: *common
+    image: optomstroy/backup:${BACKUP_TAG:-test}
+    build:
+      context: ./docker/backup
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-optomstroy_test}
+      PGDATABASE: ${POSTGRES_DB:-optomstroy_test}
+      PGPASSWORD_FILE: /run/secrets/pg_password
+      TZ: Asia/Bishkek
+      BACKUP_SCHEDULE: ${BACKUP_SCHEDULE:-0 3 * * *}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+      BACKUP_REMOTE: ""                                         # тестовый контур не выгружает дампы наружу
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}           # публичный ключ age; make test-up создаёт тестовую пару
+    secrets: [ pg_password ]
+    user: "10002:10002"
+    read_only: true
+    tmpfs: [ "/tmp" ]
+    cap_drop: [ "ALL" ]
+    volumes:
+      - backups:/backups
+      - media:/data/media:ro
+    networks: [ edge, backend ]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+networks:
+  edge:
+    name: optomstroy_test_edge
+  backend:
+    name: optomstroy_test_backend
+    internal: true
+
+volumes:
+  pgdata: {}
+  media: {}
+  backups: {}
+  caddy_data: {}
+  caddy_config: {}
+
+secrets:
+  pg_password:          { file: ./secrets/pg_password }
+  database_url:         { file: ./secrets/database_url }
+  db_migrator_password: { file: ./secrets/db_migrator_password }
+  jwt_private.pem:      { file: ./secrets/jwt_private.pem }
+  jwt_public.json:      { file: ./secrets/jwt_public.json }
+  otp_pepper:           { file: ./secrets/otp_pepper }
+  pin_pepper:           { file: ./secrets/pin_pepper }

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ (API 31+): android:allowBackup="false" не отключает перенос device-to-device, поэтому правила
+  явно исключают все домены из облачной копии и из переноса на другое устройство (ревью D-MN-08; 11 SEC —
+  refresh-токен, deviceId, шифртекст biometric_refresh в SharedPreferences, черновики drift не покидают устройство).
+  Ключи Android Keystore не переносятся в любом случае.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

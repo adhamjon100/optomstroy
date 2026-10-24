@@ -1,0 +1,793 @@
+# CI «Оптомстрой POS» (RM-C-011; 13 §3.3, §5.1, §5.3, §6.1; 12 §2.10; CONTRIBUTING.md §6; docs/ci.md).
+# Платформа — GitHub Actions по допущению Q-131 (ведущий вопрос; дубли Q-192, Q-233): место размещения CI и
+# хранилище кода решает заказчик. Раннеры обязательны с этапа C (ядро §20.2 п. 1): Linux с Docker
+# (ubuntu-latest: backend, api-e2e, тестовый контур через docker compose, build-android-debug) и Windows
+# (windows-latest: build-windows и Windows-проверки Flutter).
+# Статусы всех jobs обязательны для merge в main (branch protection — docs/ci.md §2; настраивает владелец репозитория).
+# Этот workflow НИ РАЗУ не запускался: на момент написания нет хранилища кода и раннеров (docs/ci.md §1).
+name: ci
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: "0 21 * * *"          # ежедневно 03:00 Asia/Bishkek — contracts-lint и всё остальное (CONTRIBUTING §6)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Версии инструментов закреплены (13 §3.3 риски: обновление — только владельцем с прогоном CI).
+  NODE_VERSION: "24"
+  PYTHON_VERSION: "3.13"
+  FLUTTER_VERSION: "3.38.7"
+  JAVA_VERSION: "17"
+  REDOCLY_VERSION: "2.59.0"
+  OPENAPI_GENERATOR_IMAGE: openapitools/openapi-generator-cli:v7.26.0
+  OASDIFF_IMAGE: tufin/oasdiff:v1.33.0
+  GITLEAKS_IMAGE: zricethezav/gitleaks:v8.30.1
+  TRIVY_IMAGE: aquasec/trivy:0.75.0
+  PIP_PACKAGES: "jsonschema==4.25.1 PyYAML==6.0.3"
+  # База сравнения для openapi-diff и проверки версий контрактов: PR — base, push — предыдущий коммит.
+  BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+  FORCE_COLOR: "0"
+
+jobs:
+  # -----------------------------------------------------------------------------------------------------------
+  # Контракты: CONTRIBUTING.md §6 шаги 1–18 + проверки ревью этапа B (B-KI-05) + генераторы с пустым diff.
+  # -----------------------------------------------------------------------------------------------------------
+  contracts-lint:
+    name: contracts-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17.10
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust     # одноразовый сервис job-а, доступен только с раннера; пароля нет
+        ports: [ "5432:5432" ]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: pos-api/package-lock.json
+      - name: Зависимости (Python, pos-api)
+        run: |
+          python -m pip install --disable-pip-version-check ${PIP_PACKAGES}
+          npm ci --prefix pos-api --no-audit --no-fund
+
+      - name: "RM-B-003: сборка OpenAPI детерминирована (build_openapi --check)"
+        run: python -I -X utf8 scripts/build_openapi.py --check
+      - name: "Шаг 1: redocly lint pos-api.v1.yaml"
+        run: npx --yes @redocly/cli@${REDOCLY_VERSION} lint contracts/openapi/pos-api.v1.yaml
+      - name: "Шаг 2: пути API"
+        run: python -I -X utf8 scripts/check_api_paths.py -v
+      - name: "Шаг 3: права на эндпоинтах"
+        run: python -I -X utf8 scripts/check_api_permissions.py --require-operations
+      - name: "B-AR-10 (в): словари OpenAPI"
+        run: python -I -X utf8 scripts/check_openapi_dictionaries.py
+      - name: "B-AR-10 (г): треугольник enum (DDL / enums.json / OpenAPI)"
+        run: python -I -X utf8 scripts/check_enum_triangle.py -v
+      - name: "Шаг 4: генерация клиента dart-dio (openapi-generator 7, Java 11+) во временный каталог"
+        run: |
+          out="${RUNNER_TEMP}/dart-dio"
+          mkdir -p "$out"
+          docker run --rm -u "$(id -u):$(id -g)" \
+            -v "${GITHUB_WORKSPACE}/contracts:/contracts:ro" -v "$out:/out" \
+            "${OPENAPI_GENERATOR_IMAGE}" generate \
+            -i /contracts/openapi/pos-api.v1.yaml -g dart-dio -o /out \
+            --additional-properties=pubName=pos_api_client
+          test -f "$out/pubspec.yaml"
+          echo "сгенерировано файлов: $(find "$out" -type f | wc -l)"
+      - name: "Шаг 5: redocly lint контракта 1С"
+        run: npx --yes @redocly/cli@${REDOCLY_VERSION} lint contracts/onec/onec-http-service.v1.yaml
+      - name: "Шаги 6–7: пути 1С и фикстуры"
+        run: python -I -X utf8 scripts/check_onec_paths.py
+      - name: "Шаги 8–9: DDL на postgres:17 (psql) — все pos-api/migrations/*.sql по порядку, состав таблиц dev/test (64) и prod (63), повтор миграций"
+        run: |
+          for db in ci_test ci_prod ci_behavior; do psql -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE $db"; done
+          # Все миграции в лексикографическом порядке (как мигратор src/db/migrator.ts), включая 0003, 0005–0007…
+          mapfile -t MIGRATIONS < <(ls -1 pos-api/migrations/*.sql | LC_ALL=C sort)
+          echo "миграций: ${#MIGRATIONS[@]} — ${MIGRATIONS[*]##*/}"
+          for pass in 1 2; do
+            for f in "${MIGRATIONS[@]}"; do
+              PGOPTIONS='-c app.env=test' psql -v ON_ERROR_STOP=1 -q -d ci_test -f "$f"
+            done
+            PGOPTIONS='-c app.env=test' psql -v ON_ERROR_STOP=1 -q -d ci_test -f pos-api/db/migrations-dev/0001_dev_outbox.sql
+          done
+          PGOPTIONS='-c app.env=test' psql -v ON_ERROR_STOP=1 -q -d ci_test -f scripts/check_tables.sql
+          for f in "${MIGRATIONS[@]}"; do psql -v ON_ERROR_STOP=1 -q -d ci_prod -f "$f"; done
+          psql -v ON_ERROR_STOP=1 -q -d ci_prod -f scripts/check_tables.sql
+      - name: "B-AR-10 (б): поведение DDL (60 негативных сценариев + инварианты)"
+        run: |
+          for f in $(ls -1 pos-api/migrations/*.sql | LC_ALL=C sort); do
+            PGOPTIONS='-c app.env=test' psql -v ON_ERROR_STOP=1 -q -d ci_behavior -f "$f"
+          done
+          PGOPTIONS='-c app.env=test' psql -v ON_ERROR_STOP=1 -q -d ci_behavior -f pos-api/db/migrations-dev/0001_dev_outbox.sql
+          # RM-C-006 п. 7: поведенческие проверки DDL перенесены в pos-api/test/sql/ (ревью C-MJ-05)
+          PGOPTIONS='-c app.env=test' psql -v ON_ERROR_STOP=1 -q -d ci_behavior -f pos-api/test/sql/check_ddl_behavior.sql
+      - name: "AC-DATA-169: DDL dev_outbox нет в миграциях prod-образа (RM-C-006 п. 6)"
+        run: |
+          if grep -nE 'CREATE TABLE.*dev_outbox' pos-api/migrations/*.sql; then
+            echo "::error::DDL dev_outbox в pos-api/migrations/ (prod-образ) — место ему в pos-api/db/migrations-dev/"; exit 1
+          fi
+      - name: "B-AR-10 (а): seed RBAC = permissions.yaml"
+        run: |
+          python -I -X utf8 scripts/gen_rbac_seed.py --check
+          npm run --prefix pos-api check:permissions
+      - name: "Шаг 10: tokens.json по схеме"
+        run: >-
+          python -I -X utf8 -c "import json, jsonschema;
+          jsonschema.Draft202012Validator(json.load(open('contracts/design-tokens/tokens.schema.json', encoding='utf-8'))).validate(json.load(open('contracts/design-tokens/tokens.json', encoding='utf-8')));
+          print('tokens.json: OK')"
+      - name: "Шаг 11: генератор токенов детерминирован"
+        run: |
+          python -I -X utf8 scripts/gen_tokens_dart.py "${RUNNER_TEMP}/tokens_a"
+          python -I -X utf8 scripts/gen_tokens_dart.py "${RUNNER_TEMP}/tokens_b"
+          diff -r "${RUNNER_TEMP}/tokens_a" "${RUNNER_TEMP}/tokens_b"
+      - name: "Шаг 12: контраст"
+        run: python -I -X utf8 scripts/check_contrast.py
+      - name: "Шаг 13: ARB (сборка из ТЗ актуальна, ключи и плейсхолдеры)"
+        run: |
+          python -I -X utf8 scripts/build_arb.py --check
+          python -I -X utf8 scripts/check_arb_keys.py
+          # --strict-coverage включается после закрытия B-KI-06 (тексты error_*/status_* у владельца 03).
+      - name: "Шаг 14: enums.json по схеме и сверка с 07/08"
+        run: |
+          python -I -X utf8 -c "import json, jsonschema; jsonschema.Draft202012Validator(json.load(open('contracts/enums.schema.json', encoding='utf-8'))).validate(json.load(open('contracts/enums.json', encoding='utf-8'))); print('enums.json: OK')"
+          python -I -X utf8 scripts/check_enums.py
+      - name: "Шаг 15: генератор enum-ов детерминирован"
+        run: |
+          python -I -X utf8 scripts/gen_enums.py "${RUNNER_TEMP}/enums_a"
+          python -I -X utf8 scripts/gen_enums.py "${RUNNER_TEMP}/enums_b"
+          diff -r "${RUNNER_TEMP}/enums_a" "${RUNNER_TEMP}/enums_b"
+      - name: "Шаг 16: версия и CHANGELOG изменённых контрактов (13 §5.3 п. 2)"
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        run: |
+          python -I -X utf8 - <<'PY'
+          """Шаг 16 contracts-lint (CONTRIBUTING.md §3–§4; 13 §5.3 п. 2): у изменённого контракта поднята версия, а в его
+          CHANGELOG.md есть запись с новой версией. Новые файлы и первый коммит контракта пропускаются."""
+          import json, os, re, subprocess, sys
+          import yaml
+
+          CONTRACTS = {  # путь: (как читать версию, CHANGELOG)
+              "contracts/openapi/pos-api.v1.yaml": ("yaml:info.version", "contracts/openapi/CHANGELOG.md"),
+              "contracts/onec/onec-http-service.v1.yaml": ("yaml:info.version", "contracts/onec/CHANGELOG.md"),
+              "contracts/onec/odata-allowlist.yaml": ("yaml:version", "contracts/onec/CHANGELOG.md"),
+              "contracts/enums.json": ("json:version", "contracts/CHANGELOG.md"),
+              "contracts/design-tokens/tokens.json": ("json:meta.version", "contracts/design-tokens/CHANGELOG.md"),
+              "contracts/rbac/permissions.yaml": ("yaml:version", "contracts/rbac/CHANGELOG.md"),
+          }
+
+          def git(*args):
+              r = subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8")
+              return r.returncode, r.stdout
+
+          def version_of(text, how):
+              kind, path = how.split(":", 1)
+              data = yaml.safe_load(text) if kind == "yaml" else json.loads(text)
+              for part in path.split("."):
+                  data = (data or {}).get(part)
+              return None if data is None else str(data)
+
+          def key(v):
+              return tuple(int(x) for x in re.findall(r"\d+", v)) if v else ()
+
+          base = os.environ.get("BASE_SHA", "")
+          if not base or set(base) == {"0"} or git("cat-file", "-e", f"{base}^{{commit}}")[0] != 0:
+              print(f"база сравнения недоступна ({base or 'пусто'}) — шаг 16 пропущен")
+              sys.exit(0)
+          errors = []
+          for path, (how, changelog) in CONTRACTS.items():
+              code_old, old = git("show", f"{base}:{path}")
+              if code_old != 0:
+                  print(f"{path}: в базе нет — новый контракт, проверка версии не требуется")
+                  continue
+              if not os.path.exists(path):
+                  errors.append(f"{path}: удалён (breaking в R1 запрещён — 13 §5.3 п. 5)")
+                  continue
+              new = open(path, encoding="utf-8").read()
+              if new == old:
+                  continue
+              try:
+                  v_old, v_new = version_of(old, how), version_of(new, how)
+              except Exception as exc:  # битый YAML/JSON — понятная ошибка вместо трассировки
+                  errors.append(f"{path}: не удалось прочитать версию ({type(exc).__name__})")
+                  continue
+              if key(v_new) <= key(v_old):
+                  errors.append(f"{path}: изменён, но версия не поднята ({v_old} → {v_new})")
+                  continue
+              log = open(changelog, encoding="utf-8").read() if os.path.exists(changelog) else ""
+              if not re.search(rf"(^|[^0-9.]){re.escape(v_new)}([^0-9.]|$)", log):
+                  errors.append(f"{path}: версия {v_new}, но в {changelog} нет записи с этой версией")
+              else:
+                  print(f"{path}: {v_old} → {v_new}, запись в {changelog} есть — OK")
+          for e in errors:
+              print(f"::error::{e}")
+          print("шаг 16: " + ("OK" if not errors else f"нарушений {len(errors)}"))
+          sys.exit(1 if errors else 0)
+          PY
+      - name: "Шаг 17: копии контрактов в pos-app"
+        run: python -I -X utf8 scripts/sync_contracts.py --check
+      - name: "Шаг 18: .env.example = 16 §4.3 и ключи схемы pos-api"
+        run: python -I -X utf8 scripts/check_env_example.py
+      - name: "RM-C-001: структура репозитория = docs/repo_layout.md"
+        run: python -I -X utf8 scripts/check_repo_layout.py
+      - name: "Генераторы: повторная генерация (make gen) даёт пустой diff"
+        run: |
+          make gen PYTHON=python
+          changes="$(git status --porcelain --untracked-files=all -- contracts pos-api/src pos-api/migrations pos-app/lib)"
+          if [ -n "$changes" ]; then
+            echo "::error::make gen изменил файлы — закоммитьте результат генерации (13 §5.3 п. 3):"
+            echo "$changes"
+            git --no-pager diff --stat
+            exit 1
+          fi
+          echo "генераторы: пустой diff"
+
+  # -----------------------------------------------------------------------------------------------------------
+  # Backend: lint (tsc + ESLint + Prettier), циклы, сборка, unit-тесты с покрытием (12 C-09, C-10).
+  # -----------------------------------------------------------------------------------------------------------
+  api-lint-test:
+    name: api-lint-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: pos-api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: pos-api/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Lint (tsc --noEmit, ESLint, Prettier --check)
+        run: npm run lint
+      - name: Циклы импортов (madge --circular)
+        run: npm run madge
+      - name: Сборка
+        run: npm run build
+      - name: Unit-тесты с покрытием (lcov)
+        run: >-
+          npx vitest run --coverage.enabled --coverage.provider=v8
+          --coverage.reporter=lcov --coverage.reporter=text-summary
+          --coverage.include='src/**/*.ts' --coverage.exclude='src/**/*.spec.ts'
+          --coverage.reportsDirectory=coverage
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: api-coverage
+          path: pos-api/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14
+
+  # -----------------------------------------------------------------------------------------------------------
+  # Backend: интеграционные наборы на embedded PostgreSQL 17 (linux-x64) — все наборы `npm run test:all` одним
+  # запуском с объединённым покрытием (lcov → coverage-gate), затем пороги этапа E (RM-E-012 п. 3: sync + catalog
+  # ≥ 80 %, каждый каталог ≥ 75 % — vitest.config.cov-e.ts). Ревью E-trace-5: раньше CI запускал только unit и e2e.
+  # -----------------------------------------------------------------------------------------------------------
+  api-integration:
+    name: api-integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: pos-api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: pos-api/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: "Все наборы (unit, e2e, embedded PG17: sync, sync-apply, catalog, catalog-sync, search, images, favorites, onec, …) с покрытием"
+        run: npm run test:cov:all
+      - name: "RM-E-012 п. 3: покрытие этапа E (sync, catalog, integrations/onec, customers/favorites) — пороги 80/75 %"
+        run: npm run test:cov:e
+      - name: "MNY-002: запрет плавающей точки в деньгах и количествах (pos-api/src)"
+        working-directory: .
+        run: bash scripts/check_no_double_money.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: api-integration-coverage
+          path: pos-api/coverage/all/lcov.info
+          if-no-files-found: error
+          retention-days: 14
+
+  # -----------------------------------------------------------------------------------------------------------
+  # Backend e2e на сервисе postgres:17 (12 C-11, C-13): все test/e2e/**/*.e2e-spec.ts, включая smoke в режиме
+  # «в процессе» (E2E_DATABASE_URL); health-e2e использует embedded PostgreSQL 17 (linux-x64).
+  # -----------------------------------------------------------------------------------------------------------
+  api-e2e:
+    name: api-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17.10
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: [ "5432:5432" ]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: pos-api
+    env:
+      E2E_DATABASE_URL: postgres://postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: pos-api/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: e2e (vitest.config.e2e.ts)
+        run: npm run test:e2e
+
+  # -----------------------------------------------------------------------------------------------------------
+  # Тестовый контур (RM-C-012) на Linux-раннере с Docker: docker version, сборка образов, migrate, up -d,
+  # проверки контура и smoke через Caddy. Требование журнала RM-C-011 п. 4 (Linux).
+  # -----------------------------------------------------------------------------------------------------------
+  test-contour:
+    name: test-contour
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: pos-api/package-lock.json
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: docker version / docker compose version
+        run: |
+          docker version
+          docker compose version
+      - name: compose.test.yml — статическая проверка (ports только у caddy, internal-сеть, секреты файлами)
+        run: |
+          python -m pip install --disable-pip-version-check ${PIP_PACKAGES}
+          python -I -X utf8 infra/docker/scripts/check_compose_test.py infra/compose.test.yml
+      - name: "make test-up (секреты → build → migrate → docker compose -f infra/compose.test.yml up -d)"
+        run: make test-up PYTHON=python
+      - name: "make test-check (compose config: ports; check_tables; повтор migrate; backup once)"
+        run: make test-check PYTHON=python
+      - name: "make test-smoke (npm run test:e2e -- smoke через Caddy)"
+        run: |
+          npm ci --prefix pos-api --no-audit --no-fund
+          make test-smoke
+      - name: Журналы контура при ошибке
+        if: failure()
+        run: |
+          mkdir -p "${RUNNER_TEMP}/contour-logs"
+          docker compose -f infra/compose.test.yml ps -a | tee "${RUNNER_TEMP}/contour-logs/ps.txt"
+          docker compose -f infra/compose.test.yml logs --no-color > "${RUNNER_TEMP}/contour-logs/compose.log" 2>&1 || true
+          tail -n 300 "${RUNNER_TEMP}/contour-logs/compose.log"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: test-contour-logs
+          path: ${{ runner.temp }}/contour-logs
+          retention-days: 7
+      - name: make test-down
+        if: always()
+        run: make test-down
+
+  # -----------------------------------------------------------------------------------------------------------
+  # openapi-diff (13 §5.1, §5.3 п. 3; 12 C-12): breaking-изменения контракта относительно базы → красный.
+  # Сверка экспорта Nest (/openapi.json) с контрактом — отчёт (до реализации эндпоинтов этапов D–G экспорт —
+  # подмножество контракта); блокирующей становится по решению BE (docs/ci.md §6).
+  # -----------------------------------------------------------------------------------------------------------
+  openapi-diff:
+    name: openapi-diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Контракт против базы (oasdiff breaking --fail-on ERR)
+        run: |
+          spec=contracts/openapi/pos-api.v1.yaml
+          if [ -z "${BASE_SHA}" ] || [ "${BASE_SHA}" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${BASE_SHA}:${spec}" 2>/dev/null; then
+            echo "::notice::в базе (${BASE_SHA:-нет}) нет ${spec} — сравнивать не с чем (первое появление контракта)"
+            exit 0
+          fi
+          mkdir -p "${RUNNER_TEMP}/oas"
+          git show "${BASE_SHA}:${spec}" > "${RUNNER_TEMP}/oas/base.yaml"
+          cp "$spec" "${RUNNER_TEMP}/oas/revision.yaml"
+          docker run --rm -v "${RUNNER_TEMP}/oas:/oas:ro" "${OASDIFF_IMAGE}" changelog /oas/base.yaml /oas/revision.yaml || true
+          docker run --rm -v "${RUNNER_TEMP}/oas:/oas:ro" "${OASDIFF_IMAGE}" breaking /oas/base.yaml /oas/revision.yaml --fail-on ERR
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: pos-api/package-lock.json
+      - name: Экспорт /openapi.json из pos-api (без БД)
+        working-directory: pos-api
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          APP_ENV=dev MIN_APP_VERSION='android=0.1.0,windows=0.1.0' OPENAPI_PUBLIC=true LOG_LEVEL=warn \
+            DATABASE_URL='postgres://ci@127.0.0.1:1/none' node dist/main.js > "${RUNNER_TEMP}/api.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/openapi.json -o "${RUNNER_TEMP}/export.json"; then break; fi
+            sleep 1
+          done
+          kill %1 || true
+          test -s "${RUNNER_TEMP}/export.json" || { cat "${RUNNER_TEMP}/api.log"; exit 1; }
+          echo "экспорт: $(wc -c < "${RUNNER_TEMP}/export.json") байт"
+      - name: "Экспорт ↔ контракт: реализованное не расходится с контрактом (отчёт, этап C)"
+        continue-on-error: true
+        run: |
+          mkdir -p "${RUNNER_TEMP}/oas2"
+          cp "${RUNNER_TEMP}/export.json" "${RUNNER_TEMP}/oas2/export.json"
+          cp contracts/openapi/pos-api.v1.yaml "${RUNNER_TEMP}/oas2/contract.yaml"
+          # Контракт как «новая версия» экспорта: breaking = реализованная операция несовместима с контрактом
+          # или реализовано то, чего в контракте нет.
+          docker run --rm -v "${RUNNER_TEMP}/oas2:/oas:ro" "${OASDIFF_IMAGE}" breaking /oas/export.json /oas/contract.yaml --fail-on ERR \
+            | tee "${RUNNER_TEMP}/export-vs-contract.txt"
+
+  # -----------------------------------------------------------------------------------------------------------
+  # Flutter: генерация актуальна (12 C-07), анализ, правила слоёв, unit/widget-тесты с покрытием (12 C-04).
+  # -----------------------------------------------------------------------------------------------------------
+  app-analyze-test:
+    name: app-analyze-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: pos-app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Копии контрактов (ARB) идентичны contracts/
+        working-directory: .
+        run: python -I -X utf8 scripts/sync_contracts.py --check
+      - run: flutter pub get
+      - name: Кодогенерация актуальна (build_runner + gen-l10n → пустой diff)
+        run: |
+          dart run build_runner build --delete-conflicting-outputs
+          flutter gen-l10n
+          changes="$(git status --porcelain --untracked-files=all -- .)"
+          if [ -n "$changes" ]; then echo "::error::сгенерированный код pos-app не закоммичен:"; echo "$changes"; exit 1; fi
+      - name: flutter analyze (включая riverpod_lint)
+        run: flutter analyze
+      - name: Правила слоёв (scripts/check_layers.py)
+        working-directory: .
+        run: |
+          python -I -X utf8 scripts/check_layers.py --self-test
+          python -I -X utf8 scripts/check_layers.py
+      - name: Запрет double в деньгах и количествах (13 §6.1 п. 7; 12 C-08, T-MNY-030)
+        working-directory: .
+        run: bash scripts/check_no_double_money.sh
+      - name: Тесты с покрытием (без golden)
+        run: flutter test --coverage --exclude-tags golden
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: app-coverage
+          path: pos-app/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14
+
+  # -----------------------------------------------------------------------------------------------------------
+  # Golden-тесты (12 C-05; DS-078): `flutter test --tags golden`, 0 расхождений.
+  # -----------------------------------------------------------------------------------------------------------
+  app-golden:
+    name: app-golden
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: pos-app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Есть ли golden-тесты
+        run: |
+          if ! grep -rlE "@Tags\(\[[^]]*'golden'|tags: *\[?[^]]*'golden'|tags: *'golden'" test >/dev/null 2>&1; then
+            echo "::error::golden-тестов (тег golden) нет — их добавляет RM-C-003 (design_system); пустой набор не засчитывается"
+            exit 1
+          fi
+      - name: flutter test --tags golden
+        run: flutter test --tags golden
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: golden-failures
+          path: pos-app/test/**/failures/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # -----------------------------------------------------------------------------------------------------------
+  # Сборка Windows (Windows-раннер обязателен, ядро §20.2 п. 1; RM-C-011 п. 4: `flutter build windows --release`).
+  # ATL (flutter_secure_storage) входит в образ windows-latest (VS 2022 Enterprise) — docs/ci.md §7.
+  # -----------------------------------------------------------------------------------------------------------
+  build-windows:
+    name: build-windows
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: pos-app
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter config --enable-windows-desktop
+      - run: flutter pub get
+      - name: Windows-проверки Flutter (unit/widget без golden)
+        run: flutter test --exclude-tags golden
+      - name: flutter build windows --release
+        run: |
+          flutter build windows --release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem build/windows/x64/runner/Release | Select-Object Name, Length
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pos-app-windows-release
+          path: pos-app/build/windows/x64/runner/Release/
+          if-no-files-found: error
+          retention-days: 14
+
+  # -----------------------------------------------------------------------------------------------------------
+  # Сборка Android debug (Linux-раннер). Лицензии Android SDK на раннере GitHub уже приняты владельцем образа;
+  # на машине разработки заказчика — не приняты (docs/ci.md §7), там сборка не выполняется.
+  # -----------------------------------------------------------------------------------------------------------
+  build-android-debug:
+    name: build-android-debug
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: pos-app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: flutter build apk --debug
+        run: flutter build apk --debug
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pos-app-android-debug
+          path: pos-app/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  # -----------------------------------------------------------------------------------------------------------
+  # Секреты в репозитории и истории (12 C-15; T-SEC-037): gitleaks + scripts/check_secrets.py.
+  # -----------------------------------------------------------------------------------------------------------
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: gitleaks detect (вся история, значения скрыты)
+        run: |
+          docker run --rm -u "$(id -u):$(id -g)" -v "${GITHUB_WORKSPACE}:/repo" "${GITLEAKS_IMAGE}" \
+            detect --source /repo --redact --verbose --exit-code 1 --no-banner
+      - name: scripts/check_secrets.py (самопроверка шаблонов и файлы git)
+        run: |
+          python -I -X utf8 scripts/check_secrets.py --self-test
+          python -I -X utf8 scripts/check_secrets.py
+
+  # -----------------------------------------------------------------------------------------------------------
+  # Тесты безопасности класса A (11 SEC-126; 12 §2.10, T-SEC-054, T-SEC-062) — гейт слияния.
+  # Состав на этапе C: backend-тесты защитных механизмов common/* и всё, что помечено `.security.` в имени файла
+  # (backend) или тегом `security-a` (Flutter); npm audit prod-зависимостей; Trivy образа api; статические
+  # проверки proxy и контура. Наборы T-SEC этапов D–G добавляются по той же конвенции (docs/ci.md §6).
+  # -----------------------------------------------------------------------------------------------------------
+  security-class-a:
+    name: security-class-a
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: pos-api/package-lock.json
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: npm ci --prefix pos-api --no-audit --no-fund
+      - name: "Backend: защитные механизмы (redaction логов, RBAC deny-by-default, read-only, идемпотентность, конфиг prod, версия клиента)"
+        working-directory: pos-api
+        run: npx vitest run logging_redaction rbac read-only idempotency app-config app-version security
+      - name: "Backend e2e класса A (файлы *.security.e2e-spec.ts)"
+        working-directory: pos-api
+        run: npx vitest run --config ./vitest.config.e2e.ts security --passWithNoTests
+      - name: "T-SEC-054: npm audit prod-зависимостей (high/critical → красный)"
+        working-directory: pos-api
+        run: |
+          npm audit --omit=dev --audit-level=high
+          npm audit --audit-level=high || echo "::warning::есть high/critical в dev-зависимостях — не блокирует (не попадают в образ)"
+      - name: "16 §4.6, DEPLOY-049: Caddyfile без директив аутентификации; compose — секреты только файлами"
+        run: |
+          if grep -nE '^\s*(basic_?auth|forward_auth|jwtauth|authorize)\b' infra/caddy/Caddyfile; then
+            echo "::error::pos-proxy не должен аутентифицировать/авторизовать (DEPLOY-049)"; exit 1
+          fi
+          python -m pip install --disable-pip-version-check ${PIP_PACKAGES}
+          python -I -X utf8 infra/docker/scripts/check_compose_test.py infra/compose.test.yml
+      - name: "T-SEC-054: Trivy — образ optomstroy/api (HIGH/CRITICAL с исправлением → красный)"
+        run: |
+          docker build -f infra/docker/api/Dockerfile -t optomstroy/api:ci .
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "${TRIVY_IMAGE}" image \
+            --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress optomstroy/api:ci
+      - name: "Trivy config — Dockerfile/compose (отчёт)"
+        continue-on-error: true
+        run: |
+          docker run --rm -v "${GITHUB_WORKSPACE}/infra:/infra:ro" "${TRIVY_IMAGE}" config --exit-code 0 /infra
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: "Flutter: тесты класса A (тег security-a)"
+        working-directory: pos-app
+        run: |
+          if grep -rlE "security-a" test >/dev/null 2>&1; then
+            flutter pub get
+            flutter test --tags security-a
+          else
+            echo "::warning::во Flutter пока нет тестов с тегом security-a (появятся с T-SEC/T-AUTH этапа D)"
+          fi
+
+  # -----------------------------------------------------------------------------------------------------------
+  # coverage-gate (NFR-TEST-001 — гейт R1; 13 §6.1 п. 3; 12 C-04, C-10): ≥ 80 % строк unit-тестами в каждой
+  # группе — pos-app domain/data (12 C-04), pos-api domain/application (12 C-10, 06 §7.12). Группа без строк кода
+  # (этап C — каталоги пусты) не блокирует и печатается явно. Ветвевое покрытие 100 % критичных модулей
+  # (coverage_critical.txt, T-NFR-004) — после появления перечня (docs/ci.md §6).
+  # -----------------------------------------------------------------------------------------------------------
+  coverage-gate:
+    name: coverage-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [ api-lint-test, api-integration, app-analyze-test ]
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: api-coverage
+          path: cov/api
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: api-integration-coverage
+          path: cov/api-int
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: app-coverage
+          path: cov/app
+      - name: domain/data ≥ 80 % строк
+        env:
+          COVERAGE_MIN: "80"
+        run: |
+          python3 -I -X utf8 - cov/api/lcov.info cov/app/lcov.info cov/api-int/lcov.info <<'PY'
+          """coverage-gate: доля покрытых строк по группам domain/data (lcov: строки DA по файлам; пути нормализуются).
+          pos-api — объединение unit и интеграционных наборов (строка покрыта, если покрыта хотя бы в одном отчёте)."""
+          import os, re, sys
+
+          MIN = float(os.environ.get("COVERAGE_MIN", "80"))
+          GENERATED = re.compile(r"(\.g\.dart|\.freezed\.dart|\.gr\.dart|/l10n/app_localizations[^/]*\.dart|"
+                                 r"/common/enums\.ts|permissions\.generated\.ts)$")
+          GROUPS = {
+              # pos-api — области 12 C-10 / 06 §7.12: domain (domain/**, *-state-machine.ts, common/money/**) и
+              # application (*.service.ts модулей D-06)
+              "pos-api domain": (0, re.compile(r"(^|/)(domain/|common/money/)|-state-machine\.ts$")),
+              "pos-api application": (0, re.compile(
+                  r"^src/(auth|registration|profile|catalog|cart|orders|payments|customers|transactions|returns|"
+                  r"sync|admin|notifications)/.*\.service\.ts$")),
+              # pos-app (06 §6; Clean Architecture D-05): features/*/domain, features/*/data, core/* слоя данных
+              "pos-app domain": (1, re.compile(r"^lib/features/[^/]+/domain/|^lib/core/utils/(money|qty)\.dart$")),
+              "pos-app data": (1, re.compile(r"^lib/features/[^/]+/data/|^lib/core/(database|storage|sync)/")),
+          }
+
+          def parse(path, files=None):
+              """Файл → {номер строки: покрыта?} по записям DA (объединение нескольких отчётов — «или»)."""
+              files = {} if files is None else files
+              cur = None
+              for line in open(path, encoding="utf-8"):
+                  line = line.strip()
+                  if line.startswith("SF:"):
+                      cur = line[3:].replace("\\", "/")
+                      m = re.search(r"(?:^|/)((?:src|lib)/.*)$", cur)
+                      cur = m.group(1) if m else cur
+                      files.setdefault(cur, {})
+                  elif line.startswith("DA:") and cur:
+                      no, hits = line[3:].split(",")[:2]
+                      files[cur][int(no)] = files[cur].get(int(no), False) or int(hits) > 0
+                  elif line == "end_of_record":
+                      cur = None
+              return {f: [len(d), sum(1 for v in d.values() if v)] for f, d in files.items()}, files
+
+          api_files = parse(sys.argv[1])[1]
+          api_files = parse(sys.argv[3], api_files)[1]
+          api = {f: [len(d), sum(1 for v in d.values() if v)] for f, d in api_files.items()}
+          sources = [api, parse(sys.argv[2])[0]]
+          failed, rows = [], []
+          for name, (idx, rx) in GROUPS.items():
+              lf = lh = n = 0
+              worst = []
+              for f, (found, hit) in sources[idx].items():
+                  if GENERATED.search(f) or not rx.search(f):
+                      continue
+                  n += 1; lf += found; lh += hit
+                  worst.append((hit / found if found else 1.0, f, hit, found))
+              if lf == 0:
+                  rows.append(f"| {name} | 0 | — | нет кода в группе — не блокирует |")
+                  print(f"::notice::{name}: файлов {n}, строк кода 0 — группа пуста")
+                  continue
+              pct = 100.0 * lh / lf
+              ok = pct >= MIN
+              rows.append(f"| {name} | {n} | {pct:.1f} % ({lh}/{lf}) | {'OK' if ok else 'НИЖЕ ПОРОГА'} |")
+              print(f"{name}: {pct:.1f} % ({lh}/{lf} строк, файлов {n}) — {'OK' if ok else 'ниже ' + str(MIN) + ' %'}")
+              if not ok:
+                  failed.append(name)
+                  for r, f, hit, found in sorted(worst)[:10]:
+                      print(f"   {100 * r:5.1f} %  {f} ({hit}/{found})")
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as s:
+                  s.write(f"### coverage-gate (порог {MIN:.0f} % строк)\n\n| группа | файлов | покрытие | итог |\n|---|---|---|---|\n")
+                  s.write("\n".join(rows) + "\n")
+          for name in failed:
+              print(f"::error::{name}: покрытие ниже {MIN:.0f} % (NFR-TEST-001)")
+          sys.exit(1 if failed else 0)
+          PY

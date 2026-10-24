@@ -1,0 +1,3302 @@
+# =====================================================================================
+# Optomstroy POS API — фрагмент модулей: notifications, sync, admin, health, integrations (RM-B-003)
+# Пути: /notifications*, /sync/*, /admin/*, /health, /health/ready, /openapi.json,
+#       /integrations/onec/* (вариант C-2), /integrations/smspro/dlr. Пути — относительно /api/v1 (servers корня).
+# Источник истины: 08_API_SPECIFICATION v1.9 §4.16–§4.22, §3.13, §3.15, §9; права — 11 §4.3–§4.4;
+# ядро R0 v1.9 §19.2, §22, §23, §24 (приоритет). Общие компоненты — parts/00_root.yaml, правила — ../NOTES.md.
+# Ссылки записаны как в собранном документе (#/components/...). Собственные схемы — с префиксом модуля
+# (Notifications*, Sync*, Admin*, Health*, Integrations*), кроме имён, заданных в 08: AdminUser, AuditRow.
+# R2-элементы (08 §4.20, ядро §19.2, 13 §3.11) не включены: пометка ошибки синхронизации решённой, пауза сущности,
+# экспорт CSV как функция (format=csv в R1 → 403), вебхук банка (вне этого фрагмента).
+#
+# Решения автора фрагмента (по правилу «вариант владельца словаря»; полный перечень — в итоговом отчёте RM-B-003):
+#  1. Ключи файла: openapi/info/paths/components — по постановке задачи; при сборке ключи openapi и info фрагмента
+#     должны отбрасываться (NOTES §1: openapi/info собранного документа — из 00_root.yaml).
+#  2. operationId — <module>_<action> в snake_case по тегу (владелец правила — 08 §8, API-122; NOTES §3 п.2),
+#     а не camelCase из постановки. Права — x-permissions (массив кодов 11 §4.3, NOTES §5 п.1), а не x-permission.
+#  3. Условный step-up (POST /sync/runs: только для запуска по sync.run.full) — security из двух альтернатив
+#     [{bearerAuth}, {bearerAuth + stepUpToken}]; безусловный — только [{bearerAuth + stepUpToken}] (NOTES §3 п.3).
+#  4. Коды ошибок операции перечислены в description операции: ответы ошибок — $ref на общие responses корня,
+#     а OAS 3.0.3 не допускает своё description рядом с $ref.
+#  5. /integrations/onec/*: x-feature-flag ONEC_INBOUND_ENABLED + x-status: proposed (условный элемент C-2, Q-031;
+#     13 §5.4 п.5); Idempotency-Key не используется — идемпотентность по ключам 08 §4.21 (messageNumber и т. п.).
+#     /integrations/smspro/dlr: x-feature-flag SMSPRO_DLR_MODE=push, без x-status (путь канонический, ядро §17.4).
+#  6. AdminUser.rowVersion добавлен (тела PATCH /admin/users/{id} и PUT …/roles требуют rowVersion, в перечне
+#     полей AdminUser 08 §4.18.1 его нет) — замечание владельцу 08.
+#  7. POST /admin/users/{id}/emergency-login-code — без Idempotency-Key (08 §4.18.10: намеренно не идемпотентна).
+# =====================================================================================
+openapi: 3.0.3
+info:
+  title: 'Optomstroy POS API — фрагмент 60: sync, admin, notifications, health, integrations'
+  version: 1.0.0
+paths:
+  /notifications:
+    get:
+      tags: [notifications]
+      operationId: notifications_list
+      summary: Список in-app уведомлений текущего пользователя
+      description: '08 §4.16.1. Только свои уведомления (notifications.read.own — все роли, 08 §9, 11 §4.4). Клиент опрашивает при старте, при
+        возврате в foreground и каждые 60 с (push — R2, Q-036). Ответ — Page<Notification> + unreadCount (бейдж колокольчика). Ошибки: 400 VALIDATION_FAILED
+        (неизвестный kind, limit > 100, подделанный cursor); 401; 403 FORBIDDEN (токен integration). Аудит не пишется.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - name: unread
+        in: query
+        required: false
+        description: Только непрочитанные.
+        schema:
+          type: boolean
+      - name: kind
+        in: query
+        required: false
+        description: Фильтр по видам (значения notification_kind 07 §6.1) через запятую; неизвестное значение → VALIDATION_FAILED.
+        style: form
+        explode: false
+        schema:
+          type: array
+          maxItems: 50
+          items: {$ref: '#/components/schemas/NotificationKind'}
+      - name: since
+        in: query
+        required: false
+        description: Только уведомления, созданные после момента (UTC) — для инкрементального опроса.
+        schema:
+          type: string
+          format: date-time
+      - name: limit
+        in: query
+        required: false
+        description: 'Размер страницы 1…100 (08 §4.16.1: limit ≤ 100); > 100 → VALIDATION_FAILED.'
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page<Notification> + unreadCount.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                - {$ref: '#/components/schemas/Page'}
+                - type: object
+                  required: [unreadCount]
+                  properties:
+                    items:
+                      type: array
+                      items: {$ref: '#/components/schemas/Notification'}
+                    unreadCount:
+                      type: integer
+                      minimum: 0
+                      description: Число непрочитанных уведомлений пользователя (бейдж).
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [notifications.read.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+  /notifications/{id}/read:
+    post:
+      tags: [notifications]
+      operationId: notifications_read
+      summary: Отметить уведомление прочитанным
+      description: '08 §4.16.2. Повтор идемпотентен: 200 с текущим unreadCount. Тела запроса нет. Ошибки: 401; 403 FORBIDDEN (токен integration);
+        404 NOT_FOUND — чужое или несуществующее уведомление. Аудит не пишется.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdempotencyKeyOptional'}
+      - {$ref: '#/components/parameters/IdPath'}
+      responses:
+        '200':
+          description: Уведомление прочитано; текущее число непрочитанных.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+            Idempotent-Replayed: {$ref: '#/components/headers/IdempotentReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationsUnreadCount'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [notifications.read.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: true
+      x-rate-limit-group: RL-READ
+  /notifications/read-all:
+    post:
+      tags: [notifications]
+      operationId: notifications_read_all
+      summary: Отметить все уведомления прочитанными
+      description: '08 §4.16.2. Повтор идемпотентен: 200 с текущим unreadCount (0). Тела запроса нет. Ошибки: 401; 403 FORBIDDEN (токен integration).
+        Аудит не пишется.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdempotencyKeyOptional'}
+      - name: before
+        in: query
+        required: false
+        description: >-
+          Отметить прочитанными только свои непрочитанные уведомления с createdAt ≤ before (UTC ISO-8601) — «до момента»
+          офлайн-действия пользователя (08 §4.16.2 «Уточнения», FQ-NOTIF-04; 07 §11.2 формат notification.read). Без параметра
+          отмечаются все непрочитанные на момент обработки; неверный формат — 400 VALIDATION_FAILED. Добавлено в 1.2.0.
+        schema: {type: string, format: date-time}
+      responses:
+        '200':
+          description: Все уведомления прочитаны; текущее число непрочитанных.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+            Idempotent-Replayed: {$ref: '#/components/headers/IdempotentReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationsUnreadCount'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [notifications.read.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: true
+      x-rate-limit-group: RL-READ
+  /sync/status:
+    get:
+      tags: [sync]
+      operationId: sync_status_get
+      summary: Состояние синхронизации с 1С по сущностям
+      description: '08 §4.17.1, §3.13. SCR-43 и индикатор SyncIndicator. Глубина ответа по коду права (field-level allowlist, 08 §3.13): sync.status.read
+        (все staff) — краткий ответ: overall, onecReachable, checkedAt, entities[].entity/lastSuccessAt/isStale/ageSec/consecutiveErrors, outbox.failed/outbox.dead
+        (баннер «Документы не дошли до 1С»; правило overall — 05 §7.6.1); sync.runs.read (senior_seller, admin, owner) — полный ответ: дополнительно
+        counts, outbox.pending, pendingManualOrders, entities[].lastErrorAt/paused, lastRunAt, running, runId, nextRunAt, intervalSec. Поля, не
+        разрешённые роли, отсутствуют. Ошибки: 401; 403 FORBIDDEN (customer, integration). Аудит не пишется.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      responses:
+        '200':
+          description: SyncStatus (краткий или полный — по праву).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control:
+              description: 'Политика кэширования операции: private, max-age=15 (08 §2.8, карточка §4).'
+              schema:
+                type: string
+                example: private, max-age=15
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SyncStatus'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [sync.status.read, sync.runs.read]
+      x-roles: [seller, cashier, senior_seller, admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+  /sync/runs:
+    post:
+      tags: [sync]
+      operationId: sync_runs_create
+      summary: Ручной запуск синхронизации сущности
+      description: '08 §4.17.2, ядро §17.2, §22.8; 11 №42, №42a. sync.run.incremental.limited (senior_seller, admin, owner) — только mode=incremental
+        для entity ∈ stock, prices, order_status, без step-up; любой иной запуск (mode ∈ full, reconcile или entity вне stock/prices/order_status,
+        в т. ч. incremental для customers, receivables) — sync.run.full (admin, owner) со step-up (X-Step-Up-Token, operation sync.run.full).
+        Значение mode=manual присваивается прогону сервером и в теле не принимается. Job pg-boss singleton; в режиме расширения — одно задание
+        onec.changes по плану обмена (ядро §22.8). Вариант C-2 (ONEC_INBOUND_ENABLED=true): ручной запуск недоступен для любой сущности и роли
+        → 422 VALIDATION_FAILED rule inbound_mode. Ошибки: 400 VALIDATION_FAILED (entity вне sync_entity, mode вне incremental|full|reconcile,
+        idempotency_key_required); 401; 403 FORBIDDEN (нет права), STEP_UP_REQUIRED (любой запуск по sync.run.full без токена); 409 SYNC_ALREADY_RUNNING
+        (runId), IDEMPOTENCY_IN_PROGRESS; 422 VALIDATION_FAILED rule inbound_mode, IDEMPOTENCY_KEY_REUSED; 429 RATE_LIMITED (RL-ADMIN: 10 / 10
+        мин на сущность). Аудит sync.manual_started (entity, mode, scope).'
+      security:
+      - bearerAuth: []
+      - bearerAuth: []
+        stepUpToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdempotencyKey'}
+      - {$ref: '#/components/parameters/StepUpToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SyncRunsCreateRequest'}
+      responses:
+        '202':
+          description: 'Прогон поставлен в очередь: SyncRun (status=queued); Location: /api/v1/sync/runs/{id}.'
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+            Location: {$ref: '#/components/headers/Location'}
+            Idempotent-Replayed: {$ref: '#/components/headers/IdempotentReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SyncRun'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [sync.run.incremental.limited, sync.run.full]
+      x-roles: [senior_seller, admin, owner]
+      x-step-up: true
+      x-step-up-operation: [sync.run.full]
+      x-idempotent: required
+      x-rate-limit-group: RL-ADMIN
+      x-feature-flag: ONEC_INBOUND_ENABLED=false
+    get:
+      tags: [sync]
+      operationId: sync_runs_list
+      summary: История прогонов синхронизации
+      description: '08 §4.17.2. sync.runs.read (senior_seller, admin, owner; 11 §4.4). Ответ — Page<SyncRun>. Ошибки: 400 VALIDATION_FAILED (entity/status
+        вне enum, date_range, limit > 200, cursor); 401; 403 FORBIDDEN.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - name: entity
+        in: query
+        required: false
+        description: Фильтр по сущности (sync_entity 07 §6.1).
+        schema: {$ref: '#/components/schemas/SyncEntity'}
+      - name: status
+        in: query
+        required: false
+        description: Фильтр по статусу прогона (sync_run_status 07 §6.1).
+        schema: {$ref: '#/components/schemas/SyncRunStatus'}
+      - {$ref: '#/components/parameters/From'}
+      - {$ref: '#/components/parameters/To'}
+      - {$ref: '#/components/parameters/Limit'}
+      - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page<SyncRun>.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                - {$ref: '#/components/schemas/Page'}
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items: {$ref: '#/components/schemas/SyncRun'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [sync.runs.read]
+      x-roles: [senior_seller, admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+  /sync/runs/{id}:
+    get:
+      tags: [sync]
+      operationId: sync_runs_get
+      summary: Прогон синхронизации
+      description: '08 §4.17.2. sync.runs.read (senior_seller, admin, owner). Ошибки: 401; 403 FORBIDDEN; 404 NOT_FOUND.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdPath'}
+      responses:
+        '200':
+          description: SyncRun.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SyncRun'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [sync.runs.read]
+      x-roles: [senior_seller, admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+  /sync/runs/{id}/errors:
+    get:
+      tags: [sync]
+      operationId: sync_runs_errors_list
+      summary: Ошибки прогона синхронизации
+      description: '08 §4.17.2, §2.4 (коды журнала синхронизации), §3.13. sync.runs.read (senior_seller, admin, owner). Ответ — Page<SyncRunError>;
+        errorCode — значение sync_errors.error_code (14 кодов журнала, НЕ Problem.code). Пометка ошибки решённой и пауза сущности — R2 (Q-219,
+        ядро §19.2): операций нет, resolvedAt только читается. Ошибки: 400 VALIDATION_FAILED (limit, cursor); 401; 403 FORBIDDEN; 404 NOT_FOUND
+        (прогон).'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdPath'}
+      - {$ref: '#/components/parameters/Limit'}
+      - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page<SyncRunError>.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                - {$ref: '#/components/schemas/Page'}
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items: {$ref: '#/components/schemas/SyncRunError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [sync.runs.read]
+      x-roles: [senior_seller, admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+  /sync/outbox:
+    get:
+      tags: [sync]
+      operationId: sync_outbox_list
+      summary: Очередь документов «в 1С» (outbox)
+      description: '08 §4.17.3; ядро §22.1, §22.10 (одна торговая точка в R1, Q-274). sync.outbox.manage: admin и senior_seller — все элементы,
+        фильтров «свой магазин» нет. Ответ — Page<OutboxItem>; статусы — автомат outbox_status (07 §6.5). Ошибки: 400 VALIDATION_FAILED (status/aggregateType
+        вне enum, limit, cursor); 401; 403 FORBIDDEN.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - name: status
+        in: query
+        required: false
+        description: Статусы через запятую (outbox_status 07 §6.1); по умолчанию failed,dead.
+        style: form
+        explode: false
+        schema:
+          type: array
+          maxItems: 50
+          items: {$ref: '#/components/schemas/OutboxStatus'}
+          default: [failed, dead]
+      - name: aggregateType
+        in: query
+        required: false
+        description: Тип агрегата (outbox_aggregate 07 §6.1).
+        schema: {$ref: '#/components/schemas/OutboxAggregate'}
+      - {$ref: '#/components/parameters/Limit'}
+      - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page<OutboxItem>.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                - {$ref: '#/components/schemas/Page'}
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items: {$ref: '#/components/schemas/OutboxItem'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [sync.outbox.manage]
+      x-roles: [senior_seller, admin]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+  /sync/outbox/{id}/retry:
+    post:
+      tags: [sync]
+      operationId: sync_outbox_retry
+      summary: Повторить отправку элемента outbox в 1С
+      description: '08 §4.17.3; ядро §22.1, §22.10, §19.4. Ручной повтор только failed/dead → pending (attempts сбрасывается, nextAttemptAt=now);
+        внешний ключ для 1С — тот же externalId (дубль невозможен, POS_E_DUPLICATE → sent). admin и senior_seller — все элементы, без step-up
+        (это повтор отправки, а не запуск синхронизации). Тела запроса нет. Ошибки: 400 VALIDATION_FAILED (idempotency_key_required); 401; 403
+        FORBIDDEN; 404 NOT_FOUND; 409 ORDER_STATE_INVALID (resource: outbox_item; reason: already_delivered — sent/confirmed, withdrawn — cancelled,
+        in_progress — sending, invalid_transition — pending), IDEMPOTENCY_IN_PROGRESS; 422 IDEMPOTENCY_KEY_REUSED. Аудит outbox.retried (актор,
+        элемент, прежний статус).'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdempotencyKey'}
+      - {$ref: '#/components/parameters/IdPath'}
+      responses:
+        '202':
+          description: 'Элемент возвращён в очередь: OutboxItem (status=pending, nextAttemptAt=now).'
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+            Idempotent-Replayed: {$ref: '#/components/headers/IdempotentReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OutboxItem'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [sync.outbox.manage]
+      x-roles: [senior_seller, admin]
+      x-step-up: false
+      x-idempotent: required
+      x-rate-limit-group: RL-ADMIN
+  /admin/users:
+    get:
+      tags: [admin]
+      operationId: admin_users_list
+      summary: Список пользователей (сотрудники и клиенты)
+      description: '08 §4.18.1. users.read (admin, owner). Ответ — Page<AdminUser>. Ошибки: 400 VALIDATION_FAILED (role/status/kind вне enum,
+        limit, cursor); 401; 403 FORBIDDEN. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18).
+        Cache-Control: no-store.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/Q'}
+      - name: role
+        in: query
+        required: false
+        description: Фильтр по роли (role_code 07 §6.1).
+        schema: {$ref: '#/components/schemas/RoleCode'}
+      - name: status
+        in: query
+        required: false
+        description: Фильтр по статусу пользователя (user_status 07 §6.1).
+        schema: {$ref: '#/components/schemas/UserStatus'}
+      - name: kind
+        in: query
+        required: false
+        description: Фильтр по виду учётной записи (user_kind 07 §6.1).
+        schema: {$ref: '#/components/schemas/UserKind'}
+      - {$ref: '#/components/parameters/Limit'}
+      - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page<AdminUser>.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                - {$ref: '#/components/schemas/Page'}
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items: {$ref: '#/components/schemas/AdminUser'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [users.read]
+      x-roles: [admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+    post:
+      tags: [admin]
+      operationId: admin_users_create
+      summary: Создать сотрудника (приглашение по телефону)
+      description: '08 §4.18.1; ядро §24.2 (сотрудники не регистрируются сами), 11 §4.3 №50, SEC-033. Создаёт user_invitations (телефон → роли);
+        если пользователь с этим телефоном уже pending_activation — сразу активирует его с ролями приглашения (каноническая операция активации:
+        active, kind=staff; аудит user.activated + user.role_changed). Только admin, step-up (operation users.manage). Персональные лимит скидки
+        и склады в R1 не задаются: discountLimitPercent, warehouseIds в теле → VALIDATION_FAILED rule forbidden_field. Ошибки: 400 VALIDATION_FAILED
+        (схема, forbidden_field, idempotency_key_required); 401; 403 FORBIDDEN (reason: owner_role_reserved — roles содержит owner, 11 SEC-040;
+        reason: role_not_invitable — роль вне seller, cashier, senior_seller, например admin, 08 §4.18.4 «Уточнения» п. 1), STEP_UP_REQUIRED;
+        409 PHONE_ALREADY_REGISTERED (уже активный пользователь — использовать PUT /admin/users/{id}/roles; reason: customer_account — номер
+        действующего customer, клиент приглашением в сотрудники не переводится, 08 §4.18.4 п. 2, 11 SEC-136 п. 4, Q-312), IDEMPOTENCY_IN_PROGRESS;
+        422 VALIDATION_FAILED (roles содержит integration — ядро §18.2 п.4; rule max_items — в roles больше одной роли; rule required — нет fullName;
+        08 §4.18.4 п. 3), IDEMPOTENCY_KEY_REUSED. Аудит user.invited, user.activated (если
+        был pending_activation). Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control:
+        no-store. Ответ 201 (08 §4.18.4 «Уточнения» п. 4; ADR-097, контракт 1.1.0): номер pending_activation — AdminUser (активация) и
+        Location /api/v1/admin/users/{id}; номер без учётной записи — строка users заранее не создаётся (её создаёт первый OTP-вход, 07 DATA-102),
+        ответ — Invitation и Location /api/v1/admin/invitations/{id}. Клиент различает ветки по форме ответа (у Invitation нет kind)
+        или по Location.'
+      security:
+      - bearerAuth: []
+        stepUpToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdempotencyKey'}
+      - {$ref: '#/components/parameters/StepUpToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminUsersCreateRequest'}
+      responses:
+        '201':
+          description: 'Создано (08 §4.18.4 «Уточнения» п. 4): AdminUser — пользователь pending_activation активирован с ролями приглашения;
+            Invitation — номер без учётной записи, создано приглашение (users не создаётся до первого OTP-входа). Location — URI созданного ресурса.'
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+            Idempotent-Replayed: {$ref: '#/components/headers/IdempotentReplayed'}
+            Location: {$ref: '#/components/headers/Location'}
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - {$ref: '#/components/schemas/AdminUser'}
+                - {$ref: '#/components/schemas/Invitation'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [users.manage]
+      x-roles: [admin]
+      x-step-up: true
+      x-step-up-operation: [users.manage]
+      x-idempotent: required
+      x-rate-limit-group: RL-ADMIN
+  /admin/users/{id}:
+    get:
+      tags: [admin]
+      operationId: admin_users_get
+      summary: Карточка пользователя
+      description: '08 §4.18.1. users.read (admin, owner). Ошибки: 401; 403 FORBIDDEN; 404 NOT_FOUND. Все операции модуля admin — permission по
+        08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdPath'}
+      responses:
+        '200':
+          description: AdminUser.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminUser'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [users.read]
+      x-roles: [admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+    patch:
+      tags: [admin]
+      operationId: admin_users_update
+      summary: Изменить ФИО сотрудника
+      description: '08 §4.18.1. users.manage (только admin), step-up (operation users.manage). Тело — fullName и rowVersion; роли и статус — отдельными
+        операциями; discountLimitPercent, warehouseIds не принимаются (forbidden_field). Ограничения цели — 11 SEC-043. Ошибки: 400 VALIDATION_FAILED;
+        401; 403 FORBIDDEN (цель owner, SEC-043), STEP_UP_REQUIRED; 404 NOT_FOUND; 409 VERSION_CONFLICT (current), IDEMPOTENCY_IN_PROGRESS; 422
+        VALIDATION_FAILED. Аудит user.updated. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08
+        §4.18). Cache-Control: no-store.'
+      security:
+      - bearerAuth: []
+        stepUpToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdempotencyKeyOptional'}
+      - {$ref: '#/components/parameters/StepUpToken'}
+      - {$ref: '#/components/parameters/IdPath'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminUsersUpdateRequest'}
+      responses:
+        '200':
+          description: Обновлённый AdminUser.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+            Idempotent-Replayed: {$ref: '#/components/headers/IdempotentReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminUser'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [users.manage]
+      x-roles: [admin]
+      x-step-up: true
+      x-step-up-operation: [users.manage]
+      x-idempotent: true
+      x-rate-limit-group: RL-ADMIN
+  /admin/users/{id}/roles:
+    put:
+      tags: [admin]
+      operationId: admin_users_roles_set
+      summary: Назначить роли пользователя (полная замена набора)
+      description: '08 §4.18.2; ядро §21 п.3; 11 SEC-040, SEC-043. users.roles.assign, step-up обязателен (operation users.roles.assign): admin
+        — любые роли, кроме owner; owner — только назначение и снятие ролей admin/owner. Эффект: user_roles заменяются, permissionsVersion++ →
+        активные access-токены цели получают 401 TOKEN_STALE ≤ 60 с; in-app уведомление. Применяется к active/blocked; для pending_activation
+        → 422 VALIDATION_FAILED rule user_pending_activation (активация — POST /admin/users). Повтор того же набора → 200 без изменения permissionsVersion.
+        Ошибки: 400 VALIDATION_FAILED (роль вне role_code); 401; 403 FORBIDDEN (reason: owner_role_reserved — admin назначает/снимает owner; owner
+        назначает/снимает seller/cashier/senior_seller; цель owner при субъекте admin), STEP_UP_REQUIRED; 404 NOT_FOUND; 409 VERSION_CONFLICT;
+        422 VALIDATION_FAILED (roles содержит integration; rule self_demotion — снять admin с себя; rule user_pending_activation). Аудит user.role_changed
+        (before/after, reason); отказ по SEC-040 — authz.denied. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит
+        с before/after (08 §4.18). Cache-Control: no-store.'
+      security:
+      - bearerAuth: []
+        stepUpToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdempotencyKeyOptional'}
+      - {$ref: '#/components/parameters/StepUpToken'}
+      - {$ref: '#/components/parameters/IdPath'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminUsersRolesSetRequest'}
+      responses:
+        '200':
+          description: Обновлённый AdminUser.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+            Idempotent-Replayed: {$ref: '#/components/headers/IdempotentReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminUser'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [users.roles.assign]
+      x-roles: [admin, owner]
+      x-step-up: true
+      x-step-up-operation: [users.roles.assign]
+      x-idempotent: true
+      x-rate-limit-group: RL-ADMIN
+  /admin/users/{id}/block:
+    post:
+      tags: [admin]
+      operationId: admin_users_block
+      summary: Заблокировать или разблокировать пользователя
+      description: '08 §4.18.3; 11 SEC-043. users.manage (только admin), step-up (operation users.manage). blocked=true → status=blocked, все
+        сессии отозваны, приглашение аннулировано; blocked=false → active. Повтор с тем же значением blocked → 200 без изменений. Ошибки: 400
+        VALIDATION_FAILED; 401; 403 FORBIDDEN (цель — сам субъект; цель с ролью owner — SEC-043; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND.
+        Аудит user.blocked / user.unblocked. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18).
+        Cache-Control: no-store.'
+      security:
+      - bearerAuth: []
+        stepUpToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdempotencyKeyOptional'}
+      - {$ref: '#/components/parameters/StepUpToken'}
+      - {$ref: '#/components/parameters/IdPath'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminUsersBlockRequest'}
+      responses:
+        '200':
+          description: Обновлённый AdminUser.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+            Idempotent-Replayed: {$ref: '#/components/headers/IdempotentReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminUser'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [users.manage]
+      x-roles: [admin]
+      x-step-up: true
+      x-step-up-operation: [users.manage]
+      x-idempotent: true
+      x-rate-limit-group: RL-ADMIN
+  /admin/users/{id}/logout-all:
+    post:
+      tags: [admin]
+      operationId: admin_users_logout_all
+      summary: Отозвать все сессии пользователя
+      description: '08 §4.18.3; ядро §17.4, §21 п.3; 11 SEC-043. session.revoke.any, step-up (operation session.revoke.any): admin — любые цели,
+        кроме owner; owner — только цели с ролью admin/owner. Тела запроса нет. Повтор → 204. Ошибки: 401; 403 FORBIDDEN (цель — сам субъект;
+        цель owner при субъекте admin; owner над целью без ролей admin/owner; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND. Аудит session.revoked
+        (actor, reason, число отозванных сессий в after). Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after
+        (08 §4.18). Cache-Control: no-store.'
+      security:
+      - bearerAuth: []
+        stepUpToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdempotencyKeyOptional'}
+      - {$ref: '#/components/parameters/StepUpToken'}
+      - {$ref: '#/components/parameters/IdPath'}
+      responses:
+        '204':
+          description: Сессии пользователя отозваны.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+            Idempotent-Replayed: {$ref: '#/components/headers/IdempotentReplayed'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [session.revoke.any]
+      x-roles: [admin, owner]
+      x-step-up: true
+      x-step-up-operation: [session.revoke.any]
+      x-idempotent: true
+      x-rate-limit-group: RL-ADMIN
+  /admin/users/{id}/pin:
+    delete:
+      tags: [admin]
+      operationId: admin_users_pin_reset
+      summary: Сбросить PIN приложения сотрудника
+      description: '08 §4.18.9; D-48; 11 №69, SEC-043, SEC-076; 09 BIO-021. users.pin.reset — только admin, step-up (operation users.pin.reset).
+        app_pins удаляется, счётчик неверных попыток и PIN_LOCKED снимаются; активные сессии не отзываются, но /auth/unlock и step-up method=pin
+        до установки нового PIN → 403 FORBIDDEN reason pin_not_set. Тело — reason (≥ 5 символов). DELETE идемпотентен: повтор → 204; Idempotency-Key
+        не требуется (вне перечня 08 §2.7). Ошибки: 400 VALIDATION_FAILED (reason); 401; 403 FORBIDDEN (цель — сам администратор, customer-аккаунт
+        или пользователь с ролью owner; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND. Аудит auth.pin.reset (цель, reason; без PIN). Все
+        операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      security:
+      - bearerAuth: []
+        stepUpToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/StepUpToken'}
+      - {$ref: '#/components/parameters/IdPath'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminUsersPinResetRequest'}
+      responses:
+        '204':
+          description: PIN сброшен.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [users.pin.reset]
+      x-roles: [admin]
+      x-step-up: true
+      x-step-up-operation: [users.pin.reset]
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+  /admin/users/{id}/emergency-login-code:
+    post:
+      tags: [admin]
+      operationId: admin_users_emergency_login_code_issue
+      summary: Выдать аварийный одноразовый код входа сотруднику
+      description: '08 §4.18.10; ядро §22.13 п.2, §23 п.8; 09 SMS-035, §6.13; 11 №76, SEC-043, SEC-131. Приоритет R1 — should (Q-168). Только
+        admin со step-up (operation users.emergency_code.issue). Сервер создаёт otp_challenges (purpose=login_or_register, без sms_outbox): 6
+        цифр CSPRNG, хранится только HMAC, TTL 10 мин, одноразовый; предыдущий живой челлендж номера → superseded. Код показывается администратору
+        один раз и не пишется в логи, аудит, уведомления и хранилище идемпотентности. Намеренно НЕ идемпотентна: Idempotency-Key игнорируется,
+        каждый вызов выдаёт новый код и аннулирует прежний. Ошибки: 400 VALIDATION_FAILED (схема; comment обязателен при reason=other); 401; 403
+        FORBIDDEN (роль; себе; цель с ролью admin/owner), STEP_UP_REQUIRED; 404 NOT_FOUND; 422 VALIDATION_FAILED (цель не kind=staff или не status=active);
+        429 RATE_LIMITED (не более 3 кодов на пользователя и 20 на администратора за сутки — 09 §6.13). Аудит auth.emergency_code.issued (без
+        кода); при входе — auth.emergency_code.used; уведомление цели и всем owner; алерт. Все операции модуля admin — permission по 08 §9 / 11
+        §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      security:
+      - bearerAuth: []
+        stepUpToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/StepUpToken'}
+      - {$ref: '#/components/parameters/IdPath'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminUsersEmergencyLoginCodeRequest'}
+      responses:
+        '201':
+          description: Код выдан (показывается один раз).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminEmergencyLoginCode'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [users.emergency_code.issue]
+      x-roles: [admin]
+      x-step-up: true
+      x-step-up-operation: [users.emergency_code.issue]
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+  /admin/invitations:
+    get:
+      tags: [admin]
+      operationId: admin_invitations_list
+      summary: Приглашения сотрудников
+      description: '08 §4.18.4. users.read (admin, owner). Ответ — Page<Invitation>. Ошибки: 400 VALIDATION_FAILED (limit, cursor); 401; 403 FORBIDDEN.
+        Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/Limit'}
+      - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page<Invitation>.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                - {$ref: '#/components/schemas/Page'}
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items: {$ref: '#/components/schemas/Invitation'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [users.read]
+      x-roles: [admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+    post:
+      tags: [admin]
+      operationId: admin_invitations_create
+      summary: Создать приглашение сотрудника по телефону и ролям
+      description: '08 §4.18.4; D-07; ядро §24.2 (сотрудники не регистрируются сами; «супер-админ» = admin, Q-303); 11 SEC-136. invitations.manage
+        — только admin, step-up (operation invitations.manage). Эквивалент POST /admin/users без создания пользователя. Если телефон уже принадлежит
+        аккаунту pending_activation — приглашение применяется сразу: аккаунт → active, kind=staff с ролями приглашения, приглашение
+        status=accepted, ответ 201 содержит appliedToUserId. Номер действующего customer — 409 PHONE_ALREADY_REGISTERED (reason: customer_account;
+        08 §4.18.4 п. 2, 11 SEC-136 п. 4, Q-312). expiresAt по умолчанию — 30 дней (Q-141). Ошибки: 400 VALIDATION_FAILED (схема, idempotency_key_required);
+        401; 403 FORBIDDEN (reason: owner_role_reserved; reason: role_not_invitable — роль вне seller, cashier, senior_seller), STEP_UP_REQUIRED;
+        409 PHONE_ALREADY_REGISTERED (активный staff — роли меняются через PUT /admin/users/{id}/roles; reason: customer_account — номер действующего
+        customer), IDEMPOTENCY_IN_PROGRESS; 422 VALIDATION_FAILED (rule max_items — больше одной роли; rule required — нет fullName), IDEMPOTENCY_KEY_REUSED. Аудит invitation.created (+ user.activated,
+        user.role_changed при немедленном применении). Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after
+        (08 §4.18). Cache-Control: no-store.'
+      security:
+      - bearerAuth: []
+        stepUpToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdempotencyKey'}
+      - {$ref: '#/components/parameters/StepUpToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminInvitationsCreateRequest'}
+      responses:
+        '201':
+          description: 'Приглашение создано: Invitation.'
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+            Idempotent-Replayed: {$ref: '#/components/headers/IdempotentReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Invitation'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [invitations.manage]
+      x-roles: [admin]
+      x-step-up: true
+      x-step-up-operation: [invitations.manage]
+      x-idempotent: required
+      x-rate-limit-group: RL-ADMIN
+  /admin/invitations/{id}:
+    delete:
+      tags: [admin]
+      operationId: admin_invitations_revoke
+      summary: Отозвать приглашение
+      description: '08 §4.18.4; ядро §17.4. invitations.manage — только admin, step-up (operation invitations.manage). DELETE идемпотентен: повтор
+        → 204. Ошибки: 401; 403 FORBIDDEN, STEP_UP_REQUIRED; 404 NOT_FOUND. Аудит invitation.revoked. Все операции модуля admin — permission по
+        08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      security:
+      - bearerAuth: []
+        stepUpToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/StepUpToken'}
+      - {$ref: '#/components/parameters/IdPath'}
+      responses:
+        '204':
+          description: Приглашение отозвано.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [invitations.manage]
+      x-roles: [admin]
+      x-step-up: true
+      x-step-up-operation: [invitations.manage]
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+  /admin/discount-limits:
+    get:
+      tags: [admin]
+      operationId: admin_discount_limits_get
+      summary: Лимиты ручной скидки по ролям
+      description: '08 §4.18.5. settings.app.read (admin, owner). Значения — [НЕ ПОДТВЕРЖДЕНО: Q-015]. Ошибки: 401; 403 FORBIDDEN. Все операции
+        модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      responses:
+        '200':
+          description: AdminDiscountLimits.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminDiscountLimits'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [settings.app.read]
+      x-roles: [admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+    put:
+      tags: [admin]
+      operationId: admin_discount_limits_update
+      summary: Изменить лимиты ручной скидки по ролям (полная замена)
+      description: '08 §4.18.5. settings.discount_limits.update — только admin, step-up (operation settings.discount_limits.update). Значения
+        должны совпадать с «Правилами продаж» 1С, иначе 1С отклонит заказ (R7 §4.3). Повтор того же тела → 200 без изменений. Ошибки: 400 VALIDATION_FAILED
+        (percent_range); 401; 403 FORBIDDEN, STEP_UP_REQUIRED; 409 VERSION_CONFLICT; 422 VALIDATION_FAILED. Аудит discount.limits_changed (before/after)
+        [D-36]. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      security:
+      - bearerAuth: []
+        stepUpToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdempotencyKeyOptional'}
+      - {$ref: '#/components/parameters/StepUpToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminDiscountLimitsUpdateRequest'}
+      responses:
+        '200':
+          description: AdminDiscountLimits (с updatedAt, updatedBy).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+            Idempotent-Replayed: {$ref: '#/components/headers/IdempotentReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminDiscountLimits'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [settings.discount_limits.update]
+      x-roles: [admin]
+      x-step-up: true
+      x-step-up-operation: [settings.discount_limits.update]
+      x-idempotent: true
+      x-rate-limit-group: RL-ADMIN
+  /admin/settings:
+    get:
+      tags: [admin]
+      operationId: admin_settings_get
+      summary: Настройки системы (app_settings) и env только для чтения
+      description: '08 §4.18.6 и таблица соответствия ключей; ядро §19.2, §24.2, §24.4. settings.app.read (admin, owner; для owner SCR-46 — только
+        просмотр, ядро §21 п.3). Ключи app_settings — camelCase-проекция snake_case-ключей 07 §5.59 (каждый сегмент через точку отдельно); блок
+        env — значения переменных окружения только для чтения; секреты (SMSPro, 1С, ключи) не отдаются. Ошибки: 401; 403 FORBIDDEN. Все операции
+        модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      responses:
+        '200':
+          description: AdminSettingsResponse.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminSettingsResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [settings.app.read]
+      x-roles: [admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+    put:
+      tags: [admin]
+      operationId: admin_settings_update
+      summary: Изменить настройки системы (частичный объект)
+      description: '08 §4.18.6. settings.app.update — только admin, step-up (operation settings.app.update). Тело — частичный объект settings
+        (только ключи таблицы соответствия с отметкой «запись») + rowVersion; ключи блока env (в т. ч. customerSelfService — только env, ядро
+        §19.2) и неизвестные ключи → VALIDATION_FAILED (rule read_only_setting / unknown_setting). Повтор того же тела → 200 без изменений. Ошибки:
+        400 VALIDATION_FAILED (схема, read_only_setting, unknown_setting); 401; 403 FORBIDDEN, STEP_UP_REQUIRED; 409 VERSION_CONFLICT; 422 VALIDATION_FAILED
+        (customerStockDisplay вне status|quantity — rule enum; диапазоны: lowStockThreshold ≥ 0, syncInterval.<entity> 60…86400, parkedCartTtlDays
+        1…30, receivables.maxAgeMinutes 5…1440, otp.ttlSeconds 180…600). Аудит settings.changed (по ключам, before/after). Все операции модуля
+        admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      security:
+      - bearerAuth: []
+        stepUpToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IdempotencyKeyOptional'}
+      - {$ref: '#/components/parameters/StepUpToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminSettingsUpdateRequest'}
+      responses:
+        '200':
+          description: AdminSettingsResponse (новый rowVersion).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+            Idempotent-Replayed: {$ref: '#/components/headers/IdempotentReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminSettingsResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [settings.app.update]
+      x-roles: [admin]
+      x-step-up: true
+      x-step-up-operation: [settings.app.update]
+      x-idempotent: true
+      x-rate-limit-group: RL-ADMIN
+  /admin/audit-logs:
+    get:
+      tags: [admin]
+      operationId: admin_audit_logs_list
+      summary: Журнал аудита
+      description: '08 §4.18.7; D-36; ядро §19.2, §19.4, §20.2 п.15; API-118, API-134. audit.read (admin, owner). admin видит строки без финансовых
+        before/after значений (маскируются, например after.amount="***" для payment.*; 11 SEC-083), owner — полностью. from и to обязательны,
+        период ≤ 366 дней. chainOk=false — нарушение хэш-цепочки prev_hash/row_hash (строка подсвечивается на SCR-47). Ответ — Page<AuditRow>.
+        Ошибки: 400 VALIDATION_FAILED (from/to обязательны, limit, cursor, result вне enum); 401; 403 FORBIDDEN; 422 VALIDATION_FAILED (rule date_range
+        — период > 366 дней или from > to). Само чтение аудита пишется в аудит (audit.viewed). Все операции модуля admin — permission по 08 §9
+        / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - name: entityType
+        in: query
+        required: false
+        description: Тип объекта аудита (audit_logs.entity_type).
+        schema:
+          type: string
+          maxLength: 64
+      - name: entityId
+        in: query
+        required: false
+        description: Идентификатор объекта аудита.
+        schema:
+          type: string
+          maxLength: 64
+      - name: actorId
+        in: query
+        required: false
+        description: Пользователь-актор (users.id).
+        schema:
+          type: string
+          format: uuid
+      - name: action
+        in: query
+        required: false
+        description: Префикс имени события аудита (словарь 11 §7.2), например payment.
+        schema:
+          type: string
+          maxLength: 100
+          example: payment.
+      - name: from
+        in: query
+        required: true
+        description: Начало периода (UTC), обязательно; период ≤ 366 дней (rule date_range).
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        required: true
+        description: Конец периода (UTC), обязательно.
+        schema:
+          type: string
+          format: date-time
+      - name: result
+        in: query
+        required: false
+        description: Результат операции — значения CHECK audit_logs.result (07 §6.1.1).
+        schema:
+          type: string
+          enum: [ok, denied, error]
+      - {$ref: '#/components/parameters/Limit'}
+      - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Page<AuditRow>.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema:
+                allOf:
+                - {$ref: '#/components/schemas/Page'}
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items: {$ref: '#/components/schemas/AuditRow'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [audit.read]
+      x-roles: [admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+  /admin/reports/sales-summary:
+    get:
+      tags: [admin]
+      operationId: admin_reports_sales_summary_get
+      summary: 'Отчёт: сводка продаж'
+      description: '08 §4.18.8; ядро §3.1, §22.13 п.3; API-119. reports.sales.read (admin, owner). groupBy ∈ day|seller|paymentMethod (минимум
+        R1); разрезы week, month, warehouse и продажи только из 1С (sales_history, source: onec) — R2. Ответ R1 — только application/json; данные
+        — по POS (source: pos). Ошибки: 400 VALIDATION_FAILED; 401; 403 FORBIDDEN (нет права; format=csv в R1); 422 VALIDATION_FAILED (rule date_range
+        — период > 366 дней). Аудит report.viewed (name, period) — финансовые данные [D-36]. Все операции модуля admin — permission по 08 §9 /
+        11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - name: from
+        in: query
+        required: false
+        description: Начало периода (UTC); период ≤ 366 дней (rule date_range).
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        required: false
+        description: Конец периода (UTC).
+        schema:
+          type: string
+          format: date-time
+      - name: groupBy
+        in: query
+        required: false
+        description: Разрез (минимум R1 — 08 §4.18.8, API-119); иное → VALIDATION_FAILED.
+        schema:
+          type: string
+          enum: [day, seller, paymentMethod]
+          default: day
+      - name: format
+        in: query
+        required: false
+        description: 'Формат ответа. В R1 — только json; csv (экспорт, reports.export) — R2 (Q-217, ядро §19.2): в R1 код reports.export никому
+          не выдан, поэтому format=csv → 403 FORBIDDEN (08 §4.18.8, API-119).'
+        schema:
+          type: string
+          enum: [json, csv]
+          default: json
+      responses:
+        '200':
+          description: AdminReportsSalesSummary.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminReportsSalesSummary'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [reports.sales.read]
+      x-roles: [admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+  /admin/reports/receivables:
+    get:
+      tags: [admin]
+      operationId: admin_reports_receivables_get
+      summary: 'Отчёт: дебиторская задолженность'
+      description: '08 §4.18.8; ядро §22.13 п.3. reports.receivables.read (admin, owner). Сумма и просрочка по снимку 1С (asOf, isStale); разбивка
+        по срокам (aging) и топ должников — R2 (ядро §4.2). Ответ R1 — только application/json; данные — по POS (source: pos). Ошибки: 400 VALIDATION_FAILED;
+        401; 403 FORBIDDEN (нет права; format=csv в R1); 422 VALIDATION_FAILED (rule date_range — период > 366 дней). Аудит report.viewed (name,
+        period) — финансовые данные [D-36]. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18).
+        Cache-Control: no-store.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - name: asOfOnly
+        in: query
+        required: false
+        description: 'Параметр отчёта receivables (08 §4.18.8): только момент снимка долга.'
+        schema:
+          type: boolean
+      - name: format
+        in: query
+        required: false
+        description: 'Формат ответа. В R1 — только json; csv (экспорт, reports.export) — R2 (Q-217, ядро §19.2): в R1 код reports.export никому
+          не выдан, поэтому format=csv → 403 FORBIDDEN (08 §4.18.8, API-119).'
+        schema:
+          type: string
+          enum: [json, csv]
+          default: json
+      responses:
+        '200':
+          description: AdminReportsReceivables.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminReportsReceivables'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [reports.receivables.read]
+      x-roles: [admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+  /admin/reports/qr-reconciliation:
+    get:
+      tags: [admin]
+      operationId: admin_reports_qr_reconciliation_get
+      summary: 'Отчёт: сверка QR-оплат'
+      description: '08 §4.18.8; ядро §22.2, §22.13 п.3, §24.4; R7 §3.3. reports.qr_reconciliation.read (admin, owner). Основа ежедневной сверки
+        QR с выпиской: подтверждения от провайдера (при QR_PROVIDER=onec — подтверждение от 1С, ядро §24.4) и ручные подтверждения; платежи manual_confirm
+        с reviewReason и bankAmount. Ответ R1 — только application/json; данные — по POS (source: pos). Ошибки: 400 VALIDATION_FAILED; 401; 403
+        FORBIDDEN (нет права; format=csv в R1); 422 VALIDATION_FAILED (rule date_range — период > 366 дней). Аудит report.viewed (name, period)
+        — финансовые данные [D-36]. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control:
+        no-store.'
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - name: from
+        in: query
+        required: false
+        description: Начало периода (UTC); период ≤ 366 дней (rule date_range).
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        required: false
+        description: Конец периода (UTC).
+        schema:
+          type: string
+          format: date-time
+      - name: status
+        in: query
+        required: false
+        description: Фильтр строк сверки (08 §4.18.8).
+        schema:
+          type: string
+          enum: [all, unmatched, manual]
+          default: all
+      - name: format
+        in: query
+        required: false
+        description: 'Формат ответа. В R1 — только json; csv (экспорт, reports.export) — R2 (Q-217, ядро §19.2): в R1 код reports.export никому
+          не выдан, поэтому format=csv → 403 FORBIDDEN (08 §4.18.8, API-119).'
+        schema:
+          type: string
+          enum: [json, csv]
+          default: json
+      responses:
+        '200':
+          description: AdminReportsQrReconciliation.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminReportsQrReconciliation'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [reports.qr_reconciliation.read]
+      x-roles: [admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+  /health:
+    get:
+      tags: [health]
+      operationId: health_liveness_get
+      summary: Liveness
+      description: '08 §4.19.1; API-120. Публичный: без ПДн и внутренних деталей, без версий компонентов. X-Device-Id не требуется; проверка минимальной
+        версии клиента (426) к /health* не применяется (08 §2.11). Ошибки: 429 RATE_LIMITED (RL-HEALTH). Аудит не пишется.'
+      security: []
+      parameters:
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      responses:
+        '200':
+          description: Процесс жив.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HealthLiveness'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: []
+      x-roles: []
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-HEALTH
+  /health/ready:
+    get:
+      tags: [health]
+      operationId: health_readiness_get
+      summary: Readiness
+      description: '08 §4.19.1; ядро §16 п.8; API-120. Публичный, для оркестратора и мониторинга. 200 status=ok|degraded; degraded — при любой
+        причине из checks.onec.reasons[] (только коды, без внутренних деталей). 503 {status: failed} — при недоступной БД/worker; это НЕ problem+json.
+        Доступность 1С: фаза 1 — GET /pos/v1/health (05 ONEC-051); фаза 0 (odata_only) — лёгкий OData-запрос; C-2 — по меткам последнего GET /integrations/onec/ping.
+        Ошибки: 429 RATE_LIMITED (RL-HEALTH). Аудит не пишется.'
+      security: []
+      parameters:
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      responses:
+        '200':
+          description: Готов (ok) или работает с деградацией (degraded).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HealthReadiness'}
+        '503':
+          description: 'Не готов: недоступна БД или worker. Тело — application/json {status: failed}, не problem+json (08 §4.19.1).'
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HealthReadinessFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: []
+      x-roles: []
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-HEALTH
+  /openapi.json:
+    get:
+      tags: [health]
+      operationId: health_openapi_get
+      summary: Контракт OpenAPI 3.0.3
+      description: '08 §4.19.2; D-03; API-121; 16 §4.3 OPENAPI_PUBLIC. Документ, идентичный коммитнутому openapi.json. Тестовое окружение (OPENAPI_PUBLIC=true)
+        — публичный; production (OPENAPI_PUBLIC=false, по умолчанию) — только Bearer с правом system.openapi.read (admin, 11 №70); без него →
+        404 NOT_FOUND (существование не раскрывается). Rate limit: test — RL-PUBLIC-IP, production — RL-ADMIN. Ошибки: 304 (If-None-Match совпал
+        с ETag); 404 NOT_FOUND. Аудит не пишется.'
+      security:
+      - {}
+      - bearerAuth: []
+      parameters:
+      - {$ref: '#/components/parameters/DeviceId'}
+      - {$ref: '#/components/parameters/AppVersion'}
+      - {$ref: '#/components/parameters/Platform'}
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/AcceptLanguage'}
+      - {$ref: '#/components/parameters/IfNoneMatch'}
+      responses:
+        '200':
+          description: OpenAPI 3.0.3 документ pos-api.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            X-Min-App-Version: {$ref: '#/components/headers/XMinAppVersion'}
+            X-Recommended-App-Version: {$ref: '#/components/headers/XRecommendedAppVersion'}
+            Cache-Control:
+              description: 'Политика кэширования операции: private, max-age=300 (08 §2.8, карточка §4).'
+              schema:
+                type: string
+                example: private, max-age=300
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                description: OpenAPI 3.0.3 документ (openapi, info, servers, paths, components).
+        '304': {$ref: '#/components/responses/NotModified'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [system.openapi.read]
+      x-roles: [admin]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+      x-feature-flag: OPENAPI_PUBLIC
+  /integrations/onec/changes:
+    post:
+      tags: [integrations]
+      operationId: integrations_onec_changes_push
+      summary: 1С приносит пакет изменений плана обмена «POS»
+      description: '08 §4.21.1; 05 §6.3, §6.4, §10.1 (ONEC-061); ядро §18.1. Зеркало GET /pos/v1/changes. Успешный ответ — только 202 (подтверждение
+        приёма = ack): номер проверен, пакет и запись sync_runs сохранены в одной транзакции; итог применения — в sync_runs/sync_errors по runId.
+        Идемпотентность по (node, messageNumber) относительно последнего принятого номера last, заголовок Idempotency-Key не используется: = last
+        → 202 accepted:false, прежний runId, Idempotent-Replayed: true; < last → 409 VERSION_CONFLICT (rule message_stale, lastMessageNumber);
+        > last (в т. ч. с пропуском) → 202. Применение — воркер по возрастанию messageNumber (upsert по onec_ref). Ошибки: 400 VALIDATION_FAILED
+        (схема; > 1000 объектов; элемент без data и без type: ObjectDeletion); 409 VERSION_CONFLICT (message_stale); 413 (> 10 MB); 500 INTERNAL
+        / 503 — пакет не принят (1С повторит без снятия регистрации). Аудит: sync.prices.applied / sync.stock.applied, sync.run.finished / sync.run.failed
+        (пишет воркер). Префикс /integrations/onec/* (08 §4.21 «Общее», ядро §16 п.5, §17.4): только вариант C-2 (ONEC_INBOUND_ENABLED=true; иначе
+        404 NOT_FOUND на всех путях префикса); статус ПРЕДВАРИТЕЛЬНО (Q-031, Q-010, Q-011). Аутентификация — непрозрачный технический токен роли
+        integration (таблица integration_tokens; выпуск и отзыв — скриптом bin/issue_integration_token, срок 180 дней); пользовательский JWT →
+        403 FORBIDDEN; integration-токен на других путях → 403. allowlist IP магазина обязателен при статическом IP (Q-030). X-Device-Id, X-App-Version,
+        X-Platform не требуются. Тело ≤ 10 MB, иначе 413. Ошибки префикса: 401 UNAUTHENTICATED; 403 FORBIDDEN; 404 NOT_FOUND (C-2 выключен); 409
+        VERSION_CONFLICT, SYNC_ALREADY_RUNNING; 413 PAYLOAD_TOO_LARGE. Неудачная аутентификация — аудит integration.auth_failed. Cache-Control:
+        no-store.'
+      security:
+      - integrationToken: []
+      parameters:
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/IntegrationsOnecNode'}
+      - {$ref: '#/components/parameters/IntegrationsOnecExtensionVersion'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/IntegrationsOnecChangesRequest'}
+      responses:
+        '202':
+          description: Пакет принят (или повтор того же номера с accepted:false).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+            Idempotent-Replayed: {$ref: '#/components/headers/IdempotentReplayed'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IntegrationsOnecChangesAccepted'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [sync.exchange]
+      x-roles: [integration]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-INTEGRATION
+      x-feature-flag: ONEC_INBOUND_ENABLED
+      x-status: proposed
+  /integrations/onec/snapshots/{entity}:
+    post:
+      tags: [integrations]
+      operationId: integrations_onec_snapshots_push
+      summary: 1С присылает страницу полного среза остатков, цен или долгов
+      description: '08 §4.21.6; 05 §10.1 (ONEC-062), SYNC-014…016; ядро §17.4. Зеркало полной выгрузки (fetchAll/reconcile) для C-2: срез применяется
+        атомарно после последней страницы; неполный срез не меняет текущий снимок; не все страницы за 30 мин → прогон partial, прежний снимок
+        сохраняется. Идемпотентность по (entity, snapshotAt, page): повтор страницы → 200 с тем же результатом без повторного учёта. Ошибки: 400
+        VALIDATION_FAILED (схема, entity вне stock|prices|receivables); 409 VERSION_CONFLICT (страница среза старше уже применённого snapshotAt);
+        413 (> 10 MB); 422 VALIDATION_FAILED (страница вне 1…pages; snapshotAt в будущем более чем на 5 мин). Аудит в audit_logs не пишется; прогон
+        — sync_runs (source=inbound), ошибки строк — sync_errors. Префикс /integrations/onec/* (08 §4.21 «Общее», ядро §16 п.5, §17.4): только
+        вариант C-2 (ONEC_INBOUND_ENABLED=true; иначе 404 NOT_FOUND на всех путях префикса); статус ПРЕДВАРИТЕЛЬНО (Q-031, Q-010, Q-011). Аутентификация
+        — непрозрачный технический токен роли integration (таблица integration_tokens; выпуск и отзыв — скриптом bin/issue_integration_token,
+        срок 180 дней); пользовательский JWT → 403 FORBIDDEN; integration-токен на других путях → 403. allowlist IP магазина обязателен при статическом
+        IP (Q-030). X-Device-Id, X-App-Version, X-Platform не требуются. Тело ≤ 10 MB, иначе 413. Ошибки префикса: 401 UNAUTHENTICATED; 403 FORBIDDEN;
+        404 NOT_FOUND (C-2 выключен); 409 VERSION_CONFLICT, SYNC_ALREADY_RUNNING; 413 PAYLOAD_TOO_LARGE. Неудачная аутентификация — аудит integration.auth_failed.
+        Cache-Control: no-store.'
+      security:
+      - integrationToken: []
+      parameters:
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/IntegrationsOnecNode'}
+      - {$ref: '#/components/parameters/IntegrationsOnecExtensionVersion'}
+      - name: entity
+        in: path
+        required: true
+        description: Сущность среза (подмножество sync_entity 07 §6.1, 08 §4.21.6); иное → VALIDATION_FAILED.
+        schema:
+          type: string
+          enum: [stock, prices, receivables]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/IntegrationsOnecSnapshotRequest'}
+      responses:
+        '200':
+          description: 'Страница принята; на последней странице — applied: true и counts.'
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IntegrationsOnecSnapshotResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [sync.exchange]
+      x-roles: [integration]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-INTEGRATION
+      x-feature-flag: ONEC_INBOUND_ENABLED
+      x-status: proposed
+  /integrations/onec/outbox:
+    get:
+      tags: [integrations]
+      operationId: integrations_onec_outbox_list
+      summary: 1С забирает исходящие документы POS
+      description: '08 §4.21.2; 05 §6.3, §6.4, §10.1 (ONEC-063); ядро §22.1. Зеркало POST /pos/v1/orders|payments|customers|returns. Отдаёт элементы
+        onec_outbox в статусе pending и переводит их в sending с арендой leaseUntil = now + 10 мин; без ack по истечении аренды → pending; cancelled
+        не выдаются. Порядок FIFO по created_at; зависимые элементы (платёж после заказа, заказ после нового клиента) не выдаются раньше родителя.
+        Повторный GET до ack возвращает те же элементы тому же токену. Отмена заказа — kind=order, operation=cancel. Ошибки: 400 VALIDATION_FAILED
+        (limit, неизвестный kinds). Аудит не пишется (аренда фиксируется в onec_outbox). Префикс /integrations/onec/* (08 §4.21 «Общее», ядро
+        §16 п.5, §17.4): только вариант C-2 (ONEC_INBOUND_ENABLED=true; иначе 404 NOT_FOUND на всех путях префикса); статус ПРЕДВАРИТЕЛЬНО (Q-031,
+        Q-010, Q-011). Аутентификация — непрозрачный технический токен роли integration (таблица integration_tokens; выпуск и отзыв — скриптом
+        bin/issue_integration_token, срок 180 дней); пользовательский JWT → 403 FORBIDDEN; integration-токен на других путях → 403. allowlist
+        IP магазина обязателен при статическом IP (Q-030). X-Device-Id, X-App-Version, X-Platform не требуются. Тело ≤ 10 MB, иначе 413. Ошибки
+        префикса: 401 UNAUTHENTICATED; 403 FORBIDDEN; 404 NOT_FOUND (C-2 выключен); 409 VERSION_CONFLICT, SYNC_ALREADY_RUNNING; 413 PAYLOAD_TOO_LARGE.
+        Неудачная аутентификация — аудит integration.auth_failed. Cache-Control: no-store.'
+      security:
+      - integrationToken: []
+      parameters:
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/IntegrationsOnecNode'}
+      - {$ref: '#/components/parameters/IntegrationsOnecExtensionVersion'}
+      - name: kinds
+        in: query
+        required: false
+        description: Типы элементов через запятую (outbox_aggregate 07 §6.1); по умолчанию все.
+        style: form
+        explode: false
+        schema:
+          type: array
+          maxItems: 50
+          items: {$ref: '#/components/schemas/OutboxAggregate'}
+      - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: Элементы outbox под арендой.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IntegrationsOnecOutboxResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [sync.exchange]
+      x-roles: [integration]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-INTEGRATION
+      x-feature-flag: ONEC_INBOUND_ENABLED
+      x-status: proposed
+  /integrations/onec/outbox/{outboxId}/ack:
+    post:
+      tags: [integrations]
+      operationId: integrations_onec_outbox_ack
+      summary: 1С подтверждает или отклоняет документ из outbox
+      description: '08 §4.21.3; 05 §10.1 (ONEC-063), SYNC-045, ONEC-039; ядро §22.1. result=confirmed → onec_outbox.status=sent (confirmed — только
+        после чтения документа через /changes или /order-status), заказ получает onec_ref/номер/дату; recalculated=true + totals → orders.onec_total,
+        totalsDiffer и уведомление автора; result=rejected → failed + orders.status=submit_failed + уведомление sync_error; result=retry → pending
+        с attempts+1 и nextAttemptAt по графику 1, 2, 5, 15, 60 мин (далее каждые 60 мин); при исчерпании OUTBOX_MAX_ATTEMPTS (20) или OUTBOX_MAX_AGE_HOURS
+        (24) → dead + алерт; POS_E_DUPLICATE по тому же externalId — как confirmed → sent. Идемпотентность: повтор ack с тем же result для элемента
+        в финальном статусе → 200 без изменений; ack с другим onecRef для элемента не в sending/pending → 409 VERSION_CONFLICT + запись sync_errors.
+        Ошибки: 400 VALIDATION_FAILED (схема); 404 NOT_FOUND (неизвестный outboxId); 409 VERSION_CONFLICT (противоречивый ack); 422 VALIDATION_FAILED
+        (confirmed без onecRef/onecNumber; recalculated=true без totals). Аудит outbox.confirmed / outbox.rejected, outbox.dead; для return_request
+        — также return.status_changed. Префикс /integrations/onec/* (08 §4.21 «Общее», ядро §16 п.5, §17.4): только вариант C-2 (ONEC_INBOUND_ENABLED=true;
+        иначе 404 NOT_FOUND на всех путях префикса); статус ПРЕДВАРИТЕЛЬНО (Q-031, Q-010, Q-011). Аутентификация — непрозрачный технический токен
+        роли integration (таблица integration_tokens; выпуск и отзыв — скриптом bin/issue_integration_token, срок 180 дней); пользовательский
+        JWT → 403 FORBIDDEN; integration-токен на других путях → 403. allowlist IP магазина обязателен при статическом IP (Q-030). X-Device-Id,
+        X-App-Version, X-Platform не требуются. Тело ≤ 10 MB, иначе 413. Ошибки префикса: 401 UNAUTHENTICATED; 403 FORBIDDEN; 404 NOT_FOUND (C-2
+        выключен); 409 VERSION_CONFLICT, SYNC_ALREADY_RUNNING; 413 PAYLOAD_TOO_LARGE. Неудачная аутентификация — аудит integration.auth_failed.
+        Cache-Control: no-store.'
+      security:
+      - integrationToken: []
+      parameters:
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/IntegrationsOnecNode'}
+      - {$ref: '#/components/parameters/IntegrationsOnecExtensionVersion'}
+      - name: outboxId
+        in: path
+        required: true
+        description: Идентификатор элемента очереди onec_outbox.id (в 1С ключом не является; ключ — externalId, 08 §2.7).
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/IntegrationsOnecOutboxAckRequest'}
+      responses:
+        '200':
+          description: Новый статус элемента outbox.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IntegrationsOnecOutboxAckResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/UnprocessableEntity'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [sync.exchange]
+      x-roles: [integration]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-INTEGRATION
+      x-feature-flag: ONEC_INBOUND_ENABLED
+      x-status: proposed
+  /integrations/onec/order-status:
+    post:
+      tags: [integrations]
+      operationId: integrations_onec_order_status_push
+      summary: 1С приносит сырые статусы заказов и отгрузок
+      description: '08 §4.21.4; 05 §5.1b, §10.1 (ONEC-068), ONEC-021; ядро §22.8. Зеркало GET /pos/v1/orders/{uuid}/status для пакета заказов:
+        1С приносит сырые статусы и признаки документа, проекцию в order_status (D-20) по таблице 05 §5.1b выполняет backend; далее order_status_history
+        (source=onec_sync), уведомление order_status создателю заказа; элемент outbox заказа sent → confirmed при сопоставлении по externalId.
+        Поле status (готовое значение order_status) в теле не принимается (rule forbidden_field). Комбинация, не покрытая 05 §5.1b, → объект пропускается
+        с записью sync_errors. Идемпотентность по (onecRef, changedAt). Ошибки: 400 VALIDATION_FAILED (схема, > 500 элементов, forbidden_field).
+        Аудит order.status_changed (actor = integration). Префикс /integrations/onec/* (08 §4.21 «Общее», ядро §16 п.5, §17.4): только вариант
+        C-2 (ONEC_INBOUND_ENABLED=true; иначе 404 NOT_FOUND на всех путях префикса); статус ПРЕДВАРИТЕЛЬНО (Q-031, Q-010, Q-011). Аутентификация
+        — непрозрачный технический токен роли integration (таблица integration_tokens; выпуск и отзыв — скриптом bin/issue_integration_token,
+        срок 180 дней); пользовательский JWT → 403 FORBIDDEN; integration-токен на других путях → 403. allowlist IP магазина обязателен при статическом
+        IP (Q-030). X-Device-Id, X-App-Version, X-Platform не требуются. Тело ≤ 10 MB, иначе 413. Ошибки префикса: 401 UNAUTHENTICATED; 403 FORBIDDEN;
+        404 NOT_FOUND (C-2 выключен); 409 VERSION_CONFLICT, SYNC_ALREADY_RUNNING; 413 PAYLOAD_TOO_LARGE. Неудачная аутентификация — аудит integration.auth_failed.
+        Cache-Control: no-store.'
+      security:
+      - integrationToken: []
+      parameters:
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/IntegrationsOnecNode'}
+      - {$ref: '#/components/parameters/IntegrationsOnecExtensionVersion'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/IntegrationsOnecOrderStatusRequest'}
+      responses:
+        '200':
+          description: Результат применения пакета.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IntegrationsOnecOrderStatusResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [sync.exchange]
+      x-roles: [integration]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-INTEGRATION
+      x-feature-flag: ONEC_INBOUND_ENABLED
+      x-status: proposed
+  /integrations/onec/ping:
+    get:
+      tags: [integrations]
+      operationId: integrations_onec_ping
+      summary: Проверка токена, часов и совместимости версий
+      description: '08 §4.21.5; 05 §10.1 (ONEC-064), SYNC-064, ONEC-095; ядро §22.8. 1С сообщает своё состояние query-параметрами (без ПДн; неизвестные
+        параметры игнорируются); backend обновляет sync_node_state, сверяет совместимость apiVersion (при несовместимости сущности paused, /health/ready
+        → degraded) и возвращает serverTime для контроля расхождения часов (пакеты с generatedAt, отличающимся более чем на 5 мин, принимаются
+        с предупреждением в sync_errors). В C-2 заменяет GET /pos/v1/health для /health/ready. Ошибки: 401 UNAUTHENTICATED / 403 FORBIDDEN при
+        неверном токене (аудит integration.auth_failed); успешный вызов не аудируется. Префикс /integrations/onec/* (08 §4.21 «Общее», ядро §16
+        п.5, §17.4): только вариант C-2 (ONEC_INBOUND_ENABLED=true; иначе 404 NOT_FOUND на всех путях префикса); статус ПРЕДВАРИТЕЛЬНО (Q-031,
+        Q-010, Q-011). Аутентификация — непрозрачный технический токен роли integration (таблица integration_tokens; выпуск и отзыв — скриптом
+        bin/issue_integration_token, срок 180 дней); пользовательский JWT → 403 FORBIDDEN; integration-токен на других путях → 403. allowlist
+        IP магазина обязателен при статическом IP (Q-030). X-Device-Id, X-App-Version, X-Platform не требуются. Тело ≤ 10 MB, иначе 413. Ошибки
+        префикса: 401 UNAUTHENTICATED; 403 FORBIDDEN; 404 NOT_FOUND (C-2 выключен); 409 VERSION_CONFLICT, SYNC_ALREADY_RUNNING; 413 PAYLOAD_TOO_LARGE.
+        Неудачная аутентификация — аудит integration.auth_failed. Cache-Control: no-store.'
+      security:
+      - integrationToken: []
+      parameters:
+      - {$ref: '#/components/parameters/RequestId'}
+      - {$ref: '#/components/parameters/IntegrationsOnecNode'}
+      - {$ref: '#/components/parameters/IntegrationsOnecExtensionVersion'}
+      - name: extensionVersion
+        in: query
+        required: false
+        description: Версия расширения onec-extension.
+        schema:
+          type: string
+          maxLength: 50
+      - name: apiVersion
+        in: query
+        required: false
+        description: Версия API расширения (сверка совместимости, 05 ONEC-095).
+        schema:
+          type: string
+          maxLength: 20
+      - name: platformVersion
+        in: query
+        required: false
+        description: Версия платформы 1С.
+        schema:
+          type: string
+          maxLength: 50
+      - name: configVersion
+        in: query
+        required: false
+        description: Версия конфигурации 1С.
+        schema:
+          type: string
+          maxLength: 50
+      - name: serverTime
+        in: query
+        required: false
+        description: Время сервера 1С (UTC).
+        schema:
+          type: string
+          format: date-time
+      - name: registrationBacklog
+        in: query
+        required: false
+        description: Число незарегистрированных к отправке изменений плана обмена.
+        schema:
+          type: integer
+          minimum: 0
+      - name: lastMessageNumber
+        in: query
+        required: false
+        description: Последний отправленный 1С номер сообщения.
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      responses:
+        '200':
+          description: Состояние backend для узла обмена.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IntegrationsOnecPingResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: [sync.exchange]
+      x-roles: [integration]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-INTEGRATION
+      x-feature-flag: ONEC_INBOUND_ENABLED
+      x-status: proposed
+  /integrations/smspro/dlr:
+    post:
+      tags: [integrations]
+      operationId: integrations_smspro_dlr_receive
+      summary: Отчёт о доставке SMS от SMSPro (push-DLR)
+      description: '08 §4.22.1; ядро §17.4, §17.7; 09 §6.5; 11 SEC-013, SEC-026. Опционально (could): по умолчанию SMSPRO_DLR_MODE=poll — маршрут
+        отвечает 404; push включается SMSPRO_DLR_MODE=push (09 §6.11 фиксирует объём R1 «только poll» — режим push остаётся выключенным, пока
+        не включён флагом). Без access JWT: только IP-allowlist SMSPRO_DLR_ALLOWED_IPS (пустой список → 404). Тело — application/xml (исключение
+        из правила application/json только для этого маршрута) формата 09 §6.5: report/dr[] с id и phone/report/sendTime/rcvTime; подписи у push-запроса
+        нет. Ответ — 200 с пустым телом за ≤ 1 с; обработка в фоне (pg-boss); неизвестные dr/id игнорируются (метрика sms_dlr_unknown_id_total);
+        повтор отчёта по тому же dr/id не меняет sms_outbox повторно. Ответ провайдеру — без деталей. Ошибки: 403 FORBIDDEN (IP вне allowlist);
+        404 NOT_FOUND (push выключен); 413 PAYLOAD_TOO_LARGE (> 1 MB); 415 UNSUPPORTED_MEDIA_TYPE. Аудит в audit_logs не пишется (технический
+        канал; без номеров телефонов в логах).'
+      security: []
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      requestBody:
+        required: true
+        content:
+          application/xml:
+            schema: {$ref: '#/components/schemas/IntegrationsSmsproDlrReport'}
+      responses:
+        '200':
+          description: Отчёт принят (пустое тело).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/XRequestId'}
+            Cache-Control: {$ref: '#/components/headers/CacheControl'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '415': {$ref: '#/components/responses/UnsupportedMediaType'}
+        default: {$ref: '#/components/responses/Problem'}
+      x-permissions: []
+      x-roles: []
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-PUBLIC-IP
+      x-feature-flag: SMSPRO_DLR_MODE=push
+components:
+  parameters:
+    IntegrationsOnecNode:
+      name: X-Onec-Node
+      in: header
+      required: false
+      description: '[НОВОЕ ИМЯ 08 §4.21] Имя узла плана обмена (для будущих нескольких баз), например POS.'
+      schema:
+        type: string
+        maxLength: 50
+        example: POS
+    IntegrationsOnecExtensionVersion:
+      name: X-Onec-Extension-Version
+      in: header
+      required: false
+      description: '[НОВОЕ ИМЯ 08 §4.21] Версия расширения onec-extension; пишется в sync_runs.meta.'
+      schema:
+        type: string
+        maxLength: 50
+        example: 1.0.3
+  schemas:
+    NotificationsUnreadCount:
+      type: object
+      required: [unreadCount]
+      description: Ответ POST /notifications/{id}/read и /notifications/read-all (08 §4.16.2).
+      properties:
+        unreadCount:
+          type: integer
+          minimum: 0
+          example: 2
+    SyncRunsCreateRequest:
+      type: object
+      required: [entity, mode]
+      additionalProperties: false
+      description: Тело POST /sync/runs (08 §4.17.2, §8).
+      properties:
+        entity: {$ref: '#/components/schemas/SyncEntity'}
+        mode:
+          type: string
+          enum: [incremental, full, reconcile]
+          description: 'Подмножество SyncMode (07 §6.1): значение manual присваивается прогону сервером и в теле не принимается.'
+        scope:
+          type: object
+          nullable: true
+          additionalProperties: false
+          description: Точечная синхронизация (например, долг клиента перед продажей в долг); null — вся сущность.
+          properties:
+            customerId:
+              type: string
+              format: uuid
+              nullable: true
+            variantIds:
+              type: array
+              maxItems: 200
+              items:
+                type: string
+                format: uuid
+              description: variantIds ≤ 200 (08 §2.14).
+    SyncRunError:
+      type: object
+      required: [id, entity, errorCode, message]
+      description: Строка GET /sync/runs/{id}/errors (08 §4.17.2; 07 sync_errors). errorCode — код журнала синхронизации, НЕ Problem.code.
+      properties:
+        id:
+          type: string
+          format: uuid
+        entity: {$ref: '#/components/schemas/SyncEntity'}
+        onecRef:
+          type: string
+          format: uuid
+          nullable: true
+        onecCode:
+          type: string
+          nullable: true
+          description: Код объекта в 1С.
+        errorCode: {$ref: '#/components/schemas/SyncErrorCode'}
+        message:
+          type: string
+        payload:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Данные объекта без ПДн.
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+          description: 'Только чтение: операция «пометить решённой» — R2 (Q-219, ядро §19.2).'
+    AdminUser:
+      type: object
+      required: [id, kind, status, roles]
+      description: Пользователь в админ-разделе (08 §4.18.1; имя схемы — из 08).
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind: {$ref: '#/components/schemas/UserKind'}
+        status: {$ref: '#/components/schemas/UserStatus'}
+        phoneMasked:
+          type: string
+          example: +996 7** *** *01
+          description: 'Телефон: маскированный (формат PhoneMasked, ядро §19.2); для admin — полный (08 §4.18.1).'
+        fullName:
+          type: string
+        roles:
+          type: array
+          items: {$ref: '#/components/schemas/RoleCode'}
+        permissionsVersion:
+          type: integer
+          minimum: 0
+        discountLimitPercent:
+          allOf: [{$ref: '#/components/schemas/Percent'}]
+          readOnly: true
+          description: 'Только чтение: лимит эффективной роли из role_discount_limits (персональных лимитов в R1 нет).'
+        lastLoginAt:
+          type: string
+          format: date-time
+          nullable: true
+        devicesCount:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        invitation:
+          type: object
+          nullable: true
+          properties:
+            status:
+              type: string
+              enum: [pending, accepted]
+            createdAt:
+              type: string
+              format: date-time
+        rowVersion:
+          type: integer
+          minimum: 0
+          description: Версия строки для PATCH /admin/users/{id} и PUT …/roles (VERSION_CONFLICT). В перечне полей AdminUser 08 §4.18.1 не названо
+            — добавлено, т. к. тела PATCH и PUT …/roles требуют rowVersion.
+    AdminUsersCreateRequest:
+      type: object
+      required: [phone, fullName, roles]
+      additionalProperties: false
+      description: Тело POST /admin/users (08 §4.18.1). discountLimitPercent, warehouseIds → VALIDATION_FAILED rule forbidden_field.
+      properties:
+        phone: {$ref: '#/components/schemas/PhoneE164'}
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 150
+          description: '07 users.full_name: 2…150.'
+        roles:
+          type: array
+          minItems: 1
+          maxItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: [seller, cashier, senior_seller, admin, owner]
+            description: 'user_invitations.role (07 §6.1.1): подмножество RoleCode без customer и integration.'
+          description: 'R1: ровно одна роль — приглашение хранит одну роль (07 §5.3 user_invitations.role), активная роль пользователя одна
+            (07 §5.7 user_roles_one_active_uq); расширение maxItems — после решения Q-005 (expand-изменение; B-AR-02). owner → 403 FORBIDDEN
+            (owner_role_reserved, 11 SEC-040); integration — не принимается (ядро §18.2 п.4).'
+    AdminUsersUpdateRequest:
+      type: object
+      required: [rowVersion]
+      additionalProperties: false
+      description: 'Тело PATCH /admin/users/{id} (08 §4.18.1): только fullName; роли и статус — отдельными операциями.'
+      properties:
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 150
+        rowVersion:
+          type: integer
+          minimum: 0
+    AdminUsersRolesSetRequest:
+      type: object
+      required: [roles, rowVersion]
+      additionalProperties: false
+      description: 'Тело PUT /admin/users/{id}/roles (08 §4.18.2): полная замена набора ролей.'
+      properties:
+        roles:
+          type: array
+          minItems: 1
+          maxItems: 1
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/RoleCode'}
+          description: 'R1: ровно одна роль (07 §5.7: одна активная роль, user_roles_one_active_uq) — больше одной → 400 VALIDATION_FAILED
+            по схеме, а не 500 из БД; расширение maxItems — после решения Q-005 (expand-изменение; B-AR-02). Me.roles и AdminUser.roles
+            остаются массивами. integration → 422 VALIDATION_FAILED (ядро §18.2 п.4); ограничения по owner — 11 SEC-040, ядро §21 п.3.'
+        reason:
+          type: string
+          maxLength: 500
+          example: перевод на кассу
+        rowVersion:
+          type: integer
+          minimum: 0
+    AdminUsersBlockRequest:
+      type: object
+      required: [blocked]
+      additionalProperties: false
+      description: Тело POST /admin/users/{id}/block (08 §4.18.3).
+      properties:
+        blocked:
+          type: boolean
+          description: true — заблокировать, false — разблокировать.
+        reason:
+          type: string
+          maxLength: 500
+          example: увольнение
+    AdminUsersPinResetRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      description: Тело DELETE /admin/users/{id}/pin (08 §4.18.9; 11 SEC-076).
+      properties:
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+          example: сотрудник забыл PIN
+    AdminUsersEmergencyLoginCodeRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      description: Тело POST /admin/users/{id}/emergency-login-code (08 §4.18.10).
+      properties:
+        reason:
+          type: string
+          enum: [sms_unavailable, sim_lost, other]
+        comment:
+          type: string
+          nullable: true
+          minLength: 5
+          maxLength: 200
+          description: Обязателен при reason=other (иначе VALIDATION_FAILED).
+    AdminEmergencyLoginCode:
+      type: object
+      required: [code, expiresAt, phoneMasked]
+      description: 'Ответ 201 POST /admin/users/{id}/emergency-login-code: показывается администратору один раз; не сохраняется в idempotency_keys.'
+      properties:
+        code:
+          type: string
+          pattern: ^\d{6}$
+          example: '123456'
+        expiresAt:
+          type: string
+          format: date-time
+        phoneMasked: {$ref: '#/components/schemas/PhoneMasked'}
+    AdminInvitationsCreateRequest:
+      type: object
+      required: [phone, roles]
+      additionalProperties: false
+      description: Тело POST /admin/invitations (08 §4.18.4).
+      properties:
+        phone: {$ref: '#/components/schemas/PhoneE164'}
+        roles:
+          type: array
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+          items:
+            type: string
+            enum: [seller, cashier, senior_seller, admin, owner]
+            description: 'user_invitations.role (07 §6.1.1): подмножество RoleCode без customer и integration.'
+        fullName:
+          type: string
+          nullable: true
+          minLength: 2
+          maxLength: 150
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: null — по умолчанию 30 дней от создания (Q-141).
+    AdminDiscountLimitsByRole:
+      type: object
+      required: [seller, cashier, senior_seller, admin, owner]
+      additionalProperties: false
+      description: 'Лимит ручной скидки по ролям (role_discount_limits; значения — [НЕ ПОДТВЕРЖДЕНО: Q-015], 08 §4.18.5).'
+      properties:
+        seller: {$ref: '#/components/schemas/Percent'}
+        cashier: {$ref: '#/components/schemas/Percent'}
+        senior_seller: {$ref: '#/components/schemas/Percent'}
+        admin: {$ref: '#/components/schemas/Percent'}
+        owner: {$ref: '#/components/schemas/Percent'}
+    AdminDiscountLimitsUpdateRequest:
+      type: object
+      required: [limits, overrideRoles, rowVersion]
+      additionalProperties: false
+      description: 'Тело PUT /admin/discount-limits (08 §4.18.5): полная замена по rowVersion.'
+      properties:
+        limits: {$ref: '#/components/schemas/AdminDiscountLimitsByRole'}
+        overrideRoles:
+          type: array
+          maxItems: 7
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/RoleCode'}
+          description: 'Роли, подтверждающие скидку сверх лимита (пример 08: senior_seller, admin).'
+        rowVersion:
+          type: integer
+          minimum: 0
+    AdminDiscountLimits:
+      type: object
+      required: [limits, overrideRoles, rowVersion]
+      description: Ответ GET/PUT /admin/discount-limits (08 §4.18.5).
+      properties:
+        limits: {$ref: '#/components/schemas/AdminDiscountLimitsByRole'}
+        overrideRoles:
+          type: array
+          items: {$ref: '#/components/schemas/RoleCode'}
+        rowVersion:
+          type: integer
+          minimum: 0
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedBy:
+          type: object
+          nullable: true
+          allOf: [{$ref: '#/components/schemas/UserRef'}]
+    AdminSettingsValues:
+      type: object
+      additionalProperties: false
+      description: 'Ключи app_settings (07 §5.59) в camelCase-проекции (08 §4.18.6, таблица соответствия; ядро §19.2): имя поля — ключ целиком,
+        включая точки (receivables.maxAgeMinutes, syncInterval.<entity>, otp.ttlSeconds). Все ключи таблицы — с отметкой «запись». В ответе —
+        все ключи; в PUT — частичный объект. Ключи env и неизвестные → VALIDATION_FAILED.'
+      properties:
+        lowStockThreshold:
+          type: integer
+          minimum: 0
+          description: low_stock_threshold; по умолчанию 5 [НЕ ПОДТВЕРЖДЕНО]. Публичный.
+        cartStaleMinutes:
+          type: integer
+          minimum: 0
+          description: cart_stale_minutes.
+        parkedCartTtlDays:
+          type: integer
+          minimum: 1
+          maximum: 30
+          description: parked_cart_ttl_days; по умолчанию 7 (Q-141).
+        overpayAllowed:
+          type: boolean
+          description: overpay_allowed; по умолчанию false (Q-012).
+        returnApprovalThreshold:
+          allOf: [{$ref: '#/components/schemas/Money'}]
+          description: return_approval_threshold (Q-144).
+        returnsEnabled:
+          type: boolean
+          description: 'returns_enabled (Q-018). Публичный: features.returnsFromPos.'
+        cashRounding:
+          type: string
+          enum: [none, to_som]
+          description: cash_rounding; по умолчанию none (Q-016).
+        deliverySlots:
+          type: array
+          maxItems: 500
+          items: {$ref: '#/components/schemas/DeliverySlot'}
+          description: delivery_slots. Публичный.
+        receivables.maxAgeMinutes:
+          type: integer
+          minimum: 5
+          maximum: 1440
+          description: receivables.max_age_minutes; по умолчанию 60 (иначе env RECEIVABLES_MAX_AGE_MIN).
+        minAppVersion:
+          allOf: [{$ref: '#/components/schemas/SemVerByPlatform'}]
+          description: min_app_version (иначе env MIN_APP_VERSION). Публичный.
+        recommendedAppVersion:
+          type: string
+          nullable: true
+          allOf: [{$ref: '#/components/schemas/SemVerByPlatform'}]
+          description: recommended_app_version (иначе env RECOMMENDED_APP_VERSION). Публичный.
+        secureScreens:
+          type: array
+          maxItems: 500
+          items:
+            type: string
+            maxLength: 50
+          description: 'secure_screens (json): список экранов с запретом снимков.'
+        privacyContact:
+          type: string
+          nullable: true
+          maxLength: 300
+          description: privacy_contact. Публичный.
+        syncInterval.categories:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.categories, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.products:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.products, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.variants:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.variants, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.attributes:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.attributes, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.units:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.units, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.barcodes:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.barcodes, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.images:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.images, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.warehouses:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.warehouses, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.stock:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.stock, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.prices:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.prices, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.customers:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.customers, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.receivables:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.receivables, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.sales_history:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.sales_history, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.order_status:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.order_status, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.discounts:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.discounts, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.payment_docs:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.payment_docs, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        syncInterval.return_docs:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: sync_interval.return_docs, секунды (по умолчанию — env SYNC_*_CRON, D-29).
+        otp.ttlSeconds:
+          type: integer
+          minimum: 180
+          maximum: 600
+          description: otp.ttl_seconds; 300 (иначе env OTP_TTL_SECONDS).
+        otp.maxAttempts:
+          type: integer
+          minimum: 1
+          description: otp.max_attempts; 5 (иначе env OTP_MAX_VERIFY_ATTEMPTS).
+        session.staffRefreshDays:
+          type: integer
+          minimum: 1
+          description: session.staff_refresh_days; 7.
+        consentTexts:
+          type: object
+          additionalProperties: true
+          description: 'consent_texts (json): версии и ссылки на тексты согласий (Q-027).'
+        categoryIcons:
+          type: object
+          additionalProperties: true
+          description: category_icons (json).
+        attributeCodes:
+          type: object
+          additionalProperties: true
+          description: attribute_codes (json).
+        print.defaultPaper:
+          allOf: [{$ref: '#/components/schemas/PrintPaper'}]
+          description: print.default_paper.
+        qr.enabled:
+          type: boolean
+          description: 'qr.enabled. Публичный: features.qrProvider=none, если false; features.qrWebhook.'
+        customerStockDisplay:
+          allOf: [{$ref: '#/components/schemas/CustomerStockDisplay'}]
+          description: customer_stock_display; по умолчанию status (ядро §24.2). Публичный.
+        supportContacts:
+          type: array
+          maxItems: 500
+          items: {$ref: '#/components/schemas/SupportContact'}
+          description: support_contacts (json; kind phone|telegram|email). Публичный.
+    AdminSettingsEnv:
+      type: object
+      readOnly: true
+      description: Значения переменных окружения — только чтение (изменяются только на сервере; 08 §4.18.6; 16 §4.3). Секреты не отдаются.
+      properties:
+        customerSelfService:
+          type: boolean
+          description: CUSTOMER_SELF_SERVICE — только env, по умолчанию true (ядро §24.2, §19.2).
+        debtPaymentsFromPos:
+          type: boolean
+          description: DEBT_PAYMENTS_FROM_POS (Q-152).
+        qrProvider:
+          allOf: [{$ref: '#/components/schemas/QrProviderMode'}]
+          description: 'QR_PROVIDER: onec — основной R1, none — запасной, bakai — R2 (ядро §24.4).'
+        qrTtlMinutes:
+          type: integer
+          minimum: 0
+          description: QR_TTL_MINUTES.
+        qrOnecPollSeconds:
+          type: integer
+          minimum: 0
+          description: QR_ONEC_POLL_SECONDS, по умолчанию 5 (ядро §24.4).
+        receivablesMaxAgeMin:
+          type: integer
+          minimum: 0
+          description: RECEIVABLES_MAX_AGE_MIN (действует, если ключ не задан).
+        minAppVersion:
+          allOf: [{$ref: '#/components/schemas/SemVerByPlatform'}]
+          description: env MIN_APP_VERSION.
+        recommendedAppVersion:
+          type: string
+          nullable: true
+          allOf: [{$ref: '#/components/schemas/SemVerByPlatform'}]
+          description: env RECOMMENDED_APP_VERSION.
+        otpTtlSeconds:
+          type: integer
+          minimum: 0
+          description: OTP_TTL_SECONDS (09 §6.11).
+        otpResendCooldownSeconds:
+          type: integer
+          minimum: 0
+          description: OTP_RESEND_COOLDOWN_SECONDS (09 §6.11).
+        otpMaxVerifyAttempts:
+          type: integer
+          minimum: 0
+          description: OTP_MAX_VERIFY_ATTEMPTS (09 §6.11).
+        otpGlobalPerMin:
+          type: integer
+          minimum: 0
+          description: OTP_GLOBAL_PER_MIN — лимит отправок (09 §6.11).
+        otpLockAfterLockedCodes:
+          type: integer
+          minimum: 0
+          description: OTP_LOCK_AFTER_LOCKED_CODES — лимит отправок (09 §6.11).
+        otpPhonePauseMinutes:
+          type: integer
+          minimum: 0
+          description: OTP_PHONE_PAUSE_MINUTES — лимит отправок (09 §6.11).
+        sessionIdleLockMinutes:
+          type: integer
+          minimum: 0
+          description: SESSION_IDLE_LOCK_MINUTES (ядро §17.7, §19.3).
+        authBackgroundLockMinutes:
+          type: integer
+          minimum: 0
+          description: AUTH_BACKGROUND_LOCK_MINUTES (ядро §19.3).
+        smsSenderName:
+          type: string
+          description: SMSPRO_SENDER — имя отправителя SMS (не секрет).
+    AdminSettingsResponse:
+      type: object
+      required: [settings, env, rowVersion]
+      description: Ответ GET/PUT /admin/settings (08 §4.18.6).
+      properties:
+        settings: {$ref: '#/components/schemas/AdminSettingsValues'}
+        env: {$ref: '#/components/schemas/AdminSettingsEnv'}
+        rowVersion:
+          type: integer
+          minimum: 0
+    AdminSettingsUpdateRequest:
+      type: object
+      required: [settings, rowVersion]
+      additionalProperties: false
+      description: 'Тело PUT /admin/settings (08 §4.18.6): частичный объект settings + rowVersion.'
+      properties:
+        settings: {$ref: '#/components/schemas/AdminSettingsValues'}
+        rowVersion:
+          type: integer
+          minimum: 0
+    AuditRow:
+      type: object
+      required: [id, occurredAt, action, result, chainOk]
+      description: Строка журнала аудита (08 §4.18.7; имя схемы — из 08 §8; используется также в GET /transactions/{id}, 08 §4.14.2). Для admin
+        финансовые значения before/after маскируются ("***"), owner видит полностью (API-118, API-134, 11 SEC-083).
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        requestId:
+          type: string
+        actor:
+          type: object
+          nullable: true
+          allOf: [{$ref: '#/components/schemas/UserRef'}]
+          description: null — системный актор (воркер, integration).
+        actorRole:
+          allOf: [{$ref: '#/components/schemas/RoleCode'}]
+          description: Роль актора на момент события.
+        sessionId:
+          type: string
+          format: uuid
+          nullable: true
+        deviceId:
+          type: string
+          nullable: true
+        ip:
+          type: string
+          nullable: true
+        appVersion:
+          type: string
+          nullable: true
+        action:
+          type: string
+          example: payment.manual_qr_confirmed
+          description: Имя события — словарь 11 §7.2, §7.2.1.
+        entityType:
+          type: string
+          nullable: true
+        entityId:
+          type: string
+          nullable: true
+        onecRef:
+          type: string
+          format: uuid
+          nullable: true
+        before:
+          type: object
+          nullable: true
+          additionalProperties: true
+        after:
+          type: object
+          nullable: true
+          additionalProperties: true
+        result:
+          type: string
+          enum: [ok, denied, error]
+          description: audit_logs.result (07 §6.1.1).
+        stepUpMethod:
+          type: string
+          nullable: true
+          allOf: [{$ref: '#/components/schemas/StepUpMethod'}]
+        reason:
+          type: string
+          nullable: true
+        rowHash:
+          type: string
+        chainOk:
+          type: boolean
+          description: 'Результат проверки хэш-цепочки prev_hash/row_hash (07, D-36): false — нарушение целостности (ядро §19.2).'
+    AdminReportsPeriod:
+      type: object
+      required: [from, to]
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+    AdminReportsSalesByMethod:
+      type: object
+      description: Суммы по способам оплаты (payment_method 07 §6.1).
+      properties:
+        cash: {$ref: '#/components/schemas/Money'}
+        qr_bakai: {$ref: '#/components/schemas/Money'}
+        credit: {$ref: '#/components/schemas/Money'}
+    AdminReportsSalesSummaryTotals:
+      type: object
+      properties:
+        ordersCount:
+          type: integer
+          minimum: 0
+        ordersTotal: {$ref: '#/components/schemas/Money'}
+        paidTotal: {$ref: '#/components/schemas/Money'}
+        byMethod: {$ref: '#/components/schemas/AdminReportsSalesByMethod'}
+        discountTotal: {$ref: '#/components/schemas/Money'}
+        cancelledCount:
+          type: integer
+          minimum: 0
+    AdminReportsSalesSummaryRow:
+      allOf:
+      - type: object
+        required: [key]
+        properties:
+          key:
+            type: string
+            example: '2026-10-18'
+            description: Значение разреза groupBy (дата, id продавца или способ оплаты).
+      - {$ref: '#/components/schemas/AdminReportsSalesSummaryTotals'}
+    AdminReportsSalesSummary:
+      type: object
+      required: [period, rows, source]
+      description: 'Ответ GET /admin/reports/sales-summary (08 §4.18.8): только по данным POS.'
+      properties:
+        period: {$ref: '#/components/schemas/AdminReportsPeriod'}
+        rows:
+          type: array
+          items: {$ref: '#/components/schemas/AdminReportsSalesSummaryRow'}
+        totals: {$ref: '#/components/schemas/AdminReportsSalesSummaryTotals'}
+        source:
+          type: string
+          enum: [pos]
+          description: 'R1 — только pos; source: onec (sales_history) — R2.'
+    AdminReportsReceivables:
+      type: object
+      required: [asOf, isStale]
+      description: 'Ответ GET /admin/reports/receivables (08 §4.18.8): по снимку 1С; aging и топ должников — R2.'
+      properties:
+        asOf:
+          type: string
+          format: date-time
+          nullable: true
+        isStale:
+          type: boolean
+        totalBalance: {$ref: '#/components/schemas/Money'}
+        totalOverdue: {$ref: '#/components/schemas/Money'}
+        customersCount:
+          type: integer
+          minimum: 0
+        overdueCount:
+          type: integer
+          minimum: 0
+    AdminReportsQrReconciliationRow:
+      type: object
+      required: [paymentId, amount, status]
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        orderNumber:
+          type: string
+          nullable: true
+          example: POS-2026-000123
+        amount: {$ref: '#/components/schemas/Money'}
+        bankReference:
+          type: string
+          nullable: true
+        confirmationKind:
+          type: string
+          nullable: true
+          enum: [webhook, manual, null]
+          description: webhook — автоматическое подтверждение провайдера (при QR_PROVIDER=onec — от 1С, ядро §24.4); manual — кассиром.
+        confirmedBy:
+          type: object
+          nullable: true
+          allOf: [{$ref: '#/components/schemas/UserRef'}]
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+        status: {$ref: '#/components/schemas/PaymentStatus'}
+        reviewReason:
+          type: string
+          nullable: true
+          allOf: [{$ref: '#/components/schemas/ReviewReason'}]
+        bankAmount:
+          type: object
+          nullable: true
+          allOf: [{$ref: '#/components/schemas/Money'}]
+    AdminReportsQrReconciliation:
+      type: object
+      required: [period, rows, summary]
+      description: Ответ GET /admin/reports/qr-reconciliation (08 §4.18.8).
+      properties:
+        period: {$ref: '#/components/schemas/AdminReportsPeriod'}
+        rows:
+          type: array
+          items: {$ref: '#/components/schemas/AdminReportsQrReconciliationRow'}
+        summary:
+          type: object
+          properties:
+            webhook:
+              type: integer
+              minimum: 0
+            manual:
+              type: integer
+              minimum: 0
+            unmatched:
+              type: integer
+              minimum: 0
+    HealthLiveness:
+      type: object
+      required: [status, apiVersion, serverTime]
+      description: 'GET /health (08 §4.19.1): только это, без версий компонентов.'
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        apiVersion:
+          type: string
+          example: '1.0'
+        serverTime:
+          type: string
+          format: date-time
+    HealthReadiness:
+      type: object
+      required: [status, checks]
+      description: GET /health/ready 200 (08 §4.19.1).
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        checks:
+          type: object
+          properties:
+            db:
+              type: string
+              example: ok
+            worker:
+              type: string
+              example: ok
+            onec:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ok, unreachable, degraded]
+                reasons:
+                  type: array
+                  items:
+                    type: string
+                    enum: [consecutive_errors, manual_orders_sla, price_list_config, inbound_silent, api_incompatible]
+                  description: consecutive_errors — consecutiveErrors ≥ 3 у сущности; manual_orders_sla — заказ фазы 0 старше MANUAL_ORDER_SLA_MIN;
+                    price_list_config — роль без вида цены; inbound_silent — в C-2 нет ping дольше 2× периода; api_incompatible — несовместимая
+                    версия API расширения (сущности paused).
+            sync:
+              type: object
+              properties:
+                stockAgeSec:
+                  type: integer
+                  minimum: 0
+                stale:
+                  type: boolean
+            sms:
+              type: string
+              enum: [ok, circuit_open]
+    HealthReadinessFailed:
+      type: object
+      required: [status]
+      description: GET /health/ready 503 — не problem+json (08 §4.19.1).
+      properties:
+        status:
+          type: string
+          enum: [failed]
+    IntegrationsOnecChangeObject:
+      type: object
+      required: [objectType, ref]
+      additionalProperties: false
+      description: 'Элемент objects[] пакета (08 §4.21.1; 05 §10.1): изменение — с data; удаление — type: ObjectDeletion без data. Элемент без
+        data и без type: ObjectDeletion → VALIDATION_FAILED. Имена objectType — [ТИПОВО: Q-010].'
+      properties:
+        type:
+          type: string
+          enum: [ObjectDeletion]
+          description: Только для удаления объекта.
+        objectType:
+          type: string
+          maxLength: 200
+          example: Catalog_Номенклатура
+        ref:
+          type: string
+          minLength: 1
+          maxLength: 150
+          description: 'Ключ объекта (B-AR-05; 05 §6.2 п.1, контракт 1С ObjectDeletion.ref/BarcodeChange.ref): для справочников и документов
+            (Catalog_*, Document_*) — Ref_Key, GUID в нижнем регистре (формат проверяет сервер по objectType; иное → ошибка объекта в
+            sync_errors, пакет не отвергается целиком); для наборов записей регистров (InformationRegister_*, например штрихкоды) — ключ
+            набора, например значение штрихкода. Хранение версий — sync_entity_versions.onec_key (07 §5.54, предложение).'
+        dataVersion:
+          type: string
+          maxLength: 100
+          example: AAAAAgAC
+        deletionMark:
+          type: boolean
+        data:
+          type: object
+          additionalProperties: true
+          description: Содержимое объекта по JSON-формату 05 §6.4 (владелец формата — 05).
+    IntegrationsOnecChangesRequest:
+      type: object
+      required: [messageNumber, node, objects]
+      additionalProperties: false
+      description: Тело POST /integrations/onec/changes — канонический формат 05 §10.1 (ядро §18.1).
+      properties:
+        messageNumber:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 1042
+        node:
+          type: string
+          maxLength: 50
+          example: POS
+        objects:
+          type: array
+          maxItems: 1000
+          items: {$ref: '#/components/schemas/IntegrationsOnecChangeObject'}
+          description: ≤ 1000 (как limit метода /pos/v1/changes, 05 §6.3).
+        generatedAt:
+          type: string
+          format: date-time
+    IntegrationsOnecChangesAccepted:
+      type: object
+      required: [messageNumber, accepted, runId]
+      description: Ответ 202 (подтверждение приёма пакета; итог применения — в sync_runs/sync_errors по runId).
+      properties:
+        messageNumber:
+          type: integer
+          format: int64
+          minimum: 0
+        accepted:
+          type: boolean
+          description: false — повтор уже принятого номера (объекты повторно не применяются).
+        runId:
+          type: string
+          format: uuid
+    IntegrationsOnecOutboxItem:
+      type: object
+      required: [outboxId, kind, operation, externalId, payload]
+      properties:
+        outboxId:
+          type: string
+          format: uuid
+        kind: {$ref: '#/components/schemas/OutboxAggregate'}
+        operation: {$ref: '#/components/schemas/OutboxOperation'}
+        externalId:
+          type: string
+          format: uuid
+          description: UUID агрегата = onec_outbox.external_id — ключ идемпотентности для 1С (08 §2.7).
+        publicNumber:
+          type: string
+          example: POS-2026-000123
+          description: Только отображаемый реквизит, ключом не является.
+        attempt:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          additionalProperties: true
+          description: Команда по JSON-формату 05 §6.4 (например, CreateOrderCmd).
+    IntegrationsOnecOutboxResponse:
+      type: object
+      required: [items, leaseUntil]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/IntegrationsOnecOutboxItem'}
+        leaseUntil:
+          type: string
+          format: date-time
+          description: Окончание аренды выданных элементов (now + 10 мин).
+    IntegrationsOnecOutboxAckRequest:
+      type: object
+      required: [result]
+      additionalProperties: false
+      description: Тело POST /integrations/onec/outbox/{outboxId}/ack — состав 05 §10.1; коды POS_E_* — 05 §6.5 [ТИПОВО].
+      properties:
+        result:
+          type: string
+          enum: [confirmed, rejected, retry]
+        onecRef:
+          type: string
+          format: uuid
+          description: Обязателен при confirmed.
+        onecNumber:
+          type: string
+          maxLength: 50
+          example: УТ-000123
+          description: Обязателен при confirmed.
+        onecDate:
+          type: string
+          format: date-time
+        status:
+          type: string
+          maxLength: 100
+          example: Не согласован
+          description: Статус документа в 1С как есть.
+        posted:
+          type: boolean
+          description: Признак проведения документа.
+        recalculated:
+          type: boolean
+        totals:
+          type: object
+          nullable: true
+          additionalProperties: false
+          description: Обязателен при recalculated=true.
+          required: [subtotal, discountTotal, total]
+          properties:
+            subtotal: {$ref: '#/components/schemas/MoneyAmount'}
+            discountTotal: {$ref: '#/components/schemas/MoneyAmount'}
+            total: {$ref: '#/components/schemas/MoneyAmount'}
+        error:
+          type: object
+          nullable: true
+          additionalProperties: false
+          properties:
+            code:
+              type: string
+              maxLength: 50
+              example: POS_E_VALIDATION
+            message:
+              type: string
+              maxLength: 2000
+            details:
+              type: object
+              additionalProperties: true
+    IntegrationsOnecOutboxAckResponse:
+      type: object
+      required: [outboxId, status]
+      properties:
+        outboxId:
+          type: string
+          format: uuid
+        status:
+          allOf: [{$ref: '#/components/schemas/OutboxStatus'}]
+          description: confirmed → sent; rejected → failed; retry → pending (или dead при исчерпании попыток).
+    IntegrationsOnecOrderStatusItem:
+      type: object
+      required: [onecRef, onecStatus, changedAt]
+      additionalProperties: false
+      description: 'Сырые статусы и признаки документа 1С — набор 05 §10.1, ONEC-068; значения — как в 1С ([ТИПОВО: Q-010]). Поле status не принимается.'
+      properties:
+        onecRef:
+          type: string
+          format: uuid
+        externalId:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID заказа POS (orders.id).
+        onecStatus:
+          type: string
+          maxLength: 100
+          example: К выполнению
+        approved:
+          type: boolean
+        fulfillmentState:
+          type: string
+          nullable: true
+          maxLength: 100
+        shipmentRef:
+          type: string
+          format: uuid
+          nullable: true
+        shippedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deletionMark:
+          type: boolean
+        changedAt:
+          type: string
+          format: date-time
+    IntegrationsOnecOrderStatusRequest:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          maxItems: 500
+          items: {$ref: '#/components/schemas/IntegrationsOnecOrderStatusItem'}
+    IntegrationsOnecOrderStatusResponse:
+      type: object
+      required: [applied, skipped, unknown]
+      properties:
+        applied:
+          type: integer
+          minimum: 0
+        skipped:
+          type: integer
+          minimum: 0
+        unknown:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Заказы, которых нет в POS (созданы в 1С напрямую — в R1 не импортируются).
+    IntegrationsOnecPingResponse:
+      type: object
+      required: [ok, serverTime]
+      properties:
+        ok:
+          type: boolean
+        serverTime:
+          type: string
+          format: date-time
+        lastMessageNumber:
+          type: integer
+          format: int64
+          minimum: 0
+        pendingOutbox:
+          type: integer
+          minimum: 0
+        apiVersion:
+          type: string
+          example: '1.0'
+    IntegrationsOnecSnapshotRequest:
+      type: object
+      required: [snapshotAt, page, pages, hasMore, rows]
+      additionalProperties: false
+      description: 'Тело POST /integrations/onec/snapshots/{entity} (08 §4.21.6; 05 §10.1, ONEC-062). Имена полей строк — [ТИПОВО: Q-010].'
+      properties:
+        snapshotAt:
+          type: string
+          format: date-time
+        page:
+          type: integer
+          minimum: 1
+        pages:
+          type: integer
+          minimum: 1
+        hasMore:
+          type: boolean
+        rows:
+          type: array
+          maxItems: 1000
+          items:
+            type: object
+            additionalProperties: true
+          description: 'Строки среза по JSON-формату 05 §6.4; ≤ 1000 на страницу (как пример 08 «received: 1000» и limit /changes); тело ≤ 10
+            MB.'
+    IntegrationsOnecSnapshotResponse:
+      type: object
+      required: [entity, snapshotAt, page, received, applied, runId]
+      properties:
+        entity:
+          type: string
+          enum: [stock, prices, receivables]
+        snapshotAt:
+          type: string
+          format: date-time
+        page:
+          type: integer
+          minimum: 1
+        received:
+          type: integer
+          minimum: 0
+        applied:
+          type: boolean
+          description: true — только на последней странице (срез применён атомарно).
+        runId:
+          type: string
+          format: uuid
+        counts:
+          allOf: [{$ref: '#/components/schemas/SyncCounts'}]
+          description: Только на последней странице.
+    IntegrationsSmsproDlrPhone:
+      type: object
+      xml:
+        name: phone
+      properties:
+        number:
+          type: string
+          example: '996550123456'
+        report:
+          type: integer
+          minimum: 0
+          maximum: 7
+          description: 'Код отчёта SMSPro (09 §6.5): 3 → DELIVERED; 2/4/5/7 → FAILED; 0/1/6 → PENDING.'
+        sendTime:
+          type: string
+          description: YYYYMMDDhhmmss или пустая строка.
+        rcvTime:
+          type: string
+          description: YYYYMMDDhhmmss или пустая строка.
+    IntegrationsSmsproDlrEntry:
+      type: object
+      xml:
+        name: dr
+      properties:
+        id:
+          type: string
+          example: A881726
+          description: Идентификатор транзакции SMSPro = sms_outbox.provider_message_id; неизвестные игнорируются.
+        phone:
+          type: array
+          items: {$ref: '#/components/schemas/IntegrationsSmsproDlrPhone'}
+          xml:
+            wrapped: false
+    IntegrationsSmsproDlrReport:
+      type: object
+      description: 'Push-DLR SMSPro, формат 09 §6.5 [ПОДТВЕРЖДЕНО: R2 §4.2]: один XML может содержать несколько dr и несколько phone. Формат задаёт
+        провайдер, поэтому строгая проверка лишних элементов не применяется (ответ провайдеру — всегда 200, 08 §4.22.1).'
+      xml:
+        name: report
+        namespace: http://Giper.mobi/schema/DeliveryReport
+      properties:
+        dr:
+          type: array
+          maxItems: 500
+          items: {$ref: '#/components/schemas/IntegrationsSmsproDlrEntry'}
+          xml:
+            wrapped: false

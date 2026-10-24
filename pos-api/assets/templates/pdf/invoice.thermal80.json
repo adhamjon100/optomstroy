@@ -1,0 +1,56 @@
+{
+  "$comment": "Счёт на оплату, лента 80 мм (08 §4.8.5: invoice в A4 и 80 мм). Ширина 226,77 pt = 80 мм, поля по 4 мм; высота страницы — по содержимому. Формат шаблона — README.md рядом.",
+  "kind": "invoice",
+  "paper": "thermal80",
+  "title": "Счёт на оплату",
+  "page": { "width": 226.77, "margins": { "top": 10, "right": 11.34, "bottom": 14, "left": 11.34 } },
+  "fontSize": 7.5,
+  "blocks": [
+    { "type": "text", "text": "{{copy}}", "when": "copy", "align": "center", "bold": true, "size": 10 },
+    { "type": "text", "text": "{{seller.name}}", "align": "center", "bold": true, "size": 9, "gapAfter": 1 },
+    { "type": "text", "text": "ИНН {{seller.inn}}", "when": "seller.inn", "align": "center", "gapAfter": 1 },
+    { "type": "text", "text": "{{seller.address}}", "when": "seller.address", "align": "center", "gapAfter": 1 },
+    {
+      "type": "text",
+      "text": "{{seller.bankName}}, БИК {{seller.bic}}, р/с {{seller.account}}",
+      "when": "seller.account",
+      "align": "center"
+    },
+    { "type": "rule", "dashed": true },
+    { "type": "text", "text": "СЧЁТ НА ОПЛАТУ № {{number}}", "align": "center", "bold": true, "size": 9, "gapAfter": 1 },
+    { "type": "text", "text": "от {{date}}", "align": "center" },
+    {
+      "type": "fields",
+      "labelWidth": 0.32,
+      "rows": [
+        { "label": "Покупатель", "value": "{{customer.name}}" },
+        { "label": "ИНН", "value": "{{customer.inn}}", "when": "customer.inn" },
+        { "label": "Основание", "value": "{{purpose}}" },
+        { "label": "Оплата", "value": "{{paymentMethod}}" },
+        { "label": "Срок оплаты", "value": "{{dueDate}}", "when": "dueDate" }
+      ]
+    },
+    {
+      "type": "table",
+      "rows": "items",
+      "size": 7,
+      "columns": [
+        { "header": "Товар", "value": "{{name}}", "width": 0.46 },
+        { "header": "Кол-во × цена", "value": "{{qtyPrice}}", "width": 0.3, "align": "right" },
+        { "header": "Сумма", "value": "{{sum}}", "width": 0.24, "align": "right" }
+      ]
+    },
+    {
+      "type": "fields",
+      "labelWidth": 0.6,
+      "valueAlign": "right",
+      "rows": [
+        { "label": "Сумма без скидки", "value": "{{totals.subtotal}}" },
+        { "label": "{{totals.discountLabel}}", "value": "−{{totals.discount}}", "when": "totals.hasDiscount" },
+        { "label": "ИТОГО К ОПЛАТЕ", "value": "{{totals.total}} {{currency}}", "bold": true }
+      ]
+    },
+    { "type": "rule", "dashed": true },
+    { "type": "text", "text": "{{nonFiscalMark}}", "align": "center", "size": 7 }
+  ]
+}

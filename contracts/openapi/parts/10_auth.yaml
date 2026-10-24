@@ -1,0 +1,1574 @@
+# =====================================================================================
+# Optomstroy POS API — фрагмент модулей auth (/auth/*), registration (/registration/*), profile (/me*)
+# RM-B-003. Источник истины: docs/specification/08_API_SPECIFICATION.md v1.9 — §2.2, §2.7, §2.9, §2.10, §2.12,
+# §2.14, §3.14, §3.15, §4.1, §4.2, §4.3, §8 (скелет: OtpVerifyRequest, AuthAuthenticated, AuthPendingActivation,
+# AuthRegistrationRequired), §9; права — 11 §4.3–§4.4 (x-permissions — только коды 11 §4.3); ядро R0 v1.9
+# §19.2, §19.3, §22.12, §24.2 (приоритет). Общие компоненты — parts/00_root.yaml; правила — ../NOTES.md.
+#
+# Ключи openapi/info оставлены по постановке задачи (минимальные), чтобы фрагмент был самостоятельным YAML-документом;
+# сборщик берёт из фрагмента только paths и components (NOTES §1). Ссылки — как в собранном документе (#/components/...).
+#
+# Не включено (R2 / не R1): POST /registration/face-scan/verify (ядро §17.4, 08 §4.2.3, 13 RM-B-003); методы step-up
+# bio+pin / bio+otp и поле biometricAssertion (08 §2.12, §4.1.7; ядро §19.3); POST /me/devices/{id}/push-token (Q-036),
+# /auth/phone/check, /auth/password/login, /auth/card/login, /registration/start, POST /registration/customer-match (08 §4.20).
+#
+# Решения автора фрагмента (зафиксированы здесь, т. к. NOTES.md вне зоны записи этой задачи):
+#  A1. operationId — snake_case <tag>_<action> по 08 §8 и NOTES §3 п.2 (владелец правил генерации), а не camelCase.
+#  A2. Расширение прав — x-permissions (массив) по 08 §8 / NOTES §5 п.1 (не x-permission).
+#  A3. x-rate-limit-group — строка: основная группа 08 §2.9; дополнительные группы перечислены в description.
+#  A4. Idempotency-Key НЕ применяется (x-idempotent: false) к операциям, выдающим секреты/токены и имеющим собственную
+#      семантику повтора по карточке 08: /auth/otp/request, /auth/otp/verify, /auth/refresh, /auth/step-up, /auth/unlock,
+#      /me/phone/change/request, /me/phone/change/confirm, /me/biometrics (08 §2.10 «POST без Idempotency-Key»;
+#      §2.2 — refresh хранится только как SHA-256, тело ответа с токеном в idempotency_keys не сохраняется).
+#      Прочие POST/PUT/PATCH — IdempotencyKeyOptional; /registration/complete — IdempotencyKey (08 §2.7 «Где обязателен»).
+#  A5. Условный step-up (DELETE /auth/sessions/{sessionId} для чужого устройства, POST /me/pin — кроме первого PIN
+#      сотрудника по приглашению, POST /me/consents — только отзыв personal_data): security — две альтернативы
+#      [{bearerAuth, stepUpToken}, {bearerAuth}]; безусловный step-up — только [{bearerAuth, stepUpToken}].
+#  A6. POST /me/phone/change/confirm — x-step-up: false: step-up проверяется на request (08 §4.3.3; таблица operation
+#      08 §2.12 содержит только request); confirm привязан к челленджу, выданному после step-up.
+#  A7. Ограничения длины строк, не заданные 08 (maxLength токенов, osVersion, appVersion, version согласия, кода сферы
+#      деятельности), выбраны автором фрагмента как защитные верхние границы (08 §2.14 «maxLength у каждого поля»).
+#  A8. x-roles публичных операций — [] (роль не определена до аутентификации; security: []).
+#  A9. PUT /me/settings — строгая схема запроса MeSettingsPutRequest (полная замена, additionalProperties:false,
+#      rowVersion обязателен): общая схема Settings из 00_root — схема ответа без additionalProperties:false.
+#      Встроенные enum scanner/catalogView взяты из 08 §3.14 без изменений.
+# =====================================================================================
+openapi: 3.0.3
+info:
+  title: Optomstroy POS API — fragment auth / registration / profile
+  version: "1.0.0"
+paths:
+  # ===================================================================================
+  # auth (08 §4.1)
+  # ===================================================================================
+  /auth/otp/request:
+    post:
+      tags: [auth]
+      operationId: auth_otp_request
+      summary: Запросить одноразовый код (нейтральный ответ)
+      description: >
+        08 §4.1.1. Создаёт otp_challenge (purpose=login_or_register) и отправляет SMS через SmsGateway. Нейтральный ответ:
+        форма, статус и время ответа одинаковы для зарегистрированного и незарегистрированного номера (D-10).
+        Повтор в cooldown → 429 OTP_RATE_LIMITED; повтор после cooldown создаёт новый код и аннулирует прежний.
+        Ошибки: 400 VALIDATION_FAILED (phone_e164, purpose); 423 OTP_LOCKED; 429 OTP_RATE_LIMITED (retryAfter);
+        503 SMS_PROVIDER_ERROR. Rate limit: RL-OTP-SEND, RL-OTP-SEND-IP, RL-OTP-SEND-DEV, RL-OTP-GLOBAL, RL-PUBLIC-IP.
+        Аудит: auth.otp.sent (без кода). Кэширование: no-store.
+      security: []
+      x-permissions: []
+      x-roles: []
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-OTP-SEND
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthOtpRequestRequest" }
+      responses:
+        "202":
+          description: Код отправлен (ответ одинаков для любого номера).
+          headers: &stdHeaders
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthOtpRequestResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "423": { $ref: "#/components/responses/Locked" }
+        "426": { $ref: "#/components/responses/UpgradeRequired" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/otp/verify:
+    post:
+      tags: [auth]
+      operationId: auth_otp_verify
+      summary: Проверить код; ветвление «вход / сотрудник по приглашению / регистрация клиента / ожидание активации»
+      description: >
+        08 §4.1.2; ядро §24.2. Проверка кода (constant-time), атомарное потребление, регистрация устройства, затем ветвление:
+        аккаунт active → authenticated; номер с действующим приглашением → учётная запись сотрудника и authenticated
+        с roleSource=invitation, nextStep=set_pin (без регистрационной формы); нет аккаунта и приглашения →
+        registration_required (регистрация клиента); pending_activation — только при CUSTOMER_SELF_SERVICE=false;
+        blocked → 403 FORBIDDEN. До установки PIN сессия сотрудника по приглашению ограничена (/me*, /auth/*,
+        GET /settings/public; прочее → 403 FORBIDDEN reason pin_not_set). Повторный verify того же кода → 422 OTP_EXPIRED.
+        Ошибки: 400 VALIDATION_FAILED; 403 FORBIDDEN (blocked); 409 DEVICE_MISMATCH (X-Device-Id ≠ устройству челленджа);
+        422 OTP_INVALID (attemptsLeft), OTP_EXPIRED; 423 OTP_LOCKED (retryAfter); 429 RATE_LIMITED.
+        Rate limit: RL-OTP-VERIFY, RL-PUBLIC-IP. Аудит: auth.otp.verified / auth.otp.failed / auth.login; user.created
+        (вход по приглашению). Кэширование: no-store.
+      security: []
+      x-permissions: []
+      x-roles: []
+      x-step-up: false
+      x-idempotent: false
+      x-feature-flag: CUSTOMER_SELF_SERVICE
+      x-rate-limit-group: RL-OTP-VERIFY
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OtpVerifyRequest" }
+      responses:
+        "200":
+          description: "authenticated | registration_required | pending_activation (одинаковая структура верхнего уровня)."
+          headers: *stdHeaders
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/AuthAuthenticated"
+                  - $ref: "#/components/schemas/AuthPendingActivation"
+                  - $ref: "#/components/schemas/AuthRegistrationRequired"
+                discriminator:
+                  propertyName: status
+                  mapping:
+                    authenticated: "#/components/schemas/AuthAuthenticated"
+                    pending_activation: "#/components/schemas/AuthPendingActivation"
+                    registration_required: "#/components/schemas/AuthRegistrationRequired"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "423": { $ref: "#/components/responses/Locked" }
+        "426": { $ref: "#/components/responses/UpgradeRequired" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/otp/challenges/{challengeId}:
+    get:
+      tags: [auth]
+      operationId: auth_otp_challenge_get
+      summary: Статус доставки SMS по челленджу (без ПДн)
+      description: >
+        08 §4.1.9; ядро §19.2. SCR-02: «Отправляем SMS…» / «SMS отправлено» / «Не удалось отправить SMS». Без access JWT;
+        доступ только с тем же X-Device-Id, что у челленджа (иначе 404 — существование не раскрывается). Ответ не содержит
+        ПДн и одинаков для любого номера. Ошибки: 400 VALIDATION_FAILED (challengeId не uuid, нет X-Device-Id);
+        404 NOT_FOUND (неизвестный / чужой по X-Device-Id / истёкший более 10 мин назад); 429 RATE_LIMITED.
+        Rate limit: RL-OTP-STATUS, RL-PUBLIC-IP. Аудит: не пишется. Кэширование: no-store.
+      security: []
+      x-permissions: []
+      x-roles: []
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-OTP-STATUS
+      parameters:
+        - $ref: "#/components/parameters/AuthChallengeIdPath"
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      responses:
+        "200":
+          description: Состояние доставки SMS.
+          headers: *stdHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthOtpChallengeStatus" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "426": { $ref: "#/components/responses/UpgradeRequired" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: auth_refresh
+      summary: Ротация пары access/refresh
+      description: >
+        08 §4.1.3, §2.2. Только обычная ротация по непрозрачному refresh (тело); аутентификация — по refresh и X-Device-Id.
+        biometric_refresh здесь не принимается (400 VALIDATION_FAILED rule use_unlock) — только POST /auth/unlock.
+        Поля kind и amr → 400 rule forbidden_field. Окно грации 30 с: повтор с предыдущим refresh возвращает ту же новую
+        пару; позже — reuse → отзыв семьи + аудит session.reuse_detected.
+        Ошибки: 400 VALIDATION_FAILED; 401 SESSION_REVOKED (неизвестен / отозван / просрочен / reuse / чужой deviceId /
+        idle-отзыв), UNLOCK_REQUIRED (staff на Windows без действующего unlocked_until, D-48); 429 RATE_LIMITED.
+        Rate limit: RL-AUTH. Кэширование: no-store (токены).
+      security: []
+      x-permissions: []
+      x-roles: []
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-AUTH
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthRefreshRequest" }
+      responses:
+        "200":
+          description: Новая пара токенов.
+          headers: *stdHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthTokenPair" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "426": { $ref: "#/components/responses/UpgradeRequired" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: auth_logout
+      summary: Завершить текущую сессию
+      description: >
+        08 §4.1.4. Отзывает текущую sid (refresh всех kind этой сессии), jti access — в denylist до exp. Повтор → 204.
+        Ошибки: общие (401, 403). Rate limit: RL-AUTH. Аудит: auth.logout. Кэширование: no-store.
+      x-permissions: [session.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: true
+      x-rate-limit-group: RL-AUTH
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKeyOptional"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthLogoutRequest" }
+      responses:
+        "204":
+          description: Сессия завершена (повтор — тоже 204).
+          headers: &idemHeaders
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/logout-all:
+    post:
+      tags: [auth]
+      operationId: auth_logout_all
+      summary: Завершить все сессии пользователя (step-up)
+      description: >
+        08 §4.1.5. Отзывает все sid и refresh-семьи (стандартные и биометрические), включая текущую, без увеличения
+        permissionsVersion; access-токены других устройств перестают приниматься не позже чем через 60 с. Повтор → 204.
+        Step-up обязателен (operation session.logout_all, 08 §2.12). Ошибки: 401; 403 STEP_UP_REQUIRED, FORBIDDEN.
+        Rate limit: RL-AUTH. Аудит: auth.logout_all (stepUpMethod). Кэширование: no-store.
+      security:
+        - bearerAuth: []
+          stepUpToken: []
+      x-permissions: [session.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: true
+      x-step-up-operation: [session.logout_all]
+      x-idempotent: true
+      x-rate-limit-group: RL-AUTH
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/StepUpToken"
+        - $ref: "#/components/parameters/IdempotencyKeyOptional"
+      responses:
+        "204":
+          description: Все сессии отозваны.
+          headers: *idemHeaders
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/sessions:
+    get:
+      tags: [auth]
+      operationId: auth_sessions_list
+      summary: Список активных сессий/устройств пользователя (SCR-42)
+      description: >
+        08 §4.1.6. Только свои сессии; без пагинации (≤ 5 устройств). Ошибки: общие (401, 403).
+        Rate limit: RL-AUTH. Кэширование: no-store.
+      x-permissions: [session.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-AUTH
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      responses:
+        "200":
+          description: Активные сессии.
+          headers: *stdHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSessionList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/sessions/{sessionId}:
+    delete:
+      tags: [auth]
+      operationId: auth_session_revoke
+      summary: Отозвать свою сессию (другого устройства — со step-up)
+      description: >
+        08 §4.1.6; ядро §17.2. Отзыв текущей сессии = logout (без step-up). Отзыв своей сессии на другом устройстве —
+        step-up обязателен (operation session.revoke.other): X-Step-Up-Token обязателен, если sessionId ≠ текущей.
+        Чужой или неизвестный sessionId → 404. Повтор → 204. Access-токены отозванной сессии отклоняются ≤ 60 с.
+        Ошибки: 401; 403 STEP_UP_REQUIRED (другое устройство без токена), FORBIDDEN; 404 NOT_FOUND.
+        Rate limit: RL-AUTH. Аудит: session.revoked (stepUpMethod для другой сессии). Кэширование: no-store.
+      security:
+        - bearerAuth: []
+          stepUpToken: []
+        - bearerAuth: []
+      x-permissions: [session.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: true
+      x-step-up-operation: [session.revoke.other]
+      x-idempotent: false
+      x-rate-limit-group: RL-AUTH
+      parameters:
+        - $ref: "#/components/parameters/AuthSessionIdPath"
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/StepUpToken"
+      responses:
+        "204":
+          description: Сессия отозвана.
+          headers: *stdHeaders
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [auth]
+      operationId: auth_session_rename
+      summary: Переименовать устройство своей сессии
+      description: >
+        08 §4.1.6 (путь — ядро §17.4; приоритет could). Тело — только deviceName (1…60, без управляющих символов);
+        иные поля → 400. Чужой sessionId → 404. Повтор с тем же телом → 200.
+        Ошибки: 400 VALIDATION_FAILED; 401; 403; 404 NOT_FOUND. Rate limit: RL-AUTH. Аудит: не пишется. Кэширование: no-store.
+      x-permissions: [session.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: true
+      x-rate-limit-group: RL-AUTH
+      parameters:
+        - $ref: "#/components/parameters/AuthSessionIdPath"
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKeyOptional"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthSessionPatchRequest" }
+      responses:
+        "200":
+          description: Обновлённая сессия.
+          headers: *idemHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/step-up:
+    post:
+      tags: [auth]
+      operationId: auth_step_up
+      summary: Получить stepUpToken для критической операции (PIN или OTP)
+      description: >
+        08 §4.1.7, §2.12; ядро §18.2 п.6, §19.3. operation клиент берёт из 403 STEP_UP_REQUIRED.stepUp.operation без
+        изменений (иное → 400 rule operation). method=pin → 200 со stepUpToken; method=otp без challengeId → 202
+        (создаёт otp_challenge purpose=step_up), с challengeId и code → 200. Токен многоразовый 15 мин в области scope.
+        В R1 методы bio+pin / bio+otp отклоняются 400 VALIDATION_FAILED (rule method).
+        Ошибки: 400 VALIDATION_FAILED; 401 PIN_INVALID (attemptsLeft; refresh на этот код не выполняется) и общие 401;
+        403 FORBIDDEN (reason pin_not_set / operation_not_permitted); 422 OTP_INVALID, OTP_EXPIRED; 423 PIN_LOCKED,
+        OTP_LOCKED; 429 OTP_RATE_LIMITED, RATE_LIMITED. Rate limit: RL-PIN, RL-OTP-SEND, RL-OTP-VERIFY.
+        Аудит: auth.step_up.ok / auth.step_up.failed; auth.pin.locked; auth.otp.sent. Кэширование: no-store.
+      x-permissions: [session.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-PIN
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthStepUpRequest" }
+      responses:
+        "200":
+          description: stepUpToken выдан.
+          headers: *stdHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthStepUpToken" }
+        "202":
+          description: "method=otp, шаг 1: код отправлен на номер пользователя (purpose=step_up)."
+          headers: *stdHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthOtpChallengeIssued" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "423": { $ref: "#/components/responses/Locked" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/unlock:
+    post:
+      tags: [auth]
+      operationId: auth_unlock
+      summary: Разблокировать сессию по PIN или биометрии с криптопривязкой (с ротацией refresh)
+      description: >
+        08 §4.1.8; ядро §18.2 п.5, §19.3; D-48. Без access JWT: субъект — refreshToken + X-Device-Id, второй фактор —
+        PIN (серверная проверка) или method=biometric (biometric_refresh после системной биометрии; не Windows).
+        Без method — pin. biometricInvalidated=true (с method=pin) отзывает биометрическую семью устройства и выключает
+        Me.security.biometricsEnabled. Сервер устанавливает sessions.unlocked_until = now() + SESSION_IDLE_LOCK_MINUTES.
+        Ротация refresh — по правилам /auth/refresh (окно грации 30 с, reuse-detection).
+        Ошибки: 400 VALIDATION_FAILED; 401 PIN_INVALID (attemptsLeft; клиент не вызывает /auth/refresh), SESSION_REVOKED;
+        403 FORBIDDEN (reason pin_not_set); 423 PIN_LOCKED; 429 RATE_LIMITED. Rate limit: RL-PIN, RL-AUTH.
+        Аудит: auth.unlock (метод, result, deviceId; без PIN); auth.pin.locked. Кэширование: no-store.
+      security: []
+      x-permissions: []
+      x-roles: []
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-PIN
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthUnlockRequest" }
+      responses:
+        "200":
+          description: Сессия разблокирована, выдана новая пара токенов.
+          headers: *stdHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthUnlockResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "423": { $ref: "#/components/responses/Locked" }
+        "426": { $ref: "#/components/responses/UpgradeRequired" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ===================================================================================
+  # registration (08 §4.2)
+  # ===================================================================================
+  /registration/complete:
+    post:
+      tags: [registration]
+      operationId: registration_complete
+      summary: Завершить регистрацию клиента-покупателя по registration_token
+      description: >
+        08 §4.2.1; ядро §19.3, §24.2. Публичный путь (аутентификация — registrationToken в теле). Создаёт клиента-покупателя:
+        роль customer при CUSTOMER_SELF_SERVICE=true (по умолчанию в R1), иначе pending_activation; для customer — поиск
+        карточки 1С по телефону (customer_links). Сотрудники этой операцией не создаются; если приглашение появилось после
+        выдачи registration_token — применяется оно (staff с ролями приглашения, customer_links не создаётся).
+        Шаг «защита входа» обязателен: security.pin можно не передавать только при biometricsEnabled=true на устройстве
+        с биометрией с криптопривязкой (Android class3 / iOS), иначе 400/422 rule login_protection_required.
+        Наличие элемента в consents[] = выданное согласие; personal_data обязательно; biometrics_device — при
+        biometricsEnabled=true; activity_sphere — если передан activitySphere. Повтор с тем же ключом → тот же 201.
+        Скоуп Idempotency-Key здесь — (key, sha256(jti registrationToken), маршрут): пользователя до вызова нет
+        (idempotency_keys.subject_key = reg:<hex>, user_id NULL; B-AR-01). Токены в хранилище идемпотентности не
+        сохраняются (07 §5.56), поэтому повтор выдаёт новую пару токенов для сессии, созданной первым вызовом, на том же
+        устройстве — правило предложено владельцу 08 §2.7 (contracts/openapi/NOTES.md §8).
+        Ошибки: 400 VALIDATION_FAILED (pin_weak, login_protection_required, fullName, birth_year_range, неизвестный
+        activitySphere или consents[].kind, idempotency_key_required); 401 REGISTRATION_TOKEN_INVALID;
+        409 PHONE_ALREADY_REGISTERED, IDEMPOTENCY_IN_PROGRESS; 422 CONSENT_REQUIRED, IDEMPOTENCY_KEY_REUSED;
+        429 RATE_LIMITED. Rate limit: RL-PUBLIC-IP. Аудит: user.created (roleSource invitation|self), consent.granted,
+        auth.pin.set. Кэширование: no-store (токены). Статус карточки: ПРЕДВАРИТЕЛЬНО (Q-027, Q-161, Q-165).
+      security: []
+      x-permissions: []
+      x-roles: []
+      x-step-up: false
+      x-idempotent: required
+      x-feature-flag: CUSTOMER_SELF_SERVICE
+      x-rate-limit-group: RL-PUBLIC-IP
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegistrationCompleteRequest" }
+      responses:
+        "201":
+          description: Пользователь создан; authenticated (с customerMatch) или pending_activation.
+          headers: *idemHeaders
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/RegistrationCompleteAuthenticated"
+                  - $ref: "#/components/schemas/AuthPendingActivation"
+                discriminator:
+                  propertyName: status
+                  mapping:
+                    authenticated: "#/components/schemas/RegistrationCompleteAuthenticated"
+                    pending_activation: "#/components/schemas/AuthPendingActivation"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "426": { $ref: "#/components/responses/UpgradeRequired" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registration/customer-match:
+    get:
+      tags: [registration]
+      operationId: registration_customer_match_get
+      summary: Статус привязки аккаунта к карточке клиента 1С (SCR-06)
+      description: >
+        08 §4.2.2. Только GET (13 RM-B-003). Любой аутентифицированный, включая user_status=pending_activation (статус,
+        не роль); для staff — всегда status none. registration_token маршрут не принимает. До confirmed ответ не содержит
+        customer.id, полного наименования, телефона карточки и финансовых данных (09 REG-032).
+        Ошибки: только общие (401, 403). Rate limit: RL-READ. Аудит: не пишется. Кэширование: no-store.
+      x-permissions: [profile.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      responses:
+        "200":
+          description: Состояние привязки.
+          headers: *stdHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RegistrationCustomerMatch" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registration/customer-match/confirm:
+    post:
+      tags: [registration]
+      operationId: registration_customer_match_confirm
+      summary: Клиент подтверждает предложенную привязку («Да, это я»)
+      description: &customerMatchResolveDescription >
+        08 §4.2.4; ядро §22.12; 11 §4.3 №75, SEC-130. Только роль customer и только при CUSTOMER_SELF_SERVICE=true; только
+        своя привязка (customer_links.user_id = sub) в статусе proposed, у которой подтверждённый телефон карточки 1С
+        совпадает с телефоном аккаунта. Step-up не требуется (владение номером доказано OTP). Повтор для привязки, уже
+        находящейся в целевом статусе, → 200 с тем же ответом.
+        Ошибки: 400 VALIDATION_FAILED; 401; 403 FORBIDDEN (staff; reason self_service_disabled, nextStep wait_admin);
+        404 NOT_FOUND (чужая/неизвестная привязка); 409 CUSTOMER_LINK_CONFLICT (conflict, неподтверждённый или второй
+        контакт, карточка уже привязана — nextStep wait_admin). Rate limit: RL-AUTH.
+        Аудит: customer.link.confirmed / customer.link.rejected (selfResolved true). Кэширование: no-store.
+      x-permissions: [customer.link.self_resolve]
+      x-roles: [customer]
+      x-step-up: false
+      x-idempotent: true
+      x-feature-flag: CUSTOMER_SELF_SERVICE
+      x-rate-limit-group: RL-AUTH
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKeyOptional"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegistrationCustomerMatchResolveRequest" }
+      responses:
+        "200":
+          description: "Привязка подтверждена: status confirmed, customer {id, displayName}, nextStep confirmed."
+          headers: *idemHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RegistrationCustomerMatch" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registration/customer-match/reject:
+    post:
+      tags: [registration]
+      operationId: registration_customer_match_reject
+      summary: Клиент отклоняет предложенную привязку («Это не я»)
+      description: *customerMatchResolveDescription
+      x-permissions: [customer.link.self_resolve]
+      x-roles: [customer]
+      x-step-up: false
+      x-idempotent: true
+      x-feature-flag: CUSTOMER_SELF_SERVICE
+      x-rate-limit-group: RL-AUTH
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKeyOptional"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegistrationCustomerMatchResolveRequest" }
+      responses:
+        "200":
+          description: "Привязка отклонена: status rejected, customer null, nextStep none (клиент работает как новый)."
+          headers: *idemHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RegistrationCustomerMatch" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ===================================================================================
+  # profile — тег me (08 §4.3)
+  # ===================================================================================
+  /me:
+    get:
+      tags: [me]
+      operationId: me_get
+      summary: Текущий пользователь, роли, permissions, настройки, безопасность, привязка
+      description: >
+        08 §4.3.1, §3.14. Источник правды клиента о ролях и правах (permissions[] — для скрытия кнопок, не защита).
+        pending_activation — усечённый DTO. Клиент перечитывает после /auth/refresh с новым permissionsVersion.
+        Ошибки: только общие (401, 403). Rate limit: RL-READ. Аудит: не пишется. Кэширование: no-store.
+      x-permissions: [profile.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      responses:
+        "200":
+          description: Текущий пользователь.
+          headers: *stdHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /me/profile:
+    patch:
+      tags: [me]
+      operationId: me_profile_update
+      summary: Изменить свой профиль
+      description: >
+        08 §4.3.2; ядро §19.3. Правила полей — как в /registration/complete (birthYear 1920…текущий−14; activitySphere —
+        только при действующем согласии activity_sphere). phone, roles, status и прочие поля → 400 rule forbidden_field
+        (08 §2.14). Ответ — Profile с rowVersion+1; повтор уже применённого запроса → 409 VERSION_CONFLICT с current.
+        Ошибки: 400 VALIDATION_FAILED; 401; 403; 409 VERSION_CONFLICT; 422 CONSENT_REQUIRED.
+        Rate limit: RL-READ (группа /me*). Аудит: profile.updated (только имена полей). Кэширование: no-store.
+      x-permissions: [profile.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: true
+      x-rate-limit-group: RL-READ
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKeyOptional"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MeProfilePatchRequest" }
+      responses:
+        "200":
+          description: Обновлённый профиль.
+          headers: *idemHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /me/phone/change/request:
+    post:
+      tags: [me]
+      operationId: me_phone_change_request
+      summary: Запросить смену номера — OTP на новый номер (step-up)
+      description: >
+        08 §4.3.3, §2.12. Step-up обязателен (operation profile.phone.change; владение старым номером — step-up,
+        при method=otp — purpose=step_up). Создаёт otp_challenge purpose=phone_change_new на новый номер.
+        Повтор в cooldown → 429 OTP_RATE_LIMITED, после cooldown — новый код (старый аннулируется).
+        Ошибки: 400 VALIDATION_FAILED (phone_e164); 401; 403 STEP_UP_REQUIRED, FORBIDDEN; 409 PHONE_ALREADY_REGISTERED;
+        423 OTP_LOCKED; 429 OTP_RATE_LIMITED. Rate limit: RL-OTP-SEND (по новому номеру).
+        Аудит: user.phone_change_requested. Кэширование: no-store.
+      security:
+        - bearerAuth: []
+          stepUpToken: []
+      x-permissions: [profile.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: true
+      x-step-up-operation: [profile.phone.change]
+      x-idempotent: false
+      x-rate-limit-group: RL-OTP-SEND
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/StepUpToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MePhoneChangeRequest" }
+      responses:
+        "202":
+          description: Код отправлен на новый номер.
+          headers: *stdHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthOtpChallengeIssued" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "423": { $ref: "#/components/responses/Locked" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /me/phone/change/confirm:
+    post:
+      tags: [me]
+      operationId: me_phone_change_confirm
+      summary: Подтвердить смену номера кодом с нового номера
+      description: >
+        08 §4.3.3. Код одноразовый: повтор → 422 OTP_EXPIRED. Все другие сессии отзываются, текущая продолжает жить.
+        Step-up проверяется на request (решение A6 заголовка файла).
+        Ошибки: 400 VALIDATION_FAILED (otp_format); 401; 403; 409 PHONE_ALREADY_REGISTERED; 422 OTP_INVALID
+        (attemptsLeft), OTP_EXPIRED; 423 OTP_LOCKED; 429 RATE_LIMITED. Rate limit: RL-OTP-VERIFY.
+        Аудит: user.phone_changed (phoneMasked old/new). Кэширование: no-store.
+      x-permissions: [profile.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-OTP-VERIFY
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MePhoneChangeConfirmRequest" }
+      responses:
+        "200":
+          description: Номер изменён, другие сессии отозваны.
+          headers: *stdHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MePhoneChangeResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "423": { $ref: "#/components/responses/Locked" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /me/settings:
+    put:
+      tags: [me]
+      operationId: me_settings_replace
+      summary: Заменить свои настройки интерфейса
+      description: >
+        08 §4.3.4, §3.14. Полная замена с rowVersion. idleLockMinutes 5…30; для staff больше 30 нельзя (сервер,
+        VALIDATION_FAILED). PUT идемпотентен; ключ допускается (клиентский outbox).
+        Ошибки: 400 VALIDATION_FAILED; 401; 403; 409 VERSION_CONFLICT (current). Rate limit: RL-READ (группа /me*).
+        Аудит: не пишется. Кэширование: no-store.
+      x-permissions: [profile.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: true
+      x-rate-limit-group: RL-READ
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/IdempotencyKeyOptional"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MeSettingsPutRequest" }
+      responses:
+        "200":
+          description: Сохранённые настройки.
+          headers: *idemHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /me/pin:
+    post:
+      tags: [me]
+      operationId: me_pin_set
+      summary: Установить или сменить PIN приложения (step-up)
+      description: >
+        08 §4.3.5; ядро §17.2, §19.3, §24.2; D-48. Step-up обязателен (operation profile.pin.set): method=pin (текущим PIN)
+        или method=otp («забыл PIN»). Исключение — первый PIN сотрудника, вошедшего по приглашению: пока
+        Me.security.pinSet=false и с создания сессии по OTP прошло не более 15 мин, X-Step-Up-Token не требуется.
+        Повтор с тем же newPin → 204 без повторной смены.
+        Ошибки: 400 VALIDATION_FAILED (pin_weak); 401; 403 STEP_UP_REQUIRED, FORBIDDEN; 429 RATE_LIMITED.
+        Rate limit: RL-PIN. Аудит: auth.pin.set / auth.pin.changed (без значений). Кэширование: no-store.
+      security:
+        - bearerAuth: []
+          stepUpToken: []
+        - bearerAuth: []
+      x-permissions: [profile.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: true
+      x-step-up-operation: [profile.pin.set]
+      x-idempotent: true
+      x-rate-limit-group: RL-PIN
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/StepUpToken"
+        - $ref: "#/components/parameters/IdempotencyKeyOptional"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MePinSetRequest" }
+      responses:
+        "204":
+          description: PIN установлен или изменён.
+          headers: *idemHeaders
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [me]
+      operationId: me_pin_delete
+      summary: Удалить PIN приложения (только customer при биометрии с криптопривязкой; step-up)
+      description: >
+        08 §4.3.5; D-48. Только роль customer при включённой биометрии с криптопривязкой; для staff PIN обязателен на всех
+        платформах → 403 FORBIDDEN (reason pin_required_for_staff). Step-up обязателен (operation profile.pin.set).
+        Повтор → 204. Ошибки: 401; 403 STEP_UP_REQUIRED, FORBIDDEN; 429 RATE_LIMITED. Rate limit: RL-PIN.
+        Аудит: auth.pin.removed. Кэширование: no-store.
+      security:
+        - bearerAuth: []
+          stepUpToken: []
+      x-permissions: [profile.manage.own]
+      x-roles: [customer]
+      x-step-up: true
+      x-step-up-operation: [profile.pin.set]
+      x-idempotent: false
+      x-rate-limit-group: RL-PIN
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/StepUpToken"
+      responses:
+        "204":
+          description: PIN удалён.
+          headers: *stdHeaders
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /me/biometrics:
+    post:
+      tags: [me]
+      operationId: me_biometrics_toggle
+      summary: Включить или выключить биометрический вход на текущем устройстве (step-up)
+      description: >
+        08 §4.3.6; D-13, D-14. Выдаёт / отзывает biometric_refresh (отдельная familyId, kind=biometric) только для
+        текущего устройства; биометрических данных сервер не получает. Step-up обязателен (operation
+        profile.biometrics.toggle). На Windows включение → 200 {enabled false, reason no_crypto_binding_on_platform}.
+        Повтор enabled=false → 200 без изменений; повтор enabled=true выдаёт новый токен и отзывает прежнюю биометрическую
+        семью устройства (поэтому Idempotency-Key не применяется — решение A4).
+        Ошибки: 400 VALIDATION_FAILED; 401; 403 STEP_UP_REQUIRED, FORBIDDEN; 422 CONSENT_REQUIRED (нет согласия
+        biometrics_device). Rate limit: RL-AUTH. Аудит: auth.biometrics.enabled / auth.biometrics.disabled;
+        consent.granted / consent.revoked. Кэширование: no-store (токен).
+      security:
+        - bearerAuth: []
+          stepUpToken: []
+      x-permissions: [profile.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: true
+      x-step-up-operation: [profile.biometrics.toggle]
+      x-idempotent: false
+      x-rate-limit-group: RL-AUTH
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/StepUpToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MeBiometricsRequest" }
+      responses:
+        "200":
+          description: Состояние биометрического входа устройства.
+          headers: *stdHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeBiometricsResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /me/consents:
+    get:
+      tags: [me]
+      operationId: me_consents_list
+      summary: Свои согласия и требуемые версии
+      description: >
+        08 §4.3.7 (ПРЕДВАРИТЕЛЬНО, Q-027 — тексты и версии согласий). Ошибки: только общие (401, 403).
+        Rate limit: RL-READ. Аудит: не пишется. Кэширование: no-store (ПДн).
+      x-permissions: [profile.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+      responses:
+        "200":
+          description: Согласия пользователя и обязательные актуальные версии.
+          headers: *stdHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeConsentList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      tags: [me]
+      operationId: me_consents_update
+      summary: Выдать или отозвать согласие (отзыв personal_data — со step-up)
+      description: >
+        08 §4.3.7, §2.12. Отзыв biometrics_device автоматически отзывает биометрическую семью; отзыв personal_data
+        переводит аккаунт в blocked с подтверждением (step-up, operation profile.consent.revoke) и уведомлением
+        администратора. Повтор с тем же {kind, version, granted} → 200 без новой записи.
+        Ошибки: 400 VALIDATION_FAILED (неизвестный kind / version); 401; 403 STEP_UP_REQUIRED (отзыв personal_data),
+        FORBIDDEN. Rate limit: RL-READ (группа /me*). Аудит: consent.granted / consent.revoked. Кэширование: no-store.
+      security:
+        - bearerAuth: []
+          stepUpToken: []
+        - bearerAuth: []
+      x-permissions: [profile.manage.own]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: true
+      x-step-up-operation: [profile.consent.revoke]
+      x-idempotent: true
+      x-rate-limit-group: RL-READ
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/AppVersion"
+        - $ref: "#/components/parameters/Platform"
+        - $ref: "#/components/parameters/RequestId"
+        - $ref: "#/components/parameters/AcceptLanguage"
+        - $ref: "#/components/parameters/StepUpToken"
+        - $ref: "#/components/parameters/IdempotencyKeyOptional"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MeConsentUpdateRequest" }
+      responses:
+        "200":
+          description: Текущее состояние согласия.
+          headers: *idemHeaders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Consent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+components:
+  parameters:
+    AuthChallengeIdPath:
+      name: challengeId
+      in: path
+      required: true
+      description: "Идентификатор otp_challenge из ответа POST /auth/otp/request (08 §4.1.9)."
+      schema: { type: string, format: uuid }
+    AuthSessionIdPath:
+      name: sessionId
+      in: path
+      required: true
+      description: "Идентификатор своей сессии (Session.id); чужой или неизвестный → 404 NOT_FOUND (08 §4.1.6)."
+      schema: { type: string, format: uuid }
+
+  schemas:
+    # ===== auth: запросы =====
+    AuthDeviceInfo:
+      type: object
+      required: [name, platform, appVersion]
+      additionalProperties: false
+      description: "Сведения об устройстве при входе/регистрации (08 §4.1.2, §8 OtpVerifyRequest.device)."
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, example: "Samsung SM-A525F" }
+        platform: { $ref: "#/components/schemas/DevicePlatform" }
+        osVersion: { type: string, maxLength: 32, example: "14" }
+        appVersion: { type: string, maxLength: 32, example: "1.4.2+87" }
+        biometricClass:
+          type: string
+          enum: [class3, class2, none, windows_hello]
+          description: "Класс биометрии устройства (08 §4.1.2); biometricRefreshOffered=true только для Android class3 / iOS."
+    AuthOtpRequestRequest:
+      type: object
+      required: [phone, purpose]
+      additionalProperties: false
+      description: "Тело POST /auth/otp/request (08 §4.1.1, §8)."
+      properties:
+        phone: { $ref: "#/components/schemas/PhoneE164" }
+        purpose:
+          type: string
+          enum: [login_or_register]
+          description: "Значение otp_purpose 07 §6; на этом маршруте — только login_or_register (иное → VALIDATION_FAILED rule purpose; ядро §18.2 п.7)."
+        locale: { $ref: "#/components/schemas/Locale" }
+        attestation:
+          type: string
+          nullable: true
+          maxLength: 8192
+          description: "Зарезервировано (R2, R6 §1.5); в R1 передаётся null или не передаётся."
+      example: { phone: "+996700000001", purpose: login_or_register, locale: ru, attestation: null }
+    OtpVerifyRequest:
+      type: object
+      required: [challengeId, code, device]
+      additionalProperties: false
+      description: "Тело POST /auth/otp/verify (имя схемы — 08 §8)."
+      properties:
+        challengeId: { type: string, format: uuid }
+        code: { type: string, pattern: '^\d{6}$', description: "Ровно 6 цифр, ведущие нули допустимы (rule otp_format)." }
+        device: { $ref: "#/components/schemas/AuthDeviceInfo" }
+      example:
+        challengeId: "0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4f55"
+        code: "004512"
+        device: { name: "Samsung SM-A525F", platform: android, osVersion: "14", appVersion: "1.4.2+87", biometricClass: class3 }
+    AuthRefreshRequest:
+      type: object
+      required: [refreshToken]
+      additionalProperties: false
+      description: "Тело POST /auth/refresh (08 §4.1.3): kind и amr не принимаются (forbidden_field)."
+      properties:
+        refreshToken:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: "Непрозрачный refresh: 32 байта CSPRNG в base64url (43 символа) (08 §2.2)."
+    AuthLogoutRequest:
+      type: object
+      additionalProperties: false
+      description: "Необязательное тело POST /auth/logout (08 §4.1.4)."
+      properties:
+        reason: { type: string, maxLength: 500, example: "user" }
+    AuthSessionPatchRequest:
+      type: object
+      required: [deviceName]
+      additionalProperties: false
+      description: "PATCH /auth/sessions/{sessionId} — только отображаемое имя устройства (08 §4.1.6)."
+      properties:
+        deviceName:
+          type: string
+          minLength: 1
+          maxLength: 60
+          pattern: '^[^\x00-\x1F\x7F]+$'
+          example: "Касса-2 (Windows)"
+    AuthStepUpRequest:
+      type: object
+      required: [method, operation]
+      additionalProperties: false
+      description: >
+        Тело POST /auth/step-up (08 §4.1.7). method=pin — с pin; method=otp — шаг 1 без challengeId/code (→ 202),
+        шаг 2 с challengeId и code (→ 200). В R1 только pin и otp (ядро §19.3); bio+pin / bio+otp и biometricAssertion — R2.
+      properties:
+        method:
+          type: string
+          enum: [pin, otp]
+          description: "Подмножество step_up_method 07 для R1 (biometric — R2, ядро §19.3)."
+        pin: { type: string, pattern: '^\d{4,6}$', description: "PIN приложения, 4–6 цифр (только method=pin)." }
+        challengeId: { type: string, format: uuid, description: "Только method=otp, шаг 2." }
+        code: { type: string, pattern: '^\d{6}$', description: "Только method=otp, шаг 2." }
+        operation: { $ref: "#/components/schemas/StepUpOperation" }
+      example: { method: pin, pin: "482913", operation: payment.qr.confirm_manual }
+    AuthUnlockRequest:
+      type: object
+      required: [refreshToken]
+      additionalProperties: false
+      description: "Тело POST /auth/unlock (08 §4.1.8). Без method — pin."
+      properties:
+        method:
+          type: string
+          enum: [pin, biometric]
+          default: pin
+          description: "biometric — только Android/iOS (не Windows), refreshToken = расшифрованный biometric_refresh."
+        refreshToken: { type: string, minLength: 1, maxLength: 256, description: "Refresh (или biometric_refresh при method=biometric)." }
+        pin: { type: string, pattern: '^\d{4,6}$', description: "Обязателен при method=pin." }
+        biometricInvalidated:
+          type: boolean
+          description: "true — ключ биометрии недоступен: сервер отзывает биометрическую семью устройства и выключает biometricsEnabled (только с method=pin)."
+      example: { method: pin, refreshToken: "b64url…", pin: "482913" }
+
+    # ===== auth: ответы =====
+    AuthOtpRequestResponse:
+      type: object
+      required: [challengeId, resendAfterSec, otpTtlSec]
+      description: "202 POST /auth/otp/request (08 §4.1.1) — одинаков для любого номера."
+      properties:
+        challengeId: { type: string, format: uuid }
+        resendAfterSec: { type: integer, minimum: 0, example: 60 }
+        otpTtlSec: { type: integer, minimum: 0, example: 300 }
+        codeLength: { type: integer, example: 6 }
+        phoneMasked: { $ref: "#/components/schemas/PhoneMasked" }
+        deliveryHint: { type: string, example: "sms" }
+    AuthOtpChallengeIssued:
+      type: object
+      required: [challengeId, resendAfterSec, otpTtlSec]
+      description: "202 при отправке OTP: POST /auth/step-up (method=otp, шаг 1) и POST /me/phone/change/request (08 §4.1.7, §4.3.3)."
+      properties:
+        challengeId: { type: string, format: uuid }
+        resendAfterSec: { type: integer, minimum: 0, example: 60 }
+        otpTtlSec: { type: integer, minimum: 0, example: 300 }
+    AuthOtpChallengeStatus:
+      type: object
+      required: [challengeId, delivery]
+      description: "GET /auth/otp/challenges/{challengeId} (08 §4.1.9): без ПДн и без кода ошибки провайдера."
+      properties:
+        challengeId: { type: string, format: uuid }
+        delivery:
+          type: string
+          enum: [queued, sent, failed]
+          description: "queued — в очереди/передаётся; sent — провайдер принял или DLR «доставлено»; failed — отказ провайдера или DLR «не доставлено»."
+        resendAfterSec: { type: integer, minimum: 0, example: 42 }
+        expiresAt: { type: string, format: date-time }
+        channel: { type: string, example: "sms" }
+    AuthAuthenticated:
+      type: object
+      required: [status, accessToken, refreshToken]
+      description: >
+        Ветка authenticated (08 §4.1.2, §8; имя схемы — 08 §8). roleSource и nextStep=set_pin — только первый вход
+        сотрудника по приглашению (ядро §24.2); для повторных входов roleSource не возвращается, nextStep — none.
+      properties:
+        status: { type: string, enum: [authenticated] }
+        accessToken: { type: string }
+        accessExpiresIn: { type: integer, example: 900 }
+        refreshToken: { type: string }
+        refreshExpiresAt: { type: string, format: date-time }
+        tokenType: { type: string, enum: [Bearer] }
+        sid: { type: string, format: uuid }
+        user: { $ref: "#/components/schemas/Me" }
+        biometricRefreshOffered: { type: boolean, description: "true только для Android class3 / iOS; Windows и сотрудник до установки PIN — false." }
+        roleSource: { type: string, enum: [invitation], description: "только первый вход сотрудника по приглашению (ядро §24.2)" }
+        nextStep: { type: string, enum: [set_pin, none] }
+    AuthPendingActivation:
+      type: object
+      required: [status, accessToken, refreshToken]
+      description: "Ветка pending_activation — только при CUSTOMER_SELF_SERVICE=false (08 §4.1.2, §4.2.1; имя — 08 §8). Ограниченная сессия: /me, /auth/*, SCR-07."
+      properties:
+        status: { type: string, enum: [pending_activation] }
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        user: { $ref: "#/components/schemas/Me" }
+    AuthRegistrationRequired:
+      type: object
+      required: [status, registrationToken]
+      description: "Ветка registration_required — номер без аккаунта и без действующего приглашения; форма клиента (08 §4.1.2; имя — 08 §8)."
+      properties:
+        status: { type: string, enum: [registration_required] }
+        registrationToken: { type: string, description: "JWT 15 мин, purpose=register; клиент хранит только в памяти (08 §2.2)." }
+        registrationExpiresIn: { type: integer, example: 900 }
+        phoneMasked: { $ref: "#/components/schemas/PhoneMasked" }
+    AuthTokenPair:
+      type: object
+      required: [accessToken, accessExpiresIn, refreshToken, refreshExpiresAt, sid]
+      description: "200 POST /auth/refresh (08 §4.1.3)."
+      properties:
+        accessToken: { type: string }
+        accessExpiresIn: { type: integer, example: 900 }
+        refreshToken: { type: string }
+        refreshExpiresAt: { type: string, format: date-time }
+        sid: { type: string, format: uuid }
+        permissionsVersion: { type: integer, minimum: 0, example: 8 }
+    AuthUnlockResponse:
+      type: object
+      required: [accessToken, accessExpiresIn, refreshToken, refreshExpiresAt, sid]
+      description: "200 POST /auth/unlock (08 §4.1.8)."
+      properties:
+        accessToken: { type: string }
+        accessExpiresIn: { type: integer, example: 900 }
+        refreshToken: { type: string }
+        refreshExpiresAt: { type: string, format: date-time }
+        sid: { type: string, format: uuid }
+        amr:
+          type: array
+          items: { type: string, enum: [sms, bio, pin] }
+          example: [sms, pin]
+        permissionsVersion: { type: integer, minimum: 0, example: 8 }
+    AuthSessionList:
+      type: object
+      required: [items]
+      description: "200 GET /auth/sessions — без пагинации, ≤ 5 устройств (08 §4.1.6)."
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Session" }
+    AuthStepUpToken:
+      type: object
+      required: [stepUpToken, expiresAt, method, scope]
+      description: "200 POST /auth/step-up (08 §4.1.7): токен многоразовый 15 мин в области scope."
+      properties:
+        stepUpToken: { type: string }
+        expiresAt: { type: string, format: date-time }
+        method: { type: string, enum: [pin, otp] }
+        scope:
+          type: array
+          description: "Коды permissions 11 §4.3 области, выведенной сервером из operation (ядро §18.2 п.6)."
+          items: { $ref: "#/components/schemas/PermissionCode" }
+
+    # ===== registration =====
+    RegistrationConsentGrant:
+      type: object
+      required: [kind, version]
+      additionalProperties: false
+      description: "Элемент consents[] при регистрации: наличие элемента = выданное согласие; granted не передаётся (08 §4.2.1)."
+      properties:
+        kind:
+          allOf: [ { $ref: "#/components/schemas/ConsentKind" } ]
+          description: "consent_kind 07: personal_data, sms, biometrics_device, activity_sphere; face_scan — R2 (→ VALIDATION_FAILED)."
+        version: { type: string, minLength: 1, maxLength: 32, example: "2026-10-01" }
+    RegistrationSecurity:
+      type: object
+      additionalProperties: false
+      description: >
+        Шаг «защита входа» (ядро §24.2): хотя бы один способ. pin можно не передавать только при biometricsEnabled=true
+        на устройстве с биометрией с криптопривязкой (Android class3 / iOS; Windows — только PIN), иначе rule
+        login_protection_required.
+      properties:
+        pin: { type: string, pattern: '^\d{4,6}$', description: "4–6 цифр; тривиальные запрещены (rule pin_weak)." }
+        biometricsEnabled: { type: boolean }
+    RegistrationCompleteRequest:
+      type: object
+      required: [registrationToken, fullName, birthYear, security, consents, device]
+      additionalProperties: false
+      description: "Тело POST /registration/complete — DTO ядра §19.3 (08 §4.2.1 — владелец DTO)."
+      properties:
+        registrationToken: { type: string, minLength: 1, maxLength: 4096 }
+        fullName: { type: string, minLength: 1, maxLength: 150, example: "Тестов Тест" }
+        birthYear:
+          type: integer
+          minimum: 1920
+          description: "1920 ≤ год ≤ текущий − 14 (верхняя граница проверяется сервером, rule birth_year_range; Q-161)."
+          example: 1990
+        activitySphere:
+          type: string
+          nullable: true
+          maxLength: 64
+          description: "Код справочника сфер деятельности (Q-165), необязательно; требует согласия activity_sphere."
+          example: "plumbing"
+        security: { $ref: "#/components/schemas/RegistrationSecurity" }
+        consents:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { $ref: "#/components/schemas/RegistrationConsentGrant" }
+        device: { $ref: "#/components/schemas/AuthDeviceInfo" }
+    RegistrationCustomerMatchSummary:
+      type: object
+      required: [status, linkId, nextStep]
+      description: "customerMatch в 201 POST /registration/complete (08 §4.2.1)."
+      properties:
+        status: { type: string, enum: [none, proposed, confirmed, conflict] }
+        linkId: { type: string, format: uuid, nullable: true }
+        nextStep: { type: string, enum: [confirm_or_reject, wait_admin, confirmed, none] }
+    RegistrationCompleteAuthenticated:
+      description: "201 POST /registration/complete, ветка authenticated: AuthAuthenticated + customerMatch (08 §4.2.1)."
+      allOf:
+        - $ref: "#/components/schemas/AuthAuthenticated"
+        - type: object
+          properties:
+            customerMatch: { $ref: "#/components/schemas/RegistrationCustomerMatchSummary" }
+    RegistrationMatchedCustomer:
+      type: object
+      description: "До confirmed — только displayNameMasked; id и displayName — только при confirmed (09 REG-032; 08 §4.2.2)."
+      properties:
+        displayNameMasked: { type: string, example: "ОсОО «Стр***»" }
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+    RegistrationCustomerMatch:
+      type: object
+      required: [status, linkId, customer, nextStep]
+      description: >
+        GET /registration/customer-match и ответы confirm/reject (08 §4.2.2, §4.2.4). nextStep confirm_or_reject — привязка
+        proposed, подтверждённый телефон карточки совпадает с телефоном аккаунта и CUSTOMER_SELF_SERVICE=true; wait_admin —
+        conflict или номер найден как второй контакт ЮЛ.
+      properties:
+        status: { type: string, enum: [none, proposed, confirmed, rejected, conflict] }
+        linkId: { type: string, format: uuid, nullable: true }
+        customer:
+          type: object
+          nullable: true
+          allOf: [ { $ref: "#/components/schemas/RegistrationMatchedCustomer" } ]
+        nextStep: { type: string, enum: [confirm_or_reject, wait_admin, confirmed, none] }
+    RegistrationCustomerMatchResolveRequest:
+      type: object
+      required: [linkId]
+      additionalProperties: false
+      description: "Тело confirm/reject (08 §4.2.4): linkId из GET /registration/customer-match или Me.customerLink.linkId."
+      properties:
+        linkId: { type: string, format: uuid }
+
+    # ===== me (profile) =====
+    MeProfilePatchRequest:
+      type: object
+      required: [rowVersion]
+      additionalProperties: false
+      description: "Тело PATCH /me/profile (08 §4.3.2): phone, roles, status запрещены (forbidden_field, 08 §2.14)."
+      properties:
+        fullName: { type: string, minLength: 1, maxLength: 150 }
+        birthYear: { type: integer, minimum: 1920, description: "1920 ≤ год ≤ текущий − 14 (rule birth_year_range)." }
+        activitySphere: { type: string, nullable: true, maxLength: 64, description: "Только при действующем согласии activity_sphere, иначе CONSENT_REQUIRED." }
+        rowVersion: { type: integer, minimum: 0 }
+      example: { fullName: "Тестов Тест", birthYear: 1990, activitySphere: null, rowVersion: 3 }
+    MePhoneChangeRequest:
+      type: object
+      required: [newPhone]
+      additionalProperties: false
+      description: "Тело POST /me/phone/change/request (08 §4.3.3)."
+      properties:
+        newPhone: { $ref: "#/components/schemas/PhoneE164" }
+    MePhoneChangeConfirmRequest:
+      type: object
+      required: [challengeId, code]
+      additionalProperties: false
+      description: "Тело POST /me/phone/change/confirm (08 §4.3.3)."
+      properties:
+        challengeId: { type: string, format: uuid }
+        code: { type: string, pattern: '^\d{6}$' }
+    MePhoneChangeResult:
+      type: object
+      required: [phone, sessionsRevoked]
+      description: "200 POST /me/phone/change/confirm: другие сессии отозваны, текущая продолжает жить (08 §4.3.3)."
+      properties:
+        phone: { $ref: "#/components/schemas/PhoneE164" }
+        sessionsRevoked: { type: boolean }
+    MeSettingsScanner:
+      type: object
+      required: [mode, suffix]
+      additionalProperties: false
+      properties:
+        mode: { type: string, enum: [hid, camera] }
+        suffix: { type: string, enum: [enter, tab, none] }
+    MeSettingsPrinter:
+      type: object
+      required: [defaultFormat, autoPrint]
+      additionalProperties: false
+      properties:
+        defaultFormat: { $ref: "#/components/schemas/PrintPaper" }
+        autoPrint: { type: boolean }
+    MeSettingsPutRequest:
+      type: object
+      required: [locale, scanner, scanAddsToCart, printer, catalogView, defaultWarehouseId, idleLockMinutes, rowVersion]
+      additionalProperties: false
+      description: "Тело PUT /me/settings — полная замена Settings 08 §3.14 с rowVersion (08 §4.3.4); ответ — Settings."
+      properties:
+        locale: { $ref: "#/components/schemas/Locale" }
+        scanner: { $ref: "#/components/schemas/MeSettingsScanner" }
+        scanAddsToCart: { type: boolean }
+        printer: { $ref: "#/components/schemas/MeSettingsPrinter" }
+        catalogView: { type: string, enum: [grid, list, compact] }
+        defaultWarehouseId: { type: string, format: uuid, nullable: true }
+        idleLockMinutes: { type: integer, minimum: 5, description: "5…30 (08 §4.3.4); для staff больше 30 нельзя — сервер, VALIDATION_FAILED." }
+        rowVersion: { type: integer, minimum: 0 }
+    MePinSetRequest:
+      type: object
+      required: [newPin]
+      additionalProperties: false
+      description: "Тело POST /me/pin {newPin} (ядро §19.3; 08 §4.3.5)."
+      properties:
+        newPin: { type: string, pattern: '^\d{4,6}$', description: "4–6 цифр; тривиальные запрещены (rule pin_weak)." }
+    MeBiometricsConsent:
+      type: object
+      required: [kind, version, granted]
+      additionalProperties: false
+      properties:
+        kind:
+          allOf: [ { $ref: "#/components/schemas/ConsentKind" } ]
+          description: "Ожидается biometrics_device."
+        version: { type: string, minLength: 1, maxLength: 32, example: "2026-10-01" }
+        granted: { type: boolean }
+    MeBiometricsRequest:
+      type: object
+      required: [enabled]
+      additionalProperties: false
+      description: "Тело POST /me/biometrics (08 §4.3.6). При enabled=true без согласия biometrics_device → 422 CONSENT_REQUIRED."
+      properties:
+        enabled: { type: boolean }
+        biometricClass: { type: string, enum: [class3, ios, windows_hello] }
+        consent: { $ref: "#/components/schemas/MeBiometricsConsent" }
+      example: { enabled: true, biometricClass: class3, consent: { kind: biometrics_device, version: "2026-10-01", granted: true } }
+    MeBiometricsResponse:
+      type: object
+      required: [enabled]
+      description: >
+        200 POST /me/biometrics (08 §4.3.6): включено — biometricRefreshToken и expiresAt (клиент шифрует токен ключом
+        Keystore/Keychain с привязкой к биометрии); Windows — enabled false и reason; выключено — enabled false.
+      properties:
+        enabled: { type: boolean }
+        biometricRefreshToken: { type: string }
+        expiresAt: { type: string, format: date-time }
+        reason: { type: string, enum: [no_crypto_binding_on_platform] }
+    MeConsentRequirement:
+      type: object
+      required: [kind, currentVersion]
+      properties:
+        kind: { $ref: "#/components/schemas/ConsentKind" }
+        currentVersion: { type: string, example: "2026-10-01" }
+        textUrl: { type: string, description: "URL текста согласия (Q-027)." }
+    MeConsentList:
+      type: object
+      required: [items, required]
+      description: "200 GET /me/consents (08 §4.3.7)."
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Consent" }
+        required:
+          type: array
+          items: { $ref: "#/components/schemas/MeConsentRequirement" }
+    MeConsentUpdateRequest:
+      type: object
+      required: [kind, version, granted]
+      additionalProperties: false
+      description: "Тело POST /me/consents (08 §4.3.7)."
+      properties:
+        kind: { $ref: "#/components/schemas/ConsentKind" }
+        version: { type: string, minLength: 1, maxLength: 32, example: "2026-10-01" }
+        granted: { type: boolean }
+      example: { kind: biometrics_device, version: "2026-10-01", granted: false }

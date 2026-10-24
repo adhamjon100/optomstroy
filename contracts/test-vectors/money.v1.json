@@ -1,0 +1,107 @@
+{
+  "$comment": "Общие тест-векторы денежной арифметики (10 §18.1, §18.2: MV-01…MV-30; MNY-003, MNY-004; 07 §7.3). Исполняются одним набором в pos-api (src/common/money/money-vectors.spec.ts) и в pos-app (test/core/utils/money_vectors_test.dart) — расхождение клиента и сервера ловится обоими тестами (ревью C-CR-01). Суммы — строки MoneyAmount (08 §3.1), проценты — строки Percent, количества — строки Quantity. Векторы MV-05…MV-07, MV-23…MV-26, MV-28 — функции только клиента (Qty, ввод, форматирование) — проверяются в pos-app/test/core/utils/*_test.dart.",
+  "version": 1,
+  "lineTotal": [
+    { "id": "MV-01", "unitPrice": "2350.00", "qty": "2", "expected": "4700.00" },
+    { "id": "MV-02", "unitPrice": "85.00", "qty": "4.5", "expected": "382.50" },
+    { "id": "MV-03", "unitPrice": "85.00", "qty": "2.333", "expected": "198.31" },
+    { "id": "MV-04", "unitPrice": "0.10", "qty": "0.005", "expected": "0.00" }
+  ],
+  "documentDiscount": [
+    { "id": "MV-08", "subtotal": "16850.00", "percent": "5", "expected": "842.50" },
+    { "id": "MV-12a", "subtotal": "2825.49", "percent": "5", "expected": "141.27" },
+    { "id": "MV-14", "subtotal": "18050.00", "percent": "5", "expected": "902.50" },
+    { "id": "MV-27", "subtotal": "0.01", "percent": "5", "expected": "0.00" }
+  ],
+  "allocateDiscount": [
+    {
+      "id": "MV-10",
+      "lines": ["4700.00", "3450.00", "1650.00", "2850.00", "4200.00"],
+      "discount": "842.50",
+      "expected": ["235.00", "172.50", "82.50", "142.50", "210.00"]
+    },
+    { "id": "MV-11", "lines": ["33.33", "33.33", "33.33"], "discount": "10.00", "expected": ["3.33", "3.33", "3.34"] },
+    {
+      "id": "MV-12",
+      "lines": ["999.99", "1250.00", "575.50"],
+      "discount": "141.27",
+      "expected": ["50.00", "62.50", "28.77"]
+    },
+    { "id": "MV-13", "lines": ["100.00", "0.00"], "discount": "10.00", "expected": ["10.00", "0.00"] },
+    {
+      "id": "MV-11-zero-last",
+      "lines": ["33.33", "33.33", "33.33", "0.00"],
+      "discount": "10.00",
+      "expected": ["3.33", "3.33", "3.34", "0.00"]
+    },
+    {
+      "id": "carry-positive",
+      "lines": ["0.03", "0.03", "0.03", "0.03", "0.01"],
+      "discount": "0.06",
+      "expected": ["0.01", "0.01", "0.01", "0.02", "0.01"]
+    },
+    {
+      "id": "carry-negative",
+      "lines": ["0.03", "0.03", "0.03", "0.01"],
+      "discount": "0.05",
+      "expected": ["0.02", "0.02", "0.01", "0.00"]
+    },
+    { "id": "all-zero", "lines": ["0.00", "0.00"], "discount": "0.00", "expected": ["0.00", "0.00"] },
+    { "id": "empty", "lines": [], "discount": "0.00", "expected": [] }
+  ],
+  "allocateDiscountErrors": [
+    { "id": "negative-discount", "lines": ["1.00"], "discount": "-0.01", "error": "negative" },
+    { "id": "negative-line", "lines": ["-1.00", "2.00"], "discount": "0.01", "error": "negative" },
+    { "id": "discount-above-total", "lines": ["1.00"], "discount": "1.01", "error": "outOfRange" }
+  ],
+  "twoStageDiscount": [
+    {
+      "id": "MV-29",
+      "lines": ["2350.00", "4800.00", "3200.00", "5000.00", "1500.00"],
+      "customerPercent": "5",
+      "manualPercent": "5",
+      "customer": ["117.50", "240.00", "160.00", "250.00", "75.00"],
+      "manual": ["111.63", "228.00", "152.00", "237.50", "71.25"],
+      "lineTotals": ["2120.87", "4332.00", "2888.00", "4512.50", "1353.75"],
+      "total": "15207.12"
+    },
+    {
+      "id": "MV-30",
+      "lines": ["33.33", "33.33", "33.33"],
+      "customerPercent": "5",
+      "manualPercent": "10",
+      "customer": ["1.67", "1.67", "1.67"],
+      "manual": ["3.17", "3.17", "3.16"],
+      "lineTotals": ["28.49", "28.49", "28.50"],
+      "total": "85.48"
+    },
+    {
+      "id": "c0-equals-allocate",
+      "lines": ["4700.00", "3450.00", "1650.00", "2850.00", "4200.00"],
+      "customerPercent": "0",
+      "manualPercent": "5",
+      "customer": ["0.00", "0.00", "0.00", "0.00", "0.00"],
+      "manual": ["235.00", "172.50", "82.50", "142.50", "210.00"],
+      "lineTotals": ["4465.00", "3277.50", "1567.50", "2707.50", "3990.00"],
+      "total": "16007.50"
+    }
+  ],
+  "cashRounding": [
+    { "id": "MV-15", "total": "16007.50", "mode": "none", "rounded": "16007.50", "delta": "0.00" },
+    { "id": "MV-16", "total": "16007.50", "mode": "to_som_half_up", "rounded": "16008.00", "delta": "0.50" },
+    { "id": "to-som-down", "total": "16007.50", "mode": "to_som_down", "rounded": "16007.00", "delta": "-0.50" }
+  ],
+  "change": [
+    { "id": "MV-17", "total": "16007.50", "received": "16100.00", "expected": "92.50" },
+    { "id": "MV-18", "total": "16007.50", "received": "16000.00", "error": "receivedLessThanTotal" }
+  ],
+  "returnLineAmount": [
+    { "id": "MV-19", "lineTotal": "4465.00", "shippedQty": "2", "returnQty": "1", "expected": "2232.50" },
+    { "id": "MV-20", "lineTotal": "198.31", "shippedQty": "2.333", "returnQty": "1", "expected": "85.00" },
+    { "id": "full-return", "lineTotal": "198.31", "shippedQty": "2.333", "returnQty": "2.333", "expected": "198.31" }
+  ],
+  "creditRemaining": [
+    { "id": "MV-21", "limit": "100000.00", "balance": "64500.00", "openOrders": "20000.00", "expected": "15500.00" },
+    { "id": "MV-22", "limit": "50000.00", "balance": "62000.00", "openOrders": "0.00", "expected": "-12000.00" }
+  ]
+}

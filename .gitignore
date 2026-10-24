@@ -1,9 +1,38 @@
+# Монорепозиторий «Оптомстрой POS» (RM-C-001). Структура — docs/repo_layout.md.
+# Правила шаблона Flutter сохранены; пути, привязанные к корню, перенесены в /pos-app/.
+
+# ---------------------------------------------------------------------------
+# Секреты — никогда не попадают в git (CONTRIBUTING.md §1 п. 7; 16 §4.3: только *_FILE вне git).
+# Проверка: python scripts/check_secrets.py
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+**/secrets/
+*.pfx
+*.p12
+*.pem
+*.key
+*.keystore
+*.jks
+key.properties
+**/google-services.json
+**/GoogleService-Info.plist
+# Выгрузки базы 1С (персональные и коммерческие данные) — не хранятся в git (onec-extension/README.md)
+*.dt
+*.1CD
+
+# ---------------------------------------------------------------------------
 # Miscellaneous
+# ---------------------------------------------------------------------------
 *.class
 *.log
+!docs/stages/*.log
 *.pyc
+__pycache__/
 *.swp
 .DS_Store
+Thumbs.db
 .atom/
 .build/
 .buildlog/
@@ -23,15 +52,19 @@ migrate_working_dir/
 # is commented out by default.
 #.vscode/
 
-# Flutter/Dart/Pub related
+# ---------------------------------------------------------------------------
+# Flutter/Dart/Pub related (pos-app/)
+# ---------------------------------------------------------------------------
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-/build/
-/coverage/
+/pos-app/build/
+/pos-app/coverage/
+/pos-app/packages/*/build/
 
 # Symbolication related
 app.*.symbols
@@ -40,6 +73,29 @@ app.*.symbols
 app.*.map.json
 
 # Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
+/pos-app/android/app/debug
+/pos-app/android/app/profile
+/pos-app/android/app/release
+
+# ---------------------------------------------------------------------------
+# Node (pos-api/, tools/) — lock-файлы коммитятся
+# ---------------------------------------------------------------------------
+node_modules/
+/pos-api/dist/
+/pos-api/coverage/
+npm-debug.log*
+.npm/
+
+# tools/pg — одноразовый PostgreSQL 17 (embedded-postgres): зависимости и временные кластеры
+/tools/pg/node_modules/
+/tools/pg/.tmp/
+
+# Временные файлы тестов (embedded PostgreSQL, flutter) — на диске D:, чтобы не занимать C:
+/.tmp/
+
+# Демо-пакет: собранное приложение, данные и журналы (demo/build-demo.ps1)
+/demo/app/
+/demo/data/
+/demo/logs/
+/demo/.tmp/
+/demo/demo_env.json

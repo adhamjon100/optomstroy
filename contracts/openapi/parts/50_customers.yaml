@@ -1,0 +1,1406 @@
+# =====================================================================================
+# Optomstroy POS API — фрагмент модуля customers (RM-B-003): пути /customers*, /receivables/overdue,
+# /discounts/rules, /favorites/*, /transactions*.
+# Источник истины: docs/specification/08_API_SPECIFICATION.md v1.9 — §3.7, §3.11, §3.15, §4.11–§4.14, §9;
+# права — 11 §4.3–§4.4; ядро R0 v1.9 §19.2, §22.12, §22.13 п.1, §24.2. Общие компоненты — parts/00_root.yaml,
+# правила — ../NOTES.md (ссылки записаны в виде собранного документа: #/components/...).
+# Ключи openapi/info — минимальные, по постановке задачи; сборщик берёт из фрагмента только paths и components.
+# R2-элементы (PATCH /customers/{id}/contacts, SMS-подтверждение клиента — ядро §19.2) не включены.
+# Решения автора фрагмента (расхождения постановки и ТЗ) — в комментариях «РЕШЕНИЕ:» ниже.
+# =====================================================================================
+openapi: 3.0.3
+info:
+  title: Optomstroy POS API — customers, receivables, discounts, favorites, transactions (фрагмент)
+  version: "1.0.0"
+paths:
+  # -----------------------------------------------------------------------------------
+  # 08 §4.11.1 / §4.11.2 — список клиентов, создание клиента
+  # -----------------------------------------------------------------------------------
+  /customers:
+    get:
+      operationId: customers_list
+      tags: [customers]
+      summary: Список и поиск клиентов (поля по роли)
+      description: >
+        08 §4.11.1. Право customer.read.basic (все staff; seller — ограниченный DTO CustomerViewSeller).
+        Суммы долга (receivable) — только с customer.receivables.read.summary и include=receivable (ядро §22.13 п.1,
+        11 SEC-031), такой ответ пишет аудит customer.debt_viewed; без них — только индикатор hasDebt/isOverdue.
+        Фильтр hasDebt — только с customer.receivables.read.summary. linkStatus — только customer.link.conflicts.read
+        (роль admin; иные роли, в том числе с customer.link.read, → 403 FORBIDDEN; 11 §4.4).
+        Роль customer → 403 FORBIDDEN (свою карточку читает через GET /customers/{id}).
+        Ошибки: 400 VALIDATION_FAILED (linkStatus вне proposed|conflict, sort_field, limit, cursor, q_too_short,
+        search_scope_role); 403 FORBIDDEN (customer; hasDebt без права; linkStatus без customer.link.conflicts.read);
+        общие (08 §4).
+      x-permissions: [customer.read.basic, customer.receivables.read.summary, customer.link.conflicts.read]
+      x-roles: [seller, cashier, senior_seller, admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/Q" }
+        - name: favorite
+          in: query
+          required: false
+          description: "true — только избранные клиенты текущего пользователя."
+          schema: { type: boolean }
+        - name: hasDebt
+          in: query
+          required: false
+          description: "Фильтр по флагу долга (без сумм); только customer.receivables.read.summary, иначе 403 FORBIDDEN."
+          schema: { type: boolean }
+        - name: isOverdue
+          in: query
+          required: false
+          description: "Фильтр по флагу просрочки."
+          schema: { type: boolean }
+        - name: customerType
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/CustomerType" }
+        - name: linkStatus
+          in: query
+          required: false
+          description: >
+            Список через запятую из proposed, conflict (ядро §19.2): клиенты с привязками аккаунтов в этих статусах для
+            вкладки «Привязки клиентов» SCR-45. Только customer.link.conflicts.read (admin); иное значение → 400
+            VALIDATION_FAILED. При параметре каждый элемент содержит links[] с user только в запрошенных статусах.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 2
+            uniqueItems: true
+            items:
+              allOf:
+                - { $ref: "#/components/schemas/CustomerLinkStatus" }
+                - { enum: [proposed, conflict] }
+        - name: include
+          in: query
+          required: false
+          description: "receivable — суммы долга в элементах (только customer.receivables.read.summary; без кода параметр игнорируется; аудит customer.debt_viewed)."
+          schema: { type: string, enum: [receivable] }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - name: sort
+          in: query
+          required: false
+          description: "Сортировка; по сумме долга не поддерживается (08 §4.11.1); неизвестное значение → 400 VALIDATION_FAILED rule sort_field."
+          schema: { type: string, enum: ["name:asc", "lastOrderAt:desc"] }
+      responses:
+        "200":
+          description: "Page<Customer(role-DTO)>; поля сериализуются по allowlist роли (08 §3.7)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Page" }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/CustomersListItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: customers_create
+      tags: [customers]
+      summary: Создать нового клиента (POS → outbox → 1С)
+      description: >
+        08 §4.11.2. «+ Новый клиент» (SCR-26): перед созданием сервер ищет существующую карточку 1С/POS по телефону и ИНН
+        (дедупликация D-08, по локальной реплике); создаётся customers(source=pos, onecStatus=pending, onecRef=null)
+        + onec_outbox(customer). Право customer.create; forceCreate=true — customer.create.force (cashier,
+        senior_seller, admin; Q-025), forceReason (5…200 символов) обязателен при forceCreate=true и запрещён при
+        false (rule force_reason_required). Аудит customer.created (forceCreate, forceReason, candidatesCount).
+        Ошибки: 409 CUSTOMER_DUPLICATE_SUSPECTED (candidates[]: id, displayName, phoneMasked, source),
+        409 IDEMPOTENCY_IN_PROGRESS; 400/422 VALIDATION_FAILED (≥ 1 телефон, inn 14 цифр, name ≤ 150,
+        force_reason_required); 422 IDEMPOTENCY_KEY_REUSED; 403 FORBIDDEN (forceCreate без customer.create.force).
+        ONEC_UNAVAILABLE не возвращается. Статус: ПРЕДВАРИТЕЛЬНО (Q-025).
+      x-permissions: [customer.create, customer.create.force]
+      x-roles: [seller, cashier, senior_seller, admin]
+      x-step-up: false
+      x-idempotent: required
+      x-rate-limit-group: RL-FIN
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomersCreateRequest" }
+      responses:
+        "201":
+          description: "Customer (source=pos, onecStatus=pending, onecRef=null), поля по роли (08 §3.7)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Customer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # -----------------------------------------------------------------------------------
+  # 08 §4.11.3 — карточка клиента
+  # -----------------------------------------------------------------------------------
+  /customers/{id}:
+    get:
+      operationId: customers_get
+      tags: [customers]
+      summary: Карточка клиента (поля по роли)
+      description: >
+        08 §4.11.3. Право customer.read.basic (части DTO — по customer.receivables.read.summary,
+        customer.history.read); роль customer — customer.self.read, только своя карточка при
+        customer_links.status=confirmed, иначе 404 NOT_FOUND. Суммы долга (receivable) — только при include=receivable
+        и праве на суммы (для customer — customer.self.receivables.read); каждый ответ с суммами пишет аудит
+        customer.debt_viewed (объём summary). Ролевые представления — CustomerViewSeller, CustomerViewCashier,
+        CustomerViewAdmin, CustomerViewSelf (08 §3.7; поля, не разрешённые роли, отсутствуют).
+        Ошибки: 404 NOT_FOUND (нет или чужой для customer); общие (08 §4).
+      x-permissions: [customer.read.basic, customer.self.read, customer.receivables.read.summary, customer.self.receivables.read, customer.history.read]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - name: include
+          in: query
+          required: false
+          description: >
+            Список через запятую: receivable, discounts, links, contacts; каждая часть дополнительно фильтруется правами
+            (receivable — суммы, только по праву на суммы долга; links — admin, owner, customer).
+          style: form
+          explode: false
+          schema:
+            type: array
+            maxItems: 4
+            uniqueItems: true
+            items: { type: string, enum: [receivable, discounts, links, contacts] }
+      responses:
+        "200":
+          description: "Customer(role-DTO) — таблица 08 §3.7."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Customer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # -----------------------------------------------------------------------------------
+  # 08 §4.11.4 — история покупок
+  # -----------------------------------------------------------------------------------
+  /customers/{id}/orders:
+    get:
+      operationId: customers_orders_list
+      tags: [customers]
+      summary: История покупок клиента (заказы POS + документы продаж 1С)
+      description: >
+        08 §4.11.4 (SCR-33). Право customer.history.read (cashier, senior_seller, admin, owner); роль customer — только
+        своя карточка при customer_links.status=confirmed (customer.self.read), при proposed/без привязки → 404
+        NOT_FOUND; seller → 403 FORBIDDEN (видит только ordersCount в карточке). Аудит customer.debt_viewed
+        (объём history, customerId, период); просмотр customer своей истории не пишется.
+        Ошибки: 403 FORBIDDEN (seller), 404 NOT_FOUND, 400 VALIDATION_FAILED (date_range); общие (08 §4).
+      x-permissions: [customer.history.read, customer.self.read]
+      x-roles: [cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/From" }
+        - { $ref: "#/components/parameters/To" }
+        - name: source
+          in: query
+          required: false
+          description: "Источник документов истории: pos, onec или all (08 §4.11.4)."
+          schema: { type: string, enum: [pos, onec, all] }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200":
+          description: "CustomerHistory — Page записей истории + summary по фильтру периода + historyFrom (ядро §19.2)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerHistory" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # -----------------------------------------------------------------------------------
+  # 08 §4.11.5 — долг и детализация
+  # -----------------------------------------------------------------------------------
+  /customers/{id}/receivables:
+    get:
+      operationId: customers_receivables_get
+      tags: [customers]
+      summary: Долг клиента и детализация по документам (данные только из 1С)
+      description: >
+        08 §4.11.5 (SCR-34). Суммы — customer.receivables.read.summary (cashier, senior_seller, admin, owner);
+        детализация include=documents — customer.receivables.read.detail; роль customer — customer.self.receivables.read,
+        только свой при customer_links.status=confirmed, иначе 404 NOT_FOUND; seller → 403 FORBIDDEN.
+        Step-up — ТОЛЬКО при include=documents, для всех ролей без исключений, включая customer: при первом просмотре
+        в сессии и повторно, если с последнего step-up прошло > 15 мин (stepUp.operation = customer.receivables.read.detail).
+        isStale=true, если now − asOf > staleAfterMinutes (60, RECEIVABLES_MAX_AGE_MIN). Параметр refresh сохранён для
+        совместимости и подчиняется лимитам RL-RECV-REFRESH; кнопка «Обновить» вызывает POST /customers/{id}/receivables/refresh.
+        Для клиента source=pos с onecStatus ≠ confirmed ошибка не возвращается — 200 с balance: null, reason: not_in_onec
+        (08 §4.11.5; см. замечание в схеме Receivable корня). Аудит customer.debt_viewed (summary / detail),
+        customer.finance.view (детализация).
+        Ошибки: 403 STEP_UP_REQUIRED (детализация), 403 FORBIDDEN (seller), 404 NOT_FOUND (чужой для customer); общие (08 §4).
+      x-permissions: [customer.receivables.read.summary, customer.receivables.read.detail, customer.self.receivables.read]
+      x-roles: [cashier, senior_seller, admin, owner, customer]
+      x-step-up: true
+      x-step-up-operation: [customer.receivables.read.detail]
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      security:
+        - bearerAuth: []
+        - bearerAuth: []
+          stepUpToken: []
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/StepUpToken" }
+        - name: include
+          in: query
+          required: false
+          description: "documents — детализация по документам (customer.receivables.read.detail; step-up)."
+          schema: { type: string, enum: [documents] }
+        - name: refresh
+          in: query
+          required: false
+          description: "true — синхронный запрос в 1С (таймаут 6000 мс); при недоступности — снимок + isStale. Лимиты RL-RECV-REFRESH."
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: "Receivable (08 §3.7); documents[] — только при include=documents со step-up."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            X-Data-As-Of: { $ref: "#/components/headers/XDataAsOf" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Receivable" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # -----------------------------------------------------------------------------------
+  # 08 §4.11.8 — точечное обновление снимка долга (ядро §19.2)
+  # -----------------------------------------------------------------------------------
+  /customers/{id}/receivables/refresh:
+    post:
+      operationId: customers_receivables_refresh
+      tags: [customers]
+      summary: Точечное синхронное обновление снимка долга клиента (ядро §19.2)
+      description: >
+        08 §4.11.8 (SCR-34 «Обновить»). Синхронно запрашивает у 1С сальдо, просрочку, лимит и (если доступна)
+        детализацию одного клиента (OnecGateway.getReceivable), обновляет снимок receivables и asOf. Право
+        customer.receivables.read.summary (cashier, senior_seller, admin, owner), без step-up; детализация в ответе —
+        только при include=documents по правилам customer.receivables.read.detail со step-up; seller, customer → 403
+        FORBIDDEN. Single-flight: параллельный запрос по тому же клиенту получает ответ выполняемого; снимок моложе 30 с —
+        200 с текущим снимком и refreshed=false без обращения к 1С. Тела нет. Idempotency-Key не требуется (вне перечня
+        08 §2.7), допускается по общему правилу; автоповтор клиентом не выполняется. Аудит customer.debt_viewed
+        (summary, refresh: true; при include=documents — дополнительно customer.finance.view).
+        Ошибки: 503 ONEC_UNAVAILABLE (1С не ответила за ONEC_SYNC_CHECK_TIMEOUT_MS = 6000 мс; снимок не изменён),
+        422 CUSTOMER_NOT_IDENTIFIED (клиент source=pos с onecStatus ≠ confirmed), 403 STEP_UP_REQUIRED
+        (include=documents без step-up), 403 FORBIDDEN, 404 NOT_FOUND, 429 RATE_LIMITED (retryAfter).
+      x-permissions: [customer.receivables.read.summary, customer.receivables.read.detail]
+      x-roles: [cashier, senior_seller, admin, owner]
+      x-step-up: true
+      x-step-up-operation: [customer.receivables.read.detail]
+      x-idempotent: true
+      x-rate-limit-group: RL-RECV-REFRESH
+      security:
+        - bearerAuth: []
+        - bearerAuth: []
+          stepUpToken: []
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+        - { $ref: "#/components/parameters/StepUpToken" }
+        - name: include
+          in: query
+          required: false
+          description: "documents — вернуть детализацию (customer.receivables.read.detail; step-up)."
+          schema: { type: string, enum: [documents] }
+      responses:
+        "200":
+          description: "Receivable с новым asOf, isStale=false, refreshed=true (или refreshed=false — снимок моложе 30 с)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            X-Data-As-Of: { $ref: "#/components/headers/XDataAsOf" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Receivable" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # -----------------------------------------------------------------------------------
+  # 08 §4.11.6 — скидки и условия клиента
+  # -----------------------------------------------------------------------------------
+  /customers/{id}/discounts:
+    get:
+      operationId: customers_discounts_get
+      tags: [customers]
+      summary: Скидки и условия клиента
+      description: >
+        08 §4.11.6 (SCR-35): вид цены клиента, скидка 1С, применимые правила, отсрочка/лимит, лимит ручной скидки
+        текущей роли. Право discount.rules.read (seller, cashier, senior_seller, admin, owner; customer — только свой,
+        11 §4.4). creditTerms.creditLimit — по праву на суммы долга. Аудит не пишется.
+        Ошибки: 404 NOT_FOUND (в т. ч. customer — чужая, proposed или несуществующая карточка неотличимы, 11 SEC-030 (в));
+        общие (08 §4).
+      x-permissions: [discount.rules.read]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+      responses:
+        "200":
+          description: "Скидки и условия клиента (08 §4.11.6)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomersDiscountsResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # -----------------------------------------------------------------------------------
+  # 08 §4.11.7 — привязки пользователей к клиенту (ядро §22.12)
+  # -----------------------------------------------------------------------------------
+  /customers/{id}/links:
+    get:
+      operationId: customers_links_list
+      tags: [customers]
+      summary: Привязанные к клиенту пользователи (customer_links)
+      description: >
+        08 §4.11.7 (SCR-45). Просмотр — customer.link.read (cashier, senior_seller, admin, owner); роль customer — только
+        свои привязки (customer.self.read). Ответ — не страница: { items: [...] }.
+        Ошибки: 403 FORBIDDEN (seller), 404 NOT_FOUND; общие (08 §4).
+      x-permissions: [customer.link.read, customer.self.read]
+      x-roles: [cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+      responses:
+        "200":
+          description: "Привязки клиента с кратким пользователем (id, displayName, phoneMasked)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomersLinksResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /customers/{id}/links/{linkId}/confirm:
+    post:
+      operationId: customers_links_confirm
+      tags: [customers]
+      summary: Подтвердить привязку аккаунта к клиенту (proposed или conflict) — только admin со step-up
+      description: >
+        08 §4.11.7; ядро §22.12; 11 №32, §4.4. customer.link.resolve — только admin, всегда со step-up
+        (stepUp.operation = customer.link.resolve); cashier, senior_seller, owner, seller, customer → 403 FORBIDDEN.
+        Клиент подтверждает свою привязку через POST /registration/customer-match/confirm (08 §4.2.4), не этим путём.
+        Подтверждение привязки, уже находящейся в целевом статусе, → 200 без изменений. Аудит customer.link.confirmed /
+        customer.link.conflict_resolved. Статус: ПРЕДВАРИТЕЛЬНО.
+        Ошибки: 409 CUSTOMER_LINK_CONFLICT (другая confirmed привязка существует и force не задан),
+        403 STEP_UP_REQUIRED (без X-Step-Up-Token), 403 FORBIDDEN (любая роль, кроме admin), 404 NOT_FOUND; общие (08 §4).
+      x-permissions: [customer.link.resolve]
+      x-roles: [admin]
+      x-step-up: true
+      x-step-up-operation: [customer.link.resolve]
+      x-idempotent: true
+      x-rate-limit-group: RL-ADMIN
+      security:
+        - bearerAuth: []
+          stepUpToken: []
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/CustomersLinkIdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+        - { $ref: "#/components/parameters/StepUpToken" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomersLinkConfirmRequest" }
+      responses:
+        "200":
+          description: "CustomerLink в статусе confirmed."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerLink" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /customers/{id}/links/{linkId}/reject:
+    post:
+      operationId: customers_links_reject
+      tags: [customers]
+      summary: Отклонить привязку аккаунта к клиенту (proposed или conflict) — только admin со step-up
+      description: >
+        08 §4.11.7; ядро §22.12; 11 №32, §4.4. customer.link.resolve — только admin, всегда со step-up
+        (stepUp.operation = customer.link.resolve); прочие роли → 403 FORBIDDEN. Клиент отклоняет свою привязку через
+        POST /registration/customer-match/reject (08 §4.2.4). Отклонение привязки, уже находящейся в целевом статусе,
+        → 200 без изменений. Аудит customer.link.rejected / customer.link.conflict_resolved. Статус: ПРЕДВАРИТЕЛЬНО.
+        Ошибки: 403 STEP_UP_REQUIRED, 403 FORBIDDEN (любая роль, кроме admin), 404 NOT_FOUND; общие (08 §4).
+      x-permissions: [customer.link.resolve]
+      x-roles: [admin]
+      x-step-up: true
+      x-step-up-operation: [customer.link.resolve]
+      x-idempotent: true
+      x-rate-limit-group: RL-ADMIN
+      security:
+        - bearerAuth: []
+          stepUpToken: []
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/CustomersLinkIdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+        - { $ref: "#/components/parameters/StepUpToken" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomersLinkRejectRequest" }
+      responses:
+        "200":
+          description: "CustomerLink в статусе rejected."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerLink" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # -----------------------------------------------------------------------------------
+  # 08 §4.12.1 — просроченные долги
+  # -----------------------------------------------------------------------------------
+  /receivables/overdue:
+    get:
+      operationId: receivables_overdue_list
+      tags: [receivables]
+      summary: Просроченные долги клиентов
+      description: >
+        08 §4.12.1. Право customer.receivables.read.summary (cashier, senior_seller, admin, owner). Просрочку считает 1С.
+        Аудит receivables.overdue_viewed (один раз на запрос).
+        Ошибки: 403 FORBIDDEN, 400 VALIDATION_FAILED; общие (08 §4).
+      x-permissions: [customer.receivables.read.summary]
+      x-roles: [cashier, senior_seller, admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - name: minOverdueDays
+          in: query
+          required: false
+          description: "Минимальное число дней просрочки."
+          schema: { type: integer, minimum: 0 }
+        - name: minAmount
+          in: query
+          required: false
+          description: "Минимальная сумма просрочки (строка Money, rule money_format)."
+          schema: { $ref: "#/components/schemas/MoneyAmount" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - name: sort
+          in: query
+          required: false
+          description: "Сортировка (08 §4.12.1); неизвестное значение → 400 VALIDATION_FAILED rule sort_field."
+          schema: { type: string, enum: ["overdueAmount:desc", "overdueDays:desc", "customerName:asc"] }
+      responses:
+        "200":
+          description: "Page<ReceivablesOverdueItem> + asOf (Page.asOf), isStale."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Page" }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/ReceivablesOverdueItem" }
+                      isStale: { type: boolean, description: "true — снимок долга старше RECEIVABLES_MAX_AGE_MIN." }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # -----------------------------------------------------------------------------------
+  # 08 §4.12.2 — правила скидок и потолок роли
+  # -----------------------------------------------------------------------------------
+  /discounts/rules:
+    get:
+      operationId: discounts_rules_get
+      tags: [discounts]
+      summary: Применимые правила скидок и потолок ручной скидки роли
+      description: >
+        08 §4.12.2. Право discount.rules.read (seller, cashier, senior_seller, admin, owner); роль customer — только
+        правила своей привязанной (confirmed) карточки, иначе 403 FORBIDDEN (11 §4.4). Автоматические скидки 1С на
+        backend не воспроизводятся (D-23). Значения лимитов — [НЕ ПОДТВЕРЖДЕНО: Q-015]. Аудит не пишется.
+        Ошибки: 403 FORBIDDEN (customer), 404 NOT_FOUND (customerId/cartId); общие (08 §4).
+      x-permissions: [discount.rules.read]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - name: customerId
+          in: query
+          required: false
+          description: "Клиент, для которого подбираются правила (необязателен)."
+          schema: { type: string, format: uuid }
+        - name: cartId
+          in: query
+          required: false
+          description: "Корзина, для которой подбираются правила."
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: "Правила скидок и потолок роли. Cache-Control: private, max-age=60 (08 §4.12.2)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control:
+              description: "private, max-age=60 (08 §4.12.2)."
+              schema: { type: string, example: "private, max-age=60" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiscountsRulesResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # -----------------------------------------------------------------------------------
+  # 08 §4.13 — избранное
+  # -----------------------------------------------------------------------------------
+  /favorites/products:
+    get:
+      operationId: favorites_products_list
+      tags: [favorites]
+      summary: Избранные товары текущего пользователя
+      description: >
+        08 §4.13.1 (SCR-40). Право favorites.products.manage — все роли, включая customer (для customer — при
+        CUSTOMER_SELF_SERVICE=true, 11 §4.4; по умолчанию true, ядро §24.2). Аудит не пишется.
+        Ошибки: общие (08 §4).
+      x-permissions: [favorites.products.manage]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - name: warehouseId
+          in: query
+          required: false
+          description: "Склад для цен и остатков товаров."
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: "Page<ProductSummary> + count (бейдж «Избранное N»)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Page" }
+                  - type: object
+                    required: [count]
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/ProductSummary" }
+                      count: { type: integer, minimum: 0, description: "Всего избранных товаров (бейдж)." }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /favorites/products/{id}:
+    put:
+      operationId: favorites_products_put
+      tags: [favorites]
+      summary: Добавить товар в избранное (идемпотентно)
+      description: >
+        08 §4.13.2. Право favorites.products.manage — все роли (customer — при CUSTOMER_SELF_SERVICE=true). Тела нет.
+        Повтор → 204. Идемпотентна по семантике; клиентский outbox (D-32) повторяет без ключа; Idempotency-Key
+        допускается (08 §2.7). Аудит не пишется.
+        Ошибки: 404 NOT_FOUND (товар не существует); общие (08 §4).
+      x-permissions: [favorites.products.manage]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: true
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+      responses:
+        "204":
+          description: "Товар в избранном (в т. ч. уже был)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+    delete:
+      operationId: favorites_products_delete
+      tags: [favorites]
+      summary: Удалить товар из избранного
+      description: >
+        08 §4.13.2. Право favorites.products.manage — все роли (customer — при CUSTOMER_SELF_SERVICE=true).
+        Отсутствующее в избранном → 204. Аудит не пишется.
+        Ошибки: 404 NOT_FOUND (товар не существует); общие (08 §4).
+      x-permissions: [favorites.products.manage]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+      responses:
+        "204":
+          description: "Товара в избранном нет (в т. ч. не было)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /favorites/customers:
+    get:
+      operationId: favorites_customers_list
+      tags: [favorites]
+      summary: Избранные клиенты текущего пользователя
+      description: >
+        08 §4.13.1 (SCR-40). Право favorites.customers.manage — cashier, senior_seller, admin (owner — нет, 11 §4.4).
+        Элементы — Customer(role-DTO) без сумм долга (только флаги hasDebt/isOverdue, ядро §22.13 п.1). Аудит не пишется.
+        Ошибки: 403 FORBIDDEN (без права); общие (08 §4).
+      x-permissions: [favorites.customers.manage]
+      x-roles: [cashier, senior_seller, admin]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200":
+          description: "Page<Customer(role-DTO)> + count."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Page" }
+                  - type: object
+                    required: [count]
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/Customer" }
+                      count: { type: integer, minimum: 0, description: "Всего избранных клиентов (бейдж)." }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /favorites/customers/{id}:
+    put:
+      operationId: favorites_customers_put
+      tags: [favorites]
+      summary: Добавить клиента в избранное (идемпотентно)
+      description: >
+        08 §4.13.2. Право favorites.customers.manage — cashier, senior_seller, admin (owner — нет, 11 §4.4). Тела нет.
+        Повтор → 204. Идемпотентна по семантике; Idempotency-Key допускается (08 §2.7). Аудит не пишется.
+        Ошибки: 404 NOT_FOUND (клиент не существует), 403 FORBIDDEN (без права); общие (08 §4).
+      x-permissions: [favorites.customers.manage]
+      x-roles: [cashier, senior_seller, admin]
+      x-step-up: false
+      x-idempotent: true
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+      responses:
+        "204":
+          description: "Клиент в избранном (в т. ч. уже был)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+    delete:
+      operationId: favorites_customers_delete
+      tags: [favorites]
+      summary: Удалить клиента из избранного
+      description: >
+        08 §4.13.2. Право favorites.customers.manage — cashier, senior_seller, admin (owner — нет, 11 §4.4).
+        Отсутствующее в избранном → 204. Аудит не пишется.
+        Ошибки: 404 NOT_FOUND (клиент не существует), 403 FORBIDDEN (без права); общие (08 §4).
+      x-permissions: [favorites.customers.manage]
+      x-roles: [cashier, senior_seller, admin]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+      responses:
+        "204":
+          description: "Клиента в избранном нет (в т. ч. не было)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # -----------------------------------------------------------------------------------
+  # 08 §4.14 — транзакции (read-model)
+  # -----------------------------------------------------------------------------------
+  /transactions:
+    get:
+      operationId: transactions_list
+      tags: [transactions]
+      summary: Журнал операций (период, клиент, статус, тип)
+      description: >
+        08 §4.14.1 (SCR-36). Права transactions.read.all (cashier, senior_seller, admin, owner) или
+        transactions.read.own (seller — только операции по своим заказам; mine=true сервер применяет всегда).
+        actorId и summary — только transactions.read.all. Роль customer → 403 FORBIDDEN. Период from…to — ≤ 366 дней
+        (rule date_range). Аудит transaction.viewed_all — обязательно при выборке с чужими данными (агрегировано: раз на
+        сессию и набор фильтров); выборка только своих операций не пишется.
+        Ошибки: 400 VALIDATION_FAILED (date_range, неизвестный kind или status), 403 FORBIDDEN (actorId без
+        transactions.read.all; customer); общие (08 §4).
+      x-permissions: [transactions.read.own, transactions.read.all]
+      x-roles: [seller, cashier, senior_seller, admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+        - name: from
+          in: query
+          required: true
+          description: "Начало периода, ISO-8601 UTC; from ≤ to; период ≤ 366 дней (08 §4.14.1, §2.14; обязателен — 08 §8)."
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          description: "Конец периода, ISO-8601 UTC (08 §4.14.1; обязателен — 08 §8)."
+          schema: { type: string, format: date-time }
+        - name: customerId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          required: false
+          description: "Список через запятую значений statusGroup (08 §3.11; ядро §19.2); иное значение → 400 VALIDATION_FAILED rule enum."
+          style: form
+          explode: false
+          schema:
+            type: array
+            maxItems: 50
+            uniqueItems: true
+            items: { $ref: "#/components/schemas/TransactionStatusGroup" }
+        - name: kind
+          in: query
+          required: false
+          description: "Список через запятую значений transaction_kind (07 §6.1)."
+          style: form
+          explode: false
+          schema:
+            type: array
+            maxItems: 50
+            uniqueItems: true
+            items: { $ref: "#/components/schemas/TransactionKind" }
+        - name: source
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/TransactionSource" }
+        - name: mine
+          in: query
+          required: false
+          description: "true — только свои операции; у seller сервер применяет всегда."
+          schema: { type: boolean }
+        - name: actorId
+          in: query
+          required: false
+          description: "Фильтр по исполнителю; только transactions.read.all, иначе 403 FORBIDDEN."
+          schema: { type: string, format: uuid }
+        - name: paymentMethod
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/PaymentMethod" }
+        - name: amountMin
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/MoneyAmount" }
+        - name: amountMax
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/MoneyAmount" }
+        - name: q
+          in: query
+          required: false
+          description: "Поиск по номеру документа."
+          schema: { type: string, maxLength: 200 }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - name: sort
+          in: query
+          required: false
+          description: "Сортировка (08 §4.14.1); неизвестное значение → 400 VALIDATION_FAILED rule sort_field."
+          schema: { type: string, enum: ["occurredAt:desc", "amount:desc"], default: "occurredAt:desc" }
+      responses:
+        "200":
+          description: "Page<Transaction> + summary по фильтру (только transactions.read.all)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Page" }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/Transaction" }
+                      summary:
+                        allOf: [ { $ref: "#/components/schemas/TransactionsSummary" } ]
+                        x-roles: [cashier, senior_seller, admin, owner]
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /transactions/{id}:
+    get:
+      operationId: transactions_get
+      tags: [transactions]
+      summary: Транзакция и связанные документы
+      description: >
+        08 §4.14.2 (SCR-37). Права transactions.read.all (cashier, senior_seller, admin, owner) или transactions.read.own
+        (seller — по своим заказам); блок audit[] — только audit.read. related[] заполнен полностью (заказ, платёж,
+        заявка на возврат, документ 1С). Аудит: audit.viewed — при непустом audit[] (чтение журнала аудита, 11 SEC-073);
+        иначе не пишется.
+        Ошибки: 404 NOT_FOUND (чужая для seller); общие (08 §4).
+      x-permissions: [transactions.read.own, transactions.read.all, audit.read]
+      x-roles: [seller, cashier, senior_seller, admin, owner]
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-READ
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/AppVersion" }
+        - { $ref: "#/components/parameters/Platform" }
+        - { $ref: "#/components/parameters/RequestId" }
+        - { $ref: "#/components/parameters/AcceptLanguage" }
+      responses:
+        "200":
+          description: "Transaction с полным related[] + audit[] (только audit.read)."
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/XRequestId" }
+            X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
+            X-Recommended-App-Version: { $ref: "#/components/headers/XRecommendedAppVersion" }
+            Cache-Control: { $ref: "#/components/headers/CacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransactionsDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Problem" }
+
+components:
+  parameters:
+    CustomersLinkIdPath:
+      name: linkId
+      in: path
+      required: true
+      description: "UUID привязки customer_links (08 §4.11.7)."
+      schema: { type: string, format: uuid }
+
+  schemas:
+    # ===== Тела запросов (additionalProperties: false — 08 §2.11, §3) =====
+    CustomersCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, customerType, phones]
+      description: >
+        Тело POST /customers (08 §4.11.2). customerType обязателен: customers.customer_type NOT NULL без DEFAULT (07 §5.28).
+        forceReason обязателен при forceCreate=true и запрещён при false (rule force_reason_required, ядро §19.2).
+        Телефоны — строки E.164 (в ответе — phones[{value, verified}], 08 §3.7).
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 150
+          description: "ФИО / наименование: 2…150 символов (08 §4.11.2 name ≤ 150; 02 SCR-26 UI-26-004 2–150)."
+          example: "Тестов Клиент"
+        customerType: { $ref: "#/components/schemas/CustomerType" }
+        phones:
+          type: array
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+          description: "≥ 1 телефон (08 §4.11.2); phones ≤ 5 (08 §2.14)."
+          items: { $ref: "#/components/schemas/PhoneE164" }
+        inn:
+          type: string
+          nullable: true
+          pattern: '^\d{14}$'
+          maxLength: 14
+          description: "ИНН КР — 14 цифр [ТИПОВО: ИНН КР; Q-142]; не логируется."
+          example: "12345678901234"
+        address:
+          type: string
+          maxLength: 300
+          description: "Адрес (необязательно; предзаполняет адрес доставки SCR-21 — тот же предел 300 символов, 02 SCR-21)."
+        comment:
+          type: string
+          maxLength: 500
+          description: "Комментарий (необязательно; ≤ 500 — 02 SCR-26 UI-26-010 [ТИПОВО])."
+        priceListId:
+          type: string
+          format: uuid
+          nullable: true
+          description: "Вид цены (необязательно)."
+        forceCreate:
+          type: boolean
+          default: false
+          description: "Создать несмотря на CUSTOMER_DUPLICATE_SUSPECTED; только customer.create.force (cashier, senior_seller, admin; Q-025)."
+        forceReason:
+          type: string
+          nullable: true
+          minLength: 5
+          maxLength: 200
+          description: "Причина принудительного создания: обязательна при forceCreate=true, запрещена при false (ядро §19.2)."
+    CustomersLinkConfirmRequest:
+      type: object
+      additionalProperties: false
+      description: >
+        Тело POST /customers/{id}/links/{linkId}/confirm (08 §4.11.7: { comment }). Поле force названо в строке «Ошибки»
+        той же карточки (CUSTOMER_LINK_CONFLICT — «другая confirmed привязка существует и force не задан»).
+      properties:
+        comment:
+          type: string
+          maxLength: 200
+          description: "Комментарий администратора (08 §2.14: comment ≤ 200)."
+        force:
+          type: boolean
+          default: false
+          description: "true — подтвердить, несмотря на другую confirmed привязку (иначе 409 CUSTOMER_LINK_CONFLICT)."
+    CustomersLinkRejectRequest:
+      type: object
+      additionalProperties: false
+      description: "Тело POST /customers/{id}/links/{linkId}/reject (08 §4.11.7: { comment })."
+      properties:
+        comment:
+          type: string
+          maxLength: 200
+          description: "Комментарий / причина отказа (08 §2.14: comment ≤ 200)."
+
+    # ===== Ответы модуля customers =====
+    CustomersLinkUser:
+      type: object
+      required: [id, displayName]
+      description: "Краткий пользователь привязки: без полного телефона (08 §4.11.1, §4.11.7)."
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        phoneMasked: { $ref: "#/components/schemas/PhoneMasked" }
+    CustomersLinkWithUser:
+      description: "CustomerLink + user { id, displayName, phoneMasked } (08 §4.11.1, §4.11.7)."
+      allOf:
+        - { $ref: "#/components/schemas/CustomerLink" }
+        - type: object
+          required: [user]
+          properties:
+            user: { $ref: "#/components/schemas/CustomersLinkUser" }
+    CustomersLinksResponse:
+      type: object
+      required: [items]
+      description: "Ответ GET /customers/{id}/links (08 §4.11.7) — не страница."
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CustomersLinkWithUser" }
+    CustomersListItem:
+      description: >
+        Элемент GET /customers: Customer(role-DTO) без сумм долга, кроме include=receivable с правом (08 §3.7).
+        При linkStatus — дополнительно links[] с user только в запрошенных статусах (08 §4.11.1; роль admin).
+      allOf:
+        - { $ref: "#/components/schemas/Customer" }
+        - type: object
+          properties:
+            links:
+              type: array
+              x-roles: [admin]
+              description: "Только при параметре linkStatus (customer.link.conflicts.read)."
+              items: { $ref: "#/components/schemas/CustomersLinkWithUser" }
+    CustomersHistoryEntry:
+      type: object
+      required: [kind, number, date, total, status, source]
+      description: "Запись истории покупок: заказ POS или документ продаж 1С (08 §4.11.4; sales_history — [ТИПОВО: Q-010])."
+      properties:
+        kind: { type: string, enum: [order, shipment, return] }
+        id: { type: string, format: uuid, nullable: true }
+        number: { type: string, example: "POS-2026-000123" }
+        date: { type: string, format: date-time }
+        total: { $ref: "#/components/schemas/Money" }
+        status: { type: string, description: "Статус документа как есть." }
+        source: { type: string, enum: [pos, onec] }
+        url: { type: string, nullable: true, example: "/api/v1/orders/{id}" }
+    CustomersHistorySummary:
+      type: object
+      required: [count, total]
+      description: "Итоги по фильтру периода (ядро §19.2 — CustomerHistory.summary)."
+      properties:
+        count: { type: integer, minimum: 0, example: 12 }
+        total: { $ref: "#/components/schemas/Money" }
+        lastOrderAt: { type: string, format: date-time, nullable: true }
+    CustomerHistory:
+      description: >
+        Имя из 08 §4.11.4 (сохраняется как есть): Page записей истории + summary + historyFrom — дата, с которой в POS
+        есть история продаж из 1С (граница SALES_HISTORY_MONTHS; ранние покупки могут отсутствовать; ядро §19.2).
+      allOf:
+        - { $ref: "#/components/schemas/Page" }
+        - type: object
+          required: [summary]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/CustomersHistoryEntry" }
+            summary: { $ref: "#/components/schemas/CustomersHistorySummary" }
+            historyFrom: { type: string, format: date, nullable: true, example: "2025-10-01" }
+    CustomersCreditTerms:
+      type: object
+      required: [creditAllowed]
+      description: "Условия отсрочки клиента (08 §4.11.6)."
+      properties:
+        creditAllowed: { type: boolean }
+        paymentTermDays: { type: integer, minimum: 0, nullable: true, example: 14 }
+        creditLimit:
+          allOf: [ { $ref: "#/components/schemas/Money" } ]
+          type: object
+          nullable: true
+          description: "Лимит долга — по праву на суммы долга (08 §4.11.6: «по праву»)."
+          x-roles: [cashier, senior_seller, admin, owner, customer]
+    CustomersDiscountsResponse:
+      type: object
+      required: [rules, asOf]
+      description: "Ответ GET /customers/{id}/discounts (08 §4.11.6)."
+      properties:
+        priceList:
+          allOf: [ { $ref: "#/components/schemas/PriceListRef" } ]
+          type: object
+          nullable: true
+        customerDiscountPercent:
+          allOf: [ { $ref: "#/components/schemas/Percent" } ]
+          type: string
+          nullable: true
+          description: "Скидка клиента из 1С («Скидка: 5 %»); null — 1С не отдаёт число (07 customers.discount_percent)."
+        rules:
+          type: array
+          items: { $ref: "#/components/schemas/DiscountRule" }
+        creditTerms: { $ref: "#/components/schemas/CustomersCreditTerms" }
+        manualDiscountLimitPercent:
+          allOf: [ { $ref: "#/components/schemas/Percent" } ]
+          description: "Лимит ручной скидки текущей роли (role_discount_limits; Q-015)."
+        asOf: { type: string, format: date-time }
+
+    # ===== Ответы модуля receivables =====
+    ReceivablesOverdueItem:
+      type: object
+      required: [customer, balance, overdueAmount, overdueDays, asOf]
+      description: "Строка просроченного долга (08 §4.12.1); customer — базовые поля клиента без сумм receivable."
+      properties:
+        customer: { $ref: "#/components/schemas/Customer" }
+        balance: { $ref: "#/components/schemas/Money" }
+        overdueAmount: { $ref: "#/components/schemas/Money" }
+        overdueDays: { type: integer, minimum: 0, example: 12 }
+        oldestDueDate: { type: string, format: date, nullable: true }
+        asOf: { type: string, format: date-time }
+
+    # ===== Ответы модуля discounts =====
+    DiscountsRulesResponse:
+      type: object
+      required: [rules, manualDiscountLimitPercent]
+      description: "Ответ GET /discounts/rules (08 §4.12.2); значения лимитов — [НЕ ПОДТВЕРЖДЕНО: Q-015]."
+      properties:
+        rules:
+          type: array
+          items: { $ref: "#/components/schemas/DiscountRule" }
+        manualDiscountLimitPercent: { $ref: "#/components/schemas/Percent" }
+        overrideRoles:
+          type: array
+          description: "Роли, которые могут подтвердить скидку сверх лимита (discount.approve.over_limit)."
+          items: { $ref: "#/components/schemas/RoleCode" }
+        limitsByRole:
+          type: object
+          description: "Лимит ручной скидки по ролям: ключ — RoleCode (seller, cashier, senior_seller, admin), значение — Percent."
+          additionalProperties: { $ref: "#/components/schemas/Percent" }
+          example: { seller: "5.00", cashier: "5.00", senior_seller: "10.00", admin: "15.00" }
+
+    # ===== Ответы модуля transactions =====
+    TransactionsSummary:
+      type: object
+      required: [count, sumIn, sumOut]
+      description: "Итоги по фильтру GET /transactions (08 §4.14.1); только transactions.read.all."
+      properties:
+        count: { type: integer, minimum: 0, example: 42 }
+        sumIn: { $ref: "#/components/schemas/Money" }
+        sumOut: { $ref: "#/components/schemas/Money" }
+    TransactionsDetail:
+      description: "Ответ GET /transactions/{id} (08 §4.14.2): Transaction с полным related[] + audit[] (только audit.read)."
+      allOf:
+        - { $ref: "#/components/schemas/Transaction" }
+        - type: object
+          properties:
+            audit:
+              type: array
+              x-roles: [admin, owner]
+              description: "Записи аудита по транзакции — только audit.read (admin — без финансовых before/after, 11 SEC-083)."
+              items: { $ref: "#/components/schemas/AuditRow" }

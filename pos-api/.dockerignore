@@ -1,0 +1,9 @@
+node_modules
+dist
+coverage
+.tmp
+test
+*.log
+.env
+secrets
+Dockerfile

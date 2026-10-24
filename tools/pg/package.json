@@ -1,0 +1,19 @@
+{
+  "name": "optomstroy-pg-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Одноразовый PostgreSQL 17 (embedded-postgres) для проверки SQL-файлов без Docker: RM-B-005, RM-B-008, RM-C-006",
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "run-sql": "node run-sql.mjs",
+    "selftest": "node run-sql.mjs test/selftest.sql --check test/selftest_check.sql"
+  },
+  "devDependencies": {
+    "embedded-postgres": "17.10.0-beta.17",
+    "pg": "8.23.1"
+  }
+}

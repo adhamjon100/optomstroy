@@ -1,0 +1,10 @@
+{
+  "_note": "тестовые данные",
+  "operation": "POST /pos/v1/changes/ack",
+  "kind": "response",
+  "status": 200,
+  "body": {
+    "messageNumber": 5121,
+    "removedRegistrations": 2500
+  }
+}

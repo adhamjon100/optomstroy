@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://optomstroy.local/contracts/enums.schema.json",
+  "title": "Оптомстрой POS — общие enum-ы и коды ошибок (RM-B-009)",
+  "description": "Схема contracts/enums.json. Значения — канон 07_DATA_MODEL §6.1/§6.1.1 и 08_API_SPECIFICATION §2.4/§3.8 (ядро R0 §18.1). Сверка с документами — scripts/check_enums.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "version", "basis", "dbEnums", "checkLists", "checkListExclusions", "apiEnums", "problemCodes"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "contract": { "const": "optomstroy-pos-enums" },
+    "version": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" },
+    "basis": {
+      "type": "object",
+      "description": "Откуда взяты значения (документ и раздел-владелец).",
+      "additionalProperties": false,
+      "required": ["kernel", "dbEnums", "checkLists", "problemCodes", "syncErrorCodes", "apiEnums"],
+      "properties": {
+        "kernel": { "type": "string", "minLength": 1 },
+        "dbEnums": { "type": "string", "minLength": 1 },
+        "checkLists": { "type": "string", "minLength": 1 },
+        "problemCodes": { "type": "string", "minLength": 1 },
+        "syncErrorCodes": { "type": "string", "minLength": 1 },
+        "apiEnums": { "type": "string", "minLength": 1 }
+      }
+    },
+    "dbEnums": {
+      "description": "Типы PostgreSQL `CREATE TYPE … AS ENUM` — таблица 07 §6.1, порядок типов и значений как в таблице.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/dbEnum" }
+    },
+    "checkLists": {
+      "description": "Текстовые поля с CHECK (… IN (…)) — таблица 07 §6.1.1 (только строки с перечнем значений).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/checkList" }
+    },
+    "checkListExclusions": {
+      "description": "Строки 07 §6.1.1 без перечня значений (регэксп, срок, согласованность) — явно исключены.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["column", "reason"],
+        "properties": {
+          "column": { "$ref": "#/$defs/columnRef" },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "apiEnums": {
+      "description": "Перечни контракта API, не являющиеся типами/CHECK БД (08 §2.4, §3.8).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/apiEnum" }
+    },
+    "problemCodes": {
+      "description": "Problem.code — полный перечень 08 §2.4 (порядок таблицы) с HTTP-статусами.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/problemCode" }
+    }
+  },
+  "$defs": {
+    "enumName": { "type": "string", "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$" },
+    "enumValue": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9]*(_[A-Za-z0-9]+)*$" },
+    "columnRef": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$" },
+    "values": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/enumValue" }
+    },
+    "notUsed": {
+      "description": "Значения, которые документ-владелец прямо объявил неиспользуемыми; генераторы их не выпускают.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/enumValue" }
+    },
+    "dbEnum": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "values", "source", "usage"],
+      "properties": {
+        "name": { "$ref": "#/$defs/enumName" },
+        "values": { "$ref": "#/$defs/values" },
+        "source": { "type": "string", "minLength": 1 },
+        "usage": { "type": "string", "minLength": 1 },
+        "notUsed": { "$ref": "#/$defs/notUsed" }
+      }
+    },
+    "checkList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "columns", "values", "source"],
+      "properties": {
+        "name": { "$ref": "#/$defs/enumName" },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/columnRef" }
+        },
+        "values": { "$ref": "#/$defs/values" },
+        "source": { "type": "string", "minLength": 1 },
+        "notUsed": { "$ref": "#/$defs/notUsed" }
+      }
+    },
+    "apiEnum": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "values", "source"],
+      "properties": {
+        "name": { "$ref": "#/$defs/enumName" },
+        "values": { "$ref": "#/$defs/values" },
+        "source": { "type": "string", "minLength": 1 },
+        "notUsed": { "$ref": "#/$defs/notUsed" }
+      }
+    },
+    "problemCode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "http"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$" },
+        "http": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 400, "maximum": 599 }
+        },
+        "tag": { "type": "string", "minLength": 1, "description": "Пометка строки 08 §2.4 ([РЕШЕНИЕ: …], [НОВОЕ ИМЯ])." }
+      }
+    }
+  }
+}

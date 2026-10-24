@@ -1,0 +1,22 @@
+{
+  "_note": "тестовые данные",
+  "operation": "POST /pos/v1/returns",
+  "kind": "request",
+  "body": {
+    "externalId": "0192f5d2-3333-7ccc-8ddd-000000000001",
+    "shipmentRef": "f1e2d3c4-0000-4000-8000-000000000020",
+    "orderExternalId": "0192f5a0-7c2e-7d3b-9a1f-3c4d5e6f7a8b",
+    "customerRef": "c3d4e5f6-0000-4000-8000-000000000001",
+    "reasonCode": "defect",
+    "reasonText": "Течёт картридж",
+    "requestedAt": "2026-10-22T10:15:00+06:00",
+    "lines": [
+      {
+        "shipmentLineNumber": 1,
+        "productRef": "a1b2c3d4-0000-4000-8000-000000000001",
+        "variantRef": "a1b2c3d4-0000-4000-8000-000000000101",
+        "quantity": "1.000"
+      }
+    ]
+  }
+}

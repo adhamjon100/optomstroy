@@ -1,0 +1,145 @@
+name: optomstroy
+description: "Оптомстрой POS — клиентское приложение (Flutter; Android, Windows; iOS — архитектурно)."
+# Приложение не публикуется на pub.dev.
+publish_to: 'none'
+
+# Версия передаётся в X-App-Version (RM-C-015) и показывается на Splash (SCR-00).
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.10.7
+  flutter: ">=3.38.7"
+
+# Владелец файла — FE (RM-C-002). Набор — R3 §15 и D-04; версии проверены
+# фактическим `flutter pub get` на Flutter 3.38.7 / Dart 3.10.7 (pos-app/NOTES.md §1).
+# Пакеты для core (RM-C-004) и design_system (RM-C-003) добавлены заранее:
+# эти задачи pubspec не меняют.
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # Состояние и DI (D-04, R3 §2)
+  flutter_riverpod: 3.1.0
+  riverpod_annotation: 4.0.0
+
+  # Навигация (R3 §3)
+  go_router: '>=17.5.0 <18.0.0'
+
+  # Локальное хранилище (R3 §4, 07 §11)
+  drift: '>=2.30.0 <2.31.0'
+  drift_flutter: '>=0.2.8 <0.3.0'
+  sqlite3: '>=2.6.0 <3.0.0'
+  shared_preferences: ^2.5.5
+  path_provider: ^2.1.6
+  # APP_DATA_DIR (dev/staging-сборки, lib/core/config/app_data_directory.dart): подмена PathProviderPlatform.instance —
+  # данные приложения integration_test пишутся не в %APPDATA% на C:. Уже был в pubspec.lock транзитивно (2.1.2).
+  path_provider_platform_interface: ^2.1.2
+  path: ^1.9.1
+
+  # Безопасное хранение и биометрия (R3 §5–§6; D-13, D-48)
+  flutter_secure_storage: ^11.2.0
+  local_auth: ^3.0.2
+
+  # Сеть и данные (R3 §8)
+  dio: ^5.11.1
+  freezed_annotation: ^3.1.0
+  json_annotation: '>=4.9.0 <4.10.0'
+  connectivity_plus: ^7.3.2
+  cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.4.5
+
+  # Графика и анимация (R3 §9; DS)
+  flutter_svg: ^2.3.0
+  rive: ^0.14.11
+
+  # Сканер штрихкода камерой — только Android/iOS (SCR-17, R3 §7)
+  mobile_scanner: ^7.4.2
+  # «Открыть настройки» ОС при запрете камеры (SCR-17 UI-17-009, EQ-SCAN-07) — только Android/iOS;
+  # версия 7.x: 9.x на iOS — только Swift Package Manager, и `flutter` с ней не работает (ios/ на CocoaPods).
+  app_settings: ^7.0.0
+
+  # Ввод телефона +996 (R3 §10), i18n (R3 §11)
+  phone_numbers_parser: ^9.0.28
+  intl: ^0.20.2 # точная версия — по пину flutter_localizations (Flutter 3.38.7)
+
+  # Вспомогательные (core: X-App-Version/X-Platform, requestId, Idempotency-Key, логирование без ПДн)
+  package_info_plus: ^10.2.2
+  device_info_plus: ^13.3.0
+  uuid: ^4.6.0
+  collection: ^1.19.1
+  meta: ^1.16.0
+  async: ^2.12.0
+  logging: ^1.3.0
+  crypto: ^3.0.7
+
+  # Этап F (RM-F-004, RM-F-006): печать и предпросмотр PDF документов заказа (`GET /orders/{id}/documents/*.pdf`,
+  # Windows/Android — Printing.layoutPdf / PdfPreview); PDF формирует backend, клиент только показывает и печатает.
+  # Проверено `flutter pub add` на Flutter 3.38.7 / Dart 3.10.7: printing 5.14.3 (+ pdf 3.12.0 транзитивно;
+  # archive 4.5.2 → 4.0.9 и image 4.12.0 → 4.11.0 — по ограничениям pdf).
+  printing: ^5.14.3
+  # Тестовая страница A4 SCR-42 (02 UI-42-014, PRINT-010): PDF-образец формируется локально (тот же pdf 3.12.0, что
+  # уже в pubspec.lock транзитивно через printing; файл образца импортирует только корень app/di).
+  pdf: ^3.12.0
+  # QR оплаты SCR-22 (`QrPanel`): отрисовка `QrInfo.payload` (EMVCo/ELQR); изображение `imageUrl` — Image.network/memory.
+  qr_flutter: ^4.1.0
+  # «Скачать PDF» SCR-24 (02 SCR-24.4, AC-UI-24-017): системный диалог «Сохранить как…» (getSaveLocation) —
+  # Windows/macOS/Linux; на Android/iOS getSaveLocation не реализован — кнопка скрыта (FQ-INT-F-01).
+  file_selector: ^1.1.0
+
+# FQ-CHK-07 / FQ-FEORD-09: image 4.11.0 вызывает ZLibDecoder.decodeLazy (есть только в archive ≥ 4.1),
+# а pdf 3.12.0 (через printing) ограничивает archive < 4.1.0 → archive 4.0.9 и любой импорт package:printing
+# не компилируется. image 4.8.0 совместим с archive 4.0.x (archive ^4.0.7) и с pdf (image >=4.1.0 <=5.0.0).
+dependency_overrides:
+  image: 4.8.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+  # Кодогенерация
+  build_runner: '>=2.10.4 <2.11.0'
+  riverpod_generator: 4.0.0+1
+  go_router_builder: 4.5.0
+  drift_dev: '>=2.30.1 <2.31.0'
+  freezed: 3.2.3
+  json_serializable: '>=6.11.2 <6.11.3'
+
+  # Линты (riverpod_lint 3.x — analysis_server_plugin, подключается в analysis_options.yaml)
+  riverpod_lint: 3.1.0
+
+  # Тесты
+  mocktail: ^1.0.5
+  alchemist: ^0.14.1
+
+  # Генераторы ассетов (DS)
+  flutter_native_splash: ^2.4.7
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+  generate: true
+
+  # Текст лицензии Inter (SIL OFL 1.1) — экран «О приложении» SCR-42 (03 §6.1).
+  assets:
+    - assets/fonts/Inter/OFL.txt
+    # Знак бренда «Logo Orange» (03 §2.4, ядро v1.9 §24.1): SplashLogo (SCR-00), AuthLogo (SCR-01/02/08).
+    - assets/brand/logo_orange.png
+
+  # Шрифт Inter подключён локально, без сетевых запросов (RM-C-003 п. 4, 03 §6.1).
+  # Вариативный Inter-Variable.ttf в бандл не входит: статические начертания 400/500/600/700.
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter/Inter-Bold.ttf
+          weight: 700

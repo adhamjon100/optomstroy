@@ -1,0 +1,11 @@
+{
+  "_note": "тестовые данные",
+  "operation": "GET /pos/v1/orders/{uuid}/status",
+  "kind": "response",
+  "status": 404,
+  "body": {
+    "code": "POS_E_NOT_FOUND",
+    "message": "Заказ с таким externalId не найден",
+    "requestId": "0192f5c3-0000-7000-8000-000000000001"
+  }
+}

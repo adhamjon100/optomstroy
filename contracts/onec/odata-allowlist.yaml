@@ -1,0 +1,574 @@
+# RM-B-004. Allow-list коллекций и полей стандартного OData 1С (ONEC-083) и формат идентификаторов.
+#
+# Назначение: состав публикации «Настройки стандартного интерфейса OData» (БСП) или
+# `УстановитьСоставСтандартногоИнтерфейсаOData` для пользователя `pos_integration` (только чтение,
+# ONEC-052, ONEC-082) и конфигурация маппинга адаптера (13 §2 «риски»: смена имени объекта 1С =
+# смена этого файла и фикстур, а не кода).
+# Источник: 05_ONEC_INTEGRATION §5.1 (столбец «Способ чтения»), §5.3 (словарь полей), §5.2 (ONEC-100…107),
+# 18_ONEC_API_REQUEST §2.2. Имена объектов 1С — гипотеза для УТ 11 до получения `$metadata`
+# (чек-лист 05 §2.2 п. 7, ONEC-107). Правило приёмки RM-B-004 п. 3: каждая коллекция либо подтверждена
+# `$metadata` (`confirmedBy` заполнен, `status` = "[ПОДТВЕРЖДЕНО: $metadata]"), либо помечена
+# "[ТИПОВО]" / "[НЕ ПОДТВЕРЖДЕНО]" с непустым `fallback`. Проверяет `scripts/check_onec_paths.py`.
+#
+# Поля, помеченные в 05 индивидуально `[НЕ ПОДТВЕРЖДЕНО: проверить по $metadata]`, перечислены в
+# `unconfirmedFields` и реализуются в реплике как nullable (ONEC-106). Коллекции с `conditional: true`
+# могут отсутствовать: тогда шаг синхронизации пропускается без ошибки (ONEC-106).
+# `fieldsComplete: false` — 05 не перечисляет полный состав полей (называет только объект); состав
+# уточняется по `$metadata`.
+
+version: 1
+owner: 05_ONEC_INTEGRATION §5 (карта сущностей); ONEC-083
+odata:
+  basePath: /odata/standard.odata/   # ONEC_ODATA_PATH; базовый адрес — ONEC_BASE_URL (только HTTPS, ONEC-081)
+  user: pos_integration              # секреты ONEC_USER_FILE / ONEC_PASSWORD_FILE
+  access: read                       # POST / PATCH / DELETE под pos_integration → 403 (AC-ONEC-052)
+  format: json                       # $format=json (в примерах 05 опущен)
+  maxTop: 2000                       # ONEC-085: $top ≤ 2000
+  pageSize: 1000                     # ONEC_SYNC_PAGE_SIZE по умолчанию (05 §7.1)
+  maxConcurrency: 2                  # ONEC_MAX_CONCURRENCY (ONEC-085)
+metadata:
+  received: false                    # `$metadata` заказчика ещё не получен (Q-010, O-04)
+  source: null                       # путь к выгрузке `$metadata` после получения (docs/discovery/onec/…)
+  checkedAt: null
+
+statusValues:
+  - "[ПОДТВЕРЖДЕНО: $metadata]"      # объект и поля найдены в `$metadata` заказчика; confirmedBy обязателен
+  - "[ТИПОВО]"                       # типовое имя УТ 11 (R1 §5), требует проверки; fallback обязателен
+  - "[НЕ ПОДТВЕРЖДЕНО]"              # имени нет в R1/R5/R7, условный объект; fallback обязателен
+
+# Формат идентификаторов (ONEC-100, ONEC-101, ONEC-037, ONEC-040; R0 §22.1)
+identifiers:
+  onecRef:
+    source: Ref_Key
+    format: "GUID, нижний регистр (8-4-4-4-12)"
+    backendColumn: onec_ref
+    rule: Единственный устойчивый ключ сопоставления; Code, Артикул, Description, Number ключами не являются (ONEC-101)
+  dataVersion:
+    source: DataVersion
+    backendColumn: onec_data_version
+  deletionMark:
+    source: DeletionMark
+    backendColumn: deletion_mark
+    rule: Реплики не удаляются физически; удаление в 1С → deletion_mark=true (ONEC-102)
+  registerSetKey:
+    rule: Для независимого регистра сведений ключ строки — значение измерения (ШтрихкодыНоменклатуры → Штрихкод, backend `barcodes.value`)
+  externalId:
+    format: "UUID агрегата POS в нижнем регистре (orders.id, payments.id, customers.id, return_requests.id)"
+    onecRegister: POS_ВнешниеИдентификаторыPOS   # ВнешнийИд (Строка 36) + ТипОбъекта → Объект (фаза 1, HS)
+    objectTypes: [Заказ, Платеж, Клиент, ЗаявкаНаВозврат]
+    commentFormat: "POS <uuid>"                   # дублируется в реквизит `Комментарий` документа (ONEC-040)
+    odataLookup: "$filter=Комментарий eq '<uuid>'"  # только временный режим ONEC-028 (поиск перед созданием)
+  dates:
+    rule: "Edm.DateTime без зоны интерпретируется как локальное время Asia/Bishkek (+06:00) и хранится timestamptz (ONEC-103)"
+
+collections:
+  # ---------- товары, категории, свойства (ONEC-001…004) ----------
+  - name: Catalog_Номенклатура
+    kind: catalog
+    requirements: [ONEC-001, ONEC-002, ONEC-003]
+    posTables: [products, categories]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    filters: ["IsFolder eq false (товары)", "IsFolder eq true (группы — категории)"]
+    fields: [Ref_Key, DataVersion, DeletionMark, IsFolder, Code, Description, НаименованиеПолное, Артикул, Parent_Key, ЕдиницаИзмерения_Key, ВидНоменклатуры_Key, ТипНоменклатуры, Описание, ФайлКартинки_Key, Весовой]
+    unconfirmedFields: []
+    fieldsComplete: true
+    conditional: false
+    fallback: "HS GET /pos/v1/changes (элемент Catalog_Номенклатура); отсутствие поля Артикул/Весовой не ломает загрузку — поле NULL (ONEC-106)"
+  - name: Catalog_Номенклатура_ДополнительныеРеквизиты
+    kind: tabularSection
+    requirements: [ONEC-004]
+    posTables: [product_attributes, variant_attribute_values]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    filters: ["Ref_Key eq guid'…'"]
+    fields: [Ref_Key, Свойство_Key, Значение, Значение_Type]
+    unconfirmedFields: []
+    fieldsComplete: true
+    conditional: false
+    fallback: "HS /pos/v1/changes отдаёт готовые пары «имя: значение» (attributes[]); при отсутствии ТЧ свойства не загружаются"
+  - name: ChartOfCharacteristicTypes_ДополнительныеРеквизитыИСведения
+    kind: chartOfCharacteristicTypes
+    requirements: [ONEC-004]
+    posTables: [product_attributes]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    fields: [Ref_Key, DataVersion, DeletionMark, Description]
+    unconfirmedFields: []
+    fieldsComplete: false
+    conditional: false
+    fallback: "HS /pos/v1/changes (attributes[].name)"
+  - name: Catalog_ЗначенияСвойствОбъектов
+    kind: catalog
+    requirements: [ONEC-004]
+    posTables: [variant_attribute_values]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    fields: [Ref_Key, DataVersion, DeletionMark, Description, Owner_Key]
+    unconfirmedFields: []
+    fieldsComplete: false
+    conditional: false
+    fallback: "HS /pos/v1/changes (attributes[].valueText)"
+
+  # ---------- варианты, единицы, упаковки, штрихкоды (ONEC-005, 017, 018) ----------
+  - name: Catalog_ХарактеристикиНоменклатуры
+    kind: catalog
+    requirements: [ONEC-005, ONEC-073]
+    posTables: [product_variants]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    fields: [Ref_Key, DataVersion, DeletionMark, Code, Description, Owner_Key, Owner_Type]
+    unconfirmedFields: []
+    fieldsComplete: true
+    conditional: true   # учёт по характеристикам может быть выключен (Q-021); без него — служебный вариант is_default
+    fallback: "HS /pos/v1/changes (Catalog_ХарактеристикиНоменклатуры); без характеристик — один служебный вариант на товар (is_default=true)"
+  - name: Catalog_КлассификаторЕдиницИзмерения
+    kind: catalog
+    requirements: [ONEC-018]
+    posTables: [units]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    fields: [Ref_Key, DataVersion, DeletionMark, Code, Description]
+    unconfirmedFields: []
+    fieldsComplete: true
+    conditional: false
+    fallback: "HS /pos/v1/changes (Catalog_КлассификаторЕдиницИзмерения)"
+  - name: Catalog_УпаковкиЕдиницыИзмерения
+    kind: catalog
+    requirements: [ONEC-018]
+    posTables: [packagings]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    fields: [Ref_Key, DataVersion, DeletionMark, Description, Owner_Key, Owner_Type, Коэффициент, ЕдиницаИзмерения_Key]
+    unconfirmedFields: []
+    fieldsComplete: true
+    conditional: true   # продажа упаковками — Q-021
+    fallback: "HS /pos/v1/changes (Catalog_УпаковкиЕдиницыИзмерения); без упаковок — продажа в базовой единице"
+  - name: InformationRegister_ШтрихкодыНоменклатуры
+    kind: informationRegister
+    requirements: [ONEC-017]
+    posTables: [barcodes]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    fields: [Штрихкод, Номенклатура_Key, Характеристика_Key, Упаковка_Key, ТипШтрихкода]
+    unconfirmedFields: [ТипШтрихкода]
+    fieldsComplete: true
+    conditional: false
+    fallback: "HS /pos/v1/changes (InformationRegister_ШтрихкодыНоменклатуры, ключ набора — штрихкод)"
+
+  # ---------- фото (ONEC-006) ----------
+  - name: Catalog_НоменклатураПрисоединенныеФайлы
+    kind: catalog
+    requirements: [ONEC-006, ONEC-049]
+    posTables: [product_images]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    fields: [Ref_Key, DataVersion, DeletionMark, ВладелецФайла_Key, Размер, Расширение, ДатаМодификацииУниверсальная]
+    unconfirmedFields: [ВладелецФайла_Key]
+    fieldsComplete: true
+    conditional: false
+    fallback: "Список — HS /pos/v1/changes; байты — только HS GET /pos/v1/images/{ref} (OData для томов не подходит); резерв — CommerceML или папка images-import/ (SYNC-036)"
+
+  # ---------- склады, остатки, резервы (ONEC-009, 010, 019) ----------
+  - name: Catalog_Склады
+    kind: catalog
+    requirements: [ONEC-019, ONEC-070]
+    posTables: [warehouses]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    filters: ["IsFolder eq false"]
+    fields: [Ref_Key, DataVersion, DeletionMark, IsFolder, Code, Description]
+    unconfirmedFields: []
+    fieldsComplete: true
+    conditional: false
+    fallback: "HS /pos/v1/changes (Catalog_Склады)"
+  - name: AccumulationRegister_ТоварыНаСкладах
+    kind: accumulationRegister
+    requirements: [ONEC-009]
+    posTables: [stock_balances]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [balance]
+    virtualTable: "Balance(Period=datetime'<сейчас>',Condition='Склад_Key eq guid''<склад>''',Dimensions='Номенклатура,Характеристика,Склад')"
+    fields: [Номенклатура_Key, Характеристика_Key, Склад_Key, ВНаличииBalance]
+    unconfirmedFields: []
+    fieldsComplete: true
+    conditional: false
+    fallback: "HS POST /pos/v1/check по списку позиций; формат Balance без Period — [НЕ ПОДТВЕРЖДЕНО], чек-лист 05 §2.2 п. 17"
+  - name: AccumulationRegister_СвободныеОстатки
+    kind: accumulationRegister
+    requirements: [ONEC-010]
+    posTables: [stock_balances]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [balance]
+    virtualTable: "Balance(Period=datetime'<сейчас>',Dimensions='Номенклатура,Характеристика,Склад')"
+    fields: [Номенклатура_Key, Характеристика_Key, Склад_Key, ВНаличииBalance, ВРезервеBalance, ВРезервеПодЗаказBalance]
+    unconfirmedFields: []
+    fieldsComplete: true
+    conditional: true   # Р2 — резервов нет; УТ 11.0–11.1 — ТоварыВРезервеНаСкладах
+    fallback: "HS POST /pos/v1/check; без регистра резервов available = quantity (backend, 05 §5.3)"
+
+  # ---------- цены (ONEC-007, 022) ----------
+  - name: Catalog_ВидыЦен
+    kind: catalog
+    requirements: [ONEC-007, ONEC-022]
+    posTables: [price_lists]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    filters: ["ИспользоватьПриПродаже eq true (если реквизит есть)"]
+    fields: [Ref_Key, DataVersion, DeletionMark, Code, Description, ИспользоватьПриПродаже, ВалютаЦены_Key, ЦенаВключаетНДС]
+    unconfirmedFields: [ИспользоватьПриПродаже, ВалютаЦены_Key, ЦенаВключаетНДС]
+    fieldsComplete: true
+    conditional: false
+    fallback: "HS /pos/v1/changes (Catalog_ВидыЦен); без ИспользоватьПриПродаже — все виды цен, выбор — настройка admin"
+  - name: InformationRegister_ЦеныНоменклатуры
+    kind: informationRegister
+    requirements: [ONEC-007]
+    posTables: [prices]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [sliceLast]
+    virtualTable: "SliceLast(Period=datetime'<дата>',Condition='ВидЦены_Key eq guid''<вид>''')"
+    fields: [Period, ВидЦены_Key, Номенклатура_Key, Характеристика_Key, Упаковка_Key, Цена]
+    unconfirmedFields: []
+    fieldsComplete: true
+    conditional: false
+    fallback: "HS POST /pos/v1/check (цена корзины) и GET /pos/v1/catalog/{ref} (could); синтаксис SliceLast с Condition — [ПОДТВЕРЖДЕНО: kb.1ci.com 17.4.13] для платформы, объект — [ТИПОВО]"
+  - name: Document_УстановкаЦенНоменклатуры
+    kind: document
+    requirements: [ONEC-007]
+    posTables: [prices]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    filters: ["Posted eq true and Date ge datetime'…'"]
+    fields: [Ref_Key, DataVersion, DeletionMark, Number, Date, Posted]
+    unconfirmedFields: []
+    fieldsComplete: false
+    conditional: false
+    fallback: "HS /pos/v1/changes (Document_УстановкаЦенНоменклатуры → перечитка среза по затронутым видам цен)"
+  - name: Document_УстановкаЦенНоменклатуры_Товары
+    kind: tabularSection
+    requirements: [ONEC-007]
+    posTables: [prices]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    filters: ["Ref_Key eq guid'…'"]
+    fields: [Ref_Key]
+    unconfirmedFields: []
+    fieldsComplete: false
+    conditional: false
+    fallback: "Полный срез InformationRegister_ЦеныНоменклатуры/SliceLast по виду цены"
+
+  # ---------- скидки и соглашения (ONEC-008) ----------
+  - name: Catalog_СкидкиНаценки
+    kind: catalog
+    requirements: [ONEC-008]
+    posTables: [discount_rules]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    fields: [Ref_Key, DataVersion, DeletionMark, Code, Description]
+    unconfirmedFields: []
+    fieldsComplete: false
+    conditional: true   # БП — нет; автоматические скидки — Q-015
+    fallback: "Итог с автоскидками — HS POST /pos/v1/check (calculateDiscounts=true) и пересчёт при POST /pos/v1/orders (ONEC-039)"
+  - name: Catalog_СоглашенияСКлиентами
+    kind: catalog
+    requirements: [ONEC-008, ONEC-022]
+    posTables: [customers]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    fields: [Ref_Key, DataVersion, DeletionMark, Description, ВидЦены_Key]
+    unconfirmedFields: []
+    fieldsComplete: false   # условия оплаты, допустимая сумма задолженности, отсрочка — имена по $metadata (Q-017)
+    conditional: true   # только УТ/ERP/КА
+    fallback: "HS GET /pos/v1/customers/{ref}/receivables (creditAllowed, creditLimit, creditDays) и /pos/v1/changes (Catalog_СоглашенияСКлиентами)"
+
+  # ---------- клиенты и телефоны (ONEC-011, 012) ----------
+  - name: Catalog_Партнеры
+    kind: catalog
+    requirements: [ONEC-011]
+    posTables: [customers]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    filters: ["Клиент eq true (если реквизит есть)"]
+    fields: [Ref_Key, DataVersion, DeletionMark, Code, Description, НаименованиеПолное, Клиент, ОсновноеСоглашение_Key]
+    unconfirmedFields: [Клиент, ОсновноеСоглашение_Key]
+    fieldsComplete: true
+    conditional: true   # Р2/Р3/УНФ/БП — только Catalog_Контрагенты
+    fallback: "Catalog_Контрагенты (конфигурации без партнёров) и HS /pos/v1/changes (Catalog_Партнеры с externalId)"
+  - name: Catalog_Партнеры_КонтактнаяИнформация
+    kind: tabularSection
+    requirements: [ONEC-012, ONEC-044]
+    posTables: [customer_contacts]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    filters: ["Тип eq 'Телефон' — значение перечисления в $filter [НЕ ПОДТВЕРЖДЕНО]"]
+    fields: [Ref_Key, Тип, Вид_Key, Представление, Значение, НомерТелефона, НомерТелефонаБезКодов]
+    unconfirmedFields: []
+    fieldsComplete: true
+    conditional: true   # поле НомерТелефона — новые версии БСП (Q-125)
+    fallback: "HS GET /pos/v1/customers?phone= (нормализованные телефоны, ONEC-044); без НомерТелефона — разбор Представление"
+  - name: Catalog_Контрагенты
+    kind: catalog
+    requirements: [ONEC-011]
+    posTables: [customers]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    filters: ["Партнер_Key eq guid'…'"]
+    fields: [Ref_Key, DataVersion, DeletionMark, Code, Description, Партнер_Key, ИНН]
+    unconfirmedFields: []
+    fieldsComplete: true
+    conditional: false
+    fallback: "HS /pos/v1/changes (Catalog_Контрагенты)"
+  - name: Catalog_Контрагенты_КонтактнаяИнформация
+    kind: tabularSection
+    requirements: [ONEC-012]
+    posTables: [customer_contacts]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    fields: [Ref_Key, Тип, Вид_Key, Представление, Значение, НомерТелефона, НомерТелефонаБезКодов]
+    unconfirmedFields: []
+    fieldsComplete: true
+    conditional: true
+    fallback: "HS GET /pos/v1/customers?phone= (поиск по партнёрам и контрагентам)"
+
+  # ---------- долги (ONEC-014) ----------
+  - name: AccumulationRegister_РасчетыСКлиентами
+    kind: accumulationRegister
+    requirements: [ONEC-014]
+    posTables: [receivables]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [balance]
+    virtualTable: "Balance(Period=datetime'<сейчас>',Condition='Партнер_Key eq guid''<партнёр>''')"
+    fields: [Партнер_Key, ДолгКлиентаBalance, НашДолгBalance]
+    unconfirmedFields: [ДолгКлиентаBalance, НашДолгBalance]
+    fieldsComplete: false
+    conditional: true   # УТ 11.0–11.3 — РасчетыСПартнерами; УНФ — РасчетыСПокупателями; БП — счёт 62
+    fallback: "HS GET /pos/v1/customers/{ref}/receivables (долг с расшифровкой и просрочкой); при ошибке прежний снимок сохраняется"
+  - name: AccumulationRegister_РасчетыСКлиентамиПоСрокам
+    kind: accumulationRegister
+    requirements: [ONEC-014]
+    posTables: [receivables]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [balance]
+    fields: [Партнер_Key]
+    unconfirmedFields: []
+    fieldsComplete: false
+    conditional: true
+    fallback: "HS GET /pos/v1/customers/{ref}/receivables (overdueAmount, overdueDays); просрочка неизвестна → overdue_amount NULL (ядро §22.4)"
+  - name: AccumulationRegister_РасчетыСКлиентамиПоДокументам
+    kind: accumulationRegister
+    requirements: [ONEC-014]
+    posTables: [receivable_documents]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [balance]
+    fields: [Партнер_Key]
+    unconfirmedFields: []
+    fieldsComplete: false
+    conditional: true
+    fallback: "HS GET /pos/v1/customers/{ref}/receivables (documents[])"
+
+  # ---------- документы продаж, платежей, возвратов (ONEC-013, 015, 016, 020, 021) ----------
+  - name: Document_ЗаказКлиента
+    kind: document
+    requirements: [ONEC-020, ONEC-021]
+    posTables: [orders]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read   # запись — только HS POST /pos/v1/orders; временный режим ONEC-028 — см. temporaryWriteMode
+    operations: [list]
+    filters: ["Ref_Key eq guid'…' or Ref_Key eq guid'…' (пакетами по 20–50; оператора in в OData v3 нет)"]
+    fields: [Ref_Key, DataVersion, DeletionMark, Number, Date, Posted, Статус, Согласован, ДатаОтгрузки, Комментарий]
+    unconfirmedFields: []
+    fieldsComplete: false   # состояние выполнения — регистр СостоянияЗаказовКлиентов [НЕ ПОДТВЕРЖДЕНО]
+    conditional: false
+    fallback: "HS GET /pos/v1/orders/{uuid}/status и POST /pos/v1/orders/status; /pos/v1/changes (Document_ЗаказКлиента)"
+  - name: Document_РеализацияТоваровУслуг
+    kind: document
+    requirements: [ONEC-013, ONEC-021]
+    posTables: [shipments]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    filters: ["Posted eq true and Date ge datetime'…'", "ЗаказКлиента_Key eq guid'…' and Posted eq true"]
+    fields: [Ref_Key, DataVersion, DeletionMark, Number, Date, Posted, Партнер_Key, СуммаДокумента, ЗаказКлиента_Key]
+    unconfirmedFields: [СуммаДокумента]
+    fieldsComplete: false
+    conditional: false
+    fallback: "HS /pos/v1/changes (Document_РеализацияТоваровУслуг); без СуммаДокумента — Σ строк ТЧ «по строкам» (ONEC-106)"
+  - name: Document_РеализацияТоваровУслуг_Товары
+    kind: tabularSection
+    requirements: [ONEC-013]
+    posTables: [shipment_items]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    filters: ["Ref_Key eq guid'…'"]
+    fields: [Ref_Key]
+    unconfirmedFields: []
+    fieldsComplete: false
+    conditional: false
+    fallback: "HS /pos/v1/changes (lines[] элемента Document_РеализацияТоваровУслуг)"
+  - name: Document_ПриходныйКассовыйОрдер
+    kind: document
+    requirements: [ONEC-016]
+    posTables: [payments, transactions]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    filters: ["Posted eq true and Date ge datetime'…'"]
+    fields: [Ref_Key, DataVersion, DeletionMark, Number, Date, Posted, Партнер_Key, СуммаДокумента, ХозяйственнаяОперация, СтатьяДДС]
+    unconfirmedFields: [СуммаДокумента, ХозяйственнаяОперация, СтатьяДДС]
+    fieldsComplete: false
+    conditional: false
+    fallback: "HS /pos/v1/changes (Document_ПриходныйКассовыйОрдер)"
+  - name: Document_ПоступлениеБезналичныхДенежныхСредств
+    kind: document
+    requirements: [ONEC-016]
+    posTables: [payments, transactions]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    filters: ["Posted eq true and Date ge datetime'…'"]
+    fields: [Ref_Key, DataVersion, DeletionMark, Number, Date, Posted, Партнер_Key, СуммаДокумента]
+    unconfirmedFields: [СуммаДокумента]
+    fieldsComplete: false
+    conditional: true   # состав платёжных документов — Q-012
+    fallback: "HS /pos/v1/changes (Document_ПоступлениеБезналичныхДенежныхСредств); оплата QR — GET /pos/v1/payments/{externalId}/status"
+  - name: Document_ЭквайринговаяОперация
+    kind: document
+    requirements: [ONEC-016]
+    posTables: [payments, transactions]
+    status: "[НЕ ПОДТВЕРЖДЕНО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    fields: [Ref_Key, DataVersion, DeletionMark, Number, Date, Posted]
+    unconfirmedFields: []
+    fieldsComplete: false
+    conditional: true   # ONEC-106: объект условный, при отсутствии шаг пропускается
+    fallback: "Шаг синхронизации пропускается без ошибки (ONEC-106); платёж по QR — HS /pos/v1/payments/{externalId}/status"
+  - name: Document_ВозвратТоваровОтКлиента
+    kind: document
+    requirements: [ONEC-015]
+    posTables: [return_requests, transactions]
+    status: "[ТИПОВО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    filters: ["Posted eq true and Date ge datetime'…'"]
+    fields: [Ref_Key, DataVersion, DeletionMark, Number, Date, Posted, ДокументОснование]
+    unconfirmedFields: [ДокументОснование]
+    fieldsComplete: false
+    conditional: false
+    fallback: "HS /pos/v1/changes (Document_ВозвратТоваровОтКлиента); статус заявки — GET /pos/v1/returns/{uuid}/status"
+  - name: Document_ЗаявкаНаВозвратТоваровОтКлиента
+    kind: document
+    requirements: [ONEC-015, ONEC-067]
+    posTables: [return_requests]
+    status: "[НЕ ПОДТВЕРЖДЕНО]"
+    confirmedBy: null
+    access: read
+    operations: [list]
+    fields: [Ref_Key, DataVersion, DeletionMark, Number, Date, Posted]
+    unconfirmedFields: []
+    fieldsComplete: false
+    conditional: true   # ONEC-106; используются ли заявки — Q-018
+    fallback: "HS GET /pos/v1/returns/{uuid}/status (статус уже спроецирован); при отсутствии объекта — ручной режим RETURNS_FROM_POS_ENABLED=false (SYNC-050)"
+
+# Предложения к ревизии allow-list (ТЗ для 1С §4.2, Г.7, вопрос 18; 05 §5.3, §7.2, SYNC-002, SYNC-012).
+# x-status: proposed — ждут согласования со специалистом 1С. В `collections` не входят: адаптер OData их
+# не запрашивает (ODATA_ALLOWLIST в коде совпадает только с `collections`). После согласования запись
+# переносится в `collections` вместе с правкой src/integrations/onec/odata-allowlist.ts.
+proposedAdditions:
+  collections:
+    - name: Catalog_Валюты
+      x-status: proposed
+      kind: catalog
+      requirements: [ONEC-007, ONEC-083]
+      posTables: [price_lists]
+      status: "[ТИПОВО]"
+      access: read
+      operations: [list]
+      fields: [Ref_Key, Code, Description]
+      reason: "Код валюты вида цены: `Catalog_ВидыЦен.ВалютаЦены_Key` → `Code` (ISO, `KGS`). Без справочника валюта вида цены по OData неизвестна и POS считает `KGS` (PriceListChange.currency: null = KGS, иная — вид цены не загружается)"
+      fallback: "HS /pos/v1/changes (Catalog_ВидыЦен.currency — код валюты); без него — currency = null → KGS"
+  queryOptions:
+    - option: $orderby
+      value: Ref_Key
+      x-status: proposed
+      collections: "все коллекции `collections` с полем Ref_Key"
+      reason: "Устойчивое постраничное чтение `$top/$skip` и ключевая пагинация `$filter=Ref_Key gt guid'…'` (SYNC-002); пометка «не встреченных» ключей без сверки по `$count` (SYNC-012, 05 §7.2)"
+      fallback: "без `$orderby` — листинг `$top/$skip`, пометка не встреченных ключей только при совпадении числа ключей с `$count` (иначе COUNT_MISMATCH, прогон partial)"
+
+# Не публикуются (ONEC-083): всё, чего нет в `collections`. Примеры из критерия приёмки:
+deniedExamples:
+  - Catalog_Пользователи   # AC-ONEC-083: GET → «Entity not found»/403
+
+# Упомянуты в 05 §5, но сознательно не входят в allow-list R1 (решение — NOTES.md §5):
+excluded:
+  - name: AccountingRegister_Хозрасчетный
+    reason: "Только конфигурация БП (остатки — счёт 41, долги — счёт 62). Публикация регистра раскрывает весь бухгалтерский учёт (против ONEC-083). Включается отдельным решением, если `$metadata` покажет БП."
+
+# Временный режим записи через OData (ONEC-028) — по умолчанию выключен.
+temporaryWriteMode:
+  requirement: ONEC-028
+  enabledBy: ONEC_ODATA_WRITE_ENABLED   # по умолчанию false
+  user: pos_odata_write                 # ONEC_ODATA_WRITE_USER_FILE / ONEC_ODATA_WRITE_PASSWORD_FILE
+  allowed:
+    - collection: Document_ЗаказКлиента
+      operations: [create]
+      preCheck: "GET …?$filter=Комментарий eq '<uuid>' перед созданием"
+  note: Только при зафиксированном решении заказчика об отсутствии 1С-разработчика; после ядра v1.9 §24.3 специалист 1С есть — режим не планируется

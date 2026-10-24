@@ -1,0 +1,111 @@
+# pos-proxy (Caddy 2) — тестовый контур infra/compose.test.yml (RM-C-012) и образец для prod (16 §4.5; RM-C-010).
+# Правила: Caddy НЕ аутентифицирует и НЕ авторизует (DEPLOY-049) — все решения о доступе принимает api;
+# наружу публикуется только этот сервис (80/443); upstream api:3000 доступен лишь в сети compose.
+#
+# Параметры (подставляются из окружения контейнера caddy ДО разбора файла):
+#   CADDY_SITE_ADDRESS  имена сайта; тест — "localhost" (по умолчанию), сервер — api-test.<домен> / api.<домен> (Q-032)
+#   CADDY_TLS           "internal" — внутренний CA Caddy (тест, по умолчанию); на сервере — e-mail для ACME
+#   API_UPSTREAM        адрес api внутри сети compose (по умолчанию api:3000)
+# Корневой сертификат внутреннего CA: /data/caddy/pki/authorities/local/root.crt (том caddy_data) —
+# smoke-тест получает его `docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt …` (Makefile, CI).
+{
+	# Внутренний CA не устанавливается в хранилище доверия контейнера (там некому доверять).
+	skip_install_trust
+	# Админ-API не нужен: конфигурация меняется только перезапуском контейнера.
+	admin off
+	# Журнал самого Caddy — JSON в stdout (docker logs), как и у api (pino, RM-C-010).
+	log default {
+		output stdout
+		format json
+	}
+}
+
+{$CADDY_SITE_ADDRESS:localhost} {
+	tls {$CADDY_TLS:internal}
+	encode zstd gzip
+
+	# Заголовки безопасности — 11 SEC-003, SEC-018; 08 §2.3; R6 §7.2. Caddy задаёт (заменяет) значения,
+	# дубликатов с заголовками pos-api не возникает. preload в HSTS — только по решению заказчика (Q-032).
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'none'"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+		-X-Powered-By
+	}
+
+	# requestId (08 §2.3, RM-C-010; ревью C-MJ-04): X-Request-Id клиента (Flutter RequestIdInterceptor) передаётся
+	# в api как есть — api делает эхо валидного UUID v4 (иначе выдаёт свой). Caddy подставляет UUID только если
+	# заголовка нет, поэтому id сквозной «клиент → Caddy → api → worker» и попадает в access-log (resp_headers).
+	@noRequestId not header X-Request-Id
+	request_header @noRequestId X-Request-Id {http.request.uuid}
+
+	# Фото: контент-адресуемые пути, неизменяемый кэш (D-30); файл на диске — images/{sha}/{size}.webp
+	# (pos-worker пишет в MEDIA_DIR=/data/media/images, том media смонтирован сюда только для чтения — 16 §4.2).
+	# URL канона 08 §4.4.7 — /images/{sha}/{size} без расширения, size ∈ thumb|card|full; иное (листинг каталога,
+	# временные .tmp, произвольные имена) → 404. Только GET/HEAD. Без Bearer в R1 (Q-158); ETag/Content-Type
+	# (image/webp по расширению) — file_server. Cache-Control immutable — только на найденный файл (@stored):
+	# 404 «фото ещё нет» не кэшируется на год (директива header исполняется раньше try_files — поэтому
+	# список файлов матчера задан явно).
+	@image {
+		method GET HEAD
+		path_regexp ^/images/[0-9a-f]{64}/(thumb|card|full)(\.webp)?$
+	}
+	handle @image {
+		root * /srv/media
+		@stored file {path}.webp {path}
+		header @stored Cache-Control "public, max-age=31536000, immutable"
+		try_files {path}.webp {path}
+		file_server
+	}
+	handle /images/* {
+		respond 404
+	}
+
+	# Readiness (/health/ready: состояние БД, worker, 1С) — только из внутренних сетей (ARCH-006; ревью C-MN-03):
+	# снаружи → 404, как любой неизвестный путь. Docker-хост, CI-раннер и мониторинг в LAN/WireGuard приходят с
+	# адресов private_ranges (smoke-тест контура обращается к опубликованному порту с хоста — адрес моста docker).
+	# Liveness /health — для внешнего монитора и smoke (без авторизации, без чувствительных данных).
+	# Матчер и respond — внутри handle: порядок директив Caddy (respond раньше reverse_proxy) однозначен.
+	handle /health* {
+		@readyExternal {
+			path /health/ready /health/ready/*
+			not remote_ip private_ranges
+		}
+		respond @readyExternal 404
+		reverse_proxy {$API_UPSTREAM:api:3000}
+	}
+
+	# Входящие интеграции (16 §4.6): тот же upstream; токен/подпись/IP-allowlist проверяет только api,
+	# выключенная интеграция → 404 из api. Входящий X-Forwarded-For клиента Caddy не доверяет (trusted_proxies не задан).
+	handle /api/v1/integrations/* {
+		reverse_proxy {$API_UPSTREAM:api:3000} {
+			transport http {
+				read_timeout 30s
+			}
+		}
+	}
+
+	# API. read_timeout 30s покрывает long-polling GET /api/v1/payments/{id}?wait= (≤ 25 с, R0 §17.4).
+	# requestId — см. request_header выше: тот же id в ответе, в журнале api (pino) и в access-log Caddy.
+	handle /api/* {
+		reverse_proxy {$API_UPSTREAM:api:3000} {
+			transport http {
+				read_timeout 30s
+			}
+		}
+	}
+
+	# Всё остальное — 404 (веб-таргет вне R1, D-39). QR-вебхук банка — только R2 (16 §4.5), здесь его нет.
+	handle {
+		respond 404
+	}
+
+	# Access-log — JSON (RM-C-010). Тест: stdout контейнера; prod: файл в томе caddy_data с ротацией (16 §4.5).
+	log {
+		output stdout
+		format json
+	}
+}

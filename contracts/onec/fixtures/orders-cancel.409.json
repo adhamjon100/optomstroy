@@ -1,0 +1,11 @@
+{
+  "_note": "тестовые данные",
+  "operation": "POST /pos/v1/orders/{uuid}/cancel",
+  "kind": "response",
+  "status": 409,
+  "body": {
+    "code": "POS_E_STATE",
+    "message": "По заказу есть проведённая реализация",
+    "requestId": "0192f5c3-0000-7000-8000-000000000001"
+  }
+}

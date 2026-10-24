@@ -1,0 +1,21 @@
+# Контекст сборки optomstroy/api — корень репозитория; в контекст попадает ТОЛЬКО перечисленное ниже
+# (белый список). Секреты (infra/secrets, .env), pos-app, resursi, docs и node_modules в контекст не передаются.
+*
+!pos-api/package.json
+!pos-api/package-lock.json
+!pos-api/tsconfig.json
+!pos-api/tsconfig.build.json
+!pos-api/scripts/**
+!pos-api/src/**
+!pos-api/migrations/**
+!pos-api/seeds/**
+# Этап F (RM-F-004): шрифт Inter (OFL) и шаблоны печатных форм PDF.
+!pos-api/assets/fonts/**
+!pos-api/assets/templates/**
+# Тестовый контур (FQ-INT-08): фикстуры 1С — только стадия test-fixtures (в прод-стадию release не копируются).
+!contracts/onec/fixtures/**
+pos-api/src/**/*.spec.ts
+pos-api/migrations/NOTES.md
+**/.env
+**/.env.*
+**/secrets/**

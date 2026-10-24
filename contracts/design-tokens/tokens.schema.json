@@ -1,0 +1,374 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://optomstroy.local/contracts/design-tokens/tokens.schema.json",
+  "title": "Optomstroy POS design tokens (RM-B-006)",
+  "description": "Схема contracts/design-tokens/tokens.json. Источник: 03_UX_UI_DESIGN_SYSTEM.md §5–§8, §11, §17; ядро R0 v1.9 §8, §17.5, §18.2 п.15, §24.1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "color", "alternatives", "text", "space", "radius", "elevation", "breakpoint", "layout", "density", "motion", "contrast"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "task", "version", "palette", "paletteName", "theme", "units", "sources", "decisions"],
+      "properties": {
+        "id": { "const": "optomstroy-ds-tokens" },
+        "task": { "const": "RM-B-006" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "palette": { "const": "B", "description": "Основная палитра R1 — B «Оранжевый» (ядро v1.9 §24.1)." },
+        "paletteName": { "type": "string", "minLength": 1 },
+        "theme": { "const": "light", "description": "Тёмная тема вне R1 (D-43)." },
+        "units": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["size", "duration"],
+          "properties": {
+            "size": { "const": "lp" },
+            "duration": { "const": "ms" }
+          }
+        },
+        "sources": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "decisions": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "color": { "$ref": "#/$defs/colorSet" },
+    "alternatives": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["A"],
+      "properties": {
+        "A": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "name", "note", "source", "color"],
+          "properties": {
+            "status": { "const": "historical-reference" },
+            "name": { "type": "string" },
+            "note": { "type": "string" },
+            "source": { "type": "string" },
+            "color": { "$ref": "#/$defs/colorSet" }
+          }
+        }
+      }
+    },
+    "text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fontFamily", "numericFontFeatures", "styles", "price"],
+      "properties": {
+        "fontFamily": { "const": "Inter" },
+        "numericFontFeatures": { "type": "array", "items": { "enum": ["tnum"] }, "minItems": 1, "uniqueItems": true },
+        "styles": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["display", "h1", "h2", "h3", "title", "bodyLg", "body", "label", "caption", "micro"],
+          "properties": {
+            "display": { "$ref": "#/$defs/textStyle" },
+            "h1": { "$ref": "#/$defs/textStyle" },
+            "h2": { "$ref": "#/$defs/textStyle" },
+            "h3": { "$ref": "#/$defs/textStyle" },
+            "title": { "$ref": "#/$defs/textStyle" },
+            "bodyLg": { "$ref": "#/$defs/textStyle" },
+            "body": { "$ref": "#/$defs/textStyle" },
+            "label": { "$ref": "#/$defs/textStyle" },
+            "caption": { "$ref": "#/$defs/textStyle" },
+            "micro": { "$ref": "#/$defs/textStyle" }
+          }
+        },
+        "price": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["base", "fontWeight", "tabularFigures"],
+          "properties": {
+            "base": { "enum": ["display", "h1", "h2", "h3", "title", "bodyLg", "body", "label", "caption", "micro"] },
+            "fontWeight": { "$ref": "#/$defs/fontWeight" },
+            "tabularFigures": { "const": true }
+          }
+        }
+      }
+    },
+    "space": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+      "properties": {
+        "1": { "$ref": "#/$defs/gridSize" },
+        "2": { "$ref": "#/$defs/gridSize" },
+        "3": { "$ref": "#/$defs/gridSize" },
+        "4": { "$ref": "#/$defs/gridSize" },
+        "5": { "$ref": "#/$defs/gridSize" },
+        "6": { "$ref": "#/$defs/gridSize" },
+        "7": { "$ref": "#/$defs/gridSize" },
+        "8": { "$ref": "#/$defs/gridSize" },
+        "9": { "$ref": "#/$defs/gridSize" },
+        "10": { "$ref": "#/$defs/gridSize" }
+      }
+    },
+    "radius": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["xs", "sm", "md", "lg", "xl", "full"],
+      "properties": {
+        "xs": { "$ref": "#/$defs/gridSize" },
+        "sm": { "$ref": "#/$defs/gridSize" },
+        "md": { "$ref": "#/$defs/gridSize" },
+        "lg": { "$ref": "#/$defs/gridSize" },
+        "xl": { "$ref": "#/$defs/gridSize" },
+        "full": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "elevation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["0", "1", "2", "3"],
+      "properties": {
+        "0": { "$ref": "#/$defs/elevationLevel" },
+        "1": { "$ref": "#/$defs/elevationLevel" },
+        "2": { "$ref": "#/$defs/elevationLevel" },
+        "3": { "$ref": "#/$defs/elevationLevel" }
+      }
+    },
+    "breakpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compact", "medium", "expanded", "large"],
+      "properties": {
+        "compact": { "$ref": "#/$defs/windowClass" },
+        "medium": { "$ref": "#/$defs/windowClass" },
+        "expanded": { "$ref": "#/$defs/windowClass" },
+        "large": { "$ref": "#/$defs/windowClass" }
+      }
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sidebarNarrow", "sidebarWide", "sidebarCollapsed", "rail", "cartNarrow", "cartWide", "productPanel", "contentMaxLarge", "cardMinWidth", "gridMinColumns", "gridMaxColumns"],
+      "properties": {
+        "sidebarNarrow": { "$ref": "#/$defs/gridSize" },
+        "sidebarWide": { "$ref": "#/$defs/gridSize" },
+        "sidebarCollapsed": { "$ref": "#/$defs/gridSize" },
+        "rail": { "$ref": "#/$defs/gridSize" },
+        "cartNarrow": { "$ref": "#/$defs/gridSize" },
+        "cartWide": { "$ref": "#/$defs/gridSize" },
+        "productPanel": { "$ref": "#/$defs/gridSize" },
+        "contentMaxLarge": { "$ref": "#/$defs/gridSize" },
+        "cardMinWidth": { "$ref": "#/$defs/gridSize" },
+        "gridMinColumns": { "type": "integer", "minimum": 1 },
+        "gridMaxColumns": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "density": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["standard", "compact"],
+      "properties": {
+        "standard": { "$ref": "#/$defs/densityLevel" },
+        "compact": { "$ref": "#/$defs/densityLevel" }
+      }
+    },
+    "motion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["duration", "curve"],
+      "properties": {
+        "duration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fast", "base", "slow", "splashLogo", "mascotTransition", "reducedCrossfade"],
+          "properties": {
+            "fast": { "$ref": "#/$defs/durationMs" },
+            "base": { "$ref": "#/$defs/durationMs" },
+            "slow": { "$ref": "#/$defs/durationMs" },
+            "splashLogo": { "$ref": "#/$defs/durationMs" },
+            "mascotTransition": { "$ref": "#/$defs/durationMs" },
+            "reducedCrossfade": { "type": "integer", "minimum": 0, "maximum": 80, "description": "Ядро §17.5: crossfade ≤ 80 мс при reduce-motion." }
+          }
+        },
+        "curve": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["standard", "standardDecelerate", "standardAccelerate", "emphasized"],
+          "properties": {
+            "standard": { "$ref": "#/$defs/cubicBezier" },
+            "standardDecelerate": { "$ref": "#/$defs/cubicBezier" },
+            "standardAccelerate": { "$ref": "#/$defs/cubicBezier" },
+            "emphasized": { "$ref": "#/$defs/cubicBezier" }
+          }
+        }
+      }
+    },
+    "contrast": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["standard", "thresholds", "pairs"],
+      "properties": {
+        "standard": { "type": "string" },
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text", "large-text", "non-text"],
+          "properties": {
+            "text": { "const": 4.5 },
+            "large-text": { "const": 3.0 },
+            "non-text": { "const": 3.0 }
+          }
+        },
+        "pairs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/contrastPair" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "colorName": {
+      "enum": [
+        "background", "surface", "surfaceVariant", "surfaceHover", "surfacePressed",
+        "primary", "primaryHover", "primaryPressed", "primaryContainer", "primaryContainerPressed", "onPrimary", "primaryText",
+        "textPrimary", "textSecondary", "textTertiary",
+        "border", "borderStrong",
+        "success", "successContainer", "onSuccess",
+        "warning", "warningContainer",
+        "error", "errorContainer", "onError",
+        "info", "infoContainer",
+        "focus", "disabledBg", "disabledText",
+        "favorite", "brandAccent", "onBrandAccent",
+        "skeletonBase", "skeletonHighlight", "overlay",
+        "iconButtonPressed",
+        "inverseSurface", "onInverseSurface"
+      ]
+    },
+    "hex": { "type": "string", "pattern": "^#[0-9A-F]{6}$" },
+    "alphaColor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rgb", "opacity"],
+      "properties": {
+        "rgb": { "$ref": "#/$defs/hex" },
+        "opacity": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 }
+      }
+    },
+    "colorValue": { "oneOf": [{ "$ref": "#/$defs/hex" }, { "$ref": "#/$defs/alphaColor" }] },
+    "colorSet": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/colorName" },
+      "additionalProperties": { "$ref": "#/$defs/colorValue" },
+      "required": [
+        "background", "surface", "surfaceVariant", "surfaceHover", "surfacePressed",
+        "primary", "primaryHover", "primaryPressed", "primaryContainer", "primaryContainerPressed", "onPrimary", "primaryText",
+        "textPrimary", "textSecondary", "textTertiary",
+        "border", "borderStrong",
+        "success", "successContainer", "onSuccess",
+        "warning", "warningContainer",
+        "error", "errorContainer", "onError",
+        "info", "infoContainer",
+        "focus", "disabledBg", "disabledText",
+        "favorite", "brandAccent", "onBrandAccent",
+        "skeletonBase", "skeletonHighlight", "overlay",
+        "iconButtonPressed",
+        "inverseSurface", "onInverseSurface"
+      ]
+    },
+    "fontWeight": { "enum": [100, 200, 300, 400, 500, 600, 700, 800, 900] },
+    "textStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fontSize", "lineHeight", "fontWeight", "letterSpacing", "contrastClass"],
+      "properties": {
+        "fontSize": { "type": "integer", "minimum": 11, "description": "Минимум 11 lp (micro), 03 §6.3." },
+        "lineHeight": { "type": "integer", "minimum": 1 },
+        "fontWeight": { "$ref": "#/$defs/fontWeight" },
+        "fontWeightMedium": { "const": 500 },
+        "letterSpacing": { "type": "number" },
+        "contrastClass": { "enum": ["normal", "large"] }
+      }
+    },
+    "gridSize": { "type": "integer", "minimum": 0, "multipleOf": 4, "description": "Все размеры кратны 4 lp (03 §7.1)." },
+    "durationMs": { "type": "integer", "minimum": 0 },
+    "cubicBezier": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number" },
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number" }
+      ],
+      "items": false
+    },
+    "shadow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "blur", "spread", "color"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "blur": { "type": "number", "minimum": 0 },
+        "spread": { "type": "number" },
+        "color": { "$ref": "#/$defs/alphaColor" }
+      }
+    },
+    "elevationLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shadows", "borderColor", "borderWidth", "scrim"],
+      "properties": {
+        "shadows": { "type": "array", "items": { "$ref": "#/$defs/shadow" } },
+        "borderColor": { "oneOf": [{ "$ref": "#/$defs/colorName" }, { "type": "null" }] },
+        "borderWidth": { "type": "number", "minimum": 0 },
+        "scrim": { "oneOf": [{ "const": "overlay" }, { "type": "null" }] }
+      }
+    },
+    "windowClass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min", "maxExclusive", "pageMargin", "columns", "columnGap"],
+      "properties": {
+        "min": { "type": "integer", "minimum": 0 },
+        "maxExclusive": { "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] },
+        "pageMargin": { "$ref": "#/$defs/gridSize" },
+        "columns": { "type": "integer", "minimum": 1 },
+        "columnGap": { "$ref": "#/$defs/gridSize" }
+      }
+    },
+    "densityLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rowHeight", "rowHeightWithThumb", "cardPadding", "rowIconSize", "gridGap", "windowClasses"],
+      "properties": {
+        "rowHeight": { "$ref": "#/$defs/gridSize" },
+        "rowHeightWithThumb": { "$ref": "#/$defs/gridSize" },
+        "cardPadding": { "$ref": "#/$defs/gridSize" },
+        "rowIconSize": { "$ref": "#/$defs/gridSize" },
+        "gridGap": { "$ref": "#/$defs/gridSize" },
+        "windowClasses": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["compact", "medium", "expanded", "large"] }
+        }
+      }
+    },
+    "contrastPair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "fg", "bg", "use", "status", "documented", "source"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^CP-[0-9]{3}$" },
+        "fg": { "oneOf": [{ "$ref": "#/$defs/colorName" }, { "$ref": "#/$defs/hex" }] },
+        "bg": { "oneOf": [{ "$ref": "#/$defs/colorName" }, { "$ref": "#/$defs/hex" }] },
+        "use": { "enum": ["text", "large-text", "non-text"] },
+        "status": {
+          "enum": ["allowed", "forbidden", "exception", "decorative", "reference"],
+          "description": "allowed — проверяется порогом; forbidden — запрещённое сочетание (не нарушение); exception — исключение WCAG; decorative — декоративный элемент; reference — справочно, не применяется."
+        },
+        "documented": { "oneOf": [{ "type": "number", "minimum": 1, "maximum": 21 }, { "type": "null" }] },
+        "source": { "type": "string", "minLength": 1 },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

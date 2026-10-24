@@ -1,0 +1,79 @@
+{
+  "$comment": "Счёт на оплату, A4 (10 PRINT-002/003; 08 §4.8.5, §7.3). Вид и реквизиты — по образцу заказчика (Q-019): шаблон меняется без изменения кода. Подстановки {{...}} — поля модели src/orders/documents/document-model.ts (invoiceModel); формат шаблона — README.md рядом.",
+  "kind": "invoice",
+  "paper": "a4",
+  "title": "Счёт на оплату",
+  "page": { "width": 595.28, "height": 841.89, "margins": { "top": 36, "right": 36, "bottom": 40, "left": 42 } },
+  "fontSize": 9,
+  "blocks": [
+    { "type": "text", "text": "{{copy}}", "when": "copy", "align": "right", "bold": true, "size": 12 },
+    {
+      "type": "fields",
+      "labelWidth": 0.2,
+      "rows": [
+        { "label": "Поставщик", "value": "{{seller.name}}", "bold": true },
+        { "label": "ИНН", "value": "{{seller.inn}}", "when": "seller.inn" },
+        { "label": "Адрес", "value": "{{seller.address}}", "when": "seller.address" },
+        { "label": "Телефон", "value": "{{seller.phone}}", "when": "seller.phone" },
+        { "label": "Банк", "value": "{{seller.bankName}}", "when": "seller.bankName" },
+        { "label": "БИК", "value": "{{seller.bic}}", "when": "seller.bic" },
+        { "label": "Расчётный счёт", "value": "{{seller.account}}", "when": "seller.account" }
+      ]
+    },
+    { "type": "spacer", "height": 8 },
+    {
+      "type": "text",
+      "text": "Счёт на оплату № {{number}} от {{date}}",
+      "size": 15,
+      "bold": true,
+      "align": "center",
+      "gapAfter": 2
+    },
+    { "type": "rule" },
+    {
+      "type": "fields",
+      "labelWidth": 0.2,
+      "rows": [
+        { "label": "Покупатель", "value": "{{customer.name}}", "bold": true },
+        { "label": "ИНН покупателя", "value": "{{customer.inn}}", "when": "customer.inn" },
+        { "label": "Основание", "value": "{{purpose}}" },
+        { "label": "Заказ POS", "value": "{{posNumber}}" },
+        { "label": "Способ оплаты", "value": "{{paymentMethod}}" },
+        { "label": "Срок оплаты", "value": "{{dueDate}}", "when": "dueDate" }
+      ]
+    },
+    {
+      "type": "table",
+      "rows": "items",
+      "grid": true,
+      "size": 8.5,
+      "columns": [
+        { "header": "№", "value": "{{lineNo}}", "width": 0.05, "align": "right" },
+        { "header": "Наименование", "value": "{{name}}", "width": 0.33 },
+        { "header": "Артикул", "value": "{{sku}}", "width": 0.12 },
+        { "header": "Кол-во", "value": "{{quantity}}", "width": 0.08, "align": "right" },
+        { "header": "Ед.", "value": "{{unit}}", "width": 0.06 },
+        { "header": "Цена", "value": "{{price}}", "width": 0.12, "align": "right" },
+        { "header": "Скидка", "value": "{{discount}}", "width": 0.11, "align": "right" },
+        { "header": "Сумма", "value": "{{sum}}", "width": 0.13, "align": "right" }
+      ]
+    },
+    {
+      "type": "fields",
+      "labelWidth": 0.8,
+      "labelAlign": "right",
+      "valueAlign": "right",
+      "rows": [
+        { "label": "Сумма без скидки:", "value": "{{totals.subtotal}}" },
+        { "label": "{{totals.discountLabel}}:", "value": "−{{totals.discount}}", "when": "totals.hasDiscount" },
+        { "label": "Итого к оплате:", "value": "{{totals.total}}", "bold": true }
+      ]
+    },
+    { "type": "text", "text": "Всего наименований {{itemsCount}}, на сумму {{totals.total}} {{currency}}" },
+    { "type": "spacer", "height": 28 },
+    { "type": "text", "text": "Руководитель ____________________        Бухгалтер ____________________" },
+    { "type": "spacer", "height": 18 },
+    { "type": "rule" },
+    { "type": "text", "text": "{{nonFiscalMark}}", "align": "center", "size": 8 }
+  ]
+}

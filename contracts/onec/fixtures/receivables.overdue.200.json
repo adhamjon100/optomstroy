@@ -1,0 +1,31 @@
+{
+  "_note": "тестовые данные",
+  "description": "Просроченный долг — POS блокирует продажу в долг (CREDIT_BLOCKED)",
+  "operation": "GET /pos/v1/customers/{ref}/receivables",
+  "kind": "response",
+  "status": 200,
+  "body": {
+    "customerRef": "c3d4e5f6-0000-4000-8000-000000000002",
+    "snapshotAt": "2026-10-21T13:41:00+06:00",
+    "balance": "8000.00",
+    "overdueAmount": "8000.00",
+    "overdueDays": 12,
+    "creditAllowed": true,
+    "creditLimit": "50000.00",
+    "creditDays": 7,
+    "creditAvailable": "42000.00",
+    "documents": [
+      {
+        "documentRef": "f1e2d3c4-0000-4000-8000-000000000032",
+        "documentType": "Document_РеализацияТоваровУслуг",
+        "number": "РТ00-001702",
+        "date": "2026-10-02T10:00:00+06:00",
+        "amount": "8000.00",
+        "paid": "0.00",
+        "remaining": "8000.00",
+        "dueDate": "2026-10-09T00:00:00+06:00",
+        "overdueDays": 12
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "_note": "тестовые данные",
+  "operation": "POST /pos/v1/customers",
+  "kind": "request",
+  "body": {
+    "externalId": "0192f5b1-1111-7aaa-8bbb-000000000001",
+    "name": "Клиент Пример",
+    "fullName": null,
+    "phone": "+996700000001",
+    "taxId": null,
+    "kind": "individual",
+    "priceListRef": null,
+    "comment": "Создан в POS",
+    "dedupe": {
+      "byPhone": true,
+      "failOnDuplicate": true
+    }
+  }
+}

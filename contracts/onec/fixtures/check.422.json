@@ -1,0 +1,19 @@
+{
+  "_note": "тестовые данные",
+  "operation": "POST /pos/v1/check",
+  "kind": "response",
+  "status": 422,
+  "body": {
+    "code": "POS_E_VALIDATION",
+    "message": "Неизвестный склад",
+    "details": {
+      "lines": [
+        {
+          "lineNumber": 1,
+          "text": "Склад не найден"
+        }
+      ]
+    },
+    "requestId": "0192f5c3-0000-7000-8000-000000000001"
+  }
+}

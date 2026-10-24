@@ -1,0 +1,40 @@
+# RM-C-001 — единые правила редакторов для монорепозитория «Оптомстрой POS».
+# https://editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Python (scripts/): PEP 8
+[*.py]
+indent_size = 4
+
+# SQL-миграции и проверки (pos-api/migrations, scripts/*.sql)
+[*.sql]
+indent_size = 2
+
+# Markdown: двойной пробел в конце строки — значимый перенос
+[*.md]
+trim_trailing_whitespace = false
+
+# Нативные проекты Flutter (Kotlin/Gradle, Swift, C++) — отступ 4, как в шаблоне
+[*.{kt,kts,gradle,swift,cc,cpp,h}]
+indent_size = 4
+
+[{CMakeLists.txt,*.cmake}]
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+# Скрипты Windows
+[*.{bat,cmd}]
+end_of_line = crlf
+
+[*.ps1]
+indent_size = 4

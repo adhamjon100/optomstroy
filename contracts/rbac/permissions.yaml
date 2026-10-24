@@ -1,0 +1,761 @@
+# RM-B-008 — матрица прав (RBAC) «Оптомстрой POS», Release 1.
+# Канон: 11_SECURITY_PRIVACY §4.1–§4.4 (владелец словаря permissions и матрицы роль × право — ядро R0 §18.1);
+# роли — ядро R0 §3.1, §24.2 (customer — R1), 07 §5.4 (role_code); step-up — ядро §3.3, §17.2, 11 §4.1 п.7.
+# Deny by default: роль получает только перечисленные в grants коды; код без строки в grants никому не выдан.
+# Файл — источник для seed pos-api/migrations/0002_rbac_seed.sql и e2e-теста матрицы (RM-B-008 п.3, этап D).
+# Сверка: python -I -X utf8 scripts/check_api_permissions.py. Решения и отступления — contracts/rbac/NOTES.md.
+
+version: 1
+source:
+  dictionary: "docs/specification/11_SECURITY_PRIVACY.md §4.3"
+  matrix: "docs/specification/11_SECURITY_PRIVACY.md §4.4"
+  step_up_scopes: "docs/specification/11_SECURITY_PRIVACY.md §4.1 п.7"
+  kernel: "docs/research/R0_DECISION_KERNEL.md v1.9 (§3, §17.2, §21 п.3, §22, §23, §24.2)"
+  tables: "docs/specification/07_DATA_MODEL.md §5.4–§5.7"
+
+# roles → таблица roles (07 §5.4). sort_order — порядок значений enum role_code (07 §14.2).
+roles:
+  - code: seller
+    name_ru: "Продавец"
+    is_system: true
+    is_assignable: true
+    sort_order: 1
+  - code: cashier
+    name_ru: "Кассир"
+    is_system: true
+    is_assignable: true
+    sort_order: 2
+  - code: senior_seller
+    name_ru: "Старший продавец"
+    is_system: true
+    is_assignable: true
+    sort_order: 3
+  - code: admin
+    name_ru: "Администратор"
+    is_system: true
+    is_assignable: true
+    sort_order: 4
+  - code: owner
+    name_ru: "Руководитель"
+    is_system: true
+    is_assignable: true
+    sort_order: 5
+  - code: customer
+    name_ru: "Клиент"
+    is_system: true
+    is_assignable: false
+    sort_order: 6
+  - code: integration
+    name_ru: "Интеграция"
+    is_system: true
+    is_assignable: false
+    sort_order: 7
+
+# permissions → таблица permissions (07 §5.5): code, description_ru (= description), requires_step_up (= step_up).
+# number — номер строки 11 §4.3; module — модуль D-06; step_up_scope — область токена step-up (11 §4.1 п.7);
+# step_up_note — для кодов, где step-up нужен не на всех операциях (текст колонки «Step-up» 11 §4.3);
+# reserved: true — код R2, в R1 никому не выдаётся (11 §4.3: №28, №60).
+permissions:
+  - number: "1"
+    code: catalog.read
+    description: "Чтение категорий, товаров, вариантов, единиц, штрихкодов, фото"
+    module: "catalog"
+    step_up: false
+  - number: "2"
+    code: catalog.prices.read
+    description: "Чтение цен по видам цены, доступным роли (розничная/оптовая по правилам 1С); customer — только свой вид цены: соглашение 1С → price_lists.is_default → розничный (ядро v1.9 §24.2)"
+    module: "catalog"
+    step_up: false
+  - number: "3"
+    code: catalog.cost_price.read
+    description: "Чтение закупочных цен/себестоимости (если 1С отдаёт)"
+    module: "catalog"
+    step_up: false
+  - number: "4"
+    code: inventory.read
+    description: "Чтение остатков/резервов/доступно по складам; customer — по app_settings.customer_stock_display (field-level SEC-031, ядро v1.9 §24.2)"
+    module: "catalog (inventory)"
+    step_up: false
+  - number: "5"
+    code: search.read
+    description: "Поиск товаров, штрихкодов, подсказки"
+    module: "catalog (search)"
+    step_up: false
+  - number: "6"
+    code: search.customers
+    description: "Поиск клиентов по имени/телефону"
+    module: "customers"
+    step_up: false
+  - number: "7"
+    code: cart.manage.own
+    description: "Корзина: создание, позиции, клиент, скидка в лимите, отложить/восстановить свои"
+    module: "cart"
+    step_up: false
+  - number: "8"
+    code: cart.parked.read.all
+    description: "Просмотр чужих отложенных корзин"
+    module: "cart"
+    step_up: false
+  - number: "9"
+    code: cart.parked.resume.any
+    description: "Восстановление чужой отложенной корзины"
+    module: "cart"
+    step_up: false
+  - number: "10"
+    code: order.create
+    description: "Создание заказа из корзины (POST /orders)"
+    module: "orders"
+    step_up: false
+  - number: "11"
+    code: order.read.own
+    description: "Чтение своих заказов"
+    module: "orders"
+    step_up: false
+  - number: "12"
+    code: order.read.all
+    description: "Чтение всех заказов"
+    module: "orders"
+    step_up: false
+  - number: "13"
+    code: order.cancel.own
+    description: "Отмена своего заказа (создатель) до согласования — submitting, pending_approval, awaiting_payment без полученных платежей (ядро §22.9; правило — §4.1 п.8; прежнее имя order.cancel.own_draft)"
+    module: "orders"
+    step_up: false
+  - number: "14"
+    code: order.cancel.request.any
+    description: "Отмена или запрос отмены любого иного отменяемого заказа: чужого до согласования, а также своего или чужого согласованного (approved, awaiting_shipment) или с полученными платежами (ядро §22.9; cashier, senior_seller, admin)"
+    module: "orders"
+    step_up: true
+    step_up_scope: order_cancel
+  - number: "15"
+    code: order.documents.print
+    description: "Получение PDF счёта/чека, квитанции об оплате долга; накладная (waybill) — не печатная форма POS: статус или ссылка 1С по order.read.* (08 §4.8.5, PRINT-004)"
+    module: "orders"
+    step_up: false
+  - number: "16"
+    code: payment.cash.receive
+    description: "Приём наличных (POST /payments, method=cash)"
+    module: "payments"
+    step_up: false
+  - number: "17"
+    code: payment.qr.show
+    description: "Показ динамического QR / инициирование qr_bakai; без кода заказ с paymentMethod=qr_bakai создаётся (POST /orders), платёж остаётся qr_pending, QR не формируется и не сериализуется (§4.3.1); customer — только по своему заказу и только при QR_PROVIDER=onec (SEC-037, SEC-135; ядро v1.9 §24.2, §24.4)"
+    module: "payments"
+    step_up: false
+  - number: "18"
+    code: payment.qr.confirm_manual
+    description: "Ручное подтверждение QR-оплаты"
+    module: "payments"
+    step_up: true
+    step_up_scope: cashbox
+  - number: "19"
+    code: payment.void
+    description: "Аннулирование неполученного платежа (cash_pending, qr_pending, qr_shown, qr_expired, manual_confirm → voided; автомат — 07 §6.4, ядро §22.2); received → voided запрещён (исправление — документами 1С, ядро §19.2), credit — конечный статус; выдан cashier и senior_seller (ядро §23 п.3 — канон). Системное аннулирование при смене способа оплаты до получения денег (cash_pending/qr_pending/qr_shown → voided, актор system, void_reason=method_changed, аудит payment.voided) выполняется в рамках операции смены способа (права — по коду нового способа, §4.3.1) без step-up и этим кодом не проверяется (ядро §23 п.3)"
+    module: "payments"
+    step_up: true
+    step_up_scope: cashbox
+    step_up_note: "ручное аннулирование пользователем"
+  - number: "20"
+    code: payment.read.all
+    description: "Чтение платежей всех пользователей"
+    module: "payments"
+    step_up: false
+  - number: "21"
+    code: credit.sale.create
+    description: "Оформление «долг без оплаты» (method=credit) при отсутствии блокировки"
+    module: "payments"
+    step_up: false
+  - number: "22"
+    code: credit.sale.approve
+    description: "Разрешение продажи в долг при fail-closed блокировке (D-24)"
+    module: "payments"
+    step_up: true
+    step_up_scope: sales_approval
+  - number: "23"
+    code: discount.apply.within_limit
+    description: "Ручная скидка на документ в пределах лимита роли (role_discount_limits)"
+    module: "cart"
+    step_up: false
+  - number: "24"
+    code: discount.approve.over_limit
+    description: "Подтверждение скидки сверх лимита инициатора (в пределах своего лимита)"
+    module: "cart"
+    step_up: true
+    step_up_scope: sales_approval
+  - number: "25"
+    code: discount.rules.read
+    description: "Чтение правил/условий скидок клиента"
+    module: "customers (discounts)"
+    step_up: false
+  - number: "26"
+    code: customer.read.basic
+    description: "Имя, телефон, тип клиента, признак «есть долг/просрочка» без сумм"
+    module: "customers"
+    step_up: false
+  - number: "27"
+    code: customer.create
+    description: "Создание нового клиента с дедупликацией по 1С (D-08)"
+    module: "customers"
+    step_up: false
+  - number: "28"
+    code: customer.update
+    description: "Изменение контактных данных клиента (через outbox в 1С). R2: PATCH /customers/{id}/contacts вне R1 (контакты — мастер-данные 1С, ядро §19.2); в R1 код зарезервирован и никому не выдаётся"
+    module: "customers"
+    step_up: false
+    reserved: true
+  - number: "29"
+    code: customer.history.read
+    description: "История покупок клиента"
+    module: "customers"
+    step_up: false
+  - number: "30"
+    code: customer.receivables.read.summary
+    description: "Сумма долга, статус, дата снимка"
+    module: "customers (receivables)"
+    step_up: false
+  - number: "31"
+    code: customer.receivables.read.detail
+    description: "Детализация долга по документам"
+    module: "customers (receivables)"
+    step_up: true
+    step_up_scope: finance_view
+    step_up_note: "при первом просмотре в сессии и повторно, если с последнего step-up прошло > 15 мин — ядро §17.2"
+  - number: "32"
+    code: customer.link.resolve
+    description: "Подтверждение/отклонение привязки customer_link, разрешение conflict; в R1 — только admin (ядро §3.1, §22.12; Q-005, Q-025; самоподтверждение клиентом — код 75 customer.link.self_resolve, SEC-130)"
+    module: "customers"
+    step_up: true
+    step_up_scope: customer_links
+    step_up_note: "ядро §19.3"
+  - number: "33"
+    code: favorites.products.manage
+    description: "Избранные товары (свои)"
+    module: "customers (favorites)"
+    step_up: false
+  - number: "34"
+    code: favorites.customers.manage
+    description: "Избранные клиенты (свои)"
+    module: "customers (favorites)"
+    step_up: false
+  - number: "35"
+    code: transactions.read.own
+    description: "Транзакции по своим операциям"
+    module: "transactions"
+    step_up: false
+  - number: "36"
+    code: transactions.read.all
+    description: "Все транзакции с фильтрами"
+    module: "transactions"
+    step_up: false
+  - number: "37"
+    code: return.create
+    description: "Заявка на возврат (R1 must — ядро §21 п.1; отключение — returns_enabled=false по Q-018): создание и изменение черновика (POST /returns, PATCH /returns/{id})"
+    module: "returns"
+    step_up: false
+  - number: "38"
+    code: return.read
+    description: "Просмотр заявок на возврат"
+    module: "returns"
+    step_up: false
+  - number: "39"
+    code: dashboard.cashier.read
+    description: "Дашборд кассира (/pos/dashboard)"
+    module: "payments"
+    step_up: false
+  - number: "40"
+    code: sync.status.read
+    description: "Краткий статус синхронизации"
+    module: "sync"
+    step_up: false
+  - number: "41"
+    code: sync.runs.read
+    description: "Полный журнал прогонов и ошибок"
+    module: "sync"
+    step_up: false
+  - number: "42"
+    code: sync.run.incremental.limited
+    description: "Ручной запуск синхронизации только в режиме incremental и только для entity ∈ {stock, prices, order_status} (ядро §17.2, SCR-43)"
+    module: "sync"
+    step_up: false
+  - number: "42a"
+    code: sync.run.full
+    description: "Ручной запуск любой сущности в любом режиме, включая full/reconcile (ядро §17.2)"
+    module: "sync"
+    step_up: true
+    step_up_scope: sync_admin
+  - number: "43"
+    code: sync.outbox.manage
+    description: "Просмотр/повтор элементов outbox (senior_seller и admin — все элементы; фильтра «свой магазин» нет — ядро §22.10, §4.1 п.8; статусы — 07 §6.5, ядро §22.1)"
+    module: "sync"
+    step_up: false
+  - number: "44"
+    code: sync.exchange
+    description: "Технический обмен с 1С (роль integration)"
+    module: "sync"
+    step_up: false
+  - number: "45"
+    code: notifications.read.own
+    description: "Центр уведомлений"
+    module: "notifications"
+    step_up: false
+  - number: "46"
+    code: profile.manage.own
+    description: "Профиль, настройки, согласия, PIN, биометрия"
+    module: "profile"
+    step_up: true
+    step_up_scope: own_security
+    step_up_note: "смена телефона, установка/смена PIN, включение/выключение биометрии (ядро §17.2; кроме первичной установки при регистрации через registration_token)"
+  - number: "47"
+    code: session.manage.own
+    description: "Свои устройства/сессии, logout, logout-all, отзыв своей сессии на другом устройстве"
+    module: "auth"
+    step_up: true
+    step_up_scope: own_security
+    step_up_note: "POST /auth/logout-all и DELETE /auth/sessions/{id} для сессии, отличной от текущей (08 §4.1.6); выход из текущей сессии (POST /auth/logout, DELETE текущей), просмотр и переименование — без step-up"
+  - number: "48"
+    code: session.revoke.any
+    description: "Отзыв сессий другого пользователя"
+    module: "admin"
+    step_up: true
+    step_up_scope: admin_users
+  - number: "49"
+    code: users.read
+    description: "Список и карточки пользователей"
+    module: "admin"
+    step_up: false
+  - number: "50"
+    code: users.manage
+    description: "Создание (приглашение и активация pending_activation с ролью — POST /admin/users), редактирование (PATCH /admin/users/{id}), блокировка и разблокировка пользователей; ограничения по цели — SEC-043"
+    module: "admin"
+    step_up: true
+    step_up_scope: admin_users
+    step_up_note: "на все изменяющие операции: POST /admin/users, PATCH /admin/users/{id}, блокировка/разблокировка (ядро §3.3 «смена ролей/блокировка», §17.2 «создание приглашений»; 08 §4.18.1)"
+  - number: "51"
+    code: users.roles.assign
+    description: "Назначение/снятие ролей"
+    module: "admin"
+    step_up: true
+    step_up_scope: admin_users
+  - number: "52"
+    code: invitations.manage
+    description: "Приглашения сотрудников по телефону (D-07); создание и отзыв"
+    module: "admin"
+    step_up: true
+    step_up_scope: admin_users
+    step_up_note: "создание/отзыв приглашения, ядро §17.2"
+  - number: "53"
+    code: settings.discount_limits.update
+    description: "Лимиты скидок по ролям"
+    module: "admin"
+    step_up: true
+    step_up_scope: settings
+  - number: "54"
+    code: settings.app.update
+    description: "Настройки приложения (app_settings), включая RECEIVABLES_MAX_AGE_MIN, параметры OTP/SMS; CUSTOMER_SELF_SERVICE в перечень изменяемых настроек не входит — это только env (ядро §19.2): в /admin/settings и UI флаг отображается только для чтения, попытка изменить его через PUT /admin/settings → 400 VALIDATION_FAILED"
+    module: "admin"
+    step_up: true
+    step_up_scope: settings
+  - number: "55"
+    code: settings.app.read
+    description: "Чтение настроек (без секретов), включая значение флага CUSTOMER_SELF_SERVICE из env (только чтение)"
+    module: "admin"
+    step_up: false
+  - number: "56"
+    code: audit.read
+    description: "Чтение аудита"
+    module: "admin (audit)"
+    step_up: false
+  - number: "57"
+    code: reports.sales.read
+    description: "Сводка продаж"
+    module: "admin (reports)"
+    step_up: false
+  - number: "58"
+    code: reports.receivables.read
+    description: "Отчёт по долгам"
+    module: "admin (reports)"
+    step_up: false
+  - number: "59"
+    code: reports.qr_reconciliation.read
+    description: "Сверка QR-платежей"
+    module: "admin (reports)"
+    step_up: false
+  - number: "60"
+    code: reports.export
+    description: "Экспорт данных, включая CSV (R2 — ядро §19.2, Q-217; в R1 зарезервировано, никому не выдаётся)"
+    module: "admin"
+    step_up: true
+    reserved: true
+  - number: "61"
+    code: customer.self.read
+    description: "Клиент-покупатель: свой профиль, свои привязки, свои заказы (созданные этим аккаунтом; заказы привязанной карточки 1С и история покупок — только при customer_links.status='confirmed', SEC-030 (в))"
+    module: "customers"
+    step_up: false
+  - number: "62"
+    code: customer.self.receivables.read
+    description: "Клиент-покупатель: свой долг при customer_link.confirmed (сумма/статус и детализация)"
+    module: "customers"
+    step_up: true
+    step_up_scope: finance_view
+    step_up_note: "детализация (?include=documents) при первом просмотре в сессии и повторно, если с последнего step-up прошло > 15 мин (ядро §3.3 — без исключений по ролям; step_up_method — otp или pin, если PIN задан, D-48); сумма/статус — без step-up"
+  - number: "63"
+    code: catalog.prices.read.all
+    description: "Все виды цен (prices[] в карточке/вариантах) и выбор priceListId в запросе (08 §9)"
+    module: "catalog"
+    step_up: false
+  - number: "64"
+    code: payment.read.own
+    description: "Платежи по своим заказам/свои платежи (GET /payments/{id} без externalRef, в т. ч. long-polling ?wait=, Q-167)"
+    module: "payments"
+    step_up: false
+  - number: "65"
+    code: payment.debt.receive
+    description: "Приём оплаты долга без заказа (POST /payments; условно Q-152, при DEBT_PAYMENTS_FROM_POS=true — ядро §17.4, §17.7)"
+    module: "payments"
+    step_up: false
+  - number: "66"
+    code: customer.create.force
+    description: "Создание клиента при CUSTOMER_DUPLICATE_SUSPECTED (POST /customers с forceCreate), обязательная причина forceReason (§7.2; имя поля — ядро §19.2)"
+    module: "customers"
+    step_up: false
+  - number: "67"
+    code: customer.link.read
+    description: "Просмотр привязок пользователей к клиенту (GET /customers/{id}/links)"
+    module: "customers"
+    step_up: false
+  - number: "68"
+    code: return.submit
+    description: "Отправка заявки на возврат в 1С (POST /returns/{id}/submit; R1 must — ядро §21 п.1; передача в 1С — RETURNS_FROM_POS_ENABLED; сверх return_approval_threshold — дополнительно return.approve, §4.1 п.8)"
+    module: "returns"
+    step_up: true
+    step_up_scope: returns
+  - number: "69"
+    code: users.pin.reset
+    description: "Сброс PIN приложения сотрудника (DELETE /admin/users/{id}/pin, ядро §17.4; сотрудник задаёт новый PIN после входа по OTP)"
+    module: "admin"
+    step_up: true
+    step_up_scope: admin_users
+  - number: "70"
+    code: system.openapi.read
+    description: "Получение /openapi.json при APP_ENV=prod (если 08 не отключает его в prod; SEC-019)"
+    module: "admin"
+    step_up: false
+  - number: "71"
+    code: order.onec_link
+    description: "Ручная привязка заказа к документу 1С при ORDER_MATCH_AMBIGUOUS (POST /orders/{id}/onec-link; событие order.onec_linked, §7.2.1; элемент outbox create в pending/failed/dead переводится в sent, заказ получает onec_ref — ядро §23 п.1)"
+    module: "orders"
+    step_up: true
+    step_up_scope: onec_link
+  - number: "72"
+    code: settings.public.read
+    description: "Чтение публичных для аутентифицированных настроек (GET /settings/public: deliverySlots, supportContacts, privacyContact, lowStockThreshold, minAppVersion, recommendedAppVersion, features{…}) — любой аутентифицированный интерактивный пользователь; без секретов и без значений, не перечисленных ядром"
+    module: "profile"
+    step_up: false
+  - number: "73"
+    code: customer.link.conflicts.read
+    description: "Список клиентов с конфликтами/предложениями привязки (GET /customers?linkStatus=proposed,conflict) для разбора администратором"
+    module: "customers"
+    step_up: false
+  - number: "74"
+    code: return.approve
+    description: "Согласование заявки на возврат: отправка заявки сверх return_approval_threshold (подтверждающий отправляет сам, CASH-007), отклонение заявки (POST /returns/{id}/reject), согласование в POS при RETURNS_FROM_POS_ENABLED=false (переходы — 10 RET, владелец)"
+    module: "returns"
+    step_up: true
+    step_up_scope: returns
+  - number: "75"
+    code: customer.link.self_resolve
+    description: "Клиент-покупатель: подтверждение или отклонение предложенной привязки своего аккаунта к карточке 1С (POST /registration/customer-match/confirm|reject, 08 §4.2.4); только при CUSTOMER_SELF_SERVICE; object-level — SEC-130"
+    module: "customers"
+    step_up: false
+  - number: "76"
+    code: users.emergency_code.issue
+    description: "Выдача сотруднику аварийного одноразового кода входа при недоступности SMS (POST /admin/users/{id}/emergency-login-code, 09 SMS-035; R1 should, Q-168); ограничения цели — SEC-131, SEC-043"
+    module: "admin"
+    step_up: true
+    step_up_scope: admin_users
+
+# grants → таблица role_permissions (07 §5.6): роль → коды (порядок — 11 §4.3).
+grants:
+  seller:
+    - catalog.read
+    - catalog.prices.read
+    - inventory.read
+    - search.read
+    - search.customers
+    - cart.manage.own
+    - order.create
+    - order.read.own
+    - order.cancel.own
+    - order.documents.print
+    - payment.qr.show
+    - credit.sale.create
+    - discount.apply.within_limit
+    - discount.rules.read
+    - customer.read.basic
+    - customer.create
+    - favorites.products.manage
+    - transactions.read.own
+    - sync.status.read
+    - notifications.read.own
+    - profile.manage.own
+    - session.manage.own
+    - payment.read.own
+    - settings.public.read
+  cashier:
+    - catalog.read
+    - catalog.prices.read
+    - inventory.read
+    - search.read
+    - search.customers
+    - cart.manage.own
+    - order.create
+    - order.read.all
+    - order.cancel.own
+    - order.cancel.request.any
+    - order.documents.print
+    - payment.cash.receive
+    - payment.qr.show
+    - payment.qr.confirm_manual
+    - payment.void
+    - payment.read.all
+    - credit.sale.create
+    - discount.apply.within_limit
+    - discount.rules.read
+    - customer.read.basic
+    - customer.create
+    - customer.history.read
+    - customer.receivables.read.summary
+    - customer.receivables.read.detail
+    - favorites.products.manage
+    - favorites.customers.manage
+    - transactions.read.all
+    - return.create
+    - return.read
+    - dashboard.cashier.read
+    - sync.status.read
+    - notifications.read.own
+    - profile.manage.own
+    - session.manage.own
+    - catalog.prices.read.all
+    - payment.debt.receive
+    - customer.create.force
+    - customer.link.read
+    - return.submit
+    - settings.public.read
+  senior_seller:
+    - catalog.read
+    - catalog.prices.read
+    - inventory.read
+    - search.read
+    - search.customers
+    - cart.manage.own
+    - cart.parked.read.all
+    - cart.parked.resume.any
+    - order.create
+    - order.read.all
+    - order.cancel.own
+    - order.cancel.request.any
+    - order.documents.print
+    - payment.cash.receive
+    - payment.qr.show
+    - payment.qr.confirm_manual
+    - payment.void
+    - payment.read.all
+    - credit.sale.create
+    - credit.sale.approve
+    - discount.apply.within_limit
+    - discount.approve.over_limit
+    - discount.rules.read
+    - customer.read.basic
+    - customer.create
+    - customer.history.read
+    - customer.receivables.read.summary
+    - customer.receivables.read.detail
+    - favorites.products.manage
+    - favorites.customers.manage
+    - transactions.read.all
+    - return.create
+    - return.read
+    - dashboard.cashier.read
+    - sync.status.read
+    - sync.runs.read
+    - sync.run.incremental.limited
+    - sync.outbox.manage
+    - notifications.read.own
+    - profile.manage.own
+    - session.manage.own
+    - catalog.prices.read.all
+    - payment.debt.receive
+    - customer.create.force
+    - customer.link.read
+    - return.submit
+    - order.onec_link
+    - settings.public.read
+    - return.approve
+  admin:
+    - catalog.read
+    - catalog.prices.read
+    - inventory.read
+    - search.read
+    - search.customers
+    - cart.manage.own
+    - cart.parked.read.all
+    - cart.parked.resume.any
+    - order.create
+    - order.read.all
+    - order.cancel.own
+    - order.cancel.request.any
+    - order.documents.print
+    - discount.apply.within_limit
+    - discount.approve.over_limit
+    - discount.rules.read
+    - customer.read.basic
+    - customer.create
+    - customer.history.read
+    - customer.receivables.read.summary
+    - customer.receivables.read.detail
+    - customer.link.resolve
+    - favorites.products.manage
+    - favorites.customers.manage
+    - transactions.read.all
+    - return.create
+    - return.read
+    - dashboard.cashier.read
+    - sync.status.read
+    - sync.runs.read
+    - sync.run.incremental.limited
+    - sync.run.full
+    - sync.outbox.manage
+    - notifications.read.own
+    - profile.manage.own
+    - session.manage.own
+    - session.revoke.any
+    - users.read
+    - users.manage
+    - users.roles.assign
+    - invitations.manage
+    - settings.discount_limits.update
+    - settings.app.update
+    - settings.app.read
+    - audit.read
+    - reports.sales.read
+    - reports.receivables.read
+    - reports.qr_reconciliation.read
+    - catalog.prices.read.all
+    - customer.create.force
+    - customer.link.read
+    - return.submit
+    - users.pin.reset
+    - system.openapi.read
+    - order.onec_link
+    - settings.public.read
+    - customer.link.conflicts.read
+    - return.approve
+    - users.emergency_code.issue
+  owner:
+    - catalog.read
+    - catalog.prices.read
+    - catalog.cost_price.read
+    - inventory.read
+    - search.read
+    - search.customers
+    - cart.parked.read.all
+    - order.read.all
+    - order.documents.print
+    - payment.read.all
+    - discount.rules.read
+    - customer.read.basic
+    - customer.history.read
+    - customer.receivables.read.summary
+    - customer.receivables.read.detail
+    - favorites.products.manage
+    - transactions.read.all
+    - return.read
+    - dashboard.cashier.read
+    - sync.status.read
+    - sync.runs.read
+    - sync.run.incremental.limited
+    - sync.run.full
+    - notifications.read.own
+    - profile.manage.own
+    - session.manage.own
+    - session.revoke.any
+    - users.read
+    - users.roles.assign
+    - settings.app.read
+    - audit.read
+    - reports.sales.read
+    - reports.receivables.read
+    - reports.qr_reconciliation.read
+    - catalog.prices.read.all
+    - customer.link.read
+    - order.onec_link
+    - settings.public.read
+  customer:
+    - catalog.read
+    - catalog.prices.read
+    - inventory.read
+    - search.read
+    - cart.manage.own
+    - order.create
+    - order.read.own
+    - order.cancel.own
+    - order.documents.print
+    - payment.qr.show
+    - discount.rules.read
+    - favorites.products.manage
+    - notifications.read.own
+    - profile.manage.own
+    - session.manage.own
+    - customer.self.read
+    - customer.self.receivables.read
+    - payment.read.own
+    - settings.public.read
+    - customer.link.self_resolve
+  integration:
+    - sync.exchange
+
+# constraints → role_permissions.constraint_json (07 §5.6): атрибутные ограничители ячеек матрицы 11 §4.4.
+# own — только свои объекты (фильтр владельца в SQL, 11 §4.1 п.5, SEC-030); maxPercentFrom — лимит из
+# role_discount_limits (SEC-034). Ограничители целей (SEC-040, SEC-043, ядро §21 п.3), conf (SEC-030 (в)) и
+# флаги (CUSTOMER_SELF_SERVICE, QR_PROVIDER) проверяет код, а не seed — см. NOTES.md.
+constraints:
+  seller:
+    order.read.own: {"own": true}
+    order.cancel.own: {"own": true}
+    order.documents.print: {"own": true}
+    discount.apply.within_limit: {"maxPercentFrom": "role_discount_limits"}
+    transactions.read.own: {"own": true}
+    payment.read.own: {"own": true}
+  cashier:
+    order.cancel.own: {"own": true}
+    discount.apply.within_limit: {"maxPercentFrom": "role_discount_limits"}
+    return.create: {"own": true}
+    return.submit: {"own": true}
+  senior_seller:
+    order.cancel.own: {"own": true}
+    discount.apply.within_limit: {"maxPercentFrom": "role_discount_limits"}
+    discount.approve.over_limit: {"maxPercentFrom": "role_discount_limits"}
+  admin:
+    order.cancel.own: {"own": true}
+    discount.apply.within_limit: {"maxPercentFrom": "role_discount_limits"}
+    discount.approve.over_limit: {"maxPercentFrom": "role_discount_limits"}
+  owner: {}
+  customer:
+    order.read.own: {"own": true}
+    order.cancel.own: {"own": true}
+    order.documents.print: {"own": true}
+    payment.qr.show: {"own": true}
+    discount.rules.read: {"own": true}
+    customer.self.read: {"own": true}
+    customer.self.receivables.read: {"own": true}
+    payment.read.own: {"own": true}
+    customer.link.self_resolve: {"own": true}
+  integration: {}
+
+# Не роль: статус пользователя pending_activation (11 §4.2) — фиксированный псевдо-набор guard'а; в seed не входит.
+pseudo_sets:
+  pending_activation:
+    - profile.manage.own
+    - session.manage.own
+    - settings.public.read

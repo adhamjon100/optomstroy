@@ -1,0 +1,2256 @@
+# D_test_run.log — прогон проверок этапа D (RM-D-011, RM-D-012), интегратор
+# Дата: 2026-10-22 04:37 +0400; машина: Windows 11 Pro, v24.11.1, Flutter 3.38.7 • channel stable • https://github.com/flutter/flutter.git
+# Формат: «$ команда» → полный вывод (ANSI-коды удалены) → «# код выхода».
+#
+# ИТОГ (все команды — код 0):
+#   pos-api: lint, build, unit 126; integrations 38; worker 19; db 13; foundation 55; auth 35; admin 36; customers 28;
+#            profile 24; registration 18; settings 17; sms 65; e2e 62 (+4 skipped: только через pos-proxy);
+#            madge — 0 циклов; check:permissions — актуально; test:cov:d — 301 тест, строки: auth/common 94.79,
+#            auth/login 98.75, auth/otp 95.76, auth/pin 97.61, auth/sessions 98.28, auth/step-up 90.43,
+#            registration 95.38 (порог 80 %); local-stack smoke 10/10; auth-smoke (настоящие процессы) 15/15.
+#   pos-app: build_runner, analyze — No issues; flutter test 696; golden 90; check_layers — 0 нарушений;
+#            sync_contracts --check — OK; integration_test на Windows: auth_flow_test 3/3, boot_test 1/1;
+#            flutter build windows --release — код 0.
+#   Не проверено: доставка SMS на реальный номер (нет аккаунта SMSPro — RM-A-004); Android; видео/скриншоты RM-D-012.
+# Телефоны/коды в выводе — только тестовые значения AUTH_FIXTURES (local-stack, APP_ENV=dev), номера маскируются.
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run lint
+# начало: 2026-10-22 04:37:32
+
+> pos-api@0.1.0 lint
+> tsc -p tsconfig.json --noEmit && eslint "src/**/*.ts" "test/**/*.ts" "scripts/**/*.ts" "scripts/**/*.mjs" && prettier --check "src/**/*.ts" "test/**/*.ts" "scripts/**/*.ts"
+
+Checking formatting...
+All matched files use Prettier code style!
+# код выхода: 0   (окончание: 04:37:59)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run build
+# начало: 2026-10-22 04:37:59
+
+> pos-api@0.1.0 prebuild
+> node scripts/clean-dist.mjs
+
+
+> pos-api@0.1.0 build
+> tsc -p tsconfig.build.json
+
+# код выхода: 0   (окончание: 04:38:07)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm test
+# начало: 2026-10-22 04:38:07
+
+> pos-api@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  12 passed (12)
+      Tests  126 passed (126)
+   Start at  04:38:08
+   Duration  7.69s (transform 11.07s, setup 0ms, import 46.54s, tests 6.30s, environment 3ms)
+
+# код выхода: 0   (окончание: 04:38:16)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:integrations
+# начало: 2026-10-22 04:38:16
+
+> pos-api@0.1.0 test:integrations
+> vitest run --config ./test/integrations/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+[Nest] 35344  - 22.10.2026, 04:38:33   ERROR [sms] Object(6) {
+  event: 'sms.alert',
+  alert: 'smspro_test_flag_leaked',
+  severity: 'critical',
+  alertMessage: 'SMSPro ответил status=11 (тестовый режим) при SMSPRO_TEST_FLAG=false, APP_ENV=prod',
+  transactionId: 'AbCdEf123456',
+  providerStatus: 11
+}
+[Nest] 35344  - 22.10.2026, 04:38:33     LOG [sms] Object(10) {
+  event: 'sms.send',
+  transactionId: 'AbCdEf123456',
+  phoneMasked: '+996 7** *** *56',
+  purpose: 'otp_login',
+  providerStatus: 11,
+  outcome: 'ACCEPTED_TEST',
+  smscnt: 1,
+  phonesRecognized: 1,
+  latencyMs: 4,
+  attempt: 1
+}
+
+ Test Files  5 passed (5)
+      Tests  38 passed (38)
+   Start at  04:38:17
+   Duration  27.70s (transform 1.63s, setup 0ms, import 9.93s, tests 16.88s, environment 0ms)
+
+# код выхода: 0   (окончание: 04:38:45)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:worker
+# начало: 2026-10-22 04:38:45
+
+> pos-api@0.1.0 test:worker
+> vitest run --config ./test/worker/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  3 passed (3)
+      Tests  19 passed (19)
+   Start at  04:38:46
+   Duration  36.69s (transform 1.58s, setup 0ms, import 7.65s, tests 28.51s, environment 0ms)
+
+# код выхода: 0   (окончание: 04:39:23)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:db
+# начало: 2026-10-22 04:39:23
+
+> pos-api@0.1.0 test:db
+> vitest run --config ./test/db/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  2 passed (2)
+      Tests  13 passed (13)
+   Start at  04:39:24
+   Duration  40.89s (transform 1.58s, setup 0ms, import 4.11s, tests 36.37s, environment 0ms)
+
+# код выхода: 0   (окончание: 04:40:05)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:foundation
+# начало: 2026-10-22 04:40:05
+
+> pos-api@0.1.0 test:foundation
+> vitest run --config ./test/foundation/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  6 passed (6)
+      Tests  55 passed (55)
+   Start at  04:40:06
+   Duration  47.66s (transform 1.63s, setup 0ms, import 6.33s, tests 40.26s, environment 0ms)
+
+# код выхода: 0   (окончание: 04:40:53)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:auth
+# начало: 2026-10-22 04:40:53
+
+> pos-api@0.1.0 test:auth
+> vitest run --config ./test/auth/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+[Nest] 33376  - 22.10.2026, 04:40:57    WARN [auth] Object(2) {
+  event: 'auth.policy.settings_unavailable',
+  err: Error: db down
+      at Object.get (D:/optomstroy/pos-api/test/auth/otp-policy.spec.ts:77:55)
+      at AuthPolicyService.effective (D:/optomstroy/pos-api/src/auth/common/auth-policy.ts:109:23)
+      at D:/optomstroy/pos-api/test/auth/otp-policy.spec.ts:132:80
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+}
+[Nest] 33376  - 22.10.2026, 04:40:57    WARN [auth] app_settings недоступны: env
+[Nest] 33376  - 22.10.2026, 04:40:57   ERROR [auth] Object(3) {
+  event: 'otp.circuit_open',
+  reason: 'global_limit',
+  minutes: 5
+}
+otp.circuit_open
+
+ Test Files  2 passed (2)
+      Tests  35 passed (35)
+   Start at  04:40:54
+   Duration  2.57s (transform 572ms, setup 0ms, import 2.75s, tests 1.13s, environment 0ms)
+
+# код выхода: 0   (окончание: 04:40:57)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:admin
+# начало: 2026-10-22 04:40:57
+
+> pos-api@0.1.0 test:admin
+> vitest run --config ./test/admin/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  3 passed (3)
+      Tests  36 passed (36)
+   Start at  04:40:58
+   Duration  26.95s (transform 2.05s, setup 0ms, import 6.80s, tests 19.59s, environment 0ms)
+
+# код выхода: 0   (окончание: 04:41:25)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:customers
+# начало: 2026-10-22 04:41:25
+
+> pos-api@0.1.0 test:customers
+> vitest run --config ./test/customers/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  2 passed (2)
+      Tests  28 passed (28)
+   Start at  04:41:26
+   Duration  14.71s (transform 1.51s, setup 0ms, import 4.56s, tests 9.80s, environment 0ms)
+
+# код выхода: 0   (окончание: 04:41:41)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:profile
+# начало: 2026-10-22 04:41:41
+
+> pos-api@0.1.0 test:profile
+> vitest run --config ./test/profile/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  2 passed (2)
+      Tests  24 passed (24)
+   Start at  04:41:42
+   Duration  15.38s (transform 1.54s, setup 0ms, import 4.58s, tests 10.41s, environment 0ms)
+
+# код выхода: 0   (окончание: 04:41:58)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:registration
+# начало: 2026-10-22 04:41:58
+
+> pos-api@0.1.0 test:registration
+> vitest run --config ./test/registration/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  1 passed (1)
+      Tests  18 passed (18)
+   Start at  04:41:59
+   Duration  14.47s (transform 1.54s, setup 0ms, import 3.93s, tests 10.36s, environment 0ms)
+
+# код выхода: 0   (окончание: 04:42:13)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:settings
+# начало: 2026-10-22 04:42:13
+
+> pos-api@0.1.0 test:settings
+> vitest run --config ./test/settings/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  2 passed (2)
+      Tests  17 passed (17)
+   Start at  04:42:14
+   Duration  20.78s (transform 1.52s, setup 0ms, import 5.87s, tests 14.54s, environment 0ms)
+
+# код выхода: 0   (окончание: 04:42:35)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:sms
+# начало: 2026-10-22 04:42:35
+
+> pos-api@0.1.0 test:sms
+> vitest run --config ./test/sms/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  4 passed (4)
+      Tests  65 passed (65)
+   Start at  04:42:36
+   Duration  42.74s (transform 1.70s, setup 0ms, import 7.89s, tests 34.13s, environment 0ms)
+
+# код выхода: 0   (окончание: 04:43:19)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:e2e
+# начало: 2026-10-22 04:43:19
+
+> pos-api@0.1.0 test:e2e
+> vitest run --config ./vitest.config.e2e.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  5 passed (5)
+      Tests  62 passed | 4 skipped (66)
+   Start at  04:43:20
+   Duration  79.86s (transform 1.60s, setup 0ms, import 11.70s, tests 67.27s, environment 0ms)
+
+# код выхода: 0   (окончание: 04:44:40)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npx madge --circular --extensions ts src
+# начало: 2026-10-22 04:44:40
+- Finding files
+Processed 282 files (2s) 
+
+✔ No circular dependency found!
+
+# код выхода: 0   (окончание: 04:44:45)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run check:permissions
+# начало: 2026-10-22 04:44:45
+
+> pos-api@0.1.0 check:permissions
+> node scripts/gen-permissions.mjs --check
+
+gen-permissions: актуально (77 кодов, 7 ролей)
+# код выхода: 0   (окончание: 04:44:46)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:cov:d
+# начало: 2026-10-22 04:44:46
+
+> pos-api@0.1.0 test:cov:d
+> vitest run --coverage --config ./vitest.config.cov-d.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+      Coverage enabled with v8
+
+[Nest] 40980  - 22.10.2026, 04:44:53    WARN [auth] Object(2) {
+  event: 'auth.policy.settings_unavailable',
+  err: Error: db down
+      at Object.get (D:/optomstroy/pos-api/test/auth/otp-policy.spec.ts:77:55)
+      at AuthPolicyService.effective (D:/optomstroy/pos-api/src/auth/common/auth-policy.ts:109:23)
+      at D:/optomstroy/pos-api/test/auth/otp-policy.spec.ts:132:80
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+}
+[Nest] 40980  - 22.10.2026, 04:44:53    WARN [auth] app_settings недоступны: env
+[Nest] 40980  - 22.10.2026, 04:44:53   ERROR [auth] Object(3) {
+  event: 'otp.circuit_open',
+  reason: 'global_limit',
+  minutes: 5
+}
+otp.circuit_open
+
+ Test Files  25 passed (25)
+      Tests  301 passed | 4 skipped (305)
+   Start at  04:44:48
+   Duration  141.25s (transform 19.21s, setup 0ms, import 86.09s, tests 109.07s, environment 3ms)
+
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   92.68 |    81.49 |   91.53 |   96.12 |                   
+ auth/common       |   90.74 |     82.6 |   87.75 |   94.79 |                   
+  ...ate-limits.ts |   82.14 |       75 |   77.77 |      92 | 92-96             
+  request.ts       |    91.3 |       60 |   88.88 |   94.73 | 32                
+  validators.ts    |      88 |      100 |    87.5 |   91.66 | 57,76             
+ auth/login        |   95.55 |    84.39 |     100 |   98.75 |                   
+  login.service.ts |   96.15 |    88.04 |     100 |   99.13 | 371               
+  me-snapshot.ts   |   93.33 |       64 |     100 |     100 | 43-44,83-104      
+  ...en.service.ts |   93.33 |     90.9 |     100 |   96.15 | 88                
+ auth/otp          |   93.73 |     80.8 |   86.88 |   95.76 |                   
+  ...repository.ts |   96.29 |     91.3 |     100 |     100 | 23,111            
+  ...it-breaker.ts |     100 |       75 |     100 |     100 | 26                
+  ...controller.ts |   97.72 |    88.88 |     100 |     100 | 84,113,116        
+  otp.provider.ts  |   80.32 |    61.81 |   57.14 |   83.01 | ...01-204,210-214 
+  otp.service.ts   |   98.02 |    87.17 |   94.44 |   97.88 | 174,391,462       
+  ...p.provider.ts |      85 |    66.66 |   85.71 |   94.44 | 42                
+  ...repository.ts |      90 |    88.88 |     100 |     100 | 40                
+ auth/pin          |   97.72 |    96.87 |   88.88 |   97.61 |                   
+  ...repository.ts |   88.88 |    85.71 |      80 |   88.88 | 45                
+ auth/sessions     |    93.8 |    83.53 |   96.55 |   98.28 |                   
+  ...sh.service.ts |   95.93 |       90 |     100 |   98.19 | 125,187           
+  ...vity.guard.ts |   79.59 |    71.42 |   66.66 |      95 | 71,86             
+  ...er.service.ts |     100 |    89.47 |     100 |     100 | 157,165           
+  session-store.ts |     100 |     91.3 |     100 |     100 | 101,150           
+  ...controller.ts |    92.1 |    85.71 |     100 |   97.14 | 53                
+  ...ns.service.ts |   96.15 |    65.71 |     100 |     100 | 33-71,135,149-179 
+ auth/step-up      |   85.49 |    67.36 |      85 |   90.43 |                   
+  ...controller.ts |      80 |    84.21 |     100 |      80 | 26,33             
+  step-up.guard.ts |   86.66 |       50 |     100 |     100 | 25-40             
+  ...operations.ts |   88.88 |       75 |   66.66 |   85.71 | 38                
+  ...up.service.ts |   85.26 |     62.9 |   83.33 |   90.36 | ...11,223,283-288 
+ registration      |   91.46 |    81.76 |   96.42 |   95.38 |                   
+  ...controller.ts |   93.75 |       75 |     100 |   93.75 | 52                
+  ...on.service.ts |   90.81 |    82.66 |      95 |   95.26 | ...59,590,594,598 
+ ...stration/ports |      80 |       75 |     100 |      75 |                   
+  ...ching.port.ts |      80 |       75 |     100 |      75 | 44                
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 92.68% ( 1242/1340 )
+Branches     : 81.49% ( 837/1027 )
+Functions    : 91.53% ( 227/248 )
+Lines        : 96.12% ( 1167/1214 )
+================================================================================
+# код выхода: 0   (окончание: 04:47:09)
+
+------------------------------------------------------------------------
+$ (cd pos-api) node scripts/local-stack.mjs smoke
+# начало: 2026-10-22 04:47:09
+[local-stack] PostgreSQL 17.10 на 127.0.0.1:63597
+[local-stack] migrate: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate: migration applied
+[local-stack] migrate: migration applied
+[local-stack] migrate: migrate: готово applied=["0001_init.sql","0002_rbac_seed.sql"]
+[local-stack] migrate: migration applied
+[local-stack] migrate: migrate: dev-миграции применены (APP_ENV=dev)
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: seed applied
+[local-stack] migrate --seed: seed: вставлено строк 39 inserted={"app_settings":30,"customers":1,"price_lists":1,"role_discount_limits":7}
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: seed applied
+[local-stack] migrate --seed: seed: 0 изменений inserted={"app_settings":0,"customers":0,"price_lists":0,"role_discount_limits":0}
+[local-stack] pos-api pid=24076 готов: http://127.0.0.1:3000 ({"MIN_APP_VERSION":"android=1.0.0,windows=1.2.0","RECOMMENDED_APP_VERSION":"android=1.1.0,windows=1.3.0"})
+[local-stack] PASS GET /health — 200 {"status":"ok","apiVersion":"1.0","serverTime":"2026-10-22T00:47:21.760Z"}
+[local-stack] PASS GET /health/ready — 200 {"status":"ok","checks":{"db":"ok","worker":"ok","sync":{"stale":false}}}
+[local-stack] PASS /health не проверяет версию (RM-C-015 п. 4) — 200
+[local-stack] PASS /health/ready не проверяет версию (RM-C-015 п. 4) — 200
+[local-stack] PASS windows 1.1.0 < MIN windows=1.2.0 → 426 APP_UPDATE_REQUIRED + X-Min-App-Version — 426 code=APP_UPDATE_REQUIRED X-Min-App-Version=windows=1.2.0
+[local-stack] PASS android 1.1.0 ≥ MIN android=1.0.0 → не 426 (маршрута на этапе C нет → 404) + X-Min/X-Recommended — 404 code=NOT_FOUND X-Min-App-Version=android=1.0.0 X-Recommended-App-Version=android=1.1.0
+[local-stack] PASS GET /api/v1/openapi.json (windows 1.2.0) → 200 + X-Min-App-Version + X-Request-Id — 200 openapi=3.0.3 X-Min-App-Version=windows=1.2.0 X-Request-Id=01a16113-acb1-76fc-ba45-bb09b7414d68
+[local-stack] PASS защищённый путь без токена → не 200 (deny by default) — 401 code=UNAUTHENTICATED
+[local-stack] pos-api pid=16624 готов: http://127.0.0.1:3000 ({"APP_READ_ONLY":"true"})
+[local-stack] PASS APP_READ_ONLY=true: GET /health/ready → 200 — 200
+[local-stack] PASS APP_READ_ONLY=true: POST /api/v1/orders → 503 APP_READ_ONLY или 404 (на этапе C мутирующих маршрутов нет) — 404 code=NOT_FOUND
+[local-stack] итог: 10/10 PASS
+# код выхода: 0   (окончание: 04:47:25)
+
+------------------------------------------------------------------------
+$ (cd pos-api) node scripts/local-stack.mjs auth-smoke
+# начало: 2026-10-22 04:47:25
+[local-stack] PostgreSQL 17.10 на 127.0.0.1:51019
+[local-stack] migrate: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate: migration applied
+[local-stack] migrate: migration applied
+[local-stack] migrate: migrate: готово applied=["0001_init.sql","0002_rbac_seed.sql"]
+[local-stack] migrate: migration applied
+[local-stack] migrate: migrate: dev-миграции применены (APP_ENV=dev)
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: seed applied
+[local-stack] migrate --seed: seed: вставлено строк 39 inserted={"app_settings":30,"customers":1,"price_lists":1,"role_discount_limits":7}
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: seed applied
+[local-stack] migrate --seed: seed: 0 изменений inserted={"app_settings":0,"customers":0,"price_lists":0,"role_discount_limits":0}
+[local-stack] auth-fixtures: администратор (admin, без PIN) и приглашение seller созданы; тестовый режим OTP включён
+[local-stack] pos-api pid=38796 готов: http://127.0.0.1:3000 (обычный режим)
+[local-stack] PASS клиент +9967*****03: POST /auth/otp/request → 202 — 202
+[local-stack] PASS клиент: POST /auth/otp/verify → 200 registration_required — 200 status=registration_required
+[local-stack] PASS клиент: POST /registration/complete → 201, customer active — 201 kind=customer status=active customerMatch=none 
+[local-stack] PASS клиент: GET /me → 200, pinSet=true — 200 pinSet=true
+[local-stack] PASS клиент +9967*****56 с карточкой 1С: 201, customerMatch=proposed (SCR-06) — 201 customerMatch.status=proposed nextStep=wait_admin 
+[local-stack] PASS приглашённый +9967*****02: verify → authenticated staff/seller, roleSource=invitation, nextStep=set_pin — 200 status=authenticated kind=staff roles=["seller"] roleSource=invitation nextStep=set_pin
+[local-stack] PASS приглашённый до PIN: прочие маршруты → 403 FORBIDDEN reason=pin_not_set — 403 code=FORBIDDEN reason=pin_not_set
+[local-stack] PASS приглашённый: первый POST /me/pin без step-up → 204 — 204 
+[local-stack] PASS приглашённый: GET /me → pinSet=true, ФИО приглашения — 200 pinSet=true fullName=совпадает
+[local-stack] PASS admin: OTP → POST /me/pin → POST /auth/step-up (pin) → stepUpToken — verify=200 pin=204 stepUp=200 
+[local-stack] PASS admin: POST /admin/invitations без X-Step-Up-Token → 403 STEP_UP_REQUIRED — 403 STEP_UP_REQUIRED
+[local-stack] PASS admin: POST /admin/invitations (cashier) → 201 — 201 
+[local-stack] PASS приглашённый администратором: OTP → staff/cashier, nextStep=set_pin — 200 roles=["cashier"] nextStep=set_pin
+[local-stack] PASS неверный код → 422 OTP_INVALID с attemptsLeft — 422 OTP_INVALID attemptsLeft=4
+[local-stack] PASS JWT alg=none → 401 UNAUTHENTICATED — 401 UNAUTHENTICATED
+[local-stack] auth-smoke итог: 15/15 PASS
+# код выхода: 0   (окончание: 04:47:37)
+
+------------------------------------------------------------------------
+$ (cd /d/optomstroy) python -I -X utf8 scripts/check_secrets.py
+# начало: 2026-10-22 04:47:38
+check_secrets: режим git ls-files + новые неигнорируемые; файлов проверено: 1213; находок: 0
+# код выхода: 0   (окончание: 04:47:47)
+
+------------------------------------------------------------------------
+$ (cd /d/optomstroy) python -I -X utf8 scripts/check_api_paths.py
+# начало: 2026-10-22 04:47:47
+INFO: ядро: извлечено 142 упоминаний операций/путей
+INFO: 08: карточек §4.x.y — 103, операций в заголовках — 143; исключённых операций в §4.20 — 13
+INFO: контракт pos-api.v1.yaml: операций 141, путей 119
+INFO: примечание: POST /registration/customer-match не найден в ядре/08 как «МЕТОД /путь» (проверяется по списку 13)
+INFO: обязательных операций/путей: 236; исключено как R2/неканоническое: 4; запрещённых шаблонов: 18
+OK: все обязательные пути и методы есть; запрещённых и лишних операций нет
+# код выхода: 0   (окончание: 04:47:48)
+
+------------------------------------------------------------------------
+$ (cd /d/optomstroy) python -I -X utf8 scripts/check_api_permissions.py
+# начало: 2026-10-22 04:47:48
+INFO  [B] словарь 11 §4.3: 77 кодов; S!: 23; в областях step-up: 22
+INFO  [C] роли: seller, cashier, senior_seller, admin, owner, customer, integration
+INFO  [D] grants: seller=24, cashier=40, senior_seller=49, admin=59, owner=38, customer=20, integration=1; пар: 231
+INFO  [E] seed: roles=7, permissions=77, role_permissions=231
+INFO  [A] источник: contracts/openapi/pos-api.v1.yaml; операций: 141
+WARN  [A] POST /cart/park: роли ['customer'] держат код операции, но не в x-roles (условие?)
+WARN  [A] GET /cart/parked: роли ['customer'] держат код операции, но не в x-roles (условие?)
+WARN  [A] DELETE /cart/parked/{id}: роли ['customer'] держат код операции, но не в x-roles (условие?)
+WARN  [A] POST /cart/parked/{id}/resume: роли ['customer'] держат код операции, но не в x-roles (условие?)
+WARN  [A] GET /catalog/price-lists: роли ['customer'] держат код операции, но не в x-roles (условие?)
+WARN  [A] DELETE /me/pin: роли ['admin', 'cashier', 'owner', 'seller', 'senior_seller'] держат код операции, но не в x-roles (условие?)
+WARN  [A] GET /orders/{id}/documents/receipt.pdf: роли ['customer'] держат код операции, но не в x-roles (условие?)
+WARN  [A] GET /orders/{id}/documents/waybill.pdf: роли ['customer'] держат код операции, но не в x-roles (условие?)
+WARN  [A] GET /payments/{id}/documents/receipt.pdf: роли ['admin', 'customer', 'seller'] держат код операции, но не в x-roles (условие?)
+ИТОГ: ошибок 0, предупреждений 9
+# код выхода: 0   (окончание: 04:47:50)
+
+------------------------------------------------------------------------
+$ (cd /d/optomstroy) python -I -X utf8 scripts/check_env_example.py
+# начало: 2026-10-22 04:47:50
+check_env_example: ожидается 97, в .env.example 97; недостающих 0, лишних 0; ключей схемы pos-api проверено 114; ошибок 0
+# код выхода: 0   (окончание: 04:47:50)
+
+------------------------------------------------------------------------
+$ (cd pos-app) flutter pub get
+# начало: 2026-10-22 04:47:58
+Resolving dependencies...
+Downloading packages...
+  _fe_analyzer_shared 91.0.0 (110.0.0 available)
+  analysis_server_plugin 0.3.3 (0.3.25 available)
+  analyzer 8.4.0 (14.6.0 available)
+  analyzer_buffer 0.1.11 (0.3.4 available)
+  analyzer_plugin 0.13.10 (0.14.19 available)
+  build 4.0.7 (5.0.0 available)
+  build_config 1.2.0 (1.4.0 available)
+  build_daemon 4.1.2 (4.1.7 available)
+  build_runner 2.10.5 (2.17.1 available)
+  built_collection 5.1.1 (5.1.2 available)
+  cached_network_image 3.4.1 (4.0.5 available)
+  cached_network_image_platform_interface 4.1.1 (5.0.3 available)
+  cached_network_image_web 1.3.1 (2.0.3 available)
+  characters 1.4.0 (1.4.1 available)
+  cli_util 0.4.2 (0.6.0 available)
+  clock 1.1.2 (1.1.3 available)
+  code_assets 1.2.1 (2.1.0 available)
+  coverage 1.15.1 (1.16.0 available)
+  dart_style 3.1.3 (3.1.14 available)
+  drift 2.30.1 (2.35.2 available)
+  drift_dev 2.30.1 (2.35.1 available)
+  drift_flutter 0.2.8 (0.3.1 available)
+  flutter_native_splash 2.4.7 (2.4.8 available)
+  flutter_riverpod 3.1.0 (3.4.3 available)
+  freezed 3.2.3 (4.0.3 available)
+  frontend_server_client 4.1.0 (4.2.0 available)
+  go_router 17.5.0 (18.1.1 available)
+  go_router_builder 4.5.0 (4.5.2 available)
+  hooks 2.0.2 (2.2.0 available)
+  intl 0.20.2 (0.20.3 available)
+  json_annotation 4.9.0 (4.12.0 available)
+  json_serializable 6.11.2 (6.15.2 available)
+  local_auth_android 2.0.8 (2.3.0 available)
+  local_auth_darwin 2.0.4 (2.0.5 available)
+  matcher 0.12.17 (0.12.20 available)
+  material_color_utilities 0.11.1 (0.13.1 available)
+  meta 1.17.0 (1.19.0 available)
+  mockito 5.6.4 (5.8.1 available)
+  objective_c 9.5.0 (9.6.2 available)
+  package_config 2.2.0 (3.0.0 available)
+  petitparser 7.0.2 (7.1.0 available)
+  platform 3.1.6 (3.2.0 available)
+  pubspec_parse 1.6.0 (1.7.0 available)
+  record_use 0.6.0 (1.1.1 available)
+  riverpod 3.1.0 (3.4.3 available)
+  riverpod_analyzer_utils 1.0.0-dev.8 (1.0.0-dev.12 available)
+  riverpod_annotation 4.0.0 (4.0.7 available)
+  riverpod_generator 4.0.0+1 (4.0.9 available)
+  riverpod_lint 3.1.0 (3.1.9 available)
+  shared_preferences 2.5.5 (2.5.6 available)
+  shared_preferences_android 2.4.23 (2.5.1 available)
+  shared_preferences_foundation 2.5.7 (2.6.0 available)
+  source_gen 4.2.4 (4.3.1 available)
+  source_helper 1.3.8 (1.4.0 available)
+  sqflite 2.4.2+1 (2.4.5 available)
+  sqflite_android 2.4.2+3 (2.4.5 available)
+  sqflite_common 2.5.8 (2.5.14 available)
+  sqflite_darwin 2.4.2 (2.4.4+1 available)
+  sqflite_platform_interface 2.4.0 (2.4.3 available)
+  sqlite3 2.9.4 (3.7.1 available)
+  sqlite3_flutter_libs 0.5.42 (0.6.0+eol available)
+  sqlparser 0.43.1 (0.45.0 available)
+  stack_trace 1.12.1 (1.12.2 available)
+  synchronized 3.4.0 (3.5.0 available)
+  test 1.26.3 (1.33.0 available)
+  test_api 0.7.7 (0.7.15 available)
+  test_core 0.6.12 (0.6.21 available)
+  vector_graphics 1.2.3 (1.2.4 available)
+  vector_graphics_compiler 1.3.0 (1.3.2 available)
+  vector_math 2.2.0 (2.4.3 available)
+  xml 6.6.1 (7.1.0 available)
+Got dependencies!
+71 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+# код выхода: 0   (окончание: 04:48:13)
+
+------------------------------------------------------------------------
+$ (cd pos-app) dart run build_runner build -d
+# начало: 2026-10-22 04:48:13
+Running build hooks...Running build hooks...  0s riverpod_generator on 290 inputs; integration_test/auth_flow_test.dart
+  0s riverpod_generator on 290 inputs: 1 no-op; integration_test/boot_test.dart
+  23s riverpod_generator on 290 inputs: 3 skipped, 1 same, 3 no-op; spent 18s analyzing, 3s resolving, 1s reading; lib/app/router/guards/auth_guard.dart
+  23s riverpod_generator on 290 inputs: 271 skipped, 2 same, 17 no-op; spent 18s analyzing, 3s resolving, 1s reading
+  0s freezed on 290 inputs; integration_test/auth_flow_test.dart
+  0s freezed on 290 inputs: 271 skipped, 19 no-op
+  0s json_serializable on 580 inputs; integration_test/auth_flow_test.dart
+  1s json_serializable on 580 inputs: 1 no-op; integration_test/auth_flow_test.freezed.dart
+  2s json_serializable on 580 inputs: 262 skipped, 35 no-op; spent 2s analyzing; lib/features/admin/presentation/users/widgets/admin_user_card.freezed.dart
+  3s json_serializable on 580 inputs: 444 skipped, 75 no-op; spent 2s analyzing; test/features/auth/data/auth_bindings_test.freezed.dart
+  4s json_serializable on 580 inputs: 479 skipped, 101 no-op; spent 3s analyzing
+  0s go_router_builder on 580 inputs; integration_test/auth_flow_test.dart
+  0s go_router_builder on 580 inputs: 441 skipped, 1 same, 71 no-op; test/features/admin/presentation/admin_users_dialogs_test.freezed.dart
+  0s go_router_builder on 580 inputs: 479 skipped, 1 same, 100 no-op
+  0s drift_dev on 2320 inputs; integration_test/auth_flow_test.dart
+  1s drift_dev on 2320 inputs: 1934 skipped, 6 output, 196 same, 77 no-op; test/features/auth/domain/auth_usecases_test.dart.types.temp.dart
+  1s drift_dev on 2320 inputs: 2017 skipped, 6 output, 196 same, 101 no-op
+  0s source_gen:combining_builder on 1160 inputs; integration_test/auth_flow_test.dart
+  0s source_gen:combining_builder on 1160 inputs: 1156 skipped, 3 same, 1 no-op
+  Built with build_runner/jit in 59s; wrote 208 outputs.
+# код выхода: 0   (окончание: 04:49:46)
+
+------------------------------------------------------------------------
+$ (cd pos-app) flutter analyze
+# начало: 2026-10-22 04:49:46
+Analyzing pos-app...                                            
+No issues found! (ran in 91.9s)
+# код выхода: 0   (окончание: 04:51:23)
+
+------------------------------------------------------------------------
+$ (cd pos-app) flutter test --reporter compact
+# начало: 2026-10-22 04:51:23
+01:35 +696: All tests passed!
+# код выхода: 0   (окончание: 04:53:04)
+
+------------------------------------------------------------------------
+$ (cd pos-app) flutter test --tags golden --reporter compact
+# начало: 2026-10-22 04:53:04
+00:35 +90: All tests passed!
+# код выхода: 0   (окончание: 04:53:44)
+
+------------------------------------------------------------------------
+$ (cd /d/optomstroy) python -I -X utf8 scripts/check_layers.py
+# начало: 2026-10-22 04:53:44
+check_layers: файлов 213, импортов 1241, нарушений 0
+# код выхода: 0   (окончание: 04:53:44)
+
+------------------------------------------------------------------------
+$ (cd /d/optomstroy) python -I -X utf8 scripts/sync_contracts.py --check
+# начало: 2026-10-22 04:53:44
+OK l10n: 3 файл(ов) идентичны (contracts/l10n == pos-app/lib/l10n)
+OK l10n: pos-app/lib/l10n/gen_input соответствует преобразованию источника
+# код выхода: 0   (окончание: 04:53:45)
+
+------------------------------------------------------------------------
+$ (cd pos-api) LOCAL_STACK_MIN_APP_VERSION=android=0.1.0,windows=0.1.0 node scripts/local-stack.mjs serve --auth-fixtures --ready-file <tmp> --ttl 1500   # фон
+[local-stack] PostgreSQL 17.10 на 127.0.0.1:50952
+[local-stack] migrate: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate: migration applied
+[local-stack] migrate: migration applied
+[local-stack] migrate: migrate: готово applied=["0001_init.sql","0002_rbac_seed.sql"]
+[local-stack] migrate: migration applied
+[local-stack] migrate: migrate: dev-миграции применены (APP_ENV=dev)
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: seed applied
+[local-stack] migrate --seed: seed: вставлено строк 39 inserted={"app_settings":30,"customers":1,"price_lists":1,"role_discount_limits":7}
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: seed applied
+[local-stack] migrate --seed: seed: 0 изменений inserted={"app_settings":0,"customers":0,"price_lists":0,"role_discount_limits":0}
+[local-stack] auth-fixtures: администратор (admin, без PIN) и приглашение seller созданы; тестовый режим OTP включён
+[local-stack] pos-api pid=29732 готов: http://127.0.0.1:3000 (обычный режим)
+[local-stack] READY http://127.0.0.1:3000 (журнал API: C:\Users\Farruh\AppData\Local\Temp\pos-local-stack-JAUrll\api.log); Ctrl+C — остановка
+
+------------------------------------------------------------------------
+$ (cd pos-app) flutter test integration_test/auth_flow_test.dart -d windows --dart-define-from-file=env/dev.json
+# начало: 2026-10-22 04:54:11
+00:00 +0: loading D:/optomstroy/pos-app/integration_test/auth_flow_test.dart
+Building Windows application...                                    41,1s
+√ Built build\windows\x64\runner\Debug\optomstroy.exe
+00:00 +0: клиент: Splash → телефон → OTP → регистрация → PIN → каталог-заглушка (SCR-50)
+00:13 +1: приглашённый сотрудник: OTP → установка PIN без регистрации → каталог-заглушка (SCR-10)
+auth_flow_test: после OTP сотрудника — /register/security
+00:22 +2: клиент с карточкой 1С: OTP → регистрация → PIN → SCR-06 «Привязка к клиенту»
+00:33 +3: (tearDownAll)
+00:33 +3: All tests passed!
+# код выхода: 0   (окончание: 04:55:30)
+
+------------------------------------------------------------------------
+$ (cd pos-app) flutter test integration_test/boot_test.dart -d windows --dart-define-from-file=env/dev.json
+# начало: 2026-10-22 04:55:30
+00:00 +0: loading D:/optomstroy/pos-app/integration_test/boot_test.dart
+Building Windows application...                                    36,1s
+√ Built build\windows\x64\runner\Debug\optomstroy.exe
+00:00 +0: boot: Splash → «нет сессии» → GET /health с тестового контура
+boot_test: API_BASE_URL=http://127.0.0.1:3000/api/v1 → BackendHealthReport(ok: true, httpStatus: 200, requestId: 01a1611b-c810-752d-ba9a-94054cff60cf, error: null)
+00:01 +1: (tearDownAll)
+00:01 +1: All tests passed!
+# код выхода: 0   (окончание: 04:56:13)
+
+------------------------------------------------------------------------
+# журнал pos-api за прогон integration_test (метод путь → статус; без тел и заголовков):
+2026-10-22T00:54:10.473Z GET /health/ready -> 200
+2026-10-22T00:54:59.052Z POST /api/v1/auth/otp/request -> 202
+2026-10-22T00:54:59.702Z POST /api/v1/auth/otp/verify -> 200
+2026-10-22T00:55:08.207Z POST /api/v1/registration/complete -> 201
+2026-10-22T00:55:10.778Z POST /api/v1/auth/otp/request -> 202
+2026-10-22T00:55:11.248Z POST /api/v1/auth/otp/verify -> 200
+2026-10-22T00:55:17.961Z POST /api/v1/me/pin -> 204
+2026-10-22T00:55:17.979Z POST /api/v1/me/consents -> 200
+2026-10-22T00:55:20.400Z POST /api/v1/auth/otp/request -> 202
+2026-10-22T00:55:20.760Z POST /api/v1/auth/otp/verify -> 200
+2026-10-22T00:55:28.888Z POST /api/v1/registration/complete -> 201
+2026-10-22T00:55:30.146Z GET /api/v1/registration/customer-match -> 200
+
+------------------------------------------------------------------------
+$ (cd pos-app) flutter build windows --release
+# начало: 2026-10-22 05:04:10
+Building Windows application...                                   118,5s
+√ Built build\windows\x64\runner\Release\optomstroy.exe
+# код выхода: 0   (окончание: 05:06:15)
+
+
+========================================================================================================================
+# ПОВТОРНЫЙ ПРОГОН ПОСЛЕ ИСПРАВЛЕНИЙ ЗАМЕЧАНИЙ D_review.md (D-MJ-01…03, D-MN-01…09) — агент исправлений
+# Дата: 2026-10-22 06:08–06:58 +0400; машина та же (Windows 11 Pro, Node v24.11.1, Flutter 3.38.7).
+# Формат тот же: «$ команда» → вывод (ANSI удалены; для flutter --reporter compact оставлены итоговые строки и ошибки)
+# → «# код выхода».
+#
+# ИТОГ:
+#   pos-api: lint 0, build 0; unit 127; integrations 38; worker 19; db 13; foundation 55; auth 52 (+16 unit ветвей
+#            политики, +1 D-MN-03); admin 36; customers 28; profile 25 (+T-BIO-013); registration 19 (+D-MN-02);
+#            settings 17; sms 65; e2e 77 (+4 skipped только через pos-proxy; новые: emergency-login 6, tokens-audit 5,
+#            rbac-matrix 3, T-SEC-008 1); madge — 0 циклов; check:permissions — актуально;
+#            test:cov:d — 336 тестов (+4 skipped): строки 97.92 %, ветви 88.51 %; otp.service.ts, otp.provider.ts,
+#            step-up.service.ts — 100 % строк и ветвей (D-MN-06);
+#            local-stack smoke — код 0; auth-smoke (настоящие процессы) 15/15.
+#   repo:    check_secrets, check_api_paths, check_api_permissions, check_env_example — код 0;
+#            trace_test_ids.py (D-MJ-02) — ID в охвате 178; с тестом 153; not_done с причиной 25; без теста и причины 0.
+#   pos-app: analyze — No issues; flutter test: 1-й запуск (параллельно по умолчанию) — 16 файлов «loading [E]
+#            TimeoutException 12 мин» (компиляция под нагрузкой; среди них не изменявшиеся design_system_golden_test,
+#            router_test), 2-й запуск --concurrency=2 — +700 All tests passed (696 + 3 static build + 1 D-MN-04);
+#            golden 90; check_layers — 0 нарушений; sync_contracts --check — OK;
+#            integration_test на Windows: auth_flow_test 3/3, boot_test 1/1; flutter build windows --release — код 0.
+#   НЕ ВЫПОЛНЕНО: Android-эмулятор (D-MJ-03) — «not enough disk space» (C: свободно ~1 ГБ), APK не собирался;
+#            iOS — нет macOS; реальные SMS — нет аккаунта SMSPro (RM-A-004).
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run lint
+# начало: 2026-10-22 06:13:27
+
+> pos-api@0.1.0 lint
+> tsc -p tsconfig.json --noEmit && eslint "src/**/*.ts" "test/**/*.ts" "scripts/**/*.ts" "scripts/**/*.mjs" && prettier --check "src/**/*.ts" "test/**/*.ts" "scripts/**/*.ts"
+
+Checking formatting...
+All matched files use Prettier code style!
+# код выхода: 0   (окончание: 06:13:51)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run build
+# начало: 2026-10-22 06:13:51
+
+> pos-api@0.1.0 prebuild
+> node scripts/clean-dist.mjs
+
+
+> pos-api@0.1.0 build
+> tsc -p tsconfig.build.json
+
+# код выхода: 0   (окончание: 06:13:57)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test
+# начало: 2026-10-22 06:13:57
+
+> pos-api@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  12 passed (12)
+      Tests  127 passed (127)
+   Start at  06:13:58
+   Duration  7.72s (transform 11.87s, setup 0ms, import 47.01s, tests 5.16s, environment 4ms)
+
+# код выхода: 0   (окончание: 06:14:06)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:integrations
+# начало: 2026-10-22 06:14:06
+
+> pos-api@0.1.0 test:integrations
+> vitest run --config ./test/integrations/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+[Nest] 17600  - 22.10.2026, 06:14:20   ERROR [sms] Object(6) {
+  event: 'sms.alert',
+  alert: 'smspro_test_flag_leaked',
+  severity: 'critical',
+  alertMessage: 'SMSPro ответил status=11 (тестовый режим) при SMSPRO_TEST_FLAG=false, APP_ENV=prod',
+  transactionId: 'AbCdEf123456',
+  providerStatus: 11
+}
+[Nest] 17600  - 22.10.2026, 06:14:20     LOG [sms] Object(10) {
+  event: 'sms.send',
+  transactionId: 'AbCdEf123456',
+  phoneMasked: '+996 7** *** *56',
+  purpose: 'otp_login',
+  providerStatus: 11,
+  outcome: 'ACCEPTED_TEST',
+  smscnt: 1,
+  phonesRecognized: 1,
+  latencyMs: 4,
+  attempt: 1
+}
+
+ Test Files  5 passed (5)
+      Tests  38 passed (38)
+   Start at  06:14:07
+   Duration  23.59s (transform 1.51s, setup 0ms, import 8.73s, tests 14.06s, environment 0ms)
+
+# код выхода: 0   (окончание: 06:14:30)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:worker
+# начало: 2026-10-22 06:14:31
+
+> pos-api@0.1.0 test:worker
+> vitest run --config ./test/worker/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  3 passed (3)
+      Tests  19 passed (19)
+   Start at  06:14:31
+   Duration  34.42s (transform 1.44s, setup 0ms, import 6.67s, tests 27.21s, environment 0ms)
+
+# код выхода: 0   (окончание: 06:15:06)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:db
+# начало: 2026-10-22 06:15:06
+
+> pos-api@0.1.0 test:db
+> vitest run --config ./test/db/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  2 passed (2)
+      Tests  13 passed (13)
+   Start at  06:15:07
+   Duration  24.32s (transform 1.41s, setup 0ms, import 3.50s, tests 20.47s, environment 0ms)
+
+# код выхода: 0   (окончание: 06:15:31)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:foundation
+# начало: 2026-10-22 06:15:31
+
+> pos-api@0.1.0 test:foundation
+> vitest run --config ./test/foundation/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  6 passed (6)
+      Tests  55 passed (55)
+   Start at  06:15:32
+   Duration  39.14s (transform 1.47s, setup 0ms, import 5.77s, tests 32.46s, environment 0ms)
+
+# код выхода: 0   (окончание: 06:16:12)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:auth
+# начало: 2026-10-22 06:16:12
+
+> pos-api@0.1.0 test:auth
+> vitest run --config ./test/auth/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(6) {
+  event: 'otp.test_mode',
+  challengeId: '01a16165-0cb7-7414-9317-1c919310351f',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: 'r-1'
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.test_mode
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(6) {
+  event: 'otp.requested',
+  challengeId: '01a16165-0cbc-75ae-bca0-210451a66725',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.requested
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(6) {
+  event: 'otp.requested',
+  challengeId: '01a16165-0cc2-7119-8b2d-499bf4350d86',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.requested
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] Object(6) {
+  event: 'otp.rate_limited',
+  scope: '',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] otp.rate_limited
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] Object(6) {
+  event: 'otp.rate_limited',
+  scope: '',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] otp.rate_limited
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] Object(6) {
+  event: 'otp.rate_limited',
+  scope: 'otp_device_24h',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] otp.rate_limited
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] Object(6) {
+  event: 'otp.rate_limited',
+  scope: 'otp_device_10m',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: 'r-2'
+}
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] otp.rate_limited
+[Nest] 42264  - 22.10.2026, 06:16:14   ERROR [auth] Object(3) {
+  event: 'audit.write_failed',
+  action: 'auth.otp.rate_limited',
+  err: Error: audit down
+      at Object.write (D:/optomstroy/pos-api/test/auth/otp-branches.spec.ts:103:28)
+      at OtpService.rateLimitedAudit (D:/optomstroy/pos-api/src/auth/otp/otp.service.ts:455:8)
+      at OtpService.issue (D:/optomstroy/pos-api/src/auth/otp/otp.service.ts:247:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at D:/optomstroy/pos-api/test/auth/otp-branches.spec.ts:185:17
+      at async file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+}
+audit failed
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(6) {
+  event: 'otp.requested',
+  challengeId: '01a16165-0cd1-706c-84c5-b4fdfa9b67b2',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.requested
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] Object(4) {
+  event: 'otp.send_exception',
+  challengeId: 'c1',
+  attempt: 1,
+  err: 'Error'
+}
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] otp.send_exception
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(9) {
+  event: 'otp.sent',
+  challengeId: 'c1',
+  transactionId: '2wG8n5rWYIZM',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'ACCEPTED',
+  attempt: 2,
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.sent
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(9) {
+  event: 'otp.failed_delivery',
+  challengeId: 'c1',
+  transactionId: 'jWGPv3OT14UR',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: null,
+  outcome: 'RETRYABLE',
+  attempt: 3,
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.failed_delivery
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] Object(4) {
+  event: 'otp.send_exception',
+  challengeId: 'c1',
+  attempt: 1,
+  err: 'Error'
+}
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] otp.send_exception
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] Object(4) {
+  event: 'otp.send_exception',
+  challengeId: 'c1',
+  attempt: 2,
+  err: 'Error'
+}
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] otp.send_exception
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] Object(4) {
+  event: 'otp.send_exception',
+  challengeId: 'c1',
+  attempt: 3,
+  err: 'Error'
+}
+[Nest] 42264  - 22.10.2026, 06:16:14    WARN [auth] otp.send_exception
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(9) {
+  event: 'otp.failed_delivery',
+  challengeId: 'c1',
+  transactionId: 'fGIaSDhS7diH',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: null,
+  outcome: 'RETRYABLE',
+  attempt: 3,
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.failed_delivery
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(9) {
+  event: 'otp.failed_delivery',
+  challengeId: 'c1',
+  transactionId: 'ayiAikqzIZJX',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 2,
+  outcome: 'CONFIG_ERROR',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.failed_delivery
+[Nest] 42264  - 22.10.2026, 06:16:14   ERROR [auth] Object(3) {
+  event: 'otp.circuit_open',
+  reason: 'config_error',
+  minutes: 15
+}
+otp.circuit_open
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(9) {
+  event: 'otp.failed_delivery',
+  challengeId: 'c1',
+  transactionId: 'JJl2W1nJp62o',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 4,
+  outcome: 'INSUFFICIENT_FUNDS',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.failed_delivery
+[Nest] 42264  - 22.10.2026, 06:16:14   ERROR [auth] Object(3) {
+  event: 'otp.circuit_open',
+  reason: 'insufficient_funds',
+  minutes: 15
+}
+otp.circuit_open
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(9) {
+  event: 'otp.failed_delivery',
+  challengeId: 'c1',
+  transactionId: 'UZ1HD9Vd0w0n',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'REJECTED',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.failed_delivery
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(9) {
+  event: 'otp.sent',
+  challengeId: 'c1',
+  transactionId: 'ipBzXhXSyqpv',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'ACCEPTED_TEST',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.sent
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(9) {
+  event: 'otp.sent',
+  challengeId: 'c1',
+  transactionId: 'GrwqAXjUHpuD',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'ACCEPTED',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.sent
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(9) {
+  event: 'otp.sent',
+  challengeId: 'c1',
+  transactionId: 'kfQdTQFuUIMe',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'ACCEPTED',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.sent
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(9) {
+  event: 'otp.sent',
+  challengeId: 'c1',
+  transactionId: 'X7MTI3dkqrzm',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'ACCEPTED',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.sent
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(9) {
+  event: 'otp.sent',
+  challengeId: 'c1',
+  transactionId: 'GnwLoOLAG3yL',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'ACCEPTED',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.sent
+[Nest] 42264  - 22.10.2026, 06:16:14   ERROR [auth] Object(3) {
+  event: 'otp.delivery_error',
+  challengeId: 'c1',
+  err: 'Error'
+}
+otp.delivery_error
+[Nest] 42264  - 22.10.2026, 06:16:14   ERROR [auth] Object(3) {
+  event: 'otp.delivery_error',
+  challengeId: 'c1',
+  err: 'unknown'
+}
+otp.delivery_error
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] Object(9) {
+  event: 'otp.failed_delivery',
+  challengeId: 'c1',
+  transactionId: 'qbK26IFPi8kp',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'RETRYABLE',
+  attempt: 2,
+  requestId: undefined
+}
+[Nest] 42264  - 22.10.2026, 06:16:14     LOG [auth] otp.failed_delivery
+[Nest] 42264  - 22.10.2026, 06:16:14   ERROR [auth] Object(2) {
+  event: 'audit.write_failed',
+  err: Error: audit down
+      at Object.write (D:/optomstroy/pos-api/test/auth/otp-branches.spec.ts:454:51)
+      at StepUpService.failedAudit (D:/optomstroy/pos-api/src/auth/step-up/step-up.service.ts:246:8)
+      at StepUpService.request (D:/optomstroy/pos-api/src/auth/step-up/step-up.service.ts:95:18)
+      at D:/optomstroy/pos-api/test/auth/otp-branches.spec.ts:476:32
+      at file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+      at file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+      at file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+      at new Promise (<anonymous>)
+      at runWithCancel (file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+      at file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+}
+audit failed
+[Nest] 17668  - 22.10.2026, 06:16:15    WARN [auth] Object(2) {
+  event: 'auth.policy.settings_unavailable',
+  err: Error: db down
+      at Object.get (D:/optomstroy/pos-api/test/auth/otp-policy.spec.ts:77:55)
+      at AuthPolicyService.effective (D:/optomstroy/pos-api/src/auth/common/auth-policy.ts:109:23)
+      at D:/optomstroy/pos-api/test/auth/otp-policy.spec.ts:132:80
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+}
+[Nest] 17668  - 22.10.2026, 06:16:15    WARN [auth] app_settings недоступны: env
+[Nest] 17668  - 22.10.2026, 06:16:15   ERROR [auth] Object(3) {
+  event: 'otp.circuit_open',
+  reason: 'global_limit',
+  minutes: 5
+}
+otp.circuit_open
+
+ Test Files  3 passed (3)
+      Tests  52 passed (52)
+   Start at  06:16:13
+   Duration  2.37s (transform 843ms, setup 0ms, import 4.05s, tests 1.11s, environment 0ms)
+
+# код выхода: 0   (окончание: 06:16:15)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:admin
+# начало: 2026-10-22 06:16:15
+
+> pos-api@0.1.0 test:admin
+> vitest run --config ./test/admin/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  3 passed (3)
+      Tests  36 passed (36)
+   Start at  06:16:16
+   Duration  23.57s (transform 1.44s, setup 0ms, import 5.20s, tests 17.86s, environment 0ms)
+
+# код выхода: 0   (окончание: 06:16:40)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:customers
+# начало: 2026-10-22 06:16:40
+
+> pos-api@0.1.0 test:customers
+> vitest run --config ./test/customers/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  2 passed (2)
+      Tests  28 passed (28)
+   Start at  06:16:41
+   Duration  13.43s (transform 1.65s, setup 0ms, import 4.36s, tests 8.74s, environment 0ms)
+
+# код выхода: 0   (окончание: 06:16:54)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:profile
+# начало: 2026-10-22 06:16:54
+
+> pos-api@0.1.0 test:profile
+> vitest run --config ./test/profile/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  2 passed (2)
+      Tests  25 passed (25)
+   Start at  06:16:55
+   Duration  14.46s (transform 1.55s, setup 0ms, import 4.27s, tests 9.82s, environment 0ms)
+
+# код выхода: 0   (окончание: 06:17:10)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:registration
+# начало: 2026-10-22 06:17:10
+
+> pos-api@0.1.0 test:registration
+> vitest run --config ./test/registration/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  1 passed (1)
+      Tests  19 passed (19)
+   Start at  06:17:11
+   Duration  13.11s (transform 1.40s, setup 0ms, import 3.41s, tests 9.52s, environment 0ms)
+
+# код выхода: 0   (окончание: 06:17:24)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:settings
+# начало: 2026-10-22 06:17:24
+
+> pos-api@0.1.0 test:settings
+> vitest run --config ./test/settings/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  2 passed (2)
+      Tests  17 passed (17)
+   Start at  06:17:25
+   Duration  14.51s (transform 1.39s, setup 0ms, import 5.02s, tests 9.11s, environment 0ms)
+
+# код выхода: 0   (окончание: 06:17:40)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:sms
+# начало: 2026-10-22 06:17:40
+
+> pos-api@0.1.0 test:sms
+> vitest run --config ./test/sms/vitest.config.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  4 passed (4)
+      Tests  65 passed (65)
+   Start at  06:17:41
+   Duration  39.11s (transform 1.40s, setup 0ms, import 6.59s, tests 31.85s, environment 0ms)
+
+# код выхода: 0   (окончание: 06:18:20)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:e2e
+# начало: 2026-10-22 06:18:20
+
+> pos-api@0.1.0 test:e2e
+> vitest run --config ./vitest.config.e2e.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+
+
+ Test Files  8 passed (8)
+      Tests  77 passed | 4 skipped (81)
+   Start at  06:18:21
+   Duration  94.18s (transform 1.52s, setup 0ms, import 15.08s, tests 77.76s, environment 1ms)
+
+# код выхода: 0   (окончание: 06:19:55)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run madge
+# начало: 2026-10-22 06:19:55
+
+> pos-api@0.1.0 madge
+> madge --circular --extensions ts src
+
+- Finding files
+Processed 285 files (2.3s) 
+
+✔ No circular dependency found!
+
+# код выхода: 0   (окончание: 06:19:58)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run check:permissions
+# начало: 2026-10-22 06:19:58
+
+> pos-api@0.1.0 check:permissions
+> node scripts/gen-permissions.mjs --check
+
+gen-permissions: актуально (77 кодов, 7 ролей)
+# код выхода: 0   (окончание: 06:19:59)
+
+------------------------------------------------------------------------
+$ (cd pos-api) npm run test:cov:d
+# начало: 2026-10-22 06:20:11
+
+> pos-api@0.1.0 test:cov:d
+> vitest run --coverage --config ./vitest.config.cov-d.ts
+
+
+ RUN  v4.1.12 D:/optomstroy/pos-api
+      Coverage enabled with v8
+
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(6) {
+  event: 'otp.test_mode',
+  challengeId: '01a16168-ba51-77ba-a207-c6e34286a149',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: 'r-1'
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.test_mode
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(6) {
+  event: 'otp.requested',
+  challengeId: '01a16168-ba6b-70ee-9a85-89670ca04b69',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.requested
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(6) {
+  event: 'otp.requested',
+  challengeId: '01a16168-ba88-71cf-9314-1947ebc58617',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.requested
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] Object(6) {
+  event: 'otp.rate_limited',
+  scope: '',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] otp.rate_limited
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] Object(6) {
+  event: 'otp.rate_limited',
+  scope: '',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] otp.rate_limited
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] Object(6) {
+  event: 'otp.rate_limited',
+  scope: 'otp_device_24h',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] otp.rate_limited
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] Object(6) {
+  event: 'otp.rate_limited',
+  scope: 'otp_device_10m',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: 'r-2'
+}
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] otp.rate_limited
+[Nest] 43888  - 22.10.2026, 06:20:15   ERROR [auth] Object(3) {
+  event: 'audit.write_failed',
+  action: 'auth.otp.rate_limited',
+  err: Error: audit down
+      at Object.write (D:/optomstroy/pos-api/test/auth/otp-branches.spec.ts:103:28)
+      at OtpService.rateLimitedAudit (D:/optomstroy/pos-api/src/auth/otp/otp.service.ts:455:8)
+      at OtpService.issue (D:/optomstroy/pos-api/src/auth/otp/otp.service.ts:247:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at D:/optomstroy/pos-api/test/auth/otp-branches.spec.ts:185:17
+      at async file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+}
+audit failed
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(6) {
+  event: 'otp.requested',
+  challengeId: '01a16168-bab5-746f-b5b6-e7b86bb29635',
+  purpose: 'login_or_register',
+  phoneMasked: '+996 7** *** *01',
+  deviceId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.requested
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] Object(4) {
+  event: 'otp.send_exception',
+  challengeId: 'c1',
+  attempt: 1,
+  err: 'Error'
+}
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] otp.send_exception
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(9) {
+  event: 'otp.sent',
+  challengeId: 'c1',
+  transactionId: 'qD7G6STqWZIX',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'ACCEPTED',
+  attempt: 2,
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.sent
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(9) {
+  event: 'otp.failed_delivery',
+  challengeId: 'c1',
+  transactionId: 'J23JzvjkN8Or',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: null,
+  outcome: 'RETRYABLE',
+  attempt: 3,
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.failed_delivery
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] Object(4) {
+  event: 'otp.send_exception',
+  challengeId: 'c1',
+  attempt: 1,
+  err: 'Error'
+}
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] otp.send_exception
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] Object(4) {
+  event: 'otp.send_exception',
+  challengeId: 'c1',
+  attempt: 2,
+  err: 'Error'
+}
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] otp.send_exception
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] Object(4) {
+  event: 'otp.send_exception',
+  challengeId: 'c1',
+  attempt: 3,
+  err: 'Error'
+}
+[Nest] 43888  - 22.10.2026, 06:20:15    WARN [auth] otp.send_exception
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(9) {
+  event: 'otp.failed_delivery',
+  challengeId: 'c1',
+  transactionId: 'PtFW1eNoe0K9',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: null,
+  outcome: 'RETRYABLE',
+  attempt: 3,
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.failed_delivery
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(9) {
+  event: 'otp.failed_delivery',
+  challengeId: 'c1',
+  transactionId: '9rFjsXYUnKdE',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 2,
+  outcome: 'CONFIG_ERROR',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.failed_delivery
+[Nest] 43888  - 22.10.2026, 06:20:15   ERROR [auth] Object(3) {
+  event: 'otp.circuit_open',
+  reason: 'config_error',
+  minutes: 15
+}
+otp.circuit_open
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(9) {
+  event: 'otp.failed_delivery',
+  challengeId: 'c1',
+  transactionId: '72m44DvBto8P',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 4,
+  outcome: 'INSUFFICIENT_FUNDS',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.failed_delivery
+[Nest] 43888  - 22.10.2026, 06:20:15   ERROR [auth] Object(3) {
+  event: 'otp.circuit_open',
+  reason: 'insufficient_funds',
+  minutes: 15
+}
+otp.circuit_open
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(9) {
+  event: 'otp.failed_delivery',
+  challengeId: 'c1',
+  transactionId: 'o1KFTx6wukTL',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'REJECTED',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.failed_delivery
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(9) {
+  event: 'otp.sent',
+  challengeId: 'c1',
+  transactionId: 'aLzCHlIn8eLd',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'ACCEPTED_TEST',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.sent
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(9) {
+  event: 'otp.sent',
+  challengeId: 'c1',
+  transactionId: 'xZW7bdZa5JxB',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'ACCEPTED',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.sent
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(9) {
+  event: 'otp.sent',
+  challengeId: 'c1',
+  transactionId: 'EscwZTRmRuts',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'ACCEPTED',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.sent
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(9) {
+  event: 'otp.sent',
+  challengeId: 'c1',
+  transactionId: '90H8b26Vceet',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'ACCEPTED',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.sent
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(9) {
+  event: 'otp.sent',
+  challengeId: 'c1',
+  transactionId: 'qRMF24eySy8u',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'ACCEPTED',
+  attempt: 1,
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.sent
+[Nest] 43888  - 22.10.2026, 06:20:15   ERROR [auth] Object(3) {
+  event: 'otp.delivery_error',
+  challengeId: 'c1',
+  err: 'Error'
+}
+otp.delivery_error
+[Nest] 43888  - 22.10.2026, 06:20:15   ERROR [auth] Object(3) {
+  event: 'otp.delivery_error',
+  challengeId: 'c1',
+  err: 'unknown'
+}
+otp.delivery_error
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] Object(9) {
+  event: 'otp.failed_delivery',
+  challengeId: 'c1',
+  transactionId: 'uidfkKrrvVnv',
+  phoneMasked: '+996 7** *** *01',
+  purpose: 'otp_login',
+  providerStatus: 0,
+  outcome: 'RETRYABLE',
+  attempt: 2,
+  requestId: undefined
+}
+[Nest] 43888  - 22.10.2026, 06:20:15     LOG [auth] otp.failed_delivery
+[Nest] 43888  - 22.10.2026, 06:20:15   ERROR [auth] Object(2) {
+  event: 'audit.write_failed',
+  err: Error: audit down
+      at Object.write (D:/optomstroy/pos-api/test/auth/otp-branches.spec.ts:454:51)
+      at StepUpService.failedAudit (D:/optomstroy/pos-api/src/auth/step-up/step-up.service.ts:246:8)
+      at StepUpService.request (D:/optomstroy/pos-api/src/auth/step-up/step-up.service.ts:95:18)
+      at D:/optomstroy/pos-api/test/auth/otp-branches.spec.ts:476:32
+      at file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+      at file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+      at file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+      at new Promise (<anonymous>)
+      at runWithCancel (file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+      at file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+}
+audit failed
+[Nest] 22616  - 22.10.2026, 06:20:17    WARN [auth] Object(2) {
+  event: 'auth.policy.settings_unavailable',
+  err: Error: db down
+      at Object.get (D:/optomstroy/pos-api/test/auth/otp-policy.spec.ts:77:55)
+      at AuthPolicyService.effective (D:/optomstroy/pos-api/src/auth/common/auth-policy.ts:109:23)
+      at D:/optomstroy/pos-api/test/auth/otp-policy.spec.ts:132:80
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async file:///D:/optomstroy/pos-api/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+}
+[Nest] 22616  - 22.10.2026, 06:20:17    WARN [auth] app_settings недоступны: env
+[Nest] 22616  - 22.10.2026, 06:20:18   ERROR [auth] Object(3) {
+  event: 'otp.circuit_open',
+  reason: 'global_limit',
+  minutes: 5
+}
+otp.circuit_open
+
+ Test Files  29 passed (29)
+      Tests  336 passed | 4 skipped (340)
+   Start at  06:20:12
+   Duration  163.76s (transform 18.58s, setup 0ms, import 92.82s, tests 130.38s, environment 4ms)
+
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   95.39 |    88.51 |   96.22 |   97.92 |                   
+ auth/common       |   95.41 |    85.86 |      92 |    96.9 |                   
+  ...ate-limits.ts |   96.55 |    93.75 |      90 |   96.15 | 95                
+  request.ts       |    91.3 |       60 |   88.88 |   94.73 | 32                
+  validators.ts    |      92 |      100 |   91.66 |   95.83 | 57                
+ auth/login        |      95 |    86.48 |     100 |   97.94 |                   
+  ...in.service.ts |      96 |     90.9 |     100 |     100 | 43,52             
+  login.service.ts |   95.17 |    89.47 |     100 |    97.7 | 172-183,439       
+  me-snapshot.ts   |   93.33 |       64 |     100 |     100 | 43-44,83-104      
+  ...en.service.ts |   93.33 |     90.9 |     100 |   96.15 | 88                
+ auth/otp          |    98.3 |    95.05 |   98.48 |   99.69 |                   
+  ...repository.ts |     100 |    88.88 |     100 |     100 | 92                
+  ...repository.ts |   96.29 |     91.3 |     100 |     100 | 23,111            
+  ...it-breaker.ts |     100 |       75 |     100 |     100 | 26                
+  ...controller.ts |   98.07 |    90.32 |     100 |     100 | 105,134,137       
+  ...p.provider.ts |      85 |    66.66 |   85.71 |   94.44 | 42                
+  ...repository.ts |      90 |    88.88 |     100 |     100 | 40                
+ auth/pin          |   97.72 |    96.87 |   88.88 |   97.61 |                   
+  ...repository.ts |   88.88 |    85.71 |      80 |   88.88 | 45                
+ auth/sessions     |   94.61 |    86.92 |   96.66 |   98.34 |                   
+  ...sh.service.ts |   96.09 |       90 |     100 |   98.27 | 129,193           
+  ...vity.guard.ts |   85.45 |    84.78 |   66.66 |   95.65 | 92,107            
+  ...er.service.ts |     100 |    92.59 |     100 |     100 | 164,172           
+  session-store.ts |     100 |     91.3 |     100 |     100 | 101,150           
+  ...controller.ts |   91.66 |    84.21 |     100 |   97.05 | 53                
+  ...ns.service.ts |   96.15 |    74.28 |     100 |     100 | 42-71,135,149-179 
+ auth/step-up      |   95.68 |    91.58 |   95.65 |   96.72 |                   
+  ...n.verifier.ts |   97.22 |    97.36 |     100 |   96.42 | 76                
+  ...controller.ts |      80 |    84.21 |     100 |      80 | 26,33             
+  step-up.guard.ts |   86.66 |       50 |     100 |     100 | 25-40             
+  ...operations.ts |   88.88 |       75 |   66.66 |   85.71 | 38                
+ registration      |   91.96 |    81.66 |   96.55 |   96.13 |                   
+  ...controller.ts |   93.75 |       75 |     100 |   93.75 | 52                
+  ...on.service.ts |   91.41 |     82.5 |   95.23 |   96.13 | ...26,589,598,602 
+ ...stration/ports |      80 |       75 |     100 |      75 |                   
+  ...ching.port.ts |      80 |       75 |     100 |      75 | 44                
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 95.39% ( 1367/1433 )
+Branches     : 88.51% ( 994/1123 )
+Functions    : 96.22% ( 255/265 )
+Lines        : 97.92% ( 1273/1300 )
+================================================================================
+# код выхода: 0   (окончание: 06:22:56)
+
+------------------------------------------------------------------------
+$ (cd /d/optomstroy) python -I -X utf8 scripts/check_secrets.py
+# начало: 2026-10-22 06:22:56
+check_secrets: режим git ls-files + новые неигнорируемые; файлов проверено: 1224; находок: 0
+# код выхода: 0   (окончание: 06:23:06)
+
+------------------------------------------------------------------------
+$ (cd /d/optomstroy) python -I -X utf8 scripts/check_api_paths.py
+# начало: 2026-10-22 06:23:07
+INFO: ядро: извлечено 142 упоминаний операций/путей
+INFO: 08: карточек §4.x.y — 103, операций в заголовках — 143; исключённых операций в §4.20 — 13
+INFO: контракт pos-api.v1.yaml: операций 141, путей 119
+INFO: примечание: POST /registration/customer-match не найден в ядре/08 как «МЕТОД /путь» (проверяется по списку 13)
+INFO: обязательных операций/путей: 236; исключено как R2/неканоническое: 4; запрещённых шаблонов: 18
+OK: все обязательные пути и методы есть; запрещённых и лишних операций нет
+# код выхода: 0   (окончание: 06:23:08)
+
+------------------------------------------------------------------------
+$ (cd /d/optomstroy) python -I -X utf8 scripts/check_api_permissions.py
+# начало: 2026-10-22 06:23:08
+INFO  [B] словарь 11 §4.3: 77 кодов; S!: 23; в областях step-up: 22
+INFO  [C] роли: seller, cashier, senior_seller, admin, owner, customer, integration
+INFO  [D] grants: seller=24, cashier=40, senior_seller=49, admin=59, owner=38, customer=20, integration=1; пар: 231
+INFO  [E] seed: roles=7, permissions=77, role_permissions=231
+INFO  [A] источник: contracts/openapi/pos-api.v1.yaml; операций: 141
+WARN  [A] POST /cart/park: роли ['customer'] держат код операции, но не в x-roles (условие?)
+WARN  [A] GET /cart/parked: роли ['customer'] держат код операции, но не в x-roles (условие?)
+WARN  [A] DELETE /cart/parked/{id}: роли ['customer'] держат код операции, но не в x-roles (условие?)
+WARN  [A] POST /cart/parked/{id}/resume: роли ['customer'] держат код операции, но не в x-roles (условие?)
+WARN  [A] GET /catalog/price-lists: роли ['customer'] держат код операции, но не в x-roles (условие?)
+WARN  [A] DELETE /me/pin: роли ['admin', 'cashier', 'owner', 'seller', 'senior_seller'] держат код операции, но не в x-roles (условие?)
+WARN  [A] GET /orders/{id}/documents/receipt.pdf: роли ['customer'] держат код операции, но не в x-roles (условие?)
+WARN  [A] GET /orders/{id}/documents/waybill.pdf: роли ['customer'] держат код операции, но не в x-roles (условие?)
+WARN  [A] GET /payments/{id}/documents/receipt.pdf: роли ['admin', 'customer', 'seller'] держат код операции, но не в x-roles (условие?)
+ИТОГ: ошибок 0, предупреждений 9
+# код выхода: 0   (окончание: 06:23:09)
+
+------------------------------------------------------------------------
+$ (cd /d/optomstroy) python -I -X utf8 scripts/check_env_example.py
+# начало: 2026-10-22 06:23:09
+check_env_example: ожидается 97, в .env.example 97; недостающих 0, лишних 0; ключей схемы pos-api проверено 114; ошибок 0
+# код выхода: 0   (окончание: 06:23:09)
+
+------------------------------------------------------------------------
+$ (cd /d/optomstroy) python -I -X utf8 scripts/trace_test_ids.py
+# начало: 2026-10-22 06:23:09
+ID | приоритет | статус | тест (файл) / причина not_done
+T-AUTH-001 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-002 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-003 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-004 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-005 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-006 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-007 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-008 | P1 | тест | pos-app/test/features/auth/presentation/otp_screen_test.dart, pos-app/test/features/auth/presentation/phone_screen_test.dart, pos-app/test/features/auth/presentation/unlock_screen_test.dart
+T-AUTH-009 | P1 | тест | pos-app/test/features/auth/presentation/unlock_screen_test.dart | частично: устройство: widget-часть — unlock_screen_test; Android-эмулятор не стартовал (нет места на C:, D-MJ-03)
+T-AUTH-010 | P1 | тест | pos-app/test/features/auth/presentation/unlock_screen_test.dart
+T-AUTH-011 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-012 | P2 | тест | pos-api/test/auth/otp-policy.spec.ts
+T-AUTH-013 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-014 | P2 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-015 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-016 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-017 | P2 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-018 | P2 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-019 | P2 | тест | pos-api/test/e2e/auth/support/auth-e2e.ts, pos-api/test/e2e/auth/tokens-audit.e2e-spec.ts
+T-AUTH-020 | P2 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-021 | P2 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-022 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-023 | P2 | тест | pos-app/test/core/utils/phone_number_test.dart, pos-app/test/features/auth/presentation/phone_screen_test.dart
+T-AUTH-024 | P2 | тест | pos-app/test/features/auth/presentation/phone_screen_test.dart
+T-AUTH-025 | P3 | not_done | P3: ссылка «Изменить номер» на SCR-02 без отдельного widget-теста (возврат с тем же номером — phone_screen_test AC-UI-01-013)
+T-AUTH-026 | P2 | тест | pos-api/test/auth/otp-policy.spec.ts, pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-027 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-028 | P2 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-029 | P2 | тест | pos-api/test/profile/profile.profile-spec.ts
+T-AUTH-030 | P1 | тест | pos-app/test/features/auth/presentation/unlock_screen_test.dart | частично: integration_test: два пользователя на одном устройстве не автоматизированы; widget — «Сменить аккаунт»
+T-AUTH-031 | P1 | тест | pos-app/integration_test/auth_flow_test.dart, pos-app/test/features/auth/splash/splash_screen_test.dart
+T-AUTH-032 | P2 | тест | pos-app/test/features/auth/presentation/otp_screen_test.dart, pos-app/test/features/auth/presentation/phone_screen_test.dart
+T-AUTH-033 | P2 | not_done | integration_test: убийство процесса на SCR-02 не автоматизировано (данные SCR-02 — только память AuthFlowNotifier; secure storage/drift не содержат challengeId — registration_draft_dao_test)
+T-AUTH-034 | P2 | тест | pos-app/test/features/auth/golden/auth_golden_test.dart, pos-app/test/features/auth/presentation/mascot_controller_test.dart
+T-AUTH-035 | P2 | тест | pos-app/test/features/auth/presentation/mascot_controller_test.dart, pos-app/test/features/auth/presentation/phone_screen_test.dart
+T-AUTH-036 | P3 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-037 | P1 | тест | pos-app/test/features/auth/data/auth_dto_contract_test.dart
+T-AUTH-038 | P1 | тест | pos-api/test/registration/registration.registration-spec.ts
+T-AUTH-039 | P1 | тест | pos-app/test/features/auth/data/auth_dto_contract_test.dart
+T-AUTH-040 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-041 | P3 | тест | pos-app/test/features/auth/golden/auth_golden_test.dart
+T-AUTH-042 | P1 | тест | pos-api/test/e2e/auth/tokens-audit.e2e-spec.ts
+T-AUTH-043 | P1 | тест | pos-api/test/registration/registration.registration-spec.ts, pos-app/integration_test/auth_flow_test.dart
+T-SMS-001 | P1 | тест | pos-api/test/sms/smspro-gateway.spec.ts, pos-api/test/sms/smspro-xml.spec.ts
+T-SMS-002 | P1 | тест | pos-api/test/sms/smspro-xml.spec.ts
+T-SMS-003 | P1 | тест | pos-api/test/sms/smspro-xml.spec.ts
+T-SMS-004 | P1 | тест | pos-api/test/sms/sms-outbox.spec.ts
+T-SMS-005 | P1 | тест | pos-api/test/sms/sms-outbox.spec.ts
+T-SMS-006 | P2 | тест | pos-api/test/sms/sms-outbox.spec.ts, pos-api/test/sms/smspro-gateway.spec.ts
+T-SMS-007 | P1 | тест | pos-api/test/sms/sms-outbox.spec.ts, pos-api/test/sms/smspro-gateway.spec.ts
+T-SMS-008 | P2 | тест | pos-api/test/sms/sms-outbox.spec.ts
+T-SMS-009 | P2 | тест | pos-api/test/sms/sms-dlr-push.spec.ts
+T-SMS-010 | P3 | тест | pos-api/test/sms/sms-outbox.spec.ts
+T-SMS-011 | P2 | тест | pos-api/test/sms/sms-outbox.spec.ts
+T-SMS-012 | P1 | тест | pos-api/test/sms/sms-outbox.spec.ts
+T-SMS-013 | P2 | тест | pos-api/test/integrations/fake-sms.gateway.spec.ts
+T-SMS-014 | P1 | тест | pos-api/test/sms/smspro-gateway.spec.ts
+T-SMS-015 | P1 | not_done | скан (не тест): scripts/check_secrets.py и scripts/check_env_example.py — прогон в D_test_run.log
+T-SMS-016 | P1 | тест | pos-api/test/integrations/fake-sms.gateway.spec.ts
+T-SMS-017 | P3 | тест | pos-api/src/common/config/app-config.spec.ts
+T-SMS-018 | P1 | not_done | стенд: нет тестового аккаунта SMSPro (Q-029, RM-A-004)
+T-SMS-019 | P1 | not_done | manual: нет аккаунта SMSPro и разрешения заказчика на реальные SMS (RM-A-004)
+T-SMS-020 | P3 | тест | pos-api/test/sms/smspro-gateway.spec.ts
+T-SESS-001 | P1 | тест | pos-api/test/e2e/auth/tokens-audit.e2e-spec.ts, pos-api/test/foundation/auth-guard.foundation-spec.ts, pos-api/test/foundation/jwt.foundation-spec.ts
+T-SESS-002 | P1 | тест | pos-api/test/e2e/auth/tokens-audit.e2e-spec.ts
+T-SESS-003 | P1 | тест | pos-app/test/core/session/session_flow_test.dart
+T-SESS-004 | P1 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts
+T-SESS-005 | P1 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts
+T-SESS-006 | P2 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts
+T-SESS-007 | P1 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts
+T-SESS-008 | P2 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts
+T-SESS-009 | P2 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts
+T-SESS-010 | P1 | тест | pos-app/test/core/session/session_flow_test.dart
+T-SESS-011 | P2 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts
+T-SESS-012 | P3 | not_done | P3: уведомление о новом устройстве (SESS-017) не реализовано на этапе D — D_spec_questions
+T-SESS-013 | P1 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts, pos-app/test/core/session/session_flow_test.dart
+T-SESS-014 | P1 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts
+T-SESS-015 | P1 | тест | pos-app/test/core/session/idle_lock_test.dart, pos-app/test/features/session_ui/session_gate_test.dart
+T-SESS-016 | P1 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts, pos-app/test/core/session/session_flow_test.dart
+T-SESS-017 | P2 | тест | pos-api/test/e2e/auth/tokens-audit.e2e-spec.ts
+T-SESS-018 | P1 | тест | pos-api/test/admin/admin-users.admin-spec.ts, pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-SESS-019 | P1 | тест | pos-app/test/core/session/session_flow_test.dart
+T-SESS-020 | P1 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts, pos-app/test/core/session/session_flow_test.dart
+T-SESS-021 | P1 | тест | pos-app/test/core/database/registration_draft_dao_test.dart, pos-app/test/features/auth/presentation/unlock_screen_test.dart | частично: integration_test холодного старта без сети на устройстве не автоматизирован; widget/DAO-части есть
+T-SESS-022 | P2 | тест | pos-app/test/build/android_build_config_test.dart
+T-SESS-023 | P1 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts
+T-BIO-001 | P1 | тест | pos-app/test/features/registration/presentation/registration_security_screen_test.dart | частично: устройство: системный BiometricPrompt не проверен (эмулятор не стартовал, D-MJ-03); widget-часть — registration_security_screen_test
+T-BIO-002 | P2 | тест | pos-api/test/profile/profile.profile-spec.ts
+T-BIO-003 | P1 | not_done | manual (класс B): смена отпечатка на устройстве не выполнена — эмулятор не стартовал (D-MJ-03)
+T-BIO-004 | P1 | тест | pos-app/test/features/auth/data/biometric_unlock_adapter_test.dart, pos-app/test/features/registration/biometrics/biometric_port_test.dart
+T-BIO-005 | P2 | тест | pos-app/test/features/registration/biometrics/biometric_port_test.dart | частично: manual: Android без Class 3 / API 24–27 — нет устройства; логика API < 30 — biometric_port_test
+T-BIO-006 | P1 | not_done | manual (класс B): криптопривязка на устройстве не проверена (D-MJ-03); код — static-тест T-BIO-018
+T-BIO-007 | P3 | not_done | условно (Q-008): iOS — нет macOS/Xcode; код AppDelegate.swift не собирался
+T-BIO-008 | P1 | тест | pos-app/test/features/registration/biometrics/biometric_port_test.dart
+T-BIO-009 | P1 | тест | pos-app/test/features/session_ui/session_gate_test.dart
+T-BIO-010 | P1 | тест | pos-app/test/features/registration/biometrics/biometric_port_test.dart
+T-BIO-011 | P1 | тест | pos-api/test/profile/consent-catalog.profile-spec.ts, pos-api/test/profile/profile.profile-spec.ts, pos-api/test/registration/registration.registration-spec.ts, pos-app/test/features/registration/domain/registration_domain_test.dart
+T-BIO-012 | P1 | тест | pos-app/test/core/session/session_flow_test.dart
+T-BIO-013 | P2 | тест | pos-api/test/admin/admin-users.admin-spec.ts, pos-api/test/profile/profile.profile-spec.ts
+T-BIO-014 | P2 | тест | pos-app/test/features/auth/presentation/unlock_screen_test.dart
+T-BIO-015 | P1 | тест | pos-app/test/features/registration/presentation/registration_security_screen_test.dart, pos-app/test/features/session_ui/step_up_dialog_test.dart
+T-BIO-016 | P2 | тест | pos-api/test/profile/profile.profile-spec.ts
+T-BIO-017 | P3 | not_done | manual (P3): рутованное устройство — нет устройства
+T-BIO-018 | P2 | тест | pos-app/test/build/android_build_config_test.dart
+T-REG-001 | P1 | тест | pos-api/test/registration/registration.registration-spec.ts
+T-REG-002 | P2 | тест | pos-app/test/features/registration/presentation/customer_link_and_pending_test.dart, pos-app/test/features/registration/presentation/registration_form_screen_test.dart
+T-REG-003 | P1 | тест | pos-app/test/features/registration/domain/registration_domain_test.dart
+T-REG-004 | P2 | тест | pos-app/test/features/registration/presentation/registration_form_screen_test.dart
+T-REG-005 | P1 | тест | pos-api/test/registration/registration.registration-spec.ts, pos-app/test/features/registration/domain/registration_domain_test.dart
+T-REG-006 | P1 | тест | pos-api/test/registration/registration.registration-spec.ts
+T-REG-007 | P1 | тест | pos-api/test/registration/registration.registration-spec.ts
+T-REG-008 | P3 | not_done | P3: типы клавиатур формы регистрации без отдельного widget-теста
+T-REG-009 | P1 | тест | pos-api/test/registration/registration.registration-spec.ts, pos-app/test/features/registration/presentation/registration_security_screen_test.dart
+T-REG-010 | P2 | тест | pos-app/test/features/registration/presentation/registration_security_screen_test.dart
+T-REG-011 | P1 | тест | pos-api/test/registration/registration.registration-spec.ts
+T-REG-012 | P1 | тест | pos-api/test/registration/registration.registration-spec.ts
+T-REG-013 | P2 | тест | pos-app/test/features/registration/presentation/registration_form_screen_test.dart, pos-app/test/features/registration/presentation/registration_security_screen_test.dart
+T-REG-014 | P3 | not_done | условно (P3): режим «форма → OTP» в R1 не принят (09 §7.1 — OTP → форма)
+T-REG-015 | P1 | тест | pos-api/test/registration/registration.registration-spec.ts
+T-REG-016 | P1 | тест | pos-app/test/features/registration/presentation/customer_link_and_pending_test.dart
+T-REG-017 | P1 | тест | pos-api/test/admin/admin-users.admin-spec.ts
+T-REG-018 | P2 | тест | pos-app/test/features/registration/presentation/customer_link_and_pending_test.dart
+T-REG-019 | P2 | тест | pos-api/test/customers/customer-links.e2e.spec.ts | частично: этап E/F: финансовые маршруты клиента (GET /customers/{id}, /receivables) не реализованы (D-MN-07); часть D — customer-links.e2e (customer-match без финансов)
+T-REG-020 | P2 | тест | pos-api/test/customers/customer-links.e2e.spec.ts
+T-REG-021 | P2 | тест | pos-api/test/profile/profile.profile-spec.ts
+T-REG-022 | P3 | тест | pos-api/test/profile/profile.profile-spec.ts
+T-REG-024 | P2 | тест | pos-api/test/customers/customer-links.e2e.spec.ts
+T-ADMIN-010 | P2 | тест | pos-api/test/admin/emergency-code.admin-spec.ts, pos-api/test/e2e/auth/emergency-login.e2e-spec.ts
+T-SEC-001 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-SEC-002 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-SEC-003 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-SEC-004 | P1 | тест | pos-api/test/auth/otp-policy.spec.ts
+T-SEC-005 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-SEC-006 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-SEC-007 | P1 | тест | pos-api/test/auth/otp-policy.spec.ts, pos-api/test/e2e/auth/otp.e2e-spec.ts, pos-api/test/integrations/prod-guard.spec.ts
+T-SEC-008 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts, pos-api/test/foundation/audit.foundation-spec.ts
+T-SEC-009 | P1 | тест | pos-api/test/e2e/auth/tokens-audit.e2e-spec.ts, pos-api/test/foundation/jwt.foundation-spec.ts
+T-SEC-010 | P1 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts
+T-SEC-011 | P2 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts
+T-SEC-012 | P1 | тест | pos-api/test/admin/admin-users.admin-spec.ts, pos-api/test/e2e/auth/sessions.e2e-spec.ts
+T-SEC-013 | P1 | тест | pos-api/test/admin/admin-users.admin-spec.ts, pos-api/test/e2e/auth/sessions.e2e-spec.ts
+T-SEC-015 | P1 | тест | pos-api/test/customers/customer-links.e2e.spec.ts
+T-SEC-016 | P1 | тест | pos-api/test/admin/admin-users.admin-spec.ts, pos-api/test/admin/emergency-code.admin-spec.ts
+T-SEC-017 | P1 | тест | pos-api/test/customers/customer-links.e2e.spec.ts | частично: этап E/F: field-level для каталога/долга; часть D — customer-match без финансов
+T-SEC-018 | P1 | тест | pos-api/test/e2e/rbac-matrix.e2e-spec.ts
+T-SEC-019 | P1 | тест | pos-api/test/e2e/rbac-matrix.e2e-spec.ts
+T-SEC-020 | P1 | тест | pos-api/test/admin/admin-users.admin-spec.ts, pos-api/test/e2e/auth/sessions.e2e-spec.ts
+T-SEC-021 | P1 | тест | pos-api/test/registration/registration.registration-spec.ts
+T-SEC-022 | P1 | not_done | этап F: скидки (лимит роли) не реализованы
+T-SEC-023 | P1 | not_done | этап F: финансовые POST не реализованы
+T-SEC-024 | P1 | тест | pos-api/test/registration/registration.registration-spec.ts
+T-SEC-025 | P2 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-SEC-027 | P1 | not_done | этап E: поиск не реализован
+T-SEC-028 | P1 | тест | pos-api/src/app.spec.ts
+T-SEC-029 | P1 | тест | pos-api/test/customers/customer-links.e2e.spec.ts, pos-api/test/e2e/auth/otp.e2e-spec.ts, pos-api/test/foundation/audit.foundation-spec.ts, pos-api/test/integrations/fake-sms.gateway.spec.ts
+T-SEC-030 | P1 | тест | pos-api/test/admin/admin-users.admin-spec.ts, pos-api/test/foundation/audit.foundation-spec.ts
+T-SEC-036 | P1 | not_done | сборки: strings/MobSF по APK/EXE — этап H (release); http:// в конфигурации — T-SMS-014
+T-SEC-037 | P1 | not_done | скан: scripts/check_secrets.py (прогон в D_test_run.log); gitleaks/docker — CI (Q-233)
+T-SEC-038 | P1 | тест | pos-api/test/e2e/auth/tokens-audit.e2e-spec.ts
+T-SEC-039 | P1 | not_done | этап F: подтверждение QR-оплаты не реализовано
+T-SEC-040 | P2 | not_done | P2: CORS/cookie без отдельного теста этапа D (CORS_ALLOWED_ORIGINS — каркас C); push-DLR — sms-dlr-push.spec
+T-SEC-041 | P1 | not_done | этап F: финансовая история не реализована
+T-SEC-042 | P1 | not_done | этап F: продажа в долг не реализована
+T-SEC-043 | P1 | тест | pos-api/test/admin/admin-users.admin-spec.ts, pos-api/test/admin/target-policy.admin-spec.ts, pos-app/test/features/admin/domain/admin_users_policy_test.dart
+T-SEC-044 | P1 | тест | pos-api/test/e2e/auth/sessions.e2e-spec.ts, pos-api/test/registration/registration.registration-spec.ts
+T-SEC-045 | P2 | тест | pos-api/test/admin/admin-users.admin-spec.ts
+T-SEC-046 | P1 | not_done | этап E: фотографии из 1С не реализованы
+T-SEC-047 | P1 | not_done | инфраструктура/юридически (трансграничная передача) — вне кода этапа D
+T-SEC-048 | P1 | тест | pos-api/test/registration/registration.registration-spec.ts
+T-SEC-050 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-SEC-054 | P1 | not_done | CI: зависимости и образы — CI-раннер (Q-233), не локальный прогон
+T-SEC-055 | P2 | тест | pos-api/test/customers/customer-links.e2e.spec.ts | частично: часть D — customer-links.e2e; остальное (integration/orders/sync) — этапы E–G
+T-REG-023 | P2 | тест | pos-app/test/features/registration/presentation/registration_form_screen_test.dart
+T-SEC-067 | P1 | not_done | этап E/F: ответы с суммами долга не реализованы
+T-AUTH-044 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-AUTH-045 | P1 | тест | pos-api/test/e2e/auth/otp.e2e-spec.ts
+T-REG-025 | P1 | тест | pos-api/test/registration/registration.registration-spec.ts, pos-app/integration_test/auth_flow_test.dart, pos-app/test/features/registration/presentation/registration_security_screen_test.dart
+T-REG-026 | P1 | тест | pos-api/test/admin/admin-users.admin-spec.ts, pos-api/test/registration/registration.registration-spec.ts
+ИТОГ: ID в охвате 178; с тестом 153; not_done с причиной 25; без теста и причины 0
+# код выхода: 0   (окончание: 06:23:09)
+
+------------------------------------------------------------------------
+$ (cd pos-api) node scripts/local-stack.mjs smoke
+# начало: 2026-10-22 06:23:24
+[local-stack] PostgreSQL 17.10 на 127.0.0.1:56013
+[local-stack] migrate: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate: migration applied
+[local-stack] migrate: migration applied
+[local-stack] migrate: migrate: готово applied=["0001_init.sql","0002_rbac_seed.sql"]
+[local-stack] migrate: migration applied
+[local-stack] migrate: migrate: dev-миграции применены (APP_ENV=dev)
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: seed applied
+[local-stack] migrate --seed: seed: вставлено строк 39 inserted={"app_settings":30,"customers":1,"price_lists":1,"role_discount_limits":7}
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: seed applied
+[local-stack] migrate --seed: seed: 0 изменений inserted={"app_settings":0,"customers":0,"price_lists":0,"role_discount_limits":0}
+[local-stack] pos-api pid=45976 готов: http://127.0.0.1:3000 ({"MIN_APP_VERSION":"android=1.0.0,windows=1.2.0","RECOMMENDED_APP_VERSION":"android=1.1.0,windows=1.3.0"})
+[local-stack] PASS GET /health — 200 {"status":"ok","apiVersion":"1.0","serverTime":"2026-10-22T02:23:34.744Z"}
+[local-stack] PASS GET /health/ready — 200 {"status":"ok","checks":{"db":"ok","worker":"ok","sync":{"stale":false}}}
+[local-stack] PASS /health не проверяет версию (RM-C-015 п. 4) — 200
+[local-stack] PASS /health/ready не проверяет версию (RM-C-015 п. 4) — 200
+[local-stack] PASS windows 1.1.0 < MIN windows=1.2.0 → 426 APP_UPDATE_REQUIRED + X-Min-App-Version — 426 code=APP_UPDATE_REQUIRED X-Min-App-Version=windows=1.2.0
+[local-stack] PASS android 1.1.0 ≥ MIN android=1.0.0 → не 426 (маршрута на этапе C нет → 404) + X-Min/X-Recommended — 404 code=NOT_FOUND X-Min-App-Version=android=1.0.0 X-Recommended-App-Version=android=1.1.0
+[local-stack] PASS GET /api/v1/openapi.json (windows 1.2.0) → 200 + X-Min-App-Version + X-Request-Id — 200 openapi=3.0.3 X-Min-App-Version=windows=1.2.0 X-Request-Id=01a1616b-c366-76db-9ecc-650f1c19c598
+[local-stack] PASS защищённый путь без токена → не 200 (deny by default) — 401 code=UNAUTHENTICATED
+[local-stack] pos-api pid=50892 готов: http://127.0.0.1:3000 ({"APP_READ_ONLY":"true"})
+[local-stack] PASS APP_READ_ONLY=true: GET /health/ready → 200 — 200
+[local-stack] PASS APP_READ_ONLY=true: POST /api/v1/orders → 503 APP_READ_ONLY или 404 (на этапе C мутирующих маршрутов нет) — 404 code=NOT_FOUND
+[local-stack] итог: 10/10 PASS
+# код выхода: 0   (окончание: 06:23:37)
+
+------------------------------------------------------------------------
+$ (cd pos-api) node scripts/local-stack.mjs auth-smoke
+# начало: 2026-10-22 06:23:37
+[local-stack] PostgreSQL 17.10 на 127.0.0.1:56055
+[local-stack] migrate: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate: migration applied
+[local-stack] migrate: migration applied
+[local-stack] migrate: migrate: готово applied=["0001_init.sql","0002_rbac_seed.sql"]
+[local-stack] migrate: migration applied
+[local-stack] migrate: migrate: dev-миграции применены (APP_ENV=dev)
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: seed applied
+[local-stack] migrate --seed: seed: вставлено строк 39 inserted={"app_settings":30,"customers":1,"price_lists":1,"role_discount_limits":7}
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: seed applied
+[local-stack] migrate --seed: seed: 0 изменений inserted={"app_settings":0,"customers":0,"price_lists":0,"role_discount_limits":0}
+[local-stack] auth-fixtures: администратор (admin, без PIN) и приглашение seller созданы; тестовый режим OTP включён
+[local-stack] pos-api pid=35916 готов: http://127.0.0.1:3000 (обычный режим)
+[local-stack] PASS клиент +9967*****03: POST /auth/otp/request → 202 — 202
+[local-stack] PASS клиент: POST /auth/otp/verify → 200 registration_required — 200 status=registration_required
+[local-stack] PASS клиент: POST /registration/complete → 201, customer active — 201 kind=customer status=active customerMatch=none 
+[local-stack] PASS клиент: GET /me → 200, pinSet=true — 200 pinSet=true
+[local-stack] PASS клиент +9967*****56 с карточкой 1С: 201, customerMatch=proposed (SCR-06) — 201 customerMatch.status=proposed nextStep=wait_admin 
+[local-stack] PASS приглашённый +9967*****02: verify → authenticated staff/seller, roleSource=invitation, nextStep=set_pin — 200 status=authenticated kind=staff roles=["seller"] roleSource=invitation nextStep=set_pin
+[local-stack] PASS приглашённый до PIN: прочие маршруты → 403 FORBIDDEN reason=pin_not_set — 403 code=FORBIDDEN reason=pin_not_set
+[local-stack] PASS приглашённый: первый POST /me/pin без step-up → 204 — 204 
+[local-stack] PASS приглашённый: GET /me → pinSet=true, ФИО приглашения — 200 pinSet=true fullName=совпадает
+[local-stack] PASS admin: OTP → POST /me/pin → POST /auth/step-up (pin) → stepUpToken — verify=200 pin=204 stepUp=200 
+[local-stack] PASS admin: POST /admin/invitations без X-Step-Up-Token → 403 STEP_UP_REQUIRED — 403 STEP_UP_REQUIRED
+[local-stack] PASS admin: POST /admin/invitations (cashier) → 201 — 201 
+[local-stack] PASS приглашённый администратором: OTP → staff/cashier, nextStep=set_pin — 200 roles=["cashier"] nextStep=set_pin
+[local-stack] PASS неверный код → 422 OTP_INVALID с attemptsLeft — 422 OTP_INVALID attemptsLeft=4
+[local-stack] PASS JWT alg=none → 401 UNAUTHENTICATED — 401 UNAUTHENTICATED
+[local-stack] auth-smoke итог: 15/15 PASS
+# код выхода: 0   (окончание: 06:23:48)
+
+------------------------------------------------------------------------
+$ (cd pos-app) flutter analyze
+# начало: 2026-10-22 06:23:54
+Analyzing pos-app...
+No issues found! (ran in 103.6s)
+# код выхода: 0   (окончание: 06:25:44)
+
+------------------------------------------------------------------------
+$ (cd pos-app) flutter test --reporter compact
+# начало: 2026-10-22 06:25:44
+
+13:16 +495 -1: loading D:/optomstroy/pos-app/test/features/auth/presentation/phone_screen_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/features/auth/presentation/phone_screen_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/features/auth/presentation/phone_screen_test.dart"
+
+13:19 +495 -2: loading D:/optomstroy/pos-app/test/features/auth/presentation/unlock_screen_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/features/auth/presentation/unlock_screen_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/features/auth/presentation/unlock_screen_test.dart"
+
+13:26 +495 -3: loading D:/optomstroy/pos-app/test/features/auth/splash/splash_screen_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/features/auth/splash/splash_screen_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/features/auth/splash/splash_screen_test.dart"
+
+13:30 +495 -4: loading D:/optomstroy/pos-app/test/features/registration/biometrics/biometric_port_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/features/registration/biometrics/biometric_port_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/features/registration/biometrics/biometric_port_test.dart"
+
+13:31 +495 -5: loading D:/optomstroy/pos-app/test/features/registration/data/registration_data_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/features/registration/data/registration_data_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/features/registration/data/registration_data_test.dart"
+
+13:32 +495 -6: loading D:/optomstroy/pos-app/test/features/registration/domain/registration_domain_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/features/registration/domain/registration_domain_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/features/registration/domain/registration_domain_test.dart"
+
+13:33 +495 -7: loading D:/optomstroy/pos-app/test/features/registration/presentation/customer_link_and_pending_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/features/registration/presentation/customer_link_and_pending_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/features/registration/presentation/customer_link_and_pending_test.dart"
+
+13:35 +495 -8: loading D:/optomstroy/pos-app/test/features/registration/presentation/registration_form_screen_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/features/registration/presentation/registration_form_screen_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/features/registration/presentation/registration_form_screen_test.dart"
+
+13:39 +495 -9: loading D:/optomstroy/pos-app/test/features/registration/presentation/registration_security_screen_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/features/registration/presentation/registration_security_screen_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/features/registration/presentation/registration_security_screen_test.dart"
+
+13:41 +495 -10: loading D:/optomstroy/pos-app/test/features/session_ui/session_gate_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/features/session_ui/session_gate_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/features/session_ui/session_gate_test.dart"
+
+25:16 +495 -11: loading D:/optomstroy/pos-app/test/features/session_ui/step_up_dialog_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/features/session_ui/step_up_dialog_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/features/session_ui/step_up_dialog_test.dart"
+
+25:19 +495 -12: loading D:/optomstroy/pos-app/test/golden/design_system_golden_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/golden/design_system_golden_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/golden/design_system_golden_test.dart"
+
+25:26 +495 -13: loading D:/optomstroy/pos-app/test/widget/app_smoke_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/widget/app_smoke_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/widget/app_smoke_test.dart"
+
+25:30 +495 -14: loading D:/optomstroy/pos-app/test/widget/dev_gallery_route_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/widget/dev_gallery_route_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/widget/dev_gallery_route_test.dart"
+
+25:31 +495 -15: loading D:/optomstroy/pos-app/test/widget/global_states_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/widget/global_states_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/widget/global_states_test.dart"
+
+25:32 +495 -16: loading D:/optomstroy/pos-app/test/widget/router_test.dart [E]
+  TimeoutException after 0:12:00.000000: Test timed out after 12 minutes.
+  package:test_api/src/backend/invoker.dart 362:28  Invoker._handleError.<fn>
+To run this test again: C:\dev\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/optomstroy/pos-app/test/widget/router_test.dart -p vm --plain-name "loading D:/optomstroy/pos-app/test/widget/router_test.dart"
+
+25:32 +495 -16: Some tests failed.
+# код выхода: 1   (окончание: 06:51:21)
+
+------------------------------------------------------------------------
+$ (cd pos-app) flutter test --tags golden --reporter compact
+# начало: 2026-10-22 06:51:21
+
+01:48 +90: All tests passed!
+# код выхода: 0   (окончание: 06:53:13)
+
+------------------------------------------------------------------------
+$ (cd /d/optomstroy) python -I -X utf8 scripts/check_layers.py
+# начало: 2026-10-22 06:53:13
+check_layers: файлов 213, импортов 1243, нарушений 0
+# код выхода: 0   (окончание: 06:53:15)
+
+------------------------------------------------------------------------
+$ (cd /d/optomstroy) python -I -X utf8 scripts/sync_contracts.py --check
+# начало: 2026-10-22 06:53:15
+OK l10n: 3 файл(ов) идентичны (contracts/l10n == pos-app/lib/l10n)
+OK l10n: pos-app/lib/l10n/gen_input соответствует преобразованию источника
+# код выхода: 0   (окончание: 06:53:16)
+
+
+------------------------------------------------------------------------
+$ (cd pos-app) flutter test --concurrency=2 --reporter compact
+# начало: 2026-10-22 06:53:33
+
+00:59 +700: All tests passed!
+# код выхода: 0   (окончание: 06:54:36)
+
+
+------------------------------------------------------------------------
+$ (cd pos-api) LOCAL_STACK_MIN_APP_VERSION=android=0.1.0,windows=0.1.0 node scripts/local-stack.mjs serve --auth-fixtures --ready-file <tmp> --ttl 1500   # фон
+[local-stack] PostgreSQL 17.10 на 127.0.0.1:55499
+[local-stack] migrate: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate: migration applied
+[local-stack] migrate: migration applied
+[local-stack] migrate: migrate: готово applied=["0001_init.sql","0002_rbac_seed.sql"]
+[local-stack] migrate: migration applied
+[local-stack] migrate: migrate: dev-миграции применены (APP_ENV=dev)
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: seed applied
+[local-stack] migrate --seed: seed: вставлено строк 39 inserted={"app_settings":30,"customers":1,"price_lists":1,"role_discount_limits":7}
+[local-stack] migrate --seed: DB_MIGRATOR_PASSWORD_FILE не задан: миграции выполняются под пользователем DATABASE_URL (допустимо только APP_ENV=dev; локально — суперпользователь embedded PostgreSQL)
+[local-stack] migrate --seed: migrate: 0 изменений (все миграции уже применены) applied=[]
+[local-stack] migrate --seed: seed applied
+[local-stack] migrate --seed: seed: 0 изменений inserted={"app_settings":0,"customers":0,"price_lists":0,"role_discount_limits":0}
+[local-stack] auth-fixtures: администратор (admin, без PIN) и приглашение seller созданы; тестовый режим OTP включён
+[local-stack] pos-api pid=42488 готов: http://127.0.0.1:3000 (обычный режим)
+[local-stack] READY http://127.0.0.1:3000 (журнал API: C:\Users\Farruh\AppData\Local\Temp\pos-local-stack-vo4OjZ\api.log); Ctrl+C — остановка
+
+------------------------------------------------------------------------
+$ (cd pos-app) flutter test integration_test/auth_flow_test.dart -d windows --dart-define-from-file=env/dev.json
+# начало: 2026-10-22 06:55:03
+00:00 +0: loading D:/optomstroy/pos-app/integration_test/auth_flow_test.dart
+Building Windows application...                                    36,4s
+√ Built build\windows\x64\runner\Debug\optomstroy.exe
+00:00 +0: T-AUTH-031, T-AUTH-043, T-REG-025 (в): клиент: Splash → телефон → OTP → регистрация → PIN → каталог-заглушка (SCR-50)
+00:12 +1: приглашённый сотрудник: OTP → установка PIN без регистрации → каталог-заглушка (SCR-10)
+auth_flow_test: после OTP сотрудника — /register/security
+00:21 +2: клиент с карточкой 1С: OTP → регистрация → PIN → SCR-06 «Привязка к клиенту»
+00:32 +3: (tearDownAll)
+00:32 +3: All tests passed!
+# код выхода: 0   (окончание: 06:56:16)
+
+------------------------------------------------------------------------
+$ (cd pos-app) flutter test integration_test/boot_test.dart -d windows --dart-define-from-file=env/dev.json
+# начало: 2026-10-22 06:56:21
+00:00 +0: loading D:/optomstroy/pos-app/integration_test/boot_test.dart
+Building Windows application...                                    28,7s
+√ Built build\windows\x64\runner\Debug\optomstroy.exe
+00:00 +0: boot: Splash → «нет сессии» → GET /health с тестового контура
+boot_test: API_BASE_URL=http://127.0.0.1:3000/api/v1 → BackendHealthReport(ok: true, httpStatus: 200, requestId: 01a1618a-485e-7520-b873-a79b0a9b1d0c, error: null)
+00:01 +1: (tearDownAll)
+00:01 +1: All tests passed!
+# код выхода: 0   (окончание: 06:56:55)
+
+------------------------------------------------------------------------
+# журнал pos-api за прогон integration_test (метод путь → статус; без тел и заголовков; телефоны в журнале — только phoneMasked):
+2026-10-22T02:55:00.436Z GET /health/ready -> 503
+2026-10-22T02:55:00.958Z GET /health/ready -> 200
+2026-10-22T02:55:46.025Z POST /api/v1/auth/otp/request -> 202
+2026-10-22T02:55:46.655Z POST /api/v1/auth/otp/verify -> 200
+2026-10-22T02:55:54.708Z POST /api/v1/registration/complete -> 201
+2026-10-22T02:55:57.203Z POST /api/v1/auth/otp/request -> 202
+2026-10-22T02:55:57.595Z POST /api/v1/auth/otp/verify -> 200
+2026-10-22T02:56:04.076Z POST /api/v1/me/pin -> 204
+2026-10-22T02:56:04.090Z POST /api/v1/me/consents -> 200
+2026-10-22T02:56:06.396Z POST /api/v1/auth/otp/request -> 202
+2026-10-22T02:56:06.566Z POST /api/v1/auth/otp/verify -> 200
+2026-10-22T02:56:14.724Z POST /api/v1/registration/complete -> 201
+2026-10-22T02:56:16.036Z GET /api/v1/registration/customer-match -> 200
+
+------------------------------------------------------------------------
+$ (cd pos-app) flutter build windows --release
+# начало: 2026-10-22 06:57:26
+Building Windows application...                                    45,0s
+√ Built build\windows\x64\runner\Release\optomstroy.exe
+# код выхода: 0   (окончание: 06:58:13)
+
+------------------------------------------------------------------------
+$ (D-MJ-03) emulator.exe -avd Pixel_9_Pro -no-snapshot-save -no-boot-anim -no-audio   # фон
+INFO         | Android emulator version 35.4.9.0 (build_id 13025442) (CL:N/A)
+INFO         | Found systemPath C:\Users\Farruh\AppData\Local\Android\Sdk\system-images\android-36\google_apis_playstore\x86_64\
+INFO         |   Checking: hasSufficientDiskSpace
+INFO         |      Error: Your device does not have enough disk space to run avd: `Pixel_9_Pro`
+FATAL        | Your device does not have enough disk space to run avd: `Pixel_9_Pro`.
+# код выхода: 1
+
+$ (PowerShell) Get-PSDrive -PSProvider FileSystem   # свободное место
+C: FreeGB 1.02 (во время прогона Flutter — 0,75 ГБ); D: FreeGB 6.08
+# Вывод: протокол на устройстве (BiometricPrompt без промпта, инвалидация при смене отпечатка, Splash → каталог
+# на Android) не выполнен; AVD, Android SDK и ~/.gradle (3,2 ГБ) на C:, освобождать/переносить данные пользователя
+# агент не вправе. Требуется ≥ 8–10 ГБ свободно на C: (или перенос ANDROID_AVD_HOME владельцем машины).

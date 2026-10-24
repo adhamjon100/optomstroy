@@ -1,0 +1,23 @@
+Inter (RM-C-003; 03 §6.1, D-17) — локальный шрифт, сетевой загрузки нет.
+
+Источник: npm-пакет inter-ui@4.1.1 (registry.npmjs.org, лицензия OFL-1.1),
+tarball sha256 e392e4d71f18a7c1f23dfecd833d68fa05eeab41862686584e80fd2b5d87e9c0.
+В пакете только WOFF2; файлы TTF получены конвертацией fontTools 4.60.0 (+ brotli 1.2.0)
+без изменения глифов (только снятие WOFF2-упаковки, flavor=None):
+
+  variable/InterVariable.woff2 -> Inter-Variable.ttf  (оси wght/opsz, резерв; в семейство не подключён)
+  web/Inter-Regular.woff2      -> Inter-Regular.ttf   (400)
+  web/Inter-Medium.woff2       -> Inter-Medium.ttf    (500)
+  web/Inter-SemiBold.woff2     -> Inter-SemiBold.ttf  (600)
+  web/Inter-Bold.woff2         -> Inter-Bold.ttf      (700)
+
+sha256:
+  af951389cf6c4768286d33cdc9fad8ef86e683e6e6291ab87183dc460c340a6c  Inter-Regular.ttf
+  5029da461fa906ee94c9df9886a4def2a474a7a5d7cd3257010ac9fb58ab52e2  Inter-Medium.ttf
+  ca0fafd6a2fcf9959b79f33b15355f12aec0b76d5faeb13f4ece7666e058d333  Inter-SemiBold.ttf
+  ed4f664552a4bad02771e96d188ed6b14198e3c7136efd5e60f9a32b98931477  Inter-Bold.ttf
+  21e1286bda14830912e1a3fa10feef0b545aebe538a35f7fb4d92f2a76e28700  Inter-Variable.ttf
+
+Проверка глифов (fontTools, cmap) во всех пяти файлах: Ң ң Ө ө Ү ү (U+04A2/04A3/04E8/04E9/04AE/04AF),
+Ё ё, U+202F, U+2026 — есть (T-DS-024, 03 §6.4); признак tnum в GSUB — есть.
+Лицензия — OFL.txt (показывается на экране «О приложении», SCR-42).

@@ -1,0 +1,7 @@
+{
+  "_note": "тестовые данные",
+  "operation": "GET /pos/v1/customers",
+  "kind": "response",
+  "status": 200,
+  "body": []
+}

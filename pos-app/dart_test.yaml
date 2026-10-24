@@ -1,0 +1,5 @@
+# Конфигурация `flutter test` (владелец FE).
+# Тег golden ставит alchemist по умолчанию; объявлен, чтобы `flutter test --tags golden`
+# и `--exclude-tags golden` работали без предупреждения «tag is not declared».
+tags:
+  golden: {}

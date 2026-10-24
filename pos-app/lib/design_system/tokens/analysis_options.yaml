@@ -1,0 +1,9 @@
+# Сгенерированные токены (scripts/gen_tokens_dart.py, RM-B-006) — руками не правятся.
+# Генератор пишет относительный импорт `ds_breakpoints.dart` в ds_density.dart,
+# поэтому здесь (и только здесь) отключено always_use_package_imports.
+# Дрейф проверяет `python -I -X utf8 scripts/gen_tokens_dart.py pos-app/lib/design_system/tokens --check`.
+include: ../../../analysis_options.yaml
+
+linter:
+  rules:
+    always_use_package_imports: false

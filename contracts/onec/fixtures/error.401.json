@@ -1,0 +1,11 @@
+{
+  "_note": "тестовые данные",
+  "operation": "GET /pos/v1/health",
+  "kind": "response",
+  "status": 401,
+  "body": {
+    "code": "POS_E_UNAUTHORIZED",
+    "message": "Неверный X-POS-Client-Key",
+    "requestId": "0192f5c3-0000-7000-8000-000000000001"
+  }
+}
