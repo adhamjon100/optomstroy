@@ -36,13 +36,18 @@ import 'package:optomstroy/features/registration/presentation/screens/registrati
 import 'package:optomstroy/features/registration/presentation/screens/registration_security_screen.dart';
 import 'package:optomstroy/features/splash/presentation/screens/splash_screen.dart';
 
+import 'support/fixture_phones.dart';
+
 /// Тестовый код OTP контура (`AUTH_FIXTURES.otpCode`).
 const String _otpCode = String.fromEnvironment('E2E_OTP_CODE', defaultValue: '246810');
 
 /// Национальные номера (9 цифр) из `AUTH_FIXTURES`.
 const String _customerPhone = String.fromEnvironment('E2E_CUSTOMER_PHONE', defaultValue: '777000903');
 const String _staffPhone = String.fromEnvironment('E2E_STAFF_PHONE', defaultValue: '777000902');
-const String _linkedPhone = String.fromEnvironment('E2E_LINKED_PHONE', defaultValue: '700123456');
+
+/// `AUTH_FIXTURES.customerLinked` = телефон карточки фикстуры 1С `customers-search.200` (`+996700000001`,
+/// сравнение по последним 9 цифрам) → регистрация даёт `customerMatch=proposed` (SCR-06).
+const String _linkedPhone = String.fromEnvironment('E2E_LINKED_PHONE', defaultValue: kLinkedPhoneDigits);
 
 const Key _customerHomeStub = ValueKey<String>('stub-SCR-50');
 const Key _catalogStub = ValueKey<String>('stub-SCR-10');

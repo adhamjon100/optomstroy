@@ -1,6 +1,6 @@
 # 07 — Модель данных «Оптомстрой POS» (backend PostgreSQL + локальная БД Flutter)
 
-Версия 1.14 · Дата 2026-10-24 (технические уточнения по реализации этапа G — §5.12, §5.28–§5.33, §5.42, §5.44–§5.46, §5.55, §9.2, §9.3, §13.3, замечание к ядру §19 п. 30 — §21.14, ADR-104…ADR-106, `docs/stages/G_spec_sync.md`; ред. 1.13 — 2026-10-23, ревью закрытия этапа F, второй круг: §5.53 — запись кода `QR_PAID_AFTER_VOID` выполнена — §21.13; ред. 1.12 — ревью закрытия этапа F: формат `notification.read` с `before` — §21.12; ред. 1.11 — код журнала синхронизации `QR_PAID_AFTER_VOID` — §21.11, ADR-103; ред. 1.10 — технические уточнения по реализации этапа F — §21.10, ADR-098…ADR-102, `docs/stages/F_spec_sync.md`; ред. 1.9 — 2026-10-22, ревью закрытия этапа E — журнал «Ревью закрытия этапа E»; ред. 1.8 — 2026-10-22; сверка с ядром решений v1.9 — §17…§24, включая ответы заказчика §24; журнал — §21, последняя сверка — §21.6; технические уточнения по контрактам и ревью этапа B — §21.7; технические уточнения по реализации этапов D–E — §21.8, ADR-088…ADR-096) · Статус: черновик для утверждения заказчиком
+Версия 1.15 · Дата 2026-10-24 (уточнения по ТЗ для программиста 1С — §5.16, §5.23, §5.64, §21.15, ADR-108; ред. 1.14 — технические уточнения по реализации этапа G — §5.12, §5.28–§5.33, §5.42, §5.44–§5.46, §5.55, §9.2, §9.3, §13.3, замечание к ядру §19 п. 30 — §21.14, ADR-104…ADR-106, `docs/stages/G_spec_sync.md`; ред. 1.13 — 2026-10-23, ревью закрытия этапа F, второй круг: §5.53 — запись кода `QR_PAID_AFTER_VOID` выполнена — §21.13; ред. 1.12 — ревью закрытия этапа F: формат `notification.read` с `before` — §21.12; ред. 1.11 — код журнала синхронизации `QR_PAID_AFTER_VOID` — §21.11, ADR-103; ред. 1.10 — технические уточнения по реализации этапа F — §21.10, ADR-098…ADR-102, `docs/stages/F_spec_sync.md`; ред. 1.9 — 2026-10-22, ревью закрытия этапа E — журнал «Ревью закрытия этапа E»; ред. 1.8 — 2026-10-22; сверка с ядром решений v1.9 — §17…§24, включая ответы заказчика §24; журнал — §21, последняя сверка — §21.6; технические уточнения по контрактам и ревью этапа B — §21.7; технические уточнения по реализации этапов D–E — §21.8, ADR-088…ADR-096) · Статус: черновик для утверждения заказчиком
 
 **Входные материалы:** `docs/research/R0_DECISION_KERNEL.md` (ядро решений: §1 глоссарий, §2 D-01…D-43, §6 канонические таблицы и enum-ы, §10 правила ID, §12 вопросы Q-xxx); `R5_BACKEND_RESEARCH.md` §3 (PostgreSQL, поиск, деньги, идентификаторы, идемпотентность, миграции) и §4 (предварительная модель данных, ER), §6 (стратегия синхронизации); `R1_1C_INTEGRATION_RESEARCH.md` §5 (карта сущностей на объекты 1С, идентификаторы) и §6 (создание заказа, идемпотентность); `R7_POS_BUSINESS_RESEARCH.md` §0–§1 (статусы), §4 (скидки, округление), §5 (долги), §6 (возвраты), §7 (единицы/упаковки), §8 (варианты), §9 (склады), §10 (роли); `R3_FLUTTER_STACK_RESEARCH.md` §4.4 (локальная БД drift); `R6_AUTH_SECURITY_RESEARCH.md` §2 (сессии), §5 (RBAC), §6 (аудит). Мастер-промт заказчика (`docs/specification/source/MASTER_PROMPT_extracted.md`) строки 107–112 (разделение данных), 404–432 (раздел 15 «Backend и модель данных»), 727–729 (раздел 4.9 «Модель данных»). Реестр исходных требований: `REQ_REGISTER_A.md` (SRC-A-107…SRC-A-114c), `REQ_REGISTER_B.md` (SRC-B-001 — запрет свободной двусторонней синхронизации, мастер-промт стр. 112), `REQ_REGISTER_D.md` (SRC-D-042…SRC-D-076), `REQ_REGISTER_E.md` (SRC-E-172…SRC-E-172i).
 
@@ -1132,6 +1132,7 @@ flowchart LR
 | name_norm | text | нет | GENERATED `norm_search(name)` STORED | lower, ё→е, unaccent, схлопывание пробелов | POS |
 | description | text | да | | Описание | 1С |
 | brand | text | да | | Производитель/марка [ТИПОВО] | 1С |
+| onec_image_file_ref | uuid | да | | Ссылка 1С главной картинки — `imageFileRef` элемента номенклатуры (уточнено по ТЗ для 1С, миграция 0019, ADR-108); используется в правиле главного фото §5.23 | 1С |
 | category_id | uuid | да | FK categories | Группа/категория; NULL — вне дерева (показывается в «Без категории» только `A`) | 1С |
 | category_path_text | text | да | | Текст пути «Сантехника / Смесители» — для FTS веса C | POS |
 | base_unit_id | uuid | нет | FK units | Единица хранения (`ЕдиницаИзмерения`) | 1С |
@@ -1268,9 +1269,12 @@ flowchart LR
 | sizes | jsonb | да | | `{"thumb": {"w":160,"h":…,"bytes":…}, "card": {...}, "full": {...}}` | POS |
 | sort_order | integer | нет | DEFAULT 0 | | 1С/POS |
 | is_primary | boolean | нет | DEFAULT false | Главное фото | 1С/POS |
+| onec_is_main | boolean | да | | Признак `isMain` файла из 1С (поле-предложение контракта 1С 1.1.0; миграция 0019, ADR-108); NULL — 1С признак не передала | 1С |
 | status | image_status | нет | enum `pending\|downloading\|ready\|failed\|missing_source` [РЕШЕНИЕ: ядро §17.3]; DEFAULT `pending` | | POS |
 | error / attempts / next_attempt_at | text / smallint / timestamptz | да | | Повторы скачивания (backoff) | POS |
 | deleted_at | timestamptz | да | | Исчезло в источнике | POS |
+
+**Правило главного фото (уточнено по ТЗ для 1С, ADR-108).** `is_primary = true` получает одна запись на товар/вариант: файл `products.onec_image_file_ref` того же товара (или его характеристики) → иначе файл с `onec_is_main = true` → иначе наименьший `sort_order` → иначе самая ранняя регистрация (05 §24, п. 14).
 
 **Уникальность.** `UNIQUE (source_ref) WHERE deleted_at IS NULL`; `product_images_primary_uq UNIQUE (product_id, variant_id, category_id) NULLS NOT DISTINCT WHERE is_primary AND deleted_at IS NULL` — `category_id` входит в ключ, иначе у двух категорий не может быть главных фото (у категорийных фото `product_id` и `variant_id` равны NULL) [РЕШЕНИЕ: этап B, ревью B-AR-19]. **Индексы.** `(product_id, sort_order) WHERE deleted_at IS NULL` — FK/Ф (галерея); `(variant_id)` — FK; `(checksum_sha256)` — П (дедупликация файлов); `(status, next_attempt_at) WHERE status IN ('pending','failed')` — Ф (очередь скачивания). **Удаление.** `deleted_at` при исчезновении в источнике; файл удаляется job-ом, если `checksum_sha256` больше не используется ни одной живой строкой. **Доступ.** чтение метаданных — все (URL `/images/{sha}/{size}` через proxy, immutable); запись — `I`/`sys`. Отсутствие фото → `images: []` и заглушка на клиенте; подстановка чужого фото исключена связью по `product_id/variant_id` (SRC-D-107).
 
@@ -2258,6 +2262,7 @@ flowchart LR
 | last_ping_at / extension_version / api_version | timestamptz / text / text | да | | Данные `GET /integrations/onec/ping` (вариант C-2) и `/ping` HS (05 ONEC-064, SYNC-064) | 1С |
 | registration_backlog / clock_skew_sec | integer / integer | да | `registration_backlog >= 0` | Число зарегистрированных, но не выгруженных изменений; расхождение часов 1С и backend | 1С/POS |
 | onec_reachable / unreachable_since | boolean / timestamptz | нет / да | `onec_reachable` DEFAULT true | Доступность 1С для `/health/ready` (`degraded`) и уведомления `sync_error` | POS |
+| auth_error_at | timestamptz | да | | Момент ответа 401/403 HTTP-сервиса 1С; пока заполнено, чтение `/changes` приостановлено до восстановления доступа и уведомлён администратор (миграция 0019, ADR-108) | POS |
 | updated_at | timestamptz | нет | DEFAULT now() | | POS |
 
 **Уникальность.** PK. **Индексы.** нет (одна строка в R1). **Удаление.** Никогда (строка `pos` создаётся seed-миграцией). **Доступ.** чтение — `SS/A/O` (сводка узла на SCR-43 через `GET /sync/status`); запись — `sys` (воркер `onec.changes`, входящий `ping`). Ручной запуск синхронизации в варианте C-2 недоступен: `POST /sync/runs` → `422` (`rule: inbound_mode`), кнопка на SCR-43 неактивна с пояснением (ядро v1.7 §22.8; коды — 08).
@@ -4836,6 +4841,15 @@ GRANT SELECT ON audit_logs TO pos_readonly;
 | GQ-FND-09, GQ-TXR-03, GQ-TXR-18, FIX-G-RETENTION, GQ-TXR-16, GQ-TXR-02 | номер `RET-…` (0017), физическое удаление, ретенция черновиков, отказ 1С; строка реализации | §5.45, §5.46, §13.3 |
 | FIX-G-ORD-DEP | зависимость `order/create` от `customer/create` | §5.55 |
 | GQ-ADM-03, FIX-G-AUDIT-JOBS | триггеры `trg_sync_runs_audit`, `trg_onec_outbox_audit` (0018); расписание якоря и проверки | §9.2, §9.3 |
+
+### 21.15. Уточнения по итогам подготовки ТЗ для программиста 1С (версия 1.15, 2026-10-24, ADR-108)
+
+Источник — `docs/integration/onec_api/98_triage.md`, `99_discrepancies_internal.md`; 05 §24 (пп. 14, 15).
+
+| Пункт | Что уточнено | Раздел |
+|---|---|---|
+| 14 | `products.onec_image_file_ref`, `product_images.onec_is_main`, правило главного фото | §5.16, §5.23 |
+| 8, 31 | `sync_node_state.auth_error_at` — пауза чтения `/changes` после 401/403 | §5.64 |
 
 ## Журнал независимой проверки (волна 4)
 

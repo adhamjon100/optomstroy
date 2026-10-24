@@ -79,7 +79,11 @@ export const CASHIER_SCENARIOS = {
 } as const;
 export type CashierScenario = keyof typeof CASHIER_SCENARIOS;
 
-/** Телефоны сценарных клиентов (E.164). `debtWithinLimit` — телефон фикстур (`+996700123456`). */
+/**
+ * Телефоны сценарных клиентов (E.164, тестовые данные). `debtWithinLimit` — ссылка фикстуры `customers-search.200`,
+ * но телефон свой (`+996700123456`; в фикстуре — `+996700000001`): синтетика кассира ищет по этой таблице, а не по
+ * фикстуре (scripts/local-stack.mjs `AUTH_FIXTURES.cashierCustomerLinked`).
+ */
 export const CASHIER_SCENARIO_PHONES: Readonly<Record<CashierScenario, string>> = {
   debtWithinLimit: '+996700123456',
   overdue: '+996700223344',

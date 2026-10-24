@@ -35,7 +35,8 @@
  * администратор (`AUTH_FIXTURES.syncAdmin`, PIN `CASHIER_SYNC_ADMIN_PIN`) со step-up запускает `POST /sync/runs`
  * `customers` (план обмена: клиенты, соглашения, скидки, реализации) и `receivables` (снимки долга) — те же
  * обработчики pos-worker, что в эксплуатации. Сценарные клиенты (телефон → ситуация): +996700123456 — долг в лимите
- * (`AUTH_FIXTURES.customerLinked`: регистрация покупателя даёт `proposed` к этой карточке), +996700223344 — просрочка
+ * (`AUTH_FIXTURES.cashierCustomerLinked`: регистрация покупателя даёт `proposed` к этой карточке синтетики; это не
+ * телефон фикстуры `customers-search.200` — тот у `AUTH_FIXTURES.customerLinked`), +996700223344 — просрочка
  * 8 000,00 (продажа в долг → `CREDIT_BLOCKED overdue`), +996555000103 — без долга, +996555000104 — лимит почти
  * исчерпан (`CREDIT_LIMIT_EXCEEDED`), +996555000105 — лимит в 1С не задан, +996555000106 — без отсрочки
  * (`credit_not_allowed`), +996555000107 — неполный снимок, +996555000108 — «устаревший», +996555000109 — покупатель
@@ -72,8 +73,9 @@
  *
  * `--auth-fixtures` (только dev, этап D, RM-D-011/RM-D-012): тестовый режим OTP 09 §5.8 (`AUTH_OTP_TEST_MODE`,
  * номера `AUTH_FIXTURES.*`, код `AUTH_FIXTURES.otpCode` — SMS не отправляется) и строки-фикстуры: администратор
- * (`admin`, без PIN) и приглашение продавца (`seller`, ФИО «Тестов Продавец»). Номер `customerLinked` совпадает с
- * фикстурой 1С `customers-search.200` (последние 9 цифр) → регистрация даёт `customerMatch.status=proposed` (SCR-06).
+ * (`admin`, без PIN) и приглашение продавца (`seller`, ФИО «Тестов Продавец»). Номер `customerLinked` читается из
+ * фикстуры 1С `customers-search.200` (`body[0].phone`, сейчас +996700000001; совпадение по последним 9 цифрам) →
+ * регистрация даёт `customerMatch.status=proposed` (SCR-06).
  *
  * Требует `npm run build` (dist/). Окружение API: APP_ENV=dev, ONEC_MODE=fixtures, SMS_PROVIDER=fake,
  * MIN_APP_VERSION=android=1.0.0,windows=1.0.0 (переопределяется переменной LOCAL_STACK_MIN_APP_VERSION).
@@ -119,6 +121,20 @@ const ONEC_FAKE_URL = `http://127.0.0.1:${ONEC_FAKE_PORT}`;
 /** Синтетических SKU по умолчанию для `--catalog-fixtures` / catalog-smoke. */
 const CATALOG_SKU_DEFAULT = 500;
 
+/**
+ * Телефон карточки 1С из фикстуры `contracts/onec/fixtures/customers-search.200.json` (`body[0].phone`, тестовые
+ * данные): `ONEC_MODE=fixtures` отвечает на `GET /customers?phone=` этой фикстурой, поэтому номер клиента auth-smoke
+ * берётся из неё, а не дублируется (после замены ПДн в фикстурах копия устарела — RR-1).
+ */
+function fixtureCustomerPhone() {
+  const path = join(API_DIR, '..', 'contracts', 'onec', 'fixtures', 'customers-search.200.json');
+  const phone = JSON.parse(readFileSync(path, 'utf8'))?.body?.[0]?.phone;
+  if (typeof phone !== 'string' || !/^\+996\d{9}$/.test(phone)) {
+    throw new Error(`фикстура customers-search.200: body[0].phone не E.164 KG (${path})`);
+  }
+  return phone;
+}
+
 /** Тестовые значения этапа D (не секреты; только APP_ENV=dev, 09 §5.8). Номера — синтетические +99677700090N. */
 const AUTH_FIXTURES = Object.freeze({
   otpCode: '246810',
@@ -127,7 +143,13 @@ const AUTH_FIXTURES = Object.freeze({
   customer: '+996777000903',
   invitedByAdmin: '+996777000904',
   customerSmoke: '+996777000905',
-  customerLinked: '+996700123456',
+  /** Клиент с карточкой 1С по фикстуре `customers-search.200` (auth-smoke, `ONEC_MODE=fixtures`). */
+  customerLinked: fixtureCustomerPhone(),
+  /**
+   * Этап G (`--cashier-fixtures`): клиент кассира «долг в лимите» — `CASHIER_SCENARIO_PHONES.debtWithinLimit`
+   * синтетики (src/integrations/onec/synthetic-cashier.ts; фейк 1С с `--cashier` ищет по ней, не по фикстуре).
+   */
+  cashierCustomerLinked: '+996700123456',
   cashier: '+996777000906',
   seniorSeller: '+996777000907',
   /** Этап G: администратор стенда кассира — запускает синхронизацию клиентов/долгов (`--cashier-fixtures`). */
@@ -2255,7 +2277,7 @@ async function cashierSmoke(stack, sku, world) {
 
     // 6. Режим клиента: регистрация по телефону клиента 1С → proposed → самоподтверждение → своя карточка и долг.
     const dev = randomUUID();
-    const { verify: v } = await otpLogin(AUTH_FIXTURES.customerLinked, dev);
+    const { verify: v } = await otpLogin(AUTH_FIXTURES.cashierCustomerLinked, dev);
     const reg = await api('POST', '/registration/complete', {
       deviceId: dev,
       idem: true,
@@ -2276,7 +2298,7 @@ async function cashierSmoke(stack, sku, world) {
     });
     let own = await apiF('GET', `/customers/${within}`, K);
     if (own.status === 401) {
-      const again = await relogin(AUTH_FIXTURES.customerLinked);
+      const again = await relogin(AUTH_FIXTURES.cashierCustomerLinked);
       K = { token: again.token, deviceId: again.deviceId };
       own = await apiF('GET', `/customers/${within}`, K);
     }

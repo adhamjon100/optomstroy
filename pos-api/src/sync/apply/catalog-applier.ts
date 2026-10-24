@@ -509,6 +509,20 @@ export class CatalogApplier {
     final: boolean,
   ): Promise<void> {
     if (items.length === 0) return;
+    // Источник без бренда (OData, `brandUnknown`): текущий `products.brand` сохраняется — и в строке, и в хэше
+    // (иначе срез OData стёр бы бренд, пришедший через `/changes`; ТЗ для 1С 5.4, разбор расхождений п. 15).
+    const unknownBrandRefs = items
+      .filter((it) => it.brandUnknown === true)
+      .map((it) => onecRefSafe(it.ref))
+      .filter((r): r is string => r !== null);
+    const keptBrand = new Map<string, string | null>();
+    if (unknownBrandRefs.length > 0) {
+      const r = await scope.client.query<{ ref: string; brand: string | null }>(
+        `SELECT onec_ref::text AS ref, brand FROM products WHERE onec_ref = ANY($1::uuid[])`,
+        [unknownBrandRefs],
+      );
+      for (const row of r.rows) keptBrand.set(row.ref, row.brand);
+    }
     const prepared = this.prepare(scope, 'products', items, (it) => {
       const name = requiredText(it.description, 'description');
       const attrs = normAttributes(it.attributes);
@@ -526,7 +540,7 @@ export class CatalogApplier {
       };
       // Предложение `brand` (ТЗ для 1С 5.4, вопрос 31) и главная картинка `imageFileRef` (разбор пп. 14–15):
       // в хэш — только непустые, чтобы товары без них не перезаписывались после обновления (SYNC-013).
-      const brand = text(it.brand);
+      const brand = it.brandUnknown === true ? (keptBrand.get(onecRefSafe(it.ref) ?? '') ?? null) : text(it.brand);
       const imageFileRef = onecRefSafe(it.imageFileRef);
       const hashOf = {
         ...fields,

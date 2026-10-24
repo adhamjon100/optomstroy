@@ -10,7 +10,7 @@
   },
   "scripts": {
     "prebuild": "node scripts/clean-dist.mjs",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/check-dist-entrypoints.mjs",
     "start": "node dist/main.js",
     "lint": "tsc -p tsconfig.json --noEmit && eslint \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\" \"scripts/**/*.mjs\" && prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
@@ -63,7 +63,7 @@
     "stack:cashier-smoke": "node scripts/local-stack.mjs cashier-smoke",
     "load:catalog-fixtures": "tsx scripts/load_catalog_fixtures.ts",
     "onec:acceptance": "tsx scripts/onec_acceptance.ts",
-    "onec:reregister": "tsx scripts/onec_reregister.ts",
+    "onec:reregister": "node dist/cli/onec_reregister.js",
     "migrate": "node dist/migrate.js",
     "seed": "node dist/migrate.js --seed",
     "worker": "node dist/worker.js",

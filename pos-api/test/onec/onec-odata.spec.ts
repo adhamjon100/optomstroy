@@ -279,6 +279,8 @@ describe('ODataCatalogSource: строки OData → элементы /changes (
         baseUnitRef: UNIT,
         imageFileRef: null,
         descriptionText: null,
+        // Бренд по OData не читается (нет в allow-list) — признак «неизвестен», не `brand: null` (п. 15).
+        brandUnknown: true,
         attributes: [
           {
             propertyRef: PROP,
@@ -290,6 +292,7 @@ describe('ODataCatalogSource: строки OData → элементы /changes (
         ],
       }),
     ]);
+    expect(pages[0]).not.toHaveProperty('brand');
   });
 
   // 12 T-ONEC-017 (даты +06:00)

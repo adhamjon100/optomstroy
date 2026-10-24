@@ -56,6 +56,7 @@ IDE-кеш `.idea/` (игнорируется git) перенесён в `pos-ap
 │   ├── openapi/                    # RM-B-003 — pos-api.v1.yaml, CHANGELOG.md (BE)
 │   ├── rbac/                       # RM-B-008 — permissions.yaml (SEC)
 │   └── test-vectors/               # RM-C-004/005 (MNY-004) — money.v1.json: общие векторы MV-01…MV-30 для pos-api и pos-app (BE + FE)
+├── demo/                           # ADR-109 — демо-пакет на тестовых данных: build-demo.ps1, start-demo.ps1/.cmd, demo-common.ps1, README.md (app/, data/, logs/ — вне git)
 ├── docs/                           # документация (ARCH; владельцы подкаталогов — 13 §5.2)
 │   ├── discovery/                  # этап A — аудит сервера, сведения 1С, SMSPro, устройства
 │   ├── erd/                        # RM-B-005, RM-C-006 — ER-диаграммы, schema_v1.sql
@@ -141,7 +142,7 @@ IDE-кеш `.idea/` (игнорируется git) перенесён в `pos-ap
 Нормативный перечень каталогов уровня 1 (для скрипта сверки):
 
 ```
-.github contracts docs infra onec-extension pos-api pos-app resursi scripts tools
+.github contracts demo docs infra onec-extension pos-api pos-app resursi scripts tools
 ```
 
 ---

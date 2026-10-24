@@ -249,6 +249,10 @@ function nomenclature(r: ODataRow): OnecNomenclatureItem {
     kindRef: ref(r['ВидНоменклатуры_Key']),
     descriptionText: str(r['Описание']),
     imageFileRef: ref(r['ФайлКартинки_Key']),
+    // Бренд по OData не читается: «Производитель_Key»/«Марка_Key» — ссылки, нужен $expand вне allow-list
+    // (contracts/onec/odata-allowlist.yaml). Источник бренда — только `/changes` расширения (ТЗ для 1С 5.4);
+    // признак сохраняет уже загруженный бренд при срезах OData (разбор расхождений п. 15).
+    brandUnknown: true,
     isWeighted: bool(r['Весовой']),
     attributes: [],
   };

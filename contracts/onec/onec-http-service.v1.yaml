@@ -1,7 +1,9 @@
 openapi: 3.0.3
 # RM-B-004. Контракт HTTP-сервиса расширения 1С «OptomstroyPOS» (POS_HTTPСервисPOS, корневой URL `pos`).
 # Канон методов — 05_ONEC_INTEGRATION §6.3–§6.5 и §6.7 (ядро R0 v1.9 §24.3, §24.4); изложение для
-# специалиста 1С — 18_ONEC_API_REQUEST §3–§5. При расхождении прав 05; решения и расхождения —
+# программиста 1С — ТЗ docs/integration/1C_API_requirements.md (версия 1.1), исходный запрос —
+# 18_ONEC_API_REQUEST §3–§5. Примеры заказа, клиента и платежа в 05 §6.4, 18 и ТЗ — из fixtures/*.json. При расхождении
+# прав 05 (по существу метода; пример, не проходящий схему, — ошибка документа); решения и расхождения —
 # contracts/onec/NOTES.md. Набор путей сверяет scripts/check_onec_paths.py (0 лишних, 0 недостающих).
 #
 # Расширения (ONEC-071, девять атрибутов контракта на каждый метод):
@@ -18,13 +20,18 @@ info:
   version: 1.1.0
   description: |
     Контракт методов `/pos/v1/*`, которые backend «Оптомстрой POS» вызывает у расширения 1С
-    «OptomstroyPOS» (фаза 1, `ONEC_MODE=extension`). Реализует специалист 1С заказчика
-    по `18_ONEC_API_REQUEST.md` (ядро v1.9 §24.3); владелец содержания методов — 05 §6.
+    «OptomstroyPOS» (фаза 1, `ONEC_MODE=extension`). Реализует программист 1С заказчика по ТЗ для
+    программиста 1С `docs/integration/1C_API_requirements.md` (версия 1.1; `18_ONEC_API_REQUEST.md` —
+    внутренний исходный запрос, ядро v1.9 §24.3); владелец содержания методов — 05 §6.
 
     **Общие правила (05 §6.4, ONEC-058).** Тела — `application/json; charset=utf-8` (кроме `/images`).
     UUID и ссылки 1С (`Ref_Key`) — строки в нижнем регистре. Деньги — строки `^-?\d+\.\d{2}$`,
     количества — строки `^-?\d+\.\d{3}$`. Даты — ISO 8601 со смещением `+06:00`.
-    `null` допустим только у необязательных полей. Получатель игнорирует неизвестные поля
+    `null` допустим только там, где в схеме указано `nullable: true`; обязательный ключ (`required`)
+    присутствует в JSON всегда, даже когда его значение `null` (ТЗ для 1С §4.3: «да, допускается `null`»).
+    Ссылка на схему, допускающая `null`, записывается как `type: object`, `nullable: true`,
+    `oneOf: [<схема>, {type: object, nullable: true, enum: [null]}]` — эту форму понимают стандартные
+    валидаторы OpenAPI 3.0.3. Получатель игнорирует неизвестные поля
     (forward-compatibility), поэтому схемы объектов не запрещают дополнительные свойства.
 
     **Версия API (ONEC-033).** Версия — в пути (`v1`) и в заголовке ответа `X-POS-API-Version: 1`.
@@ -2269,8 +2276,11 @@ components:
           type: object
           x-status: proposed
           nullable: true
-          allOf:
+          oneOf:
             - $ref: "#/components/schemas/DiscountConditions"
+            - type: object
+              nullable: true
+              enum: [null]
     ImageFileChange:
       type: object
       x-status: proposed
@@ -3614,14 +3624,20 @@ components:
           description: Только при `customerRef` и `paymentMethod=credit`, иначе `null`
           type: object
           nullable: true
-          allOf:
+          oneOf:
             - $ref: "#/components/schemas/ReceivablesSummary"
+            - type: object
+              nullable: true
+              enum: [null]
         totals:
           description: Итог 1С с автоскидками — только при `calculateDiscounts=true`, иначе `null`
           type: object
           nullable: true
-          allOf:
+          oneOf:
             - $ref: "#/components/schemas/Totals"
+            - type: object
+              nullable: true
+              enum: [null]
         issues:
           type: array
           items:

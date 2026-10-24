@@ -75,6 +75,12 @@ export interface OnecNomenclatureItem extends Versioned {
   readonly imageFileRef?: string | null;
   /** Предложение (ТЗ для 1С 5.4, вопрос 31; контракт `NomenclatureChange.brand`, `x-status: proposed`): бренд. */
   readonly brand?: string | null;
+  /**
+   * Внутренний признак источника (не поле контракта): бренд источнику неизвестен — OData (`odata_only`, срезы
+   * фолбэка) реквизитов «Производитель»/«Марка» не читает (их нет в allow-list). Применение сохраняет текущий
+   * `products.brand`, а не стирает бренд, пришедший через `/changes` (ТЗ для 1С 5.4; разбор расхождений п. 15).
+   */
+  readonly brandUnknown?: true;
   readonly isWeighted?: boolean | null;
   readonly attributes?: readonly OnecAttributeValue[];
 }

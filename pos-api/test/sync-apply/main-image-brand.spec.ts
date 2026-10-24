@@ -191,4 +191,27 @@ describe('бренд товара (п. 15)', () => {
     );
     expect(after.rows[0]).toEqual(before.rows[0]);
   });
+
+  it('источник без бренда (OData, brandUnknown) не стирает бренд из /changes и не перезаписывает товар', async () => {
+    const state = () =>
+      f.pool.query<{ brand: string | null; u: string; h: string }>(
+        `SELECT brand, updated_at::text AS u, source_hash AS h FROM products WHERE onec_ref = $1`,
+        [A],
+      );
+    const before = await state();
+    expect(before.rows[0]?.brand).toBe('Grohe');
+    // То же состояние товара, что последнее из /changes, но без бренда — как строка OData (срез фолбэка).
+    const odataLike = product(A, { imageFileRef: FA1, brandUnknown: true }, 'p2-odata');
+    expect((await service(gateway([[odataLike]])).pullOnce()).status).toBe('applied');
+    expect((await state()).rows[0]).toEqual(before.rows[0]);
+    // Изменилось другое поле — товар обновлён, бренд сохранён.
+    const renamed = product(A, { imageFileRef: FA1, brandUnknown: true, description: 'Товар A новый' }, 'p3');
+    expect((await service(gateway([[renamed]])).pullOnce()).status).toBe('applied');
+    const r = await state();
+    expect(r.rows[0]?.brand).toBe('Grohe');
+    expect(r.rows[0]?.h).not.toBe(before.rows[0]?.h);
+    // /changes без поля brand — бренд не задан (контракт NomenclatureChange.brand): NULL.
+    expect((await service(gateway([[product(A, { imageFileRef: FA1 }, 'p4')]])).pullOnce()).status).toBe('applied');
+    expect((await state()).rows[0]?.brand).toBeNull();
+  });
 });

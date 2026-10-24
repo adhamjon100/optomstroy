@@ -107,7 +107,8 @@ const String _seniorPhone = '777000907';
 const String _adminPhone = '777000901';
 const String _ownerPhone = '777000909';
 
-/// Покупатель = карточка 1С «долг в лимите» (`AUTH_FIXTURES.customerLinked`, синтетика кассира).
+/// Покупатель = карточка 1С «долг в лимите» (`AUTH_FIXTURES.cashierCustomerLinked` = `debtWithinLimit` синтетики
+/// кассира; не телефон фикстуры `customers-search.200` — тот у `customerLinked`, см. support/fixture_phones.dart).
 const String _buyerPhone = '700123456';
 
 /// Клиент с просрочкой 8 000,00 (`CASHIER_SCENARIOS.overdue`, +996700223344): поиск по 4 последним цифрам.
