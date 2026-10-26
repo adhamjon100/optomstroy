@@ -95,15 +95,18 @@ export class OtpService {
     private readonly audit: AuditService,
   ) {}
 
-  /** Тестовый режим 09 §5.8: только `APP_ENV ∈ {dev, staging}` и номер из `AUTH_OTP_TEST_PHONES`. */
+  /**
+   * Тестовый режим 09 §5.8: только `APP_ENV ∈ {dev, staging}` и номер из `AUTH_OTP_TEST_PHONES`.
+   * Значение `*` (любой номер) — только `APP_ENV=dev`: локальное демо на тестовых данных (ADR-109); в staging и prod
+   * запрещено проверкой конфигурации (env.schema.ts).
+   */
   isTestPhone(phoneE164: string): boolean {
     const c = this.config;
     if (!c.AUTH_OTP_TEST_MODE || (c.APP_ENV !== 'dev' && c.APP_ENV !== 'staging')) return false;
     if (!c.AUTH_OTP_TEST_CODE || !/^\d{6}$/.test(c.AUTH_OTP_TEST_CODE)) return false;
-    return (c.AUTH_OTP_TEST_PHONES ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .includes(phoneE164);
+    const phones = (c.AUTH_OTP_TEST_PHONES ?? '').split(',').map((s) => s.trim());
+    if (phones.includes('*')) return c.APP_ENV === 'dev';
+    return phones.includes(phoneE164);
   }
 
   /** Сырой номер в `rate_limit_counters.subject` запрещён (07 §5.12): только HMAC-псевдоним. */

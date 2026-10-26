@@ -324,6 +324,15 @@ describe('OtpService.check — ветви проверки кода (unit, 100 %
     expect(mk({ ...on, AUTH_OTP_TEST_MODE: 'false' }).isTestPhone('+996700000001')).toBe(false);
     expect(mk({ ...on, AUTH_OTP_TEST_CODE: '12ab' }).isTestPhone('+996700000001')).toBe(false);
     expect(() => config({ ...on, APP_ENV: 'prod', PUBLIC_BASE_URL: 'https://x.kg' })).toThrow(/AUTH_OTP_TEST_MODE/);
+    // ADR-109: AUTH_OTP_TEST_PHONES=* — любой номер только при APP_ENV=dev; в staging и prod конфигурация не принимается
+    const any = { ...on, AUTH_OTP_TEST_PHONES: '*' };
+    expect(mk(any).isTestPhone('+996555123456')).toBe(true);
+    expect(mk(any).isTestPhone('+996220000030')).toBe(true);
+    expect(mk({ ...any, AUTH_OTP_TEST_MODE: 'false' }).isTestPhone('+996555123456')).toBe(false);
+    expect(() => config({ ...any, APP_ENV: 'staging', PUBLIC_BASE_URL: 'https://stage.x.kg' })).toThrow(
+      /AUTH_OTP_TEST_PHONES/,
+    );
+    expect(() => config({ ...any, APP_ENV: 'prod', PUBLIC_BASE_URL: 'https://x.kg' })).toThrow(/AUTH_OTP_/);
   });
 });
 

@@ -177,9 +177,11 @@ function authFixtureEnv() {
   const phones = Object.entries(AUTH_FIXTURES)
     .filter(([k]) => k !== 'otpCode' && k !== 'invitedStaffName')
     .map(([, v]) => v);
+  // --otp-any-phone (демо, ADR-109): тестовый код подходит для любого номера — только APP_ENV=dev этого стека.
+  const anyPhone = process.argv.includes('--otp-any-phone');
   return {
     AUTH_OTP_TEST_MODE: 'true',
-    AUTH_OTP_TEST_PHONES: phones.join(','),
+    AUTH_OTP_TEST_PHONES: anyPhone ? '*' : phones.join(','),
     AUTH_OTP_TEST_CODE: AUTH_FIXTURES.otpCode,
     // Один «терминал» прогоняет все сценарии подряд (integration_test, auth-smoke): лимиты устройства и номера
     // подняты только на этом локальном стеке; сами лимиты проверяют e2e test/e2e/auth (значения 09 §5.4).

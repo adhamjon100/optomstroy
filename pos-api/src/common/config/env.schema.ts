@@ -219,6 +219,8 @@ export const envSchema = z.object(envShape).superRefine((env, ctx) => {
   if (env.APP_ENV !== 'dev' && env.PUBLIC_BASE_URL === undefined) {
     fail('PUBLIC_BASE_URL', `обязательна при APP_ENV=${env.APP_ENV}`);
   }
+  if (env.APP_ENV !== 'dev' && (env.AUTH_OTP_TEST_PHONES ?? '').split(',').some((p) => p.trim() === '*'))
+    fail('AUTH_OTP_TEST_PHONES', 'значение «*» (любой номер) разрешено только при APP_ENV=dev (ADR-109)');
   if (prod) {
     if (env.ONEC_MODE === 'fixtures') fail('ONEC_MODE', 'fixtures запрещён при APP_ENV=prod (OPS-027)');
     if (env.SMS_PROVIDER === 'fake') fail('SMS_PROVIDER', 'fake запрещён при APP_ENV=prod (OPS-027)');

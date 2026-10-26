@@ -142,7 +142,7 @@ function Start-Stack {
   # stdin стека — канал этого окна (--exit-on-stdin-end): закрытие канала или окна консоли = штатная остановка
   # API, воркера, фейка 1С, прокси и PostgreSQL. Вывод — в demo\logs через cmd.exe.
   $nodeArgs = @('scripts/local-stack.mjs', 'serve', '--cashier-fixtures', "--catalog-fixtures=$Sku",
-    '--qr-provider', $QrProvider, '--qr-paid-after-polls', '4', '--ready-file', "`"$ready`"", '--exit-on-stdin-end')
+    '--qr-provider', $QrProvider, '--qr-paid-after-polls', '4', '--ready-file', "`"$ready`"", '--exit-on-stdin-end', '--otp-any-phone')
   $cmdLine = "`"$($node.Source)`" $($nodeArgs -join ' ') 1>`"$stackLog`" 2>`"$stackErr`""
   $psi = New-Object System.Diagnostics.ProcessStartInfo
   $psi.FileName = $env:ComSpec
@@ -365,7 +365,8 @@ function Invoke-Demo {
   }
 
   Say ''
-  Say '  Вход в приложение: номер телефона, затем код из SMS — всегда 246810 (тестовый режим, SMS не отправляются).' 'White'
+  Say '  Вход в приложение: ЛЮБОЙ номер +996, затем код из SMS — всегда 246810 (демо-режим, SMS не отправляются).' 'White'
+  Say '  Свой номер = новый покупатель (регистрация). Готовые роли сотрудников:' 'White'
   Say '    +996 777 000 901  администратор        +996 777 000 909  руководитель' 'Gray'
   Say '    +996 777 000 906  кассир               +996 777 000 907  старший продавец' 'Gray'
   Say '    +996 777 000 902  продавец (по приглашению)' 'Gray'
