@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT EDIT BY HAND.
 // Generator: scripts/gen_tokens_dart.py (RM-B-006)
-// Source: contracts/design-tokens/tokens.json (canonical sha256 7ecbb28dd87e801deb0bbceb2845ab534f53e844aa8f18b39bf05f36dee13ced)
+// Source: contracts/design-tokens/tokens.json (canonical sha256 31ea2b8fcd4858d3a96d8f15ebdd88453c981902ca331fe859ffb230f2f53d46)
 // DsMotion - ds.motion.* (03 §11.1, §17.5; kernel §8.4, §17.5)
 // ignore_for_file: public_member_api_docs
 

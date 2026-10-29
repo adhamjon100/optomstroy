@@ -27,7 +27,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"optomstroy", origin, size)) {
+  // Window title "Optomstroy POS" (Cyrillic) as universal character names: MSVC builds with /W4 /WX without /utf-8.
+  if (!window.Create(L"\u041E\u043F\u0442\u043E\u043C\u0441\u0442\u0440\u043E\u0439 POS", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

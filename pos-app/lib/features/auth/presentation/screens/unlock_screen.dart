@@ -13,6 +13,7 @@ import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/confirm_dialog.dart';
+import 'package:optomstroy/design_system/components/date_range_picker.dart' show DsBishkekTime;
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/otp_field.dart';
 import 'package:optomstroy/design_system/components/pin_field.dart';
@@ -473,7 +474,7 @@ class _UnlockViewState extends ConsumerState<UnlockView> {
       );
     }
     return AuthLayout(
-      footerYear: now.toLocal().year,
+      footerYear: DsBishkekTime.wall(now).year,
       compactMascotSize: 96,
       mediumMascotSize: 160,
       banners: <Widget>[

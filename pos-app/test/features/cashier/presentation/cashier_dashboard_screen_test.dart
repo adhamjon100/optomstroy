@@ -9,6 +9,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:optomstroy/app/router/shells/app_mode.dart';
+import 'package:optomstroy/app/router/shells/staff_shell_header.dart';
 import 'package:optomstroy/core/enums.dart' hide Locale;
 import 'package:optomstroy/core/error/failure.dart';
 import 'package:optomstroy/core/error/result.dart';
@@ -16,6 +18,8 @@ import 'package:optomstroy/core/models/pos_common.dart';
 import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/design_system/components/app_icon_button.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
+import 'package:optomstroy/design_system/components/top_app_bar_pos.dart';
+import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/features/cashier/domain/entities/pos_dashboard.dart';
 import 'package:optomstroy/features/cashier/presentation/providers/cashier_ports.dart';
 import 'package:optomstroy/features/cashier/presentation/screens/cashier_dashboard_screen.dart';
@@ -480,14 +484,61 @@ void main() {
     expect(find.text('14:30'), findsOneWidget);
   });
 
-  testWidgets('без QR — часы шапки HH:mm меняются по границе минуты (UI-30-013)', (WidgetTester t) async {
+  testWidgets('medium+ — своей шапки нет (её даёт оболочка, ADR-112), заголовок «Касса» — над сводкой (UI-30-013); '
+      'compact — шапка экрана с заголовком, без часов', (WidgetTester t) async {
     final CashierHarness h = _h();
     h.clock.set(DateTime.utc(2026, 10, 22, 4, 30, 50)); // 10:30:50 по Бишкеку
-    await h.pump(t, const CashierDashboardScreen());
-    expect(find.text('10:30'), findsOneWidget);
+    for (final Size size in const <Size>[Size(1366, 900), Size(800, 1000)]) {
+      await h.pump(t, const CashierDashboardScreen(), size: size);
+      expect(find.byType(TopAppBarPos), findsNothing, reason: '$size: шапка — у оболочки (StaffShellHeader)');
+      expect(find.byKey(const ValueKey<String>('cashier-header-user')), findsNothing);
+      // Паритет функций ADR-112: название раздела видно и без своей шапки.
+      expect(find.byKey(CashierDashboardScreen.titleKey), findsOneWidget, reason: '$size: заголовок «Касса»');
+      expect(find.text('Касса'), findsOneWidget);
+      expect(
+        t.getTopLeft(find.byKey(CashierDashboardScreen.titleKey)).dy,
+        lessThan(t.getTopLeft(find.byKey(const ValueKey<String>('cashier-totals'))).dy),
+        reason: '$size: заголовок — над сводкой',
+      );
+    }
+    await h.pump(t, const CashierDashboardScreen(), size: const Size(390, 844));
+    expect(find.byType(TopAppBarPos), findsOneWidget);
+    expect(find.byKey(CashierDashboardScreen.titleKey), findsNothing, reason: 'compact — заголовок в шапке экрана');
+    expect(find.text('Касса'), findsOneWidget);
+    expect(find.text('10:30'), findsNothing, reason: 'compact — без часов (как до ADR-112)');
+  });
+
+  testWidgets('medium+: часы шапки оболочки над SCR-30 — HH:mm и «Чт, 22 октября 2026», смена по границе минуты '
+      '(UI-30-013, AC-UI-30-020)', (WidgetTester t) async {
+    final CashierHarness h = _h();
+    h.clock.set(DateTime.utc(2026, 10, 22, 4, 30, 50)); // 10:30:50 по Бишкеку
+    final FocusNode focus = FocusNode();
+    final TextEditingController text = TextEditingController();
+    addTearDown(focus.dispose);
+    addTearDown(text.dispose);
+    await h.pump(
+      t,
+      Material(
+        child: Column(
+          children: <Widget>[
+            StaffShellHeader(
+              mode: AppMode.cashier,
+              windowClass: WindowClass.expanded,
+              focusNode: focus,
+              controller: text,
+              clockLongDate: true,
+            ),
+            const Expanded(child: CashierDashboardScreen()),
+          ],
+        ),
+      ),
+    );
+    final Finder header = find.byType(StaffShellHeader);
+    expect(find.descendant(of: header, matching: find.text('10:30')), findsOneWidget);
+    expect(find.descendant(of: header, matching: find.text('Чт, 22 октября 2026')), findsOneWidget);
     h.clock.advance(const Duration(seconds: 10));
     await t.pump(const Duration(seconds: 10));
-    expect(find.text('10:31'), findsOneWidget);
+    expect(find.descendant(of: header, matching: find.text('10:31')), findsOneWidget);
     expect(find.text('10:30'), findsNothing);
   });
 
@@ -575,7 +626,7 @@ void main() {
     expect(h.receivables.overdueQueries, hasLength(1));
   });
 
-  testWidgets('шапка: логотип, «Имя · Кассир», меню аватара Профиль/Настройки/Заблокировать/Выйти (UI-30-013)', (
+  testWidgets('шапка compact: логотип, «Имя · Кассир», меню аватара Профиль/Настройки/Заблокировать/Выйти', (
     WidgetTester t,
   ) async {
     final CashierHarness h = _h();
@@ -587,10 +638,10 @@ void main() {
       cashierLockProvider.overrideWithValue(() => locks++),
       cashierLogoutProvider.overrideWithValue((BuildContext c, WidgetRef r) async => logouts++),
     ]);
-    await _pumpRouted(t, h);
+    // compact: своя шапка экрана (на medium+ шапку и меню аватара даёт оболочка — test/app/shell_navigation_test).
+    await _pumpRouted(t, h, size: const Size(390, 844));
     expect(find.byKey(const ValueKey<String>('logo')), findsOneWidget);
-    expect(find.text('Абдулла'), findsOneWidget);
-    expect(find.text('Кассир'), findsOneWidget);
+    expect(find.bySemanticsLabel('Абдулла, Кассир'), findsOneWidget);
 
     Future<void> pick(String item) async {
       await t.tap(find.byKey(const ValueKey<String>('cashier-header-user')));
@@ -611,12 +662,12 @@ void main() {
     expect(h.visited.last, '/profile');
   });
 
-  testWidgets('шапка: SyncIndicator из корня вместо иконки (UI-30-013)', (WidgetTester t) async {
+  testWidgets('шапка compact: SyncIndicator из корня вместо иконки (02 SCR-30.2 ред. 1.16)', (WidgetTester t) async {
     final CashierHarness h = _h();
     h.extraOverrides.add(
       cashierSyncIndicatorProvider.overrideWithValue((BuildContext c) => const Text('sync-indicator')),
     );
-    await h.pump(t, const CashierDashboardScreen());
+    await h.pump(t, const CashierDashboardScreen(), size: const Size(390, 844));
     expect(
       find.descendant(
         of: find.byKey(const ValueKey<String>('cashier-header-sync')),

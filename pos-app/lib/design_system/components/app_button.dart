@@ -1,13 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:optomstroy/design_system/components/app_progress.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 
 /// Варианты `AppButton` (03 §9.1). `secondary` = `tonal`.
-enum AppButtonVariant { primary, secondary, tonal, outlined, text, danger, success }
+///
+/// `tint` — тинт с декоративной рамкой (прототип 2026-10-29, ADR-112): заливка `primaryContainer`, обводка
+/// `primaryContainerBorder` 1,5, текст `onPrimaryContainer` (6.19:1) — «В корзине · N — ещё +1» карточки каталога.
+///
+/// `neutral` — нейтральная контурная (прототип 2026-10-29): фон `surface`, обводка 1 — `border`, затемнённый на 12 %
+/// к `borderStrong` (≈ #D5DEEA прототипа, декоративная), текст `textPrimary` 600; hover — `surfaceHover`. Второстепенное
+/// действие рядом с основной кнопкой: «Отложить · F8» drawer корзины — оранжевой остаётся только «Создать заказ · F9».
+///
+/// Ссылки («Сбросить фильтры», «Сбросить все» каталога) — вариант `text` (`primaryText`, ядро §24.1, DS-098): синий
+/// `info` закреплён за фокусом и информационными статусами и для ссылок не используется (ревью переноса прототипа
+/// 2026-10-29, ADR-112).
+enum AppButtonVariant { primary, secondary, tonal, outlined, text, danger, success, tint, neutral }
 
 /// Размеры `AppButton` (03 §7.4): S 36 / M 44 / L 52; тач-цель 44 / 48 / 52.
+///
+/// `card` / `cardCompact` — кнопки карточек каталога по прототипу 2026-10-29 (03 §9.11, §9.13; ADR-112): 40 / 34
+/// визуально (цель 48 / 44), радиус `md`, подпись `body` / `label` вес 700.
 enum AppButtonSize {
   /// Инлайн-действия в таблицах.
   s(height: 36, target: 44, padding: 12, icon: 20, spinner: 16),
@@ -16,7 +31,17 @@ enum AppButtonSize {
   m(height: 44, target: 48, padding: 16, icon: 20, spinner: 16),
 
   /// CTA.
-  l(height: 52, target: 52, padding: 24, icon: 24, spinner: 20);
+  l(height: 52, target: 52, padding: 24, icon: 24, spinner: 20),
+
+  /// Кнопка карточки сетки и строки списка каталога: 40 (цель 48), радиус `md`, `body 700`.
+  card(height: 40, target: 48, padding: 12, icon: 18, spinner: 16),
+
+  /// Кнопка строки «Компакт» каталога: 34 (цель 44), радиус `md`, `label 700`.
+  cardCompact(height: 34, target: 44, padding: 8, icon: 16, spinner: 14),
+
+  /// Кнопки зоны G drawer корзины в одну строку («Отложить · F8», «Создать заказ · F9»; прототип 2026-10-29,
+  /// ADR-112): 48 (цель 48), радиус `md`, `body 700`.
+  cta(height: 48, target: 48, padding: 12, icon: 20, spinner: 18);
 
   const AppButtonSize({
     required this.height,
@@ -40,12 +65,19 @@ enum AppButtonSize {
 
   /// Размер спиннера в `loading`.
   final double spinner;
+
+  /// Кнопки карточек каталога (радиус `md`, вес 700).
+  bool get isCard => this == card || this == cardCompact;
+
+  /// Радиус `md` (кнопки карточек и зоны G drawer корзины); остальные размеры — `sm`.
+  bool get roundedMd => isCard || this == cta;
 }
 
 /// Кнопка `AppButton` (03 §9.1).
 ///
-/// Палитра B (DS-098): `primary` — заливка #FF8700 с тёмным `onPrimary`; `outlined`/`text`/`tonal` —
-/// текст `primaryText`; `danger`/`success` — белый текст на `error`/`success`.
+/// Палитра B (DS-098): `primary` — заливка primary #D9380F + белый `onPrimary`, 4.64:1 (ADR-111);
+/// `outlined`/`text`/`tonal` — текст `primaryText`; `danger`/`success` — белый текст на `error`/`success`;
+/// `neutral` — `textPrimary` на `surface`.
 class AppButton extends StatelessWidget {
   /// Создаёт кнопку.
   const AppButton({
@@ -103,15 +135,23 @@ class AppButton extends StatelessWidget {
 
   bool get _enabled => onPressed != null;
 
+  /// Оценка ширины кнопки (до раскладки): поля размера, [hasIcon] — иконка с зазором 8, подпись `600` размера.
+  static double estimateWidth(
+    BuildContext context,
+    String label, {
+    AppButtonSize size = AppButtonSize.m,
+    bool hasIcon = false,
+    AppButtonVariant variant = AppButtonVariant.primary,
+  }) {
+    final TextStyle text = _textStyle(context, size, variant);
+    return size.padding * 2 + (hasIcon ? size.icon + 8 : 0) + dsTextWidth(context, label, text) + 2;
+  }
+
   @override
   Widget build(BuildContext context) {
     final DsColors c = context.colors;
-    final BorderRadius radius = BorderRadius.all(context.radii.sm);
-    final TextStyle baseText = switch (size) {
-      AppButtonSize.s => context.text.label,
-      AppButtonSize.m => context.text.body,
-      AppButtonSize.l => context.text.bodyLg,
-    }.copyWith(fontWeight: FontWeight.w600);
+    final BorderRadius radius = BorderRadius.all(size.roundedMd ? context.radii.md : context.radii.sm);
+    final TextStyle baseText = _textStyle(context, size, variant);
     final Duration fast = context.motion.of(context.motion.fast);
 
     final Widget button = Semantics(
@@ -137,7 +177,7 @@ class AppButton extends StatelessWidget {
               decoration: BoxDecoration(
                 color: bc.background,
                 borderRadius: radius,
-                border: bc.border == null ? null : Border.all(color: bc.border!, width: 1.5),
+                border: bc.border == null ? null : Border.all(color: bc.border!, width: bc.borderWidth),
               ),
               child: Center(widthFactor: expand ? null : 1, child: content),
             ),
@@ -150,6 +190,26 @@ class AppButton extends StatelessWidget {
       ),
     );
     return expand ? SizedBox(width: double.infinity, child: button) : button;
+  }
+
+  static TextStyle _textStyle(
+    BuildContext context,
+    AppButtonSize size, [
+    AppButtonVariant variant = AppButtonVariant.primary,
+  ]) {
+    final TextStyle base = switch (size) {
+      AppButtonSize.s => context.text.label.copyWith(fontWeight: FontWeight.w600),
+      AppButtonSize.m => context.text.body.copyWith(fontWeight: FontWeight.w600),
+      AppButtonSize.l => context.text.bodyLg.copyWith(fontWeight: FontWeight.w600),
+      AppButtonSize.card => context.text.body.copyWith(fontWeight: FontWeight.w700),
+      AppButtonSize.cardCompact => context.text.label.copyWith(fontWeight: FontWeight.w700),
+      AppButtonSize.cta => context.text.body.copyWith(fontWeight: FontWeight.w700),
+    };
+    return switch (variant) {
+      // Прототип: «Отложить · F8» — 14/600.
+      AppButtonVariant.neutral => base.copyWith(fontWeight: FontWeight.w600),
+      _ => base,
+    };
   }
 
   Widget _content(Color fg, TextStyle textStyle) {
@@ -197,6 +257,7 @@ class AppButton extends StatelessWidget {
       return switch (variant) {
         AppButtonVariant.text => _ButtonColors(Colors.transparent, c.disabledText),
         AppButtonVariant.outlined => _ButtonColors(Colors.transparent, c.disabledText, c.disabledText),
+        AppButtonVariant.neutral => _ButtonColors(c.surface, c.disabledText, c.disabledBg),
         _ => _ButtonColors(c.disabledBg, c.disabledText),
       };
     }
@@ -216,15 +277,30 @@ class AppButton extends StatelessWidget {
         filled(c.success, darken(c.success, .08), darken(c.success, .16)),
         c.onSuccess,
       ),
+      AppButtonVariant.tint => _ButtonColors(
+        s.pressed || s.hovered ? c.primaryContainerPressed : c.primaryContainer,
+        c.onPrimaryContainer,
+        c.primaryContainerBorder,
+      ),
+      AppButtonVariant.neutral => _ButtonColors(
+        s.pressed ? c.surfacePressed : (s.hovered ? c.surfaceHover : c.surface),
+        c.textPrimary,
+        neutralBorder(c),
+        1,
+      ),
     };
   }
+
+  /// Обводка варианта `neutral`: `border`, затемнённый на 12 % к `borderStrong` (≈ #D5DEEA прототипа).
+  static Color neutralBorder(DsColors c) => Color.lerp(c.border, c.borderStrong, .12)!;
 }
 
 @immutable
 class _ButtonColors {
-  const _ButtonColors(this.background, this.foreground, [this.border]);
+  const _ButtonColors(this.background, this.foreground, [this.border, this.borderWidth = 1.5]);
 
   final Color background;
   final Color foreground;
   final Color? border;
+  final double borderWidth; // money-double: allow — толщина обводки (lp)
 }

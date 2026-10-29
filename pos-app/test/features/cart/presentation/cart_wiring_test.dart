@@ -32,6 +32,7 @@ import 'package:optomstroy/features/cart/domain/entities/cart.dart';
 import 'package:optomstroy/features/cart/domain/repositories/cart_repository.dart';
 import 'package:optomstroy/features/cart/domain/sync/cart_sync.dart';
 import 'package:optomstroy/features/cart/presentation/widgets/cart_fab_view.dart';
+import 'package:optomstroy/features/cart/presentation/widgets/cart_header_button_view.dart';
 import 'package:optomstroy/features/cart/presentation/widgets/cart_panel_view.dart';
 import 'package:optomstroy/features/catalog/catalog_providers.dart' as catalog;
 import 'package:optomstroy/features/catalog/domain/entities/product.dart';
@@ -105,15 +106,15 @@ void main() {
       }
     });
 
-    testWidgets('CartPanel (expanded) и CartFab (compact) каталога строит корзина', (tester) async {
+    testWidgets('кнопка-итог шапки (medium+, ADR-112) и CartFab (compact) каталога строит корзина', (tester) async {
       final FakeCartRepository repo = FakeCartRepository();
       final FakeCartSync sync = FakeCartSync(repo);
       serveCart(repo, canonCart());
       final ProviderContainer c = ProviderContainer(overrides: <Override>[...cartUiOverrides]);
       addTearDown(c.dispose);
-      final CatalogCartPanelBuilder panel = c.read(catalogCartPanelProvider)!;
+      final WidgetBuilder button = c.read(catalogCartButtonProvider)!;
       final WidgetBuilder fab = c.read(catalogCartFabProvider)!;
-      tester.view.physicalSize = const Size(390, 860);
+      tester.view.physicalSize = const Size(1280, 860);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
@@ -122,7 +123,8 @@ void main() {
           cartBuilder: (BuildContext context) => Scaffold(
             body: Column(
               children: <Widget>[
-                Expanded(child: panel(context)),
+                Align(alignment: AlignmentDirectional.centerEnd, child: button(context)),
+                const Spacer(),
                 fab(context),
               ],
             ),
@@ -130,9 +132,17 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byType(CartPanelView), findsOneWidget);
+      expect(find.byType(CartHeaderButtonView), findsOneWidget);
       expect(find.byType(CartFabView), findsOneWidget);
-      expect(find.text(PriceText.format(const Money(1600750), fixed2: true)), findsWidgets);
+      expect(find.byType(CartPanelView), findsNothing, reason: 'постоянной CP нет — корзина открывается drawer');
+      expect(
+        find.descendant(
+          of: find.byKey(CartHeaderButtonView.buttonKey),
+          matching: find.text(PriceText.format(const Money(1600750), fixed2: true)),
+        ),
+        findsOneWidget,
+        reason: 'итог сервера на кнопке шапки',
+      );
     });
 
     test('реестр очереди: обработчик cart.sync добавлен к избранному и «очистить недавние»', () {

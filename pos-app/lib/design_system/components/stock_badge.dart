@@ -23,7 +23,8 @@ enum StockBadgeVariant {
   /// Пилюля 24 с фоном (сетка, карточка).
   pill,
 
-  /// Без фона: иконка + текст (список, компакт).
+  /// Без фона: иконка 14 + текст `caption 500` (строка остатка карточек каталога, список, компакт; прототип
+  /// 2026-10-29). «Мало» — `warning_amber` (иконка обязательна).
   inline,
 
   /// На фото в сетке: только иконка + число, фон `surface` 90 %, высота 20.
@@ -82,10 +83,12 @@ class StockBadge extends StatelessWidget {
     final DsColors c = context.colors;
     final (Color bg, Color fg, IconData icon) = styleOf(c, level);
     final bool small = variant == StockBadgeVariant.compact;
+    final bool line = variant == StockBadgeVariant.inline;
+    final IconData glyph = line && level == StockBadgeLevel.low ? Icons.warning_amber_rounded : icon;
     // Пилюля и строка списка в узкой колонке переносят текст на 2-ю строку по разделителю «·»: число
     // с единицей не разрывается и не обрезается (FIX-EF-13).
     final bool wraps = variant != StockBadgeVariant.compact;
-    final TextStyle style = (small ? context.text.caption : context.text.label).copyWith(
+    final TextStyle style = (small || line ? context.text.caption : context.text.label).copyWith(
       color: fg,
       fontWeight: FontWeight.w500,
       fontFeatures: DsTypography.numeric,
@@ -93,7 +96,7 @@ class StockBadge extends StatelessWidget {
     final Widget content = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Icon(icon, size: small ? 14 : 16, color: fg),
+        Icon(glyph, size: small || line ? 14 : 16, color: fg),
         if (label.isNotEmpty) ...<Widget>[
           SizedBox(width: context.space.s1),
           Flexible(

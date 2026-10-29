@@ -12,6 +12,7 @@ import 'package:optomstroy/features/catalog/presentation/screens/catalog_filters
 import 'package:optomstroy/features/catalog/presentation/screens/catalog_screen.dart';
 import 'package:optomstroy/features/catalog/presentation/screens/catalog_search_screen.dart';
 import 'package:optomstroy/features/catalog/presentation/screens/category_screen.dart';
+import 'package:optomstroy/features/catalog/presentation/widgets/catalog_toolbar.dart';
 
 import 'support/catalog_fakes.dart';
 
@@ -74,7 +75,7 @@ Future<GoRouter> _pump(WidgetTester tester, CatalogHarness h, String initial, {S
 String _location(GoRouter r) => r.routeInformationProvider.value.uri.toString();
 
 void main() {
-  testWidgets('категория с подкатегориями: чипы «Все» + дети, раскрытие в сайдбаре; лист — только подборки', (
+  testWidgets('категория с подкатегориями: лента «Все» + дети, корень выбран в колонке; лист — только подборки', (
     tester,
   ) async {
     final CatalogHarness h = CatalogHarness();
@@ -84,11 +85,9 @@ void main() {
     expect(find.text('Найдено: 6 товаров'), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('chip-sub-all')), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('chip-sub-c-mix-kitchen')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey<String>('sidebar-category-c-mix-kitchen')),
-      findsOneWidget,
-      reason: 'раскрыт 1 уровень',
-    );
+    // Подкатегории — в ленте над списком, колонка показывает только корни (макет заказчика, CQ-LAY-02).
+    expect(find.byKey(const ValueKey<String>('sidebar-category-c-mix-kitchen')), findsNothing);
+    expect(find.byKey(const ValueKey<String>('sidebar-category-c-mix')), findsOneWidget);
     final CatalogQuery q = h.catalog.productCalls.singleWhere((CatalogQuery q) => q.filter.categoryId == 'c-mix');
     expect(q.filter.includeSubcategories, isTrue);
 
@@ -132,11 +131,7 @@ void main() {
     final GoRouter router = await _pump(tester, CatalogHarness(), '/catalog/c/c-mix-kitchen');
     expect(find.byType(BackButton), findsNothing);
     expect(find.text('Каталог'), findsWidgets);
-    await tester.tap(
-      find.widgetWithText(TextButton, 'Смесители').evaluate().isEmpty
-          ? find.descendant(of: find.byType(Wrap), matching: find.text('Смесители')).first
-          : find.widgetWithText(TextButton, 'Смесители').first,
-    );
+    await tester.tap(find.descendant(of: find.byType(CatalogBreadcrumbs), matching: find.text('Смесители')));
     await settle(tester);
     expect(_location(router), startsWith('/catalog/c/c-mix'));
   });
@@ -209,10 +204,8 @@ void main() {
     expect(searchUri().queryParameters, <String, String>{'q': 'смеситель', 'categoryId': 'c-sanitary'});
 
     // Уточнение запроса на SCR-11 заменяет запись, а не добавляет: «Назад» — по-прежнему один шаг.
-    await tester.enterText(
-      find.descendant(of: find.byKey(const ValueKey<String>('stub-SCR-11')), matching: field()),
-      'смеситель кух',
-    );
+    // Маркер `stub-SCR-11` — невидимый лист внутри экрана (не предок поля): поле SCR-11 — верхняя запись (последнее).
+    await tester.enterText(field().last, 'смеситель кух');
     await tester.pump(const Duration(milliseconds: 310));
     await settle(tester);
     expect(searchUri().queryParameters['q'], 'смеситель кух');

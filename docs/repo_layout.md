@@ -58,6 +58,7 @@ IDE-кеш `.idea/` (игнорируется git) перенесён в `pos-ap
 │   └── test-vectors/               # RM-C-004/005 (MNY-004) — money.v1.json: общие векторы MV-01…MV-30 для pos-api и pos-app (BE + FE)
 ├── demo/                           # ADR-109 — демо-пакет на тестовых данных: build-demo.ps1, start-demo.ps1/.cmd, demo-common.ps1, README.md (app/, data/, logs/ — вне git)
 ├── docs/                           # документация (ARCH; владельцы подкаталогов — 13 §5.2)
+│   ├── customer/                   # документы для заказчика: Voprosy_zakazchiku.md/.docx — сводные вопросы заказчику (ARCH; 2026-10-28)
 │   ├── discovery/                  # этап A — аудит сервера, сведения 1С, SMSPro, устройства
 │   ├── erd/                        # RM-B-005, RM-C-006 — ER-диаграммы, schema_v1.sql
 │   ├── integration/                # RM-B-014 и др. — журнал версий расширения 1С, подключения
@@ -68,7 +69,7 @@ IDE-кеш `.idea/` (игнорируется git) перенесён в `pos-ap
 │   ├── research/                   # этап 1 — R0 (ядро решений), R1…R8
 │   ├── reviews/                    # отчёты независимой проверки (QA)
 │   ├── perf/                       # этапы E, H — бенчмарки
-│   ├── specification/              # ТЗ 00…18 + visual/, source/ (ARCH; только через ADR)
+│   ├── specification/              # ТЗ 00…18 + visual/ (в т. ч. visual/prototype/ — утверждённый прототип экрана выбора товаров 2026-10-29, эталон ADR-111/ADR-112), source/ (ARCH; только через ADR)
 │   ├── stages/                     # ворота и отчёты этапов: B_approval.md, B_changes.md, <X>_<name>_report.md
 │   ├── templates/                  # RM-B-012 — stage_report.md, adr.md
 │   ├── PROGRESS_LOG.md

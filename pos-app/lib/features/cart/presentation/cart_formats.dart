@@ -1,7 +1,9 @@
-// Форматы корзины для UI (03 §16.4): количество «2», «2,5»; проценты «5», «7,5»; время «HH:MM». Деньги — только
-// `PriceText.format` (целые тыйыны, D-19). Пути экранов — без импорта app/router (AP-01), формат как в routes.dart.
+// Форматы корзины для UI (03 §16.4): количество «2», «2,5»; проценты «5», «7,5»; время «HH:MM» (Asia/Bishkek).
+// Деньги — только `PriceText.format` (целые тыйыны, D-19). Пути экранов — без импорта app/router (AP-01), формат
+// как в routes.dart.
 import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/core/utils/qty.dart';
+import 'package:optomstroy/design_system/components/date_range_picker.dart' show DsBishkekTime;
 
 abstract final class CartFormats {
   /// «1», «2,5», «12,125» — без хвостовых нулей.
@@ -49,11 +51,8 @@ abstract final class CartFormats {
     return null;
   }
 
-  /// «09:41» (местное время).
-  static String time(DateTime at) {
-    final DateTime l = at.toLocal();
-    return '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
-  }
+  /// «09:41» — время магазина Asia/Bishkek (UTC+6, 02 §0.1); пояс машины не влияет.
+  static String time(DateTime at) => DsBishkekTime.time(at);
 }
 
 /// Пути экранов, в которые ведёт корзина (02 §4.1; routes.dart).

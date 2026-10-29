@@ -35,6 +35,18 @@ interface OnecCandidate {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Предел страниц регистра внешних идентификаторов за один поиск (как ручная привязка заказа — 20 страниц / 6 с). */
+const EXTERNAL_IDS_MAX_PAGES = 20;
+
+/** Дата-время контракта 1С: ISO 8601 с `+06:00` (ONEC-058; Бишкек без перехода на летнее время). */
+function toOnecDateTime(d: Date): string {
+  return `${new Date(d.getTime() + 6 * 3600_000).toISOString().slice(0, 19)}+06:00`;
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
 /** Последние 9 цифр номера — правило сравнения 1С (ONEC-044: `0700123456` и `+996700123456` — один номер). */
 function last9(phone: string): string {
   return phone.replace(/\D/g, '').slice(-9);
@@ -74,6 +86,12 @@ function replicaName(name: string): string {
  * карточку перезапишет синхронизация `customers`, 07 §5.28 «писатели столбцов»). Тип такой строки неизвестен
  * (поиск 1С его не возвращает) — ставится консервативно `legal`: самоподтверждение по ней невозможно, решает
  * `admin` (11 SEC-130). См. docs/stages/D_spec_questions.md (раздел RM-D-005/RM-D-015).
+ *
+ * POS-клиент с этим телефоном «в полёте» (`customer/create` отправляется или результат неизвестен): неизвестная
+ * карточка 1С может быть им самим, а различить их можно только по `externalId` (05 SYNC-005). Поэтому для таких
+ * кандидатов читается регистр внешних идентификаторов 1С (`listExternalIds`, SYNC-063): своя карточка — сам
+ * POS-клиент (без заглушки), остальные — обычные кандидаты; регистр недоступен — неизвестные кандидаты скрываются
+ * (known_issues G-KI-13; ревью G-customers-1c-2).
  */
 @Injectable()
 export class PgCustomerMatching implements CustomerMatching {
@@ -98,7 +116,10 @@ export class PgCustomerMatching implements CustomerMatching {
     if (this.onec && options.useOnec !== false) {
       const found = await this.searchOnec(phoneE164, options.requestId);
       onecState = found === undefined ? 'unavailable' : 'ok';
-      const inFlight = replica.some((r) => r.onec_in_flight);
+      const inFlight = replica.filter((r) => r.onec_in_flight).map((r) => r.id);
+      // Кандидаты 1С, которые могут быть карточкой самого POS-клиента «в полёте», различаются только по externalId
+      // (05 SYNC-005): регистр внешних идентификаторов 1С (SYNC-063) — один раз на поиск, лениво (G-KI-13).
+      let ownByExternalId: ReadonlyMap<string, string> | null | undefined;
       for (const c of found ?? []) {
         const known = [...byId.values()].find((m) => m.onecRef === c.ref);
         if (known) continue;
@@ -114,7 +135,19 @@ export class PgCustomerMatching implements CustomerMatching {
           if (!byId.has(ownId)) byId.set(ownId, { customerId: ownId, matchKind: 'onec', onecRef: null });
           continue;
         }
-        if (inFlight) continue;
+        if (inFlight.length > 0) {
+          // Не `??=`: null («регистр недоступен») — тоже итог, повторный вызов (до k × таймаут) не нужен.
+          if (ownByExternalId === undefined) {
+            ownByExternalId = await this.externalIdsOf(inFlight, ex, options.requestId);
+          }
+          // Регистр недоступен — консервативно: неизвестную карточку не показываем (иначе заглушка-дубль).
+          if (ownByExternalId === null) continue;
+          const mine = ownByExternalId.get(c.ref);
+          if (mine) {
+            if (!byId.has(mine)) byId.set(mine, { customerId: mine, matchKind: 'onec', onecRef: null });
+            continue;
+          }
+        }
         const id = await this.ensureReplicaRow(c, phoneE164, ex);
         if (id && !byId.has(id)) byId.set(id, { customerId: id, matchKind: 'onec', onecRef: c.ref });
       }
@@ -149,6 +182,57 @@ export class PgCustomerMatching implements CustomerMatching {
                             AND cc.value_norm = ${phone} AND cc.deleted_at IS NULL))
        ORDER BY c.id`);
     return res.rows;
+  }
+
+  /**
+   * Ref карточек 1С, созданных по `customer/create` POS-клиентов «в полёте» (результат ещё неизвестен): записи регистра
+   * внешних идентификаторов `GET /pos/v1/external-ids?type=Клиент&since=` (SYNC-063; 05 SYNC-005 — сопоставление
+   * только по `externalId`) с момента постановки самой ранней задачи минус запас на расхождение часов. Вызов — после
+   * поиска по телефону: карточка из ответа поиска уже записана 1С вместе с записью регистра. Результат: Ref → id
+   * POS-клиента; `null` — регистр не ответил, метод не поддержан (OData) или страниц больше предела — тогда
+   * неизвестные кандидаты не показываются (поведение до G-KI-13).
+   */
+  private async externalIdsOf(
+    customerIds: readonly string[],
+    ex: DbExecutor,
+    requestId: string | undefined,
+  ): Promise<ReadonlyMap<string, string> | null> {
+    if (!this.onec) return null;
+    const since = await ex.execute<{ since: Date }>(sql`
+      SELECT min(x.created_at) - interval '10 minutes' AS since FROM onec_outbox x
+       WHERE x.aggregate_type = 'customer' AND x.operation = 'create'
+         AND x.aggregate_id = ANY (${sql.param(customerIds)}::uuid[])`);
+    const from = since.rows[0]?.since;
+    if (!from) return null;
+    const wanted = new Set(customerIds.map((id) => id.toLowerCase()));
+    const out = new Map<string, string>();
+    try {
+      const signal = AbortSignal.timeout(this.config.ONEC_SYNC_CHECK_TIMEOUT_MS);
+      let cursor: string | undefined;
+      for (let page = 0; page < EXTERNAL_IDS_MAX_PAGES; page++) {
+        const r = await this.onec.listExternalIds(
+          { type: 'Клиент', since: toOnecDateTime(new Date(from)), limit: 1000, ...(cursor ? { cursor } : {}) },
+          { signal, ...(requestId ? { requestId } : {}) },
+        );
+        const items = Array.isArray(r.body.items) ? r.body.items : [];
+        for (const it of items) {
+          if (!isRecord(it)) continue;
+          const { externalId, ref, objectType } = it;
+          if (objectType !== undefined && objectType !== 'Клиент') continue;
+          if (typeof externalId !== 'string' || typeof ref !== 'string' || !UUID_RE.test(ref)) continue;
+          if (wanted.has(externalId.toLowerCase())) out.set(ref.toLowerCase(), externalId.toLowerCase());
+        }
+        cursor = r.body.hasMore === true && typeof r.body.cursor === 'string' ? r.body.cursor : undefined;
+        if (!cursor) return out;
+      }
+      return null;
+    } catch (e) {
+      this.logger.warn(
+        { event: 'customer_match.external_ids_unavailable', err: e instanceof Error ? e.name : 'unknown' },
+        'customer match: 1C external-ids unavailable, unknown candidates hidden while POS customer is in flight',
+      );
+      return null;
+    }
   }
 
   /** `undefined` — 1С недоступна (ошибка, таймаут); `[]` — 1С ответила «не найдено». */

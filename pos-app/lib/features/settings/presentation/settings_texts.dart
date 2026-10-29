@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/error/failure.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
+import 'package:optomstroy/design_system/components/date_range_picker.dart' show DsBishkekTime;
 import 'package:optomstroy/features/settings/domain/entities/settings_entities.dart';
 
 abstract final class SettingsTexts {
@@ -59,9 +60,10 @@ abstract final class SettingsTexts {
     _ => l10n.settings_sessions_load_error,
   };
 
-  /// `d MMM, HH:mm` в локальном времени устройства.
-  static String dateTime(DateTime at, String locale) => DateFormat('d MMM, HH:mm', locale).format(at.toLocal());
+  /// `d MMM, HH:mm` по часам магазина Asia/Bishkek (02 §0.1), не пояса машины.
+  static String dateTime(DateTime at, String locale) =>
+      DateFormat('d MMM, HH:mm', locale).format(DsBishkekTime.wall(at));
 
-  /// `d MMM y`.
-  static String date(DateTime at, String locale) => DateFormat('d MMM y', locale).format(at.toLocal());
+  /// `d MMM y` (день магазина Asia/Bishkek).
+  static String date(DateTime at, String locale) => DateFormat('d MMM y', locale).format(DsBishkekTime.wall(at));
 }

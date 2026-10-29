@@ -1,7 +1,10 @@
 // SCR-14: звезда избранного через порт `productFavoritePortProvider` (02 SCR-14 A3, FAV-002; 06 §6.1, EQ-PD-03)
 // и панель поверх контент-колонки списка на expanded (02 SCR-14.2, navigation.md §5; EQ-PD-05): маршрут
-// `ProductRoute` — прозрачная страница, SB и CP под ней видимы, клик вне панели закрывает её.
+// `ProductRoute` — прозрачная страница, шапка и колонка категорий под ней видимы, клик вне панели закрывает её.
+// Редакция 02 1.16 (ADR-112): постоянной CP под панелью больше нет — кнопка-итог корзины в шапке остаётся доступной
+// при открытой панели (сквозная область, как у `CatalogHeader`): нажатие доходит до кнопки, панель не закрывается.
 // Синтетические данные (фикстуры, без реальной интеграции).
+// Тест-кейсы 12_TEST_PLAN: T-CART-037 (кнопка-итог доступна при открытой панели SCR-14).
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -53,8 +56,9 @@ List<Override> _overrides(Product p, {ProductFavoritePort? favorites}) => <Overr
   productFavoritePortProvider.overrideWithValue(favorites),
 ];
 
-/// Список-заглушка SCR-10 на expanded: шапка 64 с полем поиска (SearchBar), сайдбар 240, контент-колонка
-/// (якорь), CP 320 с кнопкой — CP и SearchBar размечены как в `CatalogWorkspace` (`DsPanelPassThrough`).
+/// Список-заглушка SCR-10 на expanded по прототипу 2026-10-29 (ADR-112): шапка 68 с полем поиска (SearchBar —
+/// сквозная область, закрывает панель) и кнопкой-итогом корзины справа (сквозная область без закрытия — как в
+/// `CatalogHeader`), колонка категорий 132, контент-колонка (якорь панели). Постоянной CP нет.
 class _FakeCatalog extends StatelessWidget {
   const _FakeCatalog({required this.onSidebarTap, required this.onCartTap, required this.searchFocus});
 
@@ -68,7 +72,7 @@ class _FakeCatalog extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         SizedBox(
-          height: 64,
+          height: 68,
           child: Row(
             children: <Widget>[
               const SizedBox(width: 300, child: Text('header')),
@@ -79,6 +83,19 @@ class _FakeCatalog extends StatelessWidget {
                   child: TextField(key: const ValueKey<String>('fake-search'), focusNode: searchFocus),
                 ),
               ),
+              const Spacer(),
+              DsPanelPassThrough(
+                child: SizedBox(
+                  width: 160,
+                  height: 44,
+                  child: TextButton(
+                    key: const ValueKey<String>('fake-cart-button'),
+                    onPressed: onCartTap,
+                    child: const Text('Корзина · 3'),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 120, child: Text('bell+user')),
             ],
           ),
         ),
@@ -87,7 +104,7 @@ class _FakeCatalog extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               SizedBox(
-                width: 240,
+                width: 132,
                 child: TextButton(
                   key: const ValueKey<String>('fake-sidebar'),
                   onPressed: onSidebarTap,
@@ -97,21 +114,6 @@ class _FakeCatalog extends StatelessWidget {
               const Expanded(
                 child: DsContentRegion(
                   child: ColoredBox(key: ValueKey<String>('fake-list'), color: Colors.white),
-                ),
-              ),
-              SizedBox(
-                width: 320,
-                child: DsPanelPassThrough(
-                  child: Column(
-                    children: <Widget>[
-                      const Text('cart', key: ValueKey<String>('fake-cart')),
-                      TextButton(
-                        key: const ValueKey<String>('fake-cart-action'),
-                        onPressed: onCartTap,
-                        child: const Text('stepper'),
-                      ),
-                    ],
-                  ),
                 ),
               ),
             ],
@@ -235,7 +237,7 @@ void main() {
       return router;
     }
 
-    testWidgets('панель занимает контент-колонку: сайдбар и корзина видимы; клик вне панели — pop', (
+    testWidgets('панель занимает контент-колонку: колонка категорий и кнопка корзины видимы; клик вне панели — pop', (
       WidgetTester tester,
     ) async {
       int sidebarTaps = 0;
@@ -260,8 +262,8 @@ void main() {
       final Rect panel = tester.getRect(find.byKey(const ValueKey<String>('product-panel-overlay')));
       final Rect list = tester.getRect(find.byKey(const ValueKey<String>('fake-list')));
       expect(panel, list, reason: 'панель — ровно контент-колонка (ширина < 1200)');
-      // Список под прозрачной страницей остаётся построенным: сайдбар и корзина видимы.
-      expect(find.byKey(const ValueKey<String>('fake-cart')), findsOneWidget);
+      // Список под прозрачной страницей остаётся построенным: колонка категорий и кнопка корзины видимы.
+      expect(find.byKey(const ValueKey<String>('fake-cart-button')), findsOneWidget);
       expect(find.byKey(const ValueKey<String>('fake-sidebar')), findsOneWidget);
 
       // Клик по сайдбару (вне панели) закрывает панель тем же маршрутом, без действия под ней.
@@ -272,29 +274,29 @@ void main() {
       expect(sidebarTaps, 0);
     });
 
-    testWidgets('клик по контролу CP панель не закрывает и доходит до CP (02 SCR-14.2)', (WidgetTester tester) async {
+    testWidgets('кнопка-итог корзины в шапке при открытой панели: нажатие доходит до кнопки, панель остаётся '
+        '(02 SCR-14.2 ред. 1.16, AC-UI-14-001; ADR-112)', (WidgetTester tester) async {
       int cartTaps = 0;
       final GoRouter router = await pumpRouter(tester, onSidebarTap: () {}, onCartTap: () => cartTaps++);
       unawaited(router.push<void>('/catalog/p/p-1'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const ValueKey<String>('fake-cart-action')));
+      await tester.tap(find.byKey(const ValueKey<String>('fake-cart-button')));
       await tester.pumpAndSettle();
-      expect(cartTaps, 1, reason: 'клик по CP доходит до контрола');
+      expect(cartTaps, 1, reason: 'нажатие доходит до кнопки (в приложении — drawer корзины поверх панели)');
       expect(find.byType(ProductDetailsScreen), findsOneWidget, reason: 'панель остаётся открытой');
       expect(router.canPop(), isTrue, reason: 'маршрут панели в стеке');
-      // Пустая область CP — тоже без закрытия.
-      final Size window = tester.view.physicalSize;
-      await tester.tapAt(Offset(window.width - 20, window.height - 20));
+      // Пустая область шапки рядом с кнопкой — по-прежнему закрывает панель (navigation.md §5).
+      await tester.tapAt(const Offset(150, 34));
       await tester.pumpAndSettle();
-      expect(find.byType(ProductDetailsScreen), findsOneWidget);
+      expect(find.byType(ProductDetailsScreen), findsNothing);
     });
 
     testWidgets('клик по пустой области шапки — pop', (WidgetTester tester) async {
       final GoRouter router = await pumpRouter(tester, onSidebarTap: () {});
       unawaited(router.push<void>('/catalog/p/p-1'));
       await tester.pumpAndSettle();
-      await tester.tapAt(const Offset(150, 32));
+      await tester.tapAt(const Offset(150, 34));
       await tester.pumpAndSettle();
       expect(find.byType(ProductDetailsScreen), findsNothing);
       expect(router.routerDelegate.currentConfiguration.uri.path, '/catalog');

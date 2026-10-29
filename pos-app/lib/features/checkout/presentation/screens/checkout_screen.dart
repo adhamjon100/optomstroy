@@ -9,6 +9,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:optomstroy/core/di/core_providers.dart';
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/error/error_mapper.dart';
 import 'package:optomstroy/core/error/failure.dart';
@@ -213,7 +214,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final CheckoutState s = _state;
     final String name = l10n.checkout_credit_parked_name(
       s.customer?.title ?? l10n.checkout_customer_retail_chip,
-      CheckoutFormats.time(DateTime.now().toUtc()),
+      CheckoutFormats.time(ref.read(clockProvider).nowUtc()),
     );
     final bool ok = await _ctl.parkForApproval(name);
     if (ok && mounted) ref.read(checkoutNavigatorProvider).parked(context);

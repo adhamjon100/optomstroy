@@ -67,7 +67,7 @@ void main() {
       expect(taps, 2);
     });
 
-    testWidgets('палитра B: primary — заливка #FF8700 с тёмным текстом; outlined — primaryText', (
+    testWidgets('палитра B (ADR-111): primary — заливка с текстом onPrimary ≥ 4.5:1; outlined — primaryText', (
       WidgetTester tester,
     ) async {
       await pumpDs(
@@ -87,11 +87,16 @@ void main() {
           .map((AnimatedContainer a) => a.decoration)
           .whereType<BoxDecoration>();
       expect(fills.any((BoxDecoration d) => d.color == c.primary), isTrue);
-      // Белый текст на primary запрещён (DS-098).
-      expect(
-        tester.widgetList<Text>(find.byType(Text)).every((Text t) => t.style?.color != const Color(0xFFFFFFFF)),
-        isTrue,
-      );
+      // DS-098 в редакции ADR-111: текст на заливке primary — только onPrimary, и пара проходит AA.
+      double contrast(Color a, Color b) {
+        final double la = a.computeLuminance();
+        final double lb = b.computeLuminance();
+        return ((la > lb ? la : lb) + 0.05) / ((la > lb ? lb : la) + 0.05);
+      }
+
+      expect(contrast(c.onPrimary, c.primary), greaterThanOrEqualTo(4.5));
+      expect(contrast(c.onPrimary, c.primaryHover), greaterThanOrEqualTo(4.5));
+      expect(contrast(c.onPrimary, c.primaryPressed), greaterThanOrEqualTo(4.5));
     });
   });
 
@@ -334,6 +339,35 @@ void main() {
         }
       });
     }
+
+    testWidgets(
+      'навигация none (оболочка сотрудника, ADR-112): medium и expanded — без rail и без слота корзины (корзина — '
+      'drawer 420 по кнопке шапки); compact — нижняя панель и CartFab',
+      (WidgetTester tester) async {
+        Widget none() => AdaptiveScaffold(
+          destinations: dsShowcaseDestinations,
+          onDestinationSelected: (_) {},
+          navigation: DsShellNavigation.none,
+          topBar: (BuildContext context, WindowClass wc) => Text('шапка ${wc.name}'),
+          cartFab: const Text('fab'),
+          body: const Text('тело'),
+        );
+        for (final Size size in const <Size>[Size(800, 1280), Size(1280, 800), Size(1920, 1080)]) {
+          await pumpDs(tester, none(), size: size, scroll: false);
+          final WindowClass wc = DsBreakpoints.forWidth(size.width);
+          expect(find.byType(NavigationRailApp), findsNothing, reason: '$size');
+          expect(find.byType(BottomNavBar), findsNothing, reason: '$size');
+          expect(find.text('шапка ${wc.name}'), findsOneWidget);
+          expect(find.text('тело'), findsOneWidget);
+          expect(find.text('fab'), findsNothing, reason: '$size: CartFab — только compact');
+          // Тело — от левого края окна: rail 72 слева нет.
+          expect(tester.getTopLeft(find.text('тело')).dx, lessThan(72), reason: '$size');
+        }
+        await pumpDs(tester, none(), size: const Size(360, 640), scroll: false);
+        expect(find.byType(BottomNavBar), findsOneWidget, reason: 'compact не меняется');
+        expect(find.text('fab'), findsOneWidget);
+      },
+    );
 
     testWidgets('смена класса окна сохраняет состояние тела (п. 8.7)', (WidgetTester tester) async {
       await pumpDs(tester, scaffold(const _Counter()), size: const Size(360, 640), scroll: false);

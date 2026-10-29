@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Оптомстрой POS — выбор товаров</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F1F6FC}
+a{color:#C9330C}a:hover{color:#A82A09}
+button{font-family:inherit}
+.hov:hover{background:#F6F9FE}
+.tile:hover{border-color:#F5C6B6}
+.card:hover{box-shadow:0 6px 18px rgba(14,20,86,0.10)}
+.add:hover{background:#BF300B}
+.ghost:hover{background:#F6F9FE}
+button:focus-visible,input:focus-visible{outline:3px solid #1F5FA8;outline-offset:2px}
+.strip::-webkit-scrollbar{display:none}
+</style>
+</helmet>
+<div style="position: relative; min-height: 100vh; background: #F1F6FC; font-family: Inter, 'Segoe UI', system-ui, sans-serif; color: #0E1456; overflow-x: hidden">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px; padding: 12px 24px; background: #FFFFFF; border-bottom: 1px solid #E3E9F2">
+  <div style="display: flex; align-items: center; gap: 10px; flex: 0 0 auto">
+    <img src="./assets/25202bdd6bd63803094dabb064a725b5.png" alt="" style="width: 38px; height: 38px; object-fit: contain">
+    <span style="font-size: 21px; font-weight: 700; letter-spacing: -0.2px; color: #0E1456">Оптомстрой</span>
+  </div>
+  <label style="flex: 1 1 360px; max-width: 680px; display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 8px 0 14px; background: #EAF1FB; border-radius: 10px; box-sizing: border-box">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B6478" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+    <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Поиск товара</span>
+    <input type="search" value="{{q}}" onInput="{{onSearch}}" placeholder="Поиск товара по названию, коду или штрих-коду..." style="flex: 1; min-width: 0; border: 0; background: transparent; font-size: 14px; color: #0E1456; font-family: inherit; outline: none">
+    <button type="button" aria-label="Сканировать штрихкод" class="ghost" style="width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0E1456" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2"></path><path d="M8 8v8M11 8v8M14 8v8M16.5 8v8"></path></svg>
+    </button>
+  </label>
+  <div style="display: flex; align-items: center; gap: 14px; margin-left: auto">
+    <button type="button" onClick="{{openCart}}" aria-label="Открыть корзину" style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px 0 12px; border: 1px solid #F5C6B6; background: #FDEEE9; border-radius: 10px; cursor: pointer; color: #0E1456">
+      <span style="position: relative; display: flex">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C9330C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h2l2.2 10.2a1 1 0 0 0 1 .8h8.6a1 1 0 0 0 1-.8L19.5 8H6.2"></path><circle cx="9" cy="19" r="1.4"></circle><circle cx="17" cy="19" r="1.4"></circle></svg>
+        <sc-if value="{{cartHas}}" hint-placeholder-val="{{ true }}"><span style="position: absolute; top: -7px; right: -9px; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 9px; background: #D9380F; color: #FFFFFF; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center">{{cartCount}}</span></sc-if>
+      </span>
+      <span style="display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1">
+        <span style="font-size: 12px; color: #5B6478">Корзина</span>
+        <span style="font-size: 14px; font-weight: 700; color: #0E1456">{{cartTotal}}</span>
+      </span>
+    </button>
+    <button type="button" aria-label="Уведомления: 2 непрочитанных" class="ghost" style="position: relative; width: 44px; height: 44px; border: 0; border-radius: 10px; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0E1456" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6.5 2 6.5H4S6 14 6 9"></path><path d="M10 19a2 2 0 0 0 4 0"></path></svg>
+      <span style="position: absolute; top: 6px; right: 6px; min-width: 17px; height: 17px; border-radius: 9px; background: #D21B1F; color: #FFFFFF; font-size: 10px; font-weight: 700; line-height: 17px; text-align: center">2</span>
+    </button>
+    <div style="display: flex; align-items: center; gap: 10px">
+      <span style="width: 38px; height: 38px; border-radius: 19px; background: #FDEEE9; color: #C9330C; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 15px">А</span>
+      <span style="display: flex; flex-direction: column; line-height: 1.2">
+        <span style="font-size: 14px; font-weight: 600; color: #0E1456">Абдулла</span>
+        <span style="font-size: 12px; color: #6B7487">Продавец</span>
+      </span>
+    </div>
+  </div>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0">
+  <nav aria-label="Категории" style="flex: 0 0 132px; box-sizing: border-box; padding: 20px 14px 24px 18px">
+    <h2 style="margin: 0 0 14px 4px; font-size: 19px; font-weight: 700; color: #0E1456">Каталог</h2>
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <sc-for list="{{cats}}" as="c" hint-placeholder-count="8">
+        <button type="button" class="tile" onClick="{{c.pick}}" aria-pressed="{{c.pressed}}" style="{{c.tileStyle}}">
+          <img src="{{c.icon}}" alt="" style="width: 46px; height: 40px; object-fit: contain">
+          <span style="{{c.labelStyle}}">{{c.name}}</span>
+        </button>
+      </sc-for>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 18px 24px 40px 8px">
+    <h1 style="margin: 4px 0 14px; font-size: 30px; font-weight: 800; letter-spacing: -0.4px; color: #0E1456">{{title}}</h1>
+
+    <div style="position: relative">
+      <div class="strip" style="overflow: hidden; border-radius: 12px">
+        <div style="{{stripStyle}}">
+          <sc-for list="{{subs}}" as="s" hint-placeholder-count="9">
+            <button type="button" onClick="{{s.pick}}" aria-pressed="{{s.pressed}}" style="{{s.cardStyle}}">
+              <span style="height: 92px; display: flex; align-items: center; justify-content: center">
+                <sc-if value="{{s.hasImg}}" hint-placeholder-val="{{ true }}"><img src="{{s.img}}" alt="" style="max-width: 96px; max-height: 88px; object-fit: contain"></sc-if>
+                <sc-if value="{{s.noImg}}" hint-placeholder-val="{{ false }}"><span style="width: 56px; height: 56px; border-radius: 28px; background: #EEF3FA; display: flex; align-items: center; justify-content: center"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#7D879A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"></rect><rect x="13" y="4" width="7" height="7" rx="1.5"></rect><rect x="4" y="13" width="7" height="7" rx="1.5"></rect><rect x="13" y="13" width="7" height="7" rx="1.5"></rect></svg></span></sc-if>
+              </span>
+              <span style="{{s.labelStyle}}">{{s.name}}</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+      <sc-if value="{{canLeft}}" hint-placeholder-val="{{ false }}">
+        <button type="button" onClick="{{stripLeft}}" aria-label="Прокрутить подкатегории влево" style="position: absolute; left: -12px; top: 50%; transform: translateY(-50%); width: 38px; height: 38px; border-radius: 19px; border: 1px solid #E3E9F2; background: #FFFFFF; box-shadow: 0 4px 12px rgba(14,20,86,0.14); display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F5FA8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+        </button>
+      </sc-if>
+      <sc-if value="{{canRight}}" hint-placeholder-val="{{ true }}">
+        <button type="button" onClick="{{stripRight}}" aria-label="Прокрутить подкатегории вправо" style="position: absolute; right: -10px; top: 50%; transform: translateY(-50%); width: 38px; height: 38px; border-radius: 19px; border: 1px solid #E3E9F2; background: #FFFFFF; box-shadow: 0 4px 12px rgba(14,20,86,0.14); display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F5FA8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+        </button>
+      </sc-if>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 18px 0 14px">
+      <div style="display: flex; flex-wrap: wrap; gap: 10px">
+        <button type="button" onClick="{{toggleNew}}" aria-pressed="{{newPressed}}" style="{{newStyle}}">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path></svg>
+          Новые
+        </button>
+        <button type="button" onClick="{{toggleFav}}" aria-pressed="{{favPressed}}" style="{{favStyle}}">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.8l2.5 5.2 5.6.7-4.1 3.9 1 5.6L12 16.5l-5 2.7 1-5.6-4.1-3.9 5.6-.7z"></path></svg>
+          Избранные
+        </button>
+        <span style="align-self: center; font-size: 13px; color: #6B7487; padding-left: 4px">Найдено: {{foundText}}</span>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+        <div role="group" aria-label="Вид списка" style="display: flex; gap: 4px; padding: 4px; background: #FFFFFF; border: 1px solid #E3E9F2; border-radius: 10px">
+          <button type="button" onClick="{{setGrid}}" aria-pressed="{{gridPressed}}" style="{{gridStyle}}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="8" rx="1.5"></rect><rect x="3" y="13" width="8" height="8" rx="1.5"></rect><rect x="13" y="13" width="8" height="8" rx="1.5"></rect></svg>
+            Сетка
+          </button>
+          <button type="button" onClick="{{setList}}" aria-pressed="{{listPressed}}" style="{{listStyle}}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12"></path><circle cx="4.5" cy="6" r="1"></circle><circle cx="4.5" cy="12" r="1"></circle><circle cx="4.5" cy="18" r="1"></circle></svg>
+            Список
+          </button>
+          <button type="button" onClick="{{setCompact}}" aria-pressed="{{compactPressed}}" style="{{compactStyle}}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 5h16M4 9.7h16M4 14.3h16M4 19h16"></path></svg>
+            Компакт
+          </button>
+        </div>
+        <button type="button" onClick="{{nextSort}}" aria-label="Сортировка: сменить порядок" class="ghost" style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border: 1px solid #E3E9F2; background: #FFFFFF; border-radius: 10px; color: #0E1456; font-size: 14px; font-weight: 500; cursor: pointer">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0E1456" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M3.5 16.5L7 20l3.5-3.5M17 20V4M13.5 7.5L17 4l3.5 3.5"></path></svg>
+          {{sortLabel}}
+        </button>
+        <button type="button" onClick="{{toggleFilters}}" aria-pressed="{{filtersPressed}}" aria-expanded="{{filtersPressed}}" style="{{filtersStyle}}">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16l-6.2 7.4V19l-3.6-1.8v-4.8z"></path></svg>
+          Фильтры
+        </button>
+      </div>
+    </div>
+
+    <sc-if value="{{showFilters}}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin: -4px 0 14px; padding: 12px 16px; background: #FFFFFF; border: 1px solid #E3E9F2; border-radius: 12px">
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; color: #0E1456; cursor: pointer">
+          <input type="checkbox" checked="{{inStock}}" onChange="{{toggleStock}}" style="width: 18px; height: 18px; accent-color: #D9380F">
+          Только в наличии
+        </label>
+        <button type="button" onClick="{{resetFilters}}" class="ghost" style="height: 34px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #1F5FA8; font-size: 14px; font-weight: 500; cursor: pointer">Сбросить фильтры</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isEmpty}}" hint-placeholder-val="{{ false }}">
+      <div style="padding: 56px 24px; text-align: center; background: #FFFFFF; border: 1px solid #E3E9F2; border-radius: 14px">
+        <div style="font-size: 18px; font-weight: 700; color: #0E1456">Ничего не найдено</div>
+        <div style="margin-top: 6px; font-size: 14px; color: #6B7487">Измените запрос или сбросьте фильтры</div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isGrid}}" hint-placeholder-val="{{ true }}">
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 14px">
+        <sc-for list="{{items}}" as="p" hint-placeholder-count="12">
+          <article class="card" style="position: relative; display: flex; flex-direction: column; background: #FFFFFF; border: 1px solid #E3E9F2; border-radius: 14px; padding: 10px 12px 12px; box-sizing: border-box; transition: box-shadow 120ms ease">
+            <button type="button" onClick="{{p.fav}}" aria-pressed="{{p.favPressed}}" aria-label="{{p.favLabel}}" style="position: absolute; top: 8px; right: 8px; width: 34px; height: 34px; border: 0; border-radius: 17px; background: #FFFFFF; display: flex; align-items: center; justify-content: center; cursor: pointer">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="{{p.starFill}}" stroke="#E2A93B" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.8l2.5 5.2 5.6.7-4.1 3.9 1 5.6L12 16.5l-5 2.7 1-5.6-4.1-3.9 5.6-.7z"></path></svg>
+            </button>
+            <div style="height: 150px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px">
+              <sc-if value="{{p.hasImg}}" hint-placeholder-val="{{ true }}"><img src="{{p.img}}" alt="" style="max-width: 100%; max-height: 146px; object-fit: contain"></sc-if>
+              <sc-if value="{{p.noImg}}" hint-placeholder-val="{{ false }}"><span style="width: 100%; height: 146px; border-radius: 10px; background: #F4F7FB; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #7D879A; font-size: 12px"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#9AA3B2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"></rect><circle cx="9" cy="10" r="1.6"></circle><path d="M20.5 16l-4.5-4.5L8 19"></path></svg>Фото появится из 1С</span></sc-if>
+            </div>
+            <h3 style="margin: 0; font-size: 14px; line-height: 1.32; font-weight: 600; color: #16206A; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 37px">{{p.name}}</h3>
+            <div style="margin-top: 4px; font-size: 12px; color: #6B7487">Арт. {{p.sku}}</div>
+            <div style="{{p.stockStyle}}">
+              <sc-if value="{{p.isIn}}" hint-placeholder-val="{{ true }}"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#177245"></circle><path d="M7.5 12.3l3 3 6-6.3" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg></sc-if>
+              <sc-if value="{{p.isLow}}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9.5 17h-19z" fill="#B26A00"></path><path d="M12 9.5v4.5M12 16.8v.2" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"></path></svg></sc-if>
+              <sc-if value="{{p.isOut}}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#8A93A3"></circle><path d="M8.5 8.5l7 7M15.5 8.5l-7 7" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"></path></svg></sc-if>
+              {{p.stockText}}
+            </div>
+            <div style="margin-top: 6px; display: flex; align-items: baseline; gap: 4px; flex-wrap: wrap">
+              <span style="font-size: 18px; font-weight: 800; color: #C9330C; letter-spacing: -0.2px">{{p.price}}</span>
+              <span style="font-size: 13px; color: #6B7487">/ {{p.unit}}</span>
+            </div>
+            <div style="flex: 1"></div>
+            <button type="button" class="{{p.btnClass}}" onClick="{{p.add}}" disabled="{{p.disabled}}" style="{{p.btnStyle}}">{{p.btnLabel}}</button>
+          </article>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isList}}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <sc-for list="{{items}}" as="p" hint-placeholder-count="8">
+          <article class="card" style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 10px 14px; background: #FFFFFF; border: 1px solid #E3E9F2; border-radius: 12px">
+            <span style="width: 72px; height: 60px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto">
+              <sc-if value="{{p.hasImg}}" hint-placeholder-val="{{ true }}"><img src="{{p.img}}" alt="" style="max-width: 72px; max-height: 60px; object-fit: contain"></sc-if>
+              <sc-if value="{{p.noImg}}" hint-placeholder-val="{{ false }}"><span style="width: 60px; height: 52px; border-radius: 8px; background: #F4F7FB"></span></sc-if>
+            </span>
+            <span style="flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+              <span style="font-size: 15px; font-weight: 600; color: #16206A">{{p.name}}</span>
+              <span style="font-size: 12px; color: #6B7487">Арт. {{p.sku}}</span>
+            </span>
+            <span style="{{p.stockStyleRow}}">{{p.stockText}}</span>
+            <span style="flex: 0 0 150px; text-align: right"><span style="font-size: 17px; font-weight: 800; color: #C9330C">{{p.price}}</span><span style="font-size: 13px; color: #6B7487"> / {{p.unit}}</span></span>
+            <button type="button" class="{{p.btnClass}}" onClick="{{p.add}}" disabled="{{p.disabled}}" style="{{p.btnStyleRow}}">{{p.btnLabel}}</button>
+          </article>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isCompact}}" hint-placeholder-val="{{ false }}">
+      <div style="background: #FFFFFF; border: 1px solid #E3E9F2; border-radius: 12px; overflow-x: auto">
+        <div style="min-width: 720px">
+          <div style="display: grid; grid-template-columns: 120px minmax(0, 1fr) 150px 150px 132px; gap: 12px; padding: 10px 16px; font-size: 12px; font-weight: 600; color: #6B7487; border-bottom: 1px solid #E3E9F2">
+            <span>Артикул</span><span>Название</span><span>Наличие</span><span style="text-align: right">Цена</span><span></span>
+          </div>
+          <sc-for list="{{items}}" as="p" hint-placeholder-count="10">
+            <div class="hov" style="display: grid; grid-template-columns: 120px minmax(0, 1fr) 150px 150px 132px; gap: 12px; align-items: center; padding: 8px 16px; border-bottom: 1px solid #EEF2F8; font-size: 14px">
+              <span style="color: #5B6478">{{p.sku}}</span>
+              <span style="font-weight: 600; color: #16206A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{p.name}}</span>
+              <span style="{{p.stockStyleRow}}">{{p.stockText}}</span>
+              <span style="text-align: right; font-weight: 800; color: #C9330C">{{p.price}}</span>
+              <button type="button" class="{{p.btnClass}}" onClick="{{p.add}}" disabled="{{p.disabled}}" style="{{p.btnStyleCompact}}">{{p.btnShort}}</button>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+  </main>
+</div>
+
+<sc-if value="{{toastShown}}" hint-placeholder-val="{{ false }}">
+  <div role="status" style="position: fixed; right: 24px; bottom: 24px; display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: #0E1456; color: #FFFFFF; border-radius: 12px; font-size: 14px; box-shadow: 0 10px 30px rgba(14,20,86,0.30); max-width: 360px">
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#2FB36A"></circle><path d="M7.5 12.3l3 3 6-6.3" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    {{toast}}
+  </div>
+</sc-if>
+
+<sc-if value="{{cartOpen}}" hint-placeholder-val="{{ false }}">
+  <div style="position: fixed; inset: 0; z-index: 20; display: flex; justify-content: flex-end">
+    <button type="button" onClick="{{closeCart}}" aria-label="Закрыть корзину" style="position: absolute; inset: 0; border: 0; background: rgba(14,20,86,0.28); cursor: pointer"></button>
+    <aside aria-label="Корзина" style="position: relative; width: 420px; max-width: 100%; height: 100%; background: #FFFFFF; box-shadow: -12px 0 40px rgba(14,20,86,0.18); display: flex; flex-direction: column">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid #E3E9F2">
+        <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: #0E1456">Корзина <span style="font-weight: 600; color: #6B7487; font-size: 16px">· {{cartCount}} поз.</span></h2>
+        <button type="button" onClick="{{closeCart}}" aria-label="Закрыть корзину" class="ghost" style="width: 40px; height: 40px; border: 0; border-radius: 10px; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0E1456" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+        </button>
+      </div>
+      <button type="button" class="hov" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 20px; border: 0; border-bottom: 1px solid #E3E9F2; background: #FFFFFF; cursor: pointer; text-align: left">
+        <span style="display: flex; align-items: center; gap: 10px; font-size: 14px; color: #0E1456">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0E1456" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"></path></svg>
+          Клиент: <strong>не выбран</strong>
+        </span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6B7487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+      </button>
+      <div style="flex: 1; overflow-y: auto; padding: 6px 20px">
+        <sc-if value="{{cartEmpty}}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 48px 0; text-align: center">
+            <div style="font-size: 17px; font-weight: 700; color: #0E1456">Корзина пуста</div>
+            <div style="margin-top: 6px; font-size: 14px; color: #6B7487">Добавьте товары из каталога или отсканируйте штрихкод</div>
+          </div>
+        </sc-if>
+        <sc-for list="{{lines}}" as="l" hint-placeholder-count="3">
+          <div style="display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid #EEF2F8">
+            <span style="width: 54px; height: 48px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center">
+              <sc-if value="{{l.hasImg}}" hint-placeholder-val="{{ true }}"><img src="{{l.img}}" alt="" style="max-width: 54px; max-height: 48px; object-fit: contain"></sc-if>
+            </span>
+            <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+              <span style="display: flex; justify-content: space-between; gap: 8px">
+                <span style="font-size: 13px; font-weight: 600; color: #16206A; line-height: 1.3">{{l.name}}</span>
+                <button type="button" onClick="{{l.remove}}" aria-label="Удалить из корзины" class="ghost" style="width: 28px; height: 28px; flex: 0 0 auto; border: 0; border-radius: 8px; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B7487" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+                </button>
+              </span>
+              <span style="display: flex; align-items: center; justify-content: space-between">
+                <span style="display: flex; align-items: center; border: 1px solid #E3E9F2; border-radius: 9px">
+                  <button type="button" onClick="{{l.dec}}" aria-label="Уменьшить количество" style="width: 34px; height: 32px; border: 0; background: transparent; font-size: 18px; color: #0E1456; cursor: pointer">−</button>
+                  <span style="min-width: 32px; text-align: center; font-size: 14px; font-weight: 600">{{l.qty}}</span>
+                  <button type="button" onClick="{{l.inc}}" aria-label="Увеличить количество" style="width: 34px; height: 32px; border: 0; background: transparent; font-size: 18px; color: #0E1456; cursor: pointer">+</button>
+                </span>
+                <span style="font-size: 15px; font-weight: 800; color: #0E1456">{{l.sum}}</span>
+              </span>
+            </span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="padding: 16px 20px 20px; border-top: 1px solid #E3E9F2; display: flex; flex-direction: column; gap: 12px; background: #FBFCFE">
+        <div style="display: flex; justify-content: space-between; font-size: 14px; color: #5B6478"><span>Товаров ({{cartCount}})</span><span>{{cartTotal}}</span></div>
+        <div style="display: flex; justify-content: space-between; align-items: baseline"><span style="font-size: 18px; font-weight: 800; color: #0E1456">Итого</span><span style="font-size: 24px; font-weight: 800; color: #C9330C">{{cartTotal}}</span></div>
+        <div style="font-size: 12px; color: #6B7487">Итог пересчитывает сервер по ценам 1С при оформлении</div>
+        <div style="display: flex; gap: 10px">
+          <button type="button" class="ghost" style="flex: 1; height: 46px; border: 1px solid #D5DEEA; background: #FFFFFF; border-radius: 10px; font-size: 14px; font-weight: 600; color: #0E1456; cursor: pointer">Отложить · F8</button>
+          <button type="button" class="add" disabled="{{cartEmpty}}" style="flex: 1.4; height: 46px; border: 0; background: #D9380F; border-radius: 10px; font-size: 15px; font-weight: 700; color: #FFFFFF; cursor: pointer">Создать заказ · F9</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1180}}'>
+const IMG = {
+  cat: {
+    heating: './assets/546298e04342487169e63bf370870029.png', plumbing: './assets/6c7b2573872e04181eedbabcf138e0dd.png',
+    water: './assets/18871ec73e897ad0554a169f16aeda41.png', electric: './assets/d4a861c04df4812da554030fc9e4ffc7.png',
+    vent: './assets/468d4c01b2c789f1e21efcbc907b1597.png', build: './assets/2671204efe725bfe9d3d5db9158c1fa6.png',
+    tools: './assets/4377c3605c298c5e3a224c6f3355b991.png', fasteners: './assets/876d016d574cb37baebadcb499ec0a69.png'
+  },
+  sub: {
+    toilets: './assets/d11b39a04f20cb98c11d14a0cdf8dd43.png', sinks: './assets/14b1f345d22161b24c14878b919417a9.png',
+    baths: './assets/d2d53b6a0f3611a133465e3a67c327c3.png', showers: './assets/358ea61c9831eaaafde6a5186cc60f53.png',
+    install: './assets/95723393aba8a436eee4d53e6ee59e4f.png', bidet: './assets/703a0345cb913baad2a1341ed2fde391.png',
+    urinals: './assets/9dd040f9ed38deb930020675eee7fdcf.png', siphons: './assets/62448b65c9a018b29e46c5d645646680.png',
+    pipes: './assets/3882010e534dcc3989297708b0ada6a6.png'
+  },
+  p: {
+    toilet: './assets/7ce996d8b6cf797732db4f25e31fd393.png', sink: './assets/3d2267029dd6016c1ea180c0bf46fa87.png',
+    bath: './assets/2def3ed384b10a363787ae6626a485d9.png', shower: './assets/86a927d35176488b6306ee75e3e4593e.png',
+    install: './assets/0cc91975cf5245eee7c104eb65149fb1.png', bidet: './assets/17b994f133d85e576cec062b50821123.png',
+    urinal: './assets/91ee2af9e3dd8f7805571fb3df0b9681.png', siphon: './assets/8950e785262161a94a5b3331000fedd0.png',
+    pipes: './assets/46a28a8290f4315e59c7fd6778ba1df6.png', vanity: './assets/b57b3de12c3290cbdbef0f9d94d63ea0.png',
+    tray: './assets/7c85a959f72311e8b8fd561ffea070cb.png', towel: './assets/35c646961926ffd91dc458dd2870a56c.png'
+  }
+};
+
+const CATS = [
+  { id: 'heating', name: 'Отопление', subs: [['radiators', 'Радиаторы'], ['boilers', 'Котлы'], ['floor', 'Тёплый пол'], ['hpipes', 'Трубы отопления']] },
+  { id: 'plumbing', name: 'Сантехника', subs: [['toilets', 'Унитазы'], ['sinks', 'Раковины'], ['baths', 'Ванны'], ['showers', 'Душевые кабины'], ['install', 'Инсталляции'], ['bidet', 'Биде'], ['urinals', 'Писсуары'], ['siphons', 'Сифоны'], ['pipes', 'Канализационные трубы и фитинги']] },
+  { id: 'water', name: 'Водоснабжение', subs: [['ppr', 'Трубы ППР'], ['valves', 'Краны и вентили'], ['pumps', 'Насосы'], ['filters', 'Фильтры']] },
+  { id: 'electric', name: 'Электрика', subs: [['cable', 'Кабель'], ['breakers', 'Автоматы'], ['sockets', 'Розетки и выключатели'], ['light', 'Освещение']] },
+  { id: 'vent', name: 'Вентиляция', subs: [['fans', 'Вентиляторы'], ['ducts', 'Воздуховоды'], ['grilles', 'Решётки']] },
+  { id: 'build', name: 'Строительные материалы', subs: [['mixes', 'Сухие смеси'], ['drywall', 'Гипсокартон'], ['insul', 'Утеплитель']] },
+  { id: 'tools', name: 'Инструменты', subs: [['power', 'Электроинструмент'], ['hand', 'Ручной инструмент'], ['consum', 'Расходники']] },
+  { id: 'fasteners', name: 'Крепеж и фурнитура', subs: [['screws', 'Саморезы'], ['dowels', 'Дюбели'], ['anchors', 'Анкеры']] }
+];
+
+const P = [
+  { id: 'p1', cat: 'plumbing', sub: 'toilets', name: 'Унитаз-компакт Sanita Luxe Classic', sku: 'SL1001', price: 845000, stock: 'in', qty: 24, img: 'toilet', isNew: true },
+  { id: 'p2', cat: 'plumbing', sub: 'sinks', name: 'Раковина накладная Kirovit KVM-021', sku: 'KVM021', price: 312000, stock: 'in', qty: 15, img: 'sink' },
+  { id: 'p3', cat: 'plumbing', sub: 'baths', name: 'Ванна акриловая AquaLine 170x70', sku: 'AL17070', price: 1295000, stock: 'in', qty: 6, img: 'bath' },
+  { id: 'p4', cat: 'plumbing', sub: 'showers', name: 'Душевая кабина River 90x90', sku: 'RV9090', price: 1860000, stock: 'in', qty: 4, img: 'shower', isNew: true },
+  { id: 'p5', cat: 'plumbing', sub: 'install', name: 'Инсталляция для унитаза Geberit Duofix', sku: 'GD112', price: 1432000, stock: 'in', qty: 9, img: 'install' },
+  { id: 'p6', cat: 'plumbing', sub: 'bidet', name: 'Биде напольное Sanita', sku: 'SB200', price: 1045000, stock: 'in', qty: 7, img: 'bidet' },
+  { id: 'p7', cat: 'plumbing', sub: 'urinals', name: 'Писсуар подвесной Sanita Pro', sku: 'SP300', price: 678000, stock: 'low', qty: 3, img: 'urinal' },
+  { id: 'p8', cat: 'plumbing', sub: 'siphons', name: 'Сифон для раковины бутылочный хром', sku: 'SF450', price: 125000, stock: 'in', qty: 58, img: 'siphon' },
+  { id: 'p9', cat: 'plumbing', sub: 'pipes', name: 'Тройник канализационный 110 мм', sku: 'KT110', price: 18000, stock: 'in', qty: 340, img: 'pipes', isNew: true },
+  { id: 'p10', cat: 'plumbing', sub: 'sinks', name: 'Тумба с раковиной 60 см белая', sku: 'TR600', price: 1590000, stock: 'out', qty: 0, img: 'vanity' },
+  { id: 'p11', cat: 'plumbing', sub: 'showers', name: 'Поддон акриловый 90x90', sku: 'PD9090', price: 430000, stock: 'in', qty: 11, img: 'tray' },
+  { id: 'p12', cat: 'plumbing', sub: 'baths', name: 'Полотенцесушитель водяной 50x80', sku: 'PS5080', price: 560000, stock: 'in', qty: 13, img: 'towel' },
+  { id: 'h1', cat: 'heating', sub: 'radiators', name: 'Радиатор биметаллический 500/80, 10 секций', sku: 'RB5010', price: 785000, stock: 'in', qty: 32 },
+  { id: 'h2', cat: 'heating', sub: 'boilers', name: 'Котёл газовый настенный 24 кВт', sku: 'KG24', price: 4290000, stock: 'low', qty: 2 },
+  { id: 'h3', cat: 'heating', sub: 'floor', name: 'Мат нагревательный 2 м²', sku: 'MN200', price: 389000, stock: 'in', qty: 18 },
+  { id: 'h4', cat: 'heating', sub: 'hpipes', name: 'Труба металлопластиковая 16 мм, бухта 100 м', sku: 'MP16', price: 520000, stock: 'in', qty: 25 },
+  { id: 'w1', cat: 'water', sub: 'ppr', name: 'Труба ППР 20 мм PN20', sku: 'PPR20', price: 9500, stock: 'in', qty: 900 },
+  { id: 'w2', cat: 'water', sub: 'valves', name: 'Кран шаровой 1/2" латунь', sku: 'KS12', price: 34000, stock: 'in', qty: 150 },
+  { id: 'w3', cat: 'water', sub: 'pumps', name: 'Насос циркуляционный 25/60', sku: 'NC2560', price: 610000, stock: 'out', qty: 0 },
+  { id: 'e1', cat: 'electric', sub: 'cable', name: 'Кабель ВВГнг 3x2,5, бухта 100 м', sku: 'VVG325', price: 1150000, stock: 'in', qty: 12 },
+  { id: 'e2', cat: 'electric', sub: 'breakers', name: 'Автомат 1P 16A', sku: 'AV116', price: 26000, stock: 'in', qty: 240 },
+  { id: 'e3', cat: 'electric', sub: 'sockets', name: 'Розетка двойная с заземлением белая', sku: 'RZ2W', price: 21000, stock: 'in', qty: 95 },
+  { id: 'v1', cat: 'vent', sub: 'fans', name: 'Вентилятор вытяжной 100 мм', sku: 'VV100', price: 148000, stock: 'in', qty: 20 },
+  { id: 'b1', cat: 'build', sub: 'mixes', name: 'Плиточный клей 25 кг', sku: 'PK25', price: 54000, stock: 'in', qty: 300 },
+  { id: 't1', cat: 'tools', sub: 'power', name: 'Дрель ударная 750 Вт', sku: 'DU750', price: 395000, stock: 'in', qty: 8 },
+  { id: 'f1', cat: 'fasteners', sub: 'screws', name: 'Саморезы по дереву 3,5x35, 1000 шт', sku: 'SD3535', price: 42000, stock: 'in', qty: 75 }
+];
+
+const SORTS = ['По названию А–Я', 'По названию Я–А', 'Сначала дешевле', 'Сначала дороже'];
+
+function money(t) {
+  const s = (t / 100).toFixed(2).split('.');
+  return s[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ',' + s[1] + ' сом';
+}
+
+function plural(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { cat: 'plumbing', sub: 'all', view: 'grid', sort: 0, onlyNew: false, onlyFav: false, inStock: false, showFilters: false, q: '', favs: { p1: true }, cart: {}, cartOpen: false, toast: '', subOffset: 0 };
+  }
+
+  componentWillUnmount() { clearTimeout(this.toastTimer); }
+
+  add(p) {
+    if (p.stock === 'out') return;
+    const cart = Object.assign({}, this.state.cart);
+    cart[p.id] = (cart[p.id] || 0) + 1;
+    this.setState({ cart: cart, toast: 'Добавлено: ' + p.name });
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => this.setState({ toast: '' }), 1800);
+  }
+
+  setQty(id, qty) {
+    const cart = Object.assign({}, this.state.cart);
+    if (qty <= 0) delete cart[id]; else cart[id] = qty;
+    this.setState({ cart: cart });
+  }
+
+  renderVals() {
+    const st = this.state;
+    const cat = CATS.find((c) => c.id === st.cat) || CATS[1];
+    const accentText = '#C9330C';
+
+    const cats = CATS.map((c) => {
+      const on = c.id === st.cat;
+      return {
+        name: c.name, icon: IMG.cat[c.id], pressed: on ? 'true' : 'false',
+        pick: () => this.setState({ cat: c.id, sub: 'all', subOffset: 0 }),
+        tileStyle: 'width: 100%; min-height: 88px; padding: 10px 6px 8px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border-radius: 12px; cursor: pointer; transition: border-color 120ms ease, background 120ms ease; ' +
+          (on ? 'background: #FDEEE9; border: 1.5px solid #F5C6B6;' : 'background: #FFFFFF; border: 1.5px solid #E3E9F2;'),
+        labelStyle: 'font-size: 12px; line-height: 1.2; font-weight: ' + (on ? '700' : '600') + '; text-align: center; color: ' + (on ? accentText : '#0E1456')
+      };
+    });
+
+    const subDefs = [['all', 'Все товары']].concat(cat.subs);
+    const subs = subDefs.map((s) => {
+      const on = s[0] === st.sub;
+      const img = cat.id === 'plumbing' ? IMG.sub[s[0]] : null;
+      return {
+        name: s[1], img: img, hasImg: !!img, noImg: !img, pressed: on ? 'true' : 'false',
+        pick: () => this.setState({ sub: s[0] }),
+        cardStyle: 'flex: 0 0 118px; height: 148px; padding: 8px 8px 10px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: space-between; border-radius: 12px; cursor: pointer; transition: background 120ms ease; ' +
+          (on ? 'background: #FDEEE9; border: 1.5px solid #F5C6B6;' : 'background: #FFFFFF; border: 1.5px solid #E3E9F2;'),
+        labelStyle: 'font-size: 13px; line-height: 1.2; font-weight: ' + (on ? '700' : '500') + '; text-align: center; color: ' + (on ? accentText : '#0E1456') + '; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 31px'
+      };
+    });
+    const maxOffset = Math.max(0, subs.length - 6);
+    const offset = Math.min(st.subOffset, maxOffset);
+
+    const q = st.q.trim().toLowerCase();
+    let list = P.filter((p) => p.cat === cat.id && (st.sub === 'all' || p.sub === st.sub));
+    if (q.length >= 2) list = P.filter((p) => p.name.toLowerCase().indexOf(q) >= 0 || p.sku.toLowerCase().indexOf(q) >= 0);
+    if (st.onlyNew) list = list.filter((p) => p.isNew);
+    if (st.onlyFav) list = list.filter((p) => st.favs[p.id]);
+    if (st.inStock) list = list.filter((p) => p.stock !== 'out');
+    list = list.slice().sort((a, b) => {
+      if (st.sort === 0) return a.name.localeCompare(b.name, 'ru');
+      if (st.sort === 1) return b.name.localeCompare(a.name, 'ru');
+      if (st.sort === 2) return a.price - b.price;
+      return b.price - a.price;
+    });
+
+    const items = list.map((p) => {
+      const inCart = st.cart[p.id] || 0;
+      const out = p.stock === 'out';
+      const fav = !!st.favs[p.id];
+      const stockText = p.stock === 'in' ? 'В наличии · ' + p.qty + ' шт' : (p.stock === 'low' ? 'Мало · ' + p.qty + ' шт' : 'Нет в наличии');
+      const stockColor = p.stock === 'in' ? '#177245' : (p.stock === 'low' ? '#8A5300' : '#5F6878');
+      const btnBase = 'border-radius: 10px; font-size: 14px; font-weight: 700; cursor: ' + (out ? 'not-allowed' : 'pointer') + '; transition: background 120ms ease; ' +
+        (out ? 'background: #EEF1F5; color: #6B7487; border: 0;' : (inCart ? 'background: #FDEEE9; color: #A82A09; border: 1.5px solid #F5C6B6;' : 'background: #D9380F; color: #FFFFFF; border: 0;'));
+      const label = out ? 'Нет в наличии' : (inCart ? 'В корзине · ' + inCart + ' — ещё +1' : '+ Добавить');
+      return {
+        name: p.name, sku: p.sku, unit: 'шт', price: money(p.price),
+        img: p.img ? IMG.p[p.img] : null, hasImg: !!p.img, noImg: !p.img,
+        isIn: p.stock === 'in', isLow: p.stock === 'low', isOut: out, stockText: stockText,
+        stockStyle: 'margin-top: 8px; display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: ' + stockColor,
+        stockStyleRow: 'flex: 0 0 150px; font-size: 13px; font-weight: 500; color: ' + stockColor,
+        favPressed: fav ? 'true' : 'false', favLabel: fav ? 'Убрать из избранного' : 'Добавить в избранное', starFill: fav ? '#E2A93B' : 'none',
+        fav: () => { const favs = Object.assign({}, st.favs); if (favs[p.id]) delete favs[p.id]; else favs[p.id] = true; this.setState({ favs: favs }); },
+        add: () => this.add(p), disabled: out, btnClass: out ? '' : (inCart ? 'ghost' : 'add'),
+        btnLabel: label, btnShort: out ? 'Нет' : (inCart ? 'Ещё · ' + inCart : '+ Добавить'),
+        btnStyle: 'margin-top: 10px; width: 100%; height: 40px; ' + btnBase,
+        btnStyleRow: 'flex: 0 0 168px; height: 40px; ' + btnBase,
+        btnStyleCompact: 'height: 34px; font-size: 13px; ' + btnBase
+      };
+    });
+
+    const lines = Object.keys(st.cart).map((id) => {
+      const p = P.find((x) => x.id === id);
+      const qty = st.cart[id];
+      return {
+        name: p.name, qty: qty, sum: money(p.price * qty), img: p.img ? IMG.p[p.img] : null, hasImg: !!p.img,
+        inc: () => this.setQty(id, qty + 1), dec: () => this.setQty(id, qty - 1), remove: () => this.setQty(id, 0)
+      };
+    });
+    const total = Object.keys(st.cart).reduce((s, id) => s + P.find((x) => x.id === id).price * st.cart[id], 0);
+
+    const chip = (on) => 'display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; ' +
+      (on ? 'background: #FDEEE9; border: 1px solid #F5C6B6; color: #A82A09;' : 'background: #FFFFFF; border: 1px solid #E3E9F2; color: #0E1456;');
+    const seg = (on) => 'display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border: 0; border-radius: 7px; font-size: 14px; font-weight: 600; cursor: pointer; ' +
+      (on ? 'background: #FDEEE9; color: #A82A09;' : 'background: transparent; color: #3D4761;');
+
+    return {
+      q: st.q, onSearch: (e) => this.setState({ q: e.target.value }),
+      cats: cats, subs: subs, title: q.length >= 2 ? 'Поиск: «' + st.q.trim() + '»' : cat.name,
+      stripStyle: 'display: flex; gap: 10px; padding: 2px; transform: translateX(-' + (offset * 128) + 'px); transition: transform 220ms ease',
+      canLeft: offset > 0, canRight: offset < maxOffset,
+      stripLeft: () => this.setState({ subOffset: Math.max(0, offset - 3) }),
+      stripRight: () => this.setState({ subOffset: Math.min(maxOffset, offset + 3) }),
+      newPressed: st.onlyNew ? 'true' : 'false', newStyle: chip(st.onlyNew), toggleNew: () => this.setState({ onlyNew: !st.onlyNew }),
+      favPressed: st.onlyFav ? 'true' : 'false', favStyle: chip(st.onlyFav), toggleFav: () => this.setState({ onlyFav: !st.onlyFav }),
+      foundText: items.length + ' ' + plural(items.length, 'товар', 'товара', 'товаров'),
+      gridPressed: st.view === 'grid' ? 'true' : 'false', gridStyle: seg(st.view === 'grid'), setGrid: () => this.setState({ view: 'grid' }),
+      listPressed: st.view === 'list' ? 'true' : 'false', listStyle: seg(st.view === 'list'), setList: () => this.setState({ view: 'list' }),
+      compactPressed: st.view === 'compact' ? 'true' : 'false', compactStyle: seg(st.view === 'compact'), setCompact: () => this.setState({ view: 'compact' }),
+      sortLabel: SORTS[st.sort], nextSort: () => this.setState({ sort: (st.sort + 1) % SORTS.length }),
+      filtersPressed: st.showFilters ? 'true' : 'false', filtersStyle: chip(st.showFilters || st.inStock), toggleFilters: () => this.setState({ showFilters: !st.showFilters }),
+      showFilters: st.showFilters, inStock: st.inStock, toggleStock: () => this.setState({ inStock: !st.inStock }),
+      resetFilters: () => this.setState({ inStock: false, onlyNew: false, onlyFav: false }),
+      isEmpty: items.length === 0, isGrid: st.view === 'grid' && items.length > 0, isList: st.view === 'list' && items.length > 0, isCompact: st.view === 'compact' && items.length > 0,
+      items: items,
+      cartHas: lines.length > 0, cartCount: lines.length, cartTotal: money(total), cartEmpty: lines.length === 0, lines: lines,
+      cartOpen: st.cartOpen, openCart: () => this.setState({ cartOpen: true }), closeCart: () => this.setState({ cartOpen: false }),
+      toastShown: !!st.toast, toast: st.toast
+    };
+  }
+}
+</script>
+</body>
+</html>

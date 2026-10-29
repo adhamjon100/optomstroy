@@ -872,7 +872,13 @@ class AppLocalizationsRu extends AppLocalizations {
   String get cart_cta_create_order => 'Создать заказ';
 
   @override
+  String get cart_cta_create_order_hotkey => 'Создать заказ · F9';
+
+  @override
   String get cart_cta_park => 'Отложить заказ';
+
+  @override
+  String get cart_cta_park_hotkey => 'Отложить · F8';
 
   @override
   String get cart_cta_reason_accept_prices => 'Примите новые цены';
@@ -966,6 +972,14 @@ class AppLocalizationsRu extends AppLocalizations {
   String get cart_discount_override_reason_required => 'Укажите причину скидки';
 
   @override
+  String get cart_drawer_close_a11y => 'Закрыть корзину';
+
+  @override
+  String cart_drawer_title_count(int count) {
+    return '· $count поз.';
+  }
+
+  @override
   String get cart_empty_body => 'Добавьте товары из каталога или отсканируйте штрихкод';
 
   @override
@@ -1004,6 +1018,17 @@ class AppLocalizationsRu extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String cart_header_label_units(String units) {
+    return 'Корзина · $units';
+  }
+
+  @override
+  String get cart_header_save_failed => 'Корзина не сохранена';
+
+  @override
+  String get cart_header_warning => 'В корзине есть предупреждения';
 
   @override
   String cart_items_count(int count) {
@@ -1138,6 +1163,9 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get cart_summary_preliminary => 'предварительно';
+
+  @override
+  String get cart_summary_server_note => 'Итог пересчитывает сервер по ценам 1С при оформлении';
 
   @override
   String get cart_summary_total => 'Итого';
@@ -1381,12 +1409,27 @@ class AppLocalizationsRu extends AppLocalizations {
   String get catalog_added_snackbar => 'Добавлено · Открыть';
 
   @override
+  String catalog_added_toast(String name) {
+    return 'Добавлено: $name';
+  }
+
+  @override
   String catalog_card_a11y(String name, String price, String sku, String stock, String unitFull) {
     return '$name, $price за $unitFull, $stock, артикул $sku';
   }
 
   @override
   String get catalog_card_choose_variant => 'Выбрать вариант';
+
+  @override
+  String catalog_card_in_cart_add_more(String qty) {
+    return 'В корзине · $qty — ещё +1';
+  }
+
+  @override
+  String catalog_card_in_cart_short(String qty) {
+    return 'Ещё · $qty';
+  }
 
   @override
   String catalog_card_max_available(String qty, String unit) {
@@ -1429,6 +1472,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get catalog_card_sku_missing => 'Артикул не указан';
 
   @override
+  String get catalog_card_stock_unknown_short => 'Нет данных';
+
+  @override
   String catalog_card_variant_label(int count, String unit, String variant) {
     return '$variant · $unit / $variant · $unit · в корзине $count вар.';
   }
@@ -1450,6 +1496,9 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get catalog_compact_col_sku => 'Артикул';
+
+  @override
+  String get catalog_compact_col_stock => 'Наличие';
 
   @override
   String get catalog_compact_col_unit => 'Ед.';
@@ -1485,6 +1534,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get catalog_filters_button => 'Фильтры';
 
   @override
+  String get catalog_filters_reset => 'Сбросить фильтры';
+
+  @override
   String catalog_found_count(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -1513,6 +1565,12 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get catalog_preset_favorites => 'Избранное';
+
+  @override
+  String get catalog_preset_favorites_toolbar => 'Избранные';
+
+  @override
+  String get catalog_preset_newest => 'Новые';
 
   @override
   String get catalog_preset_recent => 'Недавние';
@@ -1549,6 +1607,12 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get catalog_sidebar_categories_title => 'Категории товаров';
+
+  @override
+  String get catalog_sidebar_collapse => 'Свернуть каталог';
+
+  @override
+  String get catalog_sidebar_expand => 'Развернуть каталог';
 
   @override
   String get catalog_sidebar_favorites => 'Избранное';
@@ -1629,8 +1693,35 @@ class AppLocalizationsRu extends AppLocalizations {
   String get category_not_found_title => 'Категория больше не существует';
 
   @override
+  String category_ribbon_all_a11y(int count, String name) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Все товары: $name, $count товара',
+      many: 'Все товары: $name, $count товаров',
+      few: 'Все товары: $name, $count товара',
+      one: 'Все товары: $name, $count товар',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get category_ribbon_next => 'Прокрутить подкатегории вправо';
+
+  @override
+  String get category_ribbon_prev => 'Прокрутить подкатегории влево';
+
+  @override
   String category_tile_a11y(int count, String name) {
-    return '$name, $count товаров';
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$name, $count товара',
+      many: '$name, $count товаров',
+      few: '$name, $count товара',
+      one: '$name, $count товар',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -4642,6 +4733,16 @@ class AppLocalizationsRu extends AppLocalizations {
   String get profile_activity_label => 'Сфера деятельности (необязательно)';
 
   @override
+  String profile_avatar_a11y(String name, String role) {
+    return 'Профиль: $name, $role';
+  }
+
+  @override
+  String profile_avatar_a11y_name(String name) {
+    return 'Профиль: $name';
+  }
+
+  @override
   String profile_birthyear_error_range(String maxYear) {
     return 'Год рождения от 1920 до $maxYear';
   }
@@ -5842,6 +5943,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get search_error_inline => 'Не удалось выполнить поиск · Повторить';
 
   @override
+  String get search_field_a11y => 'Поиск товара';
+
+  @override
   String search_found_count(int count, String query) {
     return 'Найдено: $count по «$query»';
   }
@@ -6213,6 +6317,15 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get settings_title => 'Настройки';
+
+  @override
+  String get shell_menu_open => 'Меню разделов';
+
+  @override
+  String get shell_nav_a11y => 'Навигация';
+
+  @override
+  String get shell_nav_more => 'Другие разделы';
 
   @override
   String get splash_init_error_body => 'Повторите попытку. Если ошибка повторяется, обратитесь в поддержку';

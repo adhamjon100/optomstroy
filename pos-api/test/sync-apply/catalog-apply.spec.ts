@@ -219,7 +219,20 @@ describe('Конвейер применения 1С → реплики ката�
       `SELECT DISTINCT entity::text, status::text FROM sync_runs ORDER BY 1`,
     );
     expect(runs.rows.every((r) => r.status === 'success')).toBe(true);
-    expect((await one<{ n: string }>(f.pool, `SELECT count(*)::text AS n FROM sync_errors`)).n).toBe('0');
+    expect(
+      (
+        await one<{ n: string }>(
+          f.pool,
+          `SELECT count(*)::text AS n FROM sync_errors WHERE error_code <> 'DUPLICATE_SUSPECTED'`,
+        )
+      ).n,
+    ).toBe('0');
+    // Отчёт о дублях кода 1С (05 SYNC-004, 12 T-SYNC-009) — не ошибка позиции: фикстуры 1С и синтетика нумеруют
+    // склады, виды цен, характеристики и единицы с одного кода, это настоящие дубли набора — warning по группе.
+    const dups = await f.pool.query<{ severity: string; n: string }>(
+      `SELECT severity, payload->>'count' AS n FROM sync_errors WHERE error_code = 'DUPLICATE_SUSPECTED'`,
+    );
+    expect(dups.rows.every((d) => d.severity === 'warning' && d.n === '2')).toBe(true);
     // Деньги без float: NUMERIC(14,2) равен строке среза.
     const anySlice = f.catalog
       .priceSlice()

@@ -295,6 +295,34 @@ describe('ODataCatalogSource: строки OData → элементы /changes (
     expect(pages[0]).not.toHaveProperty('brand');
   });
 
+  // 12 T-SYNC-F03 (05 SYNC-002, AC-SYNC-002: продолжение полной загрузки с cursor_to — $skip без перечитки)
+  it('readPages(kind, startSkip): чтение с $skip=startSkip, nextSkip — по числу строк OData (не элементов)', async () => {
+    const rows = (from: number, n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        Ref_Key: `d4e5f6a7-0000-4000-8000-${String(from + i + 1).padStart(12, '0')}`,
+        DataVersion: 'AAAA',
+        DeletionMark: false,
+        IsFolder: false,
+        Code: String(from + i + 1),
+        Description: `Склад ${from + i + 1}`,
+      }));
+    const t = new FakeTransport().on('Catalog_Склады?', (u) => {
+      const skip = Number(/\$skip=(\d+)/.exec(u)?.[1] ?? 0);
+      return { body: { value: skip === 4 ? rows(4, 2) : skip === 6 ? rows(6, 1) : [] } };
+    });
+    const src = new ODataCatalogSource(new OnecODataClient(cfg, t));
+    const pages: { refs: number; nextSkip: number }[] = [];
+    for await (const p of src.readPages('warehouses', 4)) pages.push({ refs: p.items.length, nextSkip: p.nextSkip });
+    expect(pages).toEqual([
+      { refs: 2, nextSkip: 6 },
+      { refs: 1, nextSkip: 7 },
+    ]);
+    expect(t.urls.filter((u) => u.includes('Catalog_Склады?')).map((u) => /\$skip=(\d+)/.exec(u)?.[1])).toEqual([
+      '4',
+      '6',
+    ]);
+  });
+
   // 12 T-ONEC-017 (даты +06:00)
   it('срез цен SliceLast по виду цены (Period без зоны → +06:00, ONEC-103); остатки: нет СвободныеОстатки → ТоварыНаСкладах', async () => {
     const t = transport();

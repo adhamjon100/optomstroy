@@ -1,22 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:optomstroy/design_system/components/app_icon_button.dart';
+import 'package:optomstroy/design_system/components/top_app_bar_pos.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/design_system/tokens/ds_typography.dart';
 
 /// Вариант `NotificationBell` (03 §9.51).
 enum NotificationBellVariant {
-  /// Шапка expanded/medium: бейдж с числом.
+  /// Шапка medium+ (прототип 2026-10-29): кнопка 44×44 с радиусом `md`, иконка 22, бейдж с числом.
   header,
 
   /// Шапка compact: только точка 8.
   dot,
 }
 
-/// Вход в центр уведомлений `NotificationBell` (03 §9.51; D-41): `notifications` 24 `textSecondary`
-/// + бейдж `error`/`onError` `micro tnum` (1 цифра — круг 18, 2 — пилюля 24, «99+» — 30) со смещением
-/// (−4, −4) и обводкой `surface` 1,5; без непрочитанных — без бейджа (не «0»); при ошибке
-/// синхронизации — `notifications_active`. Тап → SCR-44 (у вызывающего).
+/// Вход в центр уведомлений `NotificationBell` (03 §9.51; D-41).
+///
+/// `header` — [TopAppBarIconButton] 44×44 (радиус `md`, иконка 22 `textPrimary`, цель 48) + бейдж `error` высотой
+/// 18 с числом `micro 700 onError tnum` (1 цифра — круг 18, 2 — пилюля 24, «99+» — 30) в точке `top 6 / right 6`
+/// квадрата, обводка `surface` 1,5; `dot` — `AppIconButton` с точкой 8. Без непрочитанных — без бейджа (не «0»);
+/// при ошибке синхронизации — `notifications_active`. Тап → SCR-44 (у вызывающего).
 class NotificationBell extends StatelessWidget {
   /// Создаёт колокольчик.
   const NotificationBell({
@@ -80,7 +83,14 @@ class NotificationBell extends StatelessWidget {
           ),
           child: Text(
             text,
-            style: context.text.micro.copyWith(color: c.onError, fontFeatures: DsTypography.numeric, height: 1),
+            maxLines: 1,
+            textScaler: TextScaler.noScaling,
+            style: context.text.micro.copyWith(
+              color: c.onError,
+              fontWeight: FontWeight.w700,
+              fontFeatures: DsTypography.numeric,
+              height: 1,
+            ),
           ),
         );
       }
@@ -89,20 +99,30 @@ class NotificationBell extends StatelessWidget {
     // (150 мс); reduce-motion — мгновенно. Первый кадр без анимации (AnimatedSwitcher не анимирует начальный child).
     final Duration appear = context.motion.of(context.motion.base);
     final Duration vanish = context.motion.of(context.motion.fast);
+    final Widget animatedBadge = AnimatedSwitcher(
+      duration: appear,
+      reverseDuration: vanish,
+      transitionBuilder: (Widget child, Animation<double> a) => a.status == AnimationStatus.reverse
+          ? FadeTransition(opacity: a, child: child)
+          : ScaleTransition(scale: a, child: child),
+      child: badge ?? const SizedBox.shrink(key: ValueKey<String>('notification-bell-no-badge')),
+    );
+    if (variant == NotificationBellVariant.header) {
+      return TopAppBarIconButton(
+        icon: icon,
+        semanticLabel: semanticLabel,
+        onPressed: onPressed,
+        selected: active,
+        badge: animatedBadge,
+      );
+    }
     return AppIconButton(
       icon: icon,
       semanticLabel: semanticLabel,
       tooltip: semanticLabel,
       onPressed: onPressed,
       selected: active,
-      badge: AnimatedSwitcher(
-        duration: appear,
-        reverseDuration: vanish,
-        transitionBuilder: (Widget child, Animation<double> a) => a.status == AnimationStatus.reverse
-            ? FadeTransition(opacity: a, child: child)
-            : ScaleTransition(scale: a, child: child),
-        child: badge ?? const SizedBox.shrink(key: ValueKey<String>('notification-bell-no-badge')),
-      ),
+      badge: animatedBadge,
     );
   }
 }

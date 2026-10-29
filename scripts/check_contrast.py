@@ -8,13 +8,22 @@ For each pair it computes the WCAG 2.x contrast ratio
 (relative luminance of sRGB, (L1 + 0.05) / (L2 + 0.05)) and:
   * status "allowed"   - must reach the threshold of its use:
                           text 4.5, large-text 3.0, non-text 3.0 -> otherwise VIOLATION;
-  * status "forbidden" - a pair the design system forbids (e.g. white on `primary`);
-                          reported as FORBIDDEN, never as a violation;
+  * status "forbidden" - a pair the design system forbids (e.g. `primary` as text, white on
+                          `brandAccent`); reported as FORBIDDEN, never as a violation;
   * status "exception" / "decorative" / "reference" - reported, not checked;
   * "documented"        - when set, the ratio published in 03 must match the computed one
                           (rounded to 2 decimals) -> otherwise MISMATCH.
-It also requires that the pair «white on primary» is present and marked forbidden
-(03 §5.3 restriction 1; kernel v1.9 §24.1).
+Policy checks (03 §5.3 restriction 1, §5.8, DS-098 in the wording of ADR-111):
+  * the pair «#FFFFFF on primary» (text) must be present, and its status must be "allowed"
+    if and only if it reaches 4.5:1 (otherwise "forbidden") - white text on an orange fill is
+    forbidden only for fills below 4.5:1;
+  * a "forbidden" pair with white text (#FFFFFF, use text / large-text) that reaches its
+    threshold is an ERROR - its status must be updated (ADR-111);
+  * CP-087 «#FFFFFF on brandAccent» (text) must be present with status "forbidden".
+Rollback report (ADR-111 п. 7): the "allowed" pairs are also computed against every `alternatives.*`
+palette with status "rollback" (`B_2026_10_21`) and the pairs below their threshold are listed as
+ROLLBACK-WARN. The report is informational - the rollback palette is not active in the app, and
+ADR-111 records which component colours change on rollback - so it never fails the gate.
 
 Usage:  python -I -X utf8 scripts/check_contrast.py [--tokens PATH]
 Exit:   0 - no violations, mismatches or errors; 1 - otherwise; 2 - unreadable input.
@@ -140,15 +149,54 @@ def main(argv: list[str]) -> int:
         print(f"{pid:<7} {result:<10} {ratio:>6.2f} {need:>5.1f} {doc_s:>6}  {use:<10} "
               f"{label(p['fg'], fg)} on {label(p['bg'], bg)}")
 
-    # Required policy: «white on primary» is a forbidden pair (03 §5.3 restriction 1, §5.8).
-    white_on_primary = [
-        p for p in pairs
-        if p["bg"] == "primary" and (p["fg"].upper() == "#FFFFFF") and p["use"] == "text"
-    ]
+    # Policy (03 §5.3 restriction 1, §5.8, DS-098; ADR-111): white text on an orange fill is
+    # allowed exactly when it reaches 4.5:1; below that it stays forbidden.
+    def ratio_of(p: dict) -> float | None:
+        fg_hex, e1 = resolve(p["fg"], colors)
+        bg_hex, e2 = resolve(p["bg"], colors)
+        return None if (e1 or e2) else contrast_ratio(fg_hex, bg_hex)
+
+    white_text = [p for p in pairs if p["fg"].upper() == "#FFFFFF" and p["use"] in ("text", "large-text")]
+    white_on_primary = [p for p in white_text if p["bg"] == "primary" and p["use"] == "text"]
     if not white_on_primary:
         errors.append("required pair «#FFFFFF on primary» (text) is missing")
-    elif any(p["status"] != "forbidden" for p in white_on_primary):
-        errors.append("pair «#FFFFFF on primary» must have status 'forbidden'")
+    for p in white_on_primary:
+        r = ratio_of(p)
+        if r is None:
+            continue
+        expected = "allowed" if r >= float(thresholds["text"]) else "forbidden"
+        if p["status"] != expected:
+            errors.append(f"{p['id']}: «#FFFFFF on primary» is {r:.2f}:1 -> status must be '{expected}', "
+                          f"not '{p['status']}' (allowed iff >= {thresholds['text']}; ADR-111)")
+    for p in white_text:
+        r = ratio_of(p)
+        if p["status"] == "forbidden" and r is not None and r >= float(thresholds[p["use"]]):
+            errors.append(f"{p['id']}: forbidden pair «#FFFFFF on {p['bg']}» reaches {r:.2f}:1 "
+                          f"(>= {thresholds[p['use']]}) - обновите статус по ADR-111")
+    cp087 = [p for p in pairs if p["id"] == "CP-087"]
+    if not cp087:
+        errors.append("required pair CP-087 «#FFFFFF on brandAccent» (text) is missing")
+    elif not (cp087[0]["fg"].upper() == "#FFFFFF" and cp087[0]["bg"] == "brandAccent"
+              and cp087[0]["use"] == "text" and cp087[0]["status"] == "forbidden"):
+        errors.append("CP-087 must be «#FFFFFF on brandAccent» (text) with status 'forbidden' (ADR-111)")
+
+    # Rollback palettes (ADR-111 п. 7): informational report, never fails the gate.
+    rollback_warns: list[str] = []
+    for name, alt in sorted((tokens.get("alternatives") or {}).items()):
+        if not isinstance(alt, dict) or alt.get("status") != "rollback":
+            continue
+        alt_colors = alt.get("color") or {}
+        for p in sorted(pairs, key=lambda x: x["id"]):
+            if p["status"] != "allowed" or p["use"] not in thresholds:
+                continue
+            fg_hex, e1 = resolve(p["fg"], alt_colors)
+            bg_hex, e2 = resolve(p["bg"], alt_colors)
+            if e1 or e2:
+                continue  # token absent in the rollback palette (e.g. added later)
+            r = contrast_ratio(fg_hex, bg_hex)
+            if r < float(thresholds[p["use"]]):
+                rollback_warns.append(f"{name} {p['id']}: {p['fg']} on {p['bg']} ({p['use']}) {r:.2f} "
+                                      f"< {thresholds[p['use']]}")
 
     print()
     summary = ", ".join(f"{k} {counts[k]}" for k in sorted(counts))
@@ -162,6 +210,9 @@ def main(argv: list[str]) -> int:
     print(f"errors: {len(errors)}")
     for e in errors:
         print(f"  ERROR {e}")
+    print(f"rollback palette (informational, ADR-111 п. 7): {len(rollback_warns)} allowed pairs below threshold")
+    for w in rollback_warns:
+        print(f"  ROLLBACK-WARN {w}")
     ok = not (violations or mismatches or errors)
     print("RESULT: OK" if ok else "RESULT: FAIL")
     return 0 if ok else 1

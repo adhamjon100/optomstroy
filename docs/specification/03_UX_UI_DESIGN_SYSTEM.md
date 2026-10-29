@@ -1,6 +1,6 @@
 # 03 — UX/UI и дизайн-система «Оптомстрой POS»
 
-Версия 1.5 · Дата 2026-10-24 (технические уточнения по реализации этапа G: §10 — составные компоненты этапа G, новый §16.9 — ключи ARB, запрошенные этапом G (не внесены), журнал §25; ред. 1.4 — 2026-10-23, ревью закрытия этапа F, второй круг: §16.8 — временные ключи в `pos-app` заменены, журнал §25; ред. 1.3 — ключи ARB этапа F внесены в 02 §7 и `contracts/l10n`, плюральные формы — §16.8, журнал §25, ADR-103; ред. 1.2 — технические уточнения по реализации этапа F — 2026-10-23: §9.27, §10 (примечание), §16.8, §18.3, журнал §25; ред. 1.1 — 2026-10-22; ред. 1.0 — 2026-10-18; технические уточнения по реализации этапов D–E — 2026-10-22: §9.4, §9.53, §16.4, §16.7; статус внесения ключей ARB §16.7 — ADR-097; общие ключи §16.5 и плюрали §16.2/§16.3 — ревью закрытия E; журнал — §25; `docs/stages/E_spec_sync.md`) · Статус: черновик для утверждения заказчиком
+Версия 1.17 · Дата 2026-10-29 (синхронизация с реализацией переноса прототипа — ADR-111, ADR-112: §8.3 (шапка medium — по ширине, часы и дата; колонка сворачивается), §8.5 (large: ширины сотрудника и `customer`), §8.6 (перенесённые функции), §8.7 (корзина при смене класса окна), §9.10 (свёрнутая колонка категорий 72, UI-10-046), §9.15 и §9.30 (белый `onPrimary` по ADR-111), журнал §25; ред. 1.16 — 2026-10-29: QA паритета функций на окне Windows — ADR-112: §9.57 (`TopAppBarPos.searchComfortWidth` 320 — поле поиска при видимом имени у аватара), §9.10 (подпись и картинка плитки колонки с пилюлей — по центру), журнал §25; ред. 1.15 — 2026-10-29: паритет функций после переноса прототипа 2026-10-29, раунд 2 — ADR-112: §9.57 (сжатие шапки `full` по доступной ширине — `TopAppBarFit`: поле поиска не уже 240, порядок сворачивания, узкие зазоры, поле поиска второй строкой; дата часов — сворачивается последней, у «Кассы» сначала до короткой), §9.70 (строка «Корзина · N шт» сворачивается шапкой, тултип «5 поз. · 6 шт» — `countTooltip`), раскладка экрана выбора товаров, журнал §25; ред. 1.14 — 2026-10-29: паритет функций после переноса прототипа 2026-10-29, раунд 1 — ADR-112: §9.7 (цель кнопок поля шапки 48), §9.10 (пилюля числа товаров), §9.13 (миниатюра, звезда и единица в таблице «Компакт»), §9.57 (часы и дата `TopAppBarClock`, имя 1024–1279), §9.70 (единицы, «Корзина не сохранена»), раскладка экрана выбора товаров (часы, свёртывание колонки, заголовок «Касса»); ред. 1.13 — 2026-10-29: ревью переноса прототипа 2026-10-29, раунд 3 — ADR-112: §9.1 (вариант `link` снят), §9.7, §9.11, §9.13, §9.20 (`group` — цели 44), §9.26 (`toolbar` — цель 44), §9.29, §9.40, §9.53, §9.57, §9.70, §9.73, журнал §25; ред. 1.12 — 2026-10-29: QA прототипа 2026-10-29, раунд 2 — ADR-112: §7.1 (исключения вертикального ритма экрана выбора товаров), §9.10, §9.12, §9.26 (глиф «Список» `DsGlyph.bulletList`), §9.28, журнал §25; ред. 1.11 — 2026-10-29: QA прототипа 2026-10-29, раунд 1 — ADR-112: §7.1 (исключение для полей колонки категорий), §9.1 (варианты `neutral`, `link`), §9.10 (подпись без переноса внутри слова, контурная заглушка), §9.20 (размер `group`), §9.24, §9.26, §9.27, §9.28, §9.29, §9.48, §9.72, журнал §25; ред. 1.10 — 2026-10-29: корзина сотрудника на medium+ по утверждённому прототипу — ADR-112, D5: §9.1 (размер `cta`), §9.27 (вариант `overlay` — drawer 420), §9.28 (`emphasized`), §9.29 (примечание UI-20-034), §9.30 (`CartFab` — compact и `customer`), §9.48 (тост, `AppSnackbarRegion`), §9.70 (источник данных), журнал §25; ред. 1.9 — 2026-10-29: экран выбора товаров SCR-10/11/12 на medium+ по утверждённому прототипу — ADR-112: §9.1 (размеры `card`/`cardCompact`, вариант `tint`), §9.10–§9.14, §9.16, §9.17, §9.23–§9.26, новые §9.72 `ToolbarToggleButton` и §9.73 `ScrollRibbon`, §10, журнал §25; ред. 1.8 — 2026-10-29: шапка и навигация сотрудника на medium+ по утверждённому прототипу — ADR-112: §8.3, §8.4, §8.6, §9.7, §9.40, §9.51, §9.54, §9.56, §9.57, новые §9.70 `TopAppBarCartButton` и §9.71 `NavigationDrawerApp`, §10, DS-043, DS-044, журнал §25; ред. 1.7 — 2026-10-29: палитра по утверждённому прототипу `visual/prototype/Main.dc.html` — ADR-111: §1 п. 2, п. 5, §5.1, §5.2 (примечание), §5.3, §5.4.2, §5.4.3, §5.4.5, §5.5, §5.6 (примечание), §5.7, §5.8, §5.9, §7.1 (сопоставление размеров прототипа со шкалами), вступление §9, §9.1, §9.11, §9.23, §9.30, §17.2, §17.7, DS-001, DS-002, DS-007, DS-011, DS-058, DS-098, A11Y-001, A11Y-002, §19 (Q-333), §21 (замечание 17), журнал §25; ред. 1.6 — 2026-10-28, экран выбора товаров по макету заказчика 2026-10-28: §9.8, §9.10 — `CategoryTile` в колонке категорий и ленте подкатегорий на medium/expanded/large, §9.14 — `ProductImage` без повторного проявления, журнал §25, ADR-110; ред. 1.5 — 2026-10-24, технические уточнения по реализации этапа G: §10 — составные компоненты этапа G, новый §16.9 — ключи ARB, запрошенные этапом G (не внесены), журнал §25; ред. 1.4 — 2026-10-23, ревью закрытия этапа F, второй круг: §16.8 — временные ключи в `pos-app` заменены, журнал §25; ред. 1.3 — ключи ARB этапа F внесены в 02 §7 и `contracts/l10n`, плюральные формы — §16.8, журнал §25, ADR-103; ред. 1.2 — технические уточнения по реализации этапа F — 2026-10-23: §9.27, §10 (примечание), §16.8, §18.3, журнал §25; ред. 1.1 — 2026-10-22; ред. 1.0 — 2026-10-18; технические уточнения по реализации этапов D–E — 2026-10-22: §9.4, §9.53, §16.4, §16.7; статус внесения ключей ARB §16.7 — ADR-097; общие ключи §16.5 и плюрали §16.2/§16.3 — ревью закрытия E; журнал — §25; `docs/stages/E_spec_sync.md`) · Статус: черновик для утверждения заказчиком
 
 Автор: UI/UX-дизайнер (агент 4). Владелец префиксов `DS-NNN`, `A11Y-NNN`, `ANIM-NNN` (ядро §10).
 
@@ -29,10 +29,10 @@
 ## 1. Краткое содержание
 
 1. Документ фиксирует дизайн-систему Release 1 «Оптомстрой POS» для Flutter-приложения `pos-app` (Android, Windows; iOS архитектурно): токены цвета, типографики, отступов, радиусов, теней, движения; раскладки compact/medium/expanded/large; спецификацию компонентов в 67 разделах R1: 59 имён ядра §8.5 в 57 разделах (пары `FilterPanel`/`FilterSheet` и `SkeletonBox`/`SkeletonList` описаны в общих разделах 9.25 и 9.42) + 8 разделов компонентов, канонизированных ядром v1.2 §17.5 (10 имён, помечены [РЕШЕНИЕ: ядро §17.5]) + 2 раздела `SuccessCheck` и `DocumentPreview` (ядро §17.5, п. 9.67–9.68) — всего 71 имя; условный компонент R2 `FaceCaptureView` — п. 9.69 (вне R1, Q-003); 30 анимаций `ANIM-NNN` (ANIM-029/030 — видоискатель камеры, ядро §19.4); 22 требования доступности `A11Y-NNN`; 98 требований дизайн-системы `DS-NNN` (DS-085…DS-096 — по ядру v1.4 §19, п. 18.10; DS-097 — ядро v1.7, п. 18.11; DS-098 — ядро v1.9 §24.1, п. 18.12).
-2. Исследование материалов (раздел 2): три цифровых макета задают desktop/tablet-first POS-раскладку в три колонки и синий интерактивный цвет **#0053FA**; логотип `Logo Orange.png` — однотонный **#FF8700** и расходится с синим логотипом макетов; заказчик выбрал оранжевый (ядро v1.9 §24.1; Q-006 закрыт, кроме векторного логотипа) — макеты остаются эталоном компоновки, а не цвета. Ручных чертежей в материалах нет [ПОДТВЕРЖДЕНО: R4 §1.1].
+2. Исследование материалов (раздел 2): три цифровых макета задают desktop/tablet-first POS-раскладку в три колонки и синий интерактивный цвет **#0053FA**; логотип `Logo Orange.png` — однотонный **#FF8700** и расходится с синим логотипом макетов; заказчик выбрал оранжевый (ядро v1.9 §24.1; Q-006 закрыт, кроме векторного логотипа) — макеты остаются эталоном компоновки, а не цвета; с 2026-10-29 эталон цвета — утверждённый прототип экрана выбора товаров `visual/prototype/Main.dc.html` (ADR-111, отклонение от строки ядра §24.1; подтверждение заказчика — Q-333). Ручных чертежей в материалах нет [ПОДТВЕРЖДЕНО: R4 §1.1].
 3. Обзор POS/B2B-интерфейсов (раздел 3) даёт 10 паттернов с источниками: постоянная панель корзины справа, единое поле «название / артикул / штрихкод» со сканером, повторный тап «+ Добавить» → степпер, нампад для больших количеств, избранное вместо настраиваемых страниц на телефоне, статусы «цвет + иконка + текст».
 4. Анализ читаемости и плотности (раздел 4): вторичный текст макета (≈ #8B8FA0, 3.21:1) и зелёная кнопка макета (#0D9E48 с белым, 3.50:1) не проходят WCAG AA и заменены; нормативы числа тапов: известный товар в корзину — ≤ 3 тапа со сканером / ≤ 4 без; повторный заказ существующему клиенту — ≤ 6 тапов; долг клиента — ≤ 2 тапа + ввод.
-5. Два варианта палитры (раздел 5) — A «Синий» и B «Оранжевый» — заданы полными таблицами токенов `ds.color.*` с программно проверенным контрастом (43 + 43 пары, нетекстовый контраст, симуляция дальтонизма). **Основная палитра R1 — вариант B «Оранжевый»** [РЕШЕНИЕ: D-16 в редакции ядра v1.9 §24.1 — выбор заказчика 2026-10-21]: `primary #FF8700` — только заливки с тёмным текстом `onPrimary #1B1F2A` (белый на оранжевом запрещён); текст, ссылки, цены и полоса выбранного — `primaryText #B04E00`; фокус и `info` — синие #1F5FA8; `warning #8A6A00` — всегда с иконкой; оранжевый никогда не означает статус (п. 5.7–5.9, DS-098). Комбинированная схема A+ (синий интерактивный #0053FA) — историческая альтернатива.
+5. Два варианта палитры (раздел 5) — A «Синий» и B «Оранжевый» — заданы полными таблицами токенов `ds.color.*` с программно проверенным контрастом (43 + 43 пары, нетекстовый контраст, симуляция дальтонизма). **Основная палитра R1 — вариант B «Оранжевый»** [РЕШЕНИЕ: D-16 в редакции ядра v1.9 §24.1 — выбор заказчика 2026-10-21; значения — по утверждённому прототипу, ADR-111, 2026-10-29]: `primary #D9380F` — только заливки с белым текстом `onPrimary #FFFFFF` (4.64:1, AA; белый запрещён только на оранжевых заливках ниже 4.5:1 — логотипный `brandAccent #FF8700`); текст, ссылки, цены и полоса выбранного — `primaryText #C9330C`; основной текст — тёмно-синий `textPrimary #0E1456` на холодном фоне `background #F1F6FC`; фокус и `info` — синие #1F5FA8; `warning #8A5300` — всегда с иконкой; оранжевый никогда не означает статус (п. 5.3, 5.7–5.9, DS-098). Значения редакции 2026-10-21 (#FF8700 с тёмным `onPrimary #1B1F2A`, `primaryText #B04E00`) — откат `DsColors.lightB20261021`. Комбинированная схема A+ (синий интерактивный #0053FA) — историческая альтернатива.
 6. Типографика (раздел 6): Inter (OFL-1.1, локальный asset, переменный), шкала `ds.text.*` 32/28/24/20/18/16/14/13/12 (+11 только для цифр в бейджах), `tabularFigures` для всех чисел, минимум 12 lp для слов, масштаб до 1.3× [РЕШЕНИЕ: D-17]. Иконки — Material Symbols Rounded (Apache 2.0).
 7. Адаптивность (раздел 8) [РЕШЕНИЕ: D-18]: compact < 600 (1 колонка, нижняя навигация, корзина — bottom sheet + плавающая панель-итог), medium 600–1023 (rail + контент, корзина overlay 320), expanded 1024–1599 (три колонки макета: сайдбар 240–292 / контент / корзина 320–340), large ≥ 1600 (контент ограничен 1200 или 6 карточек). Тач-цели ≥ 48 lp.
 8. Splash (раздел 12): оранжевый логотип на белом фоне появляется за `ds.motion.splashLogo` 600 мс, проверка сессии идёт параллельно, суммарно ≤ 1,2 с, индикатор — только если проверка дольше 400 мс; переход по состоянию сессии без искусственной задержки.
@@ -206,13 +206,13 @@
 
 Все имена токенов — `ds.color.<имя>` ровно как в ядре §8.1 (camelCase). Все коэффициенты контраста — вывод `contrast.py` (R4 Приложение A, WCAG 2.x относительная яркость) [ПОДТВЕРЖДЕНО: `python -I contrast.py`]; дополнительные пары (п. 5.4.4, 5.4.5) посчитаны той же формулой тем же скриптом с расширенным списком пар.
 
-**Статус (ядро v1.9 §24.1, ответ заказчика 2026-10-21): основная палитра R1 — вариант B «Оранжевый» (п. 5.3, 5.7, 5.9); вариант A и комбинированная схема A+ сохранены как историческая альтернатива и в R1 не применяются.**
+**Статус (ядро v1.9 §24.1, ответ заказчика 2026-10-21): основная палитра R1 — вариант B «Оранжевый» (п. 5.3, 5.7, 5.9); вариант A и комбинированная схема A+ сохранены как историческая альтернатива и в R1 не применяются. С 2026-10-29 значения палитры B — по утверждённому прототипу (ADR-111); прежние значения B — откат `alternatives.B_2026_10_21`.**
 
 ### 5.1. Принципы, общие для обоих вариантов
 
 1. Нейтральная рабочая база: фон не белый, поверхности белые, текст не чёрный.
 2. Семантика фиксирована: **красный — только ошибка / долг / нет в наличии; зелёный — успех / в наличии / оплачено; янтарный — предупреждение / мало / просрочка; серо-синий — информация / синхронизация.**
-3. Бренд-цвет как интерактивный (`primary`) допустим, если текст на его заливке даёт ≥ 4.5:1; если сам цвет даёт < 3:1 на `surface` (оранжевый #FF8700 — 2.41:1), он применяется только как заливка с тёмным текстом, а все текстовые и индикаторные роли передаются отдельному токену `primaryText` (≥ 4.5:1) — правило ролей п. 5.9.
+3. Бренд-цвет как интерактивный (`primary`) допустим, если текст на его заливке даёт ≥ 4.5:1; если сам цвет не проходит 4.5:1 как текст на рабочих фонах (палитра B: #D9380F — 4.64:1 на `surface`, но 4.27:1 на `background`; логотипный #FF8700 — 2.41:1 на `surface`), он применяется только как заливка с `onPrimary`, а все текстовые и индикаторные роли передаются отдельному токену `primaryText` (≥ 4.5:1) — правило ролей п. 5.9.
 4. Статусы никогда не передаются только цветом (A11Y-004).
 5. Токены спроектированы так, чтобы добавить тёмную тему без переименований [РЕШЕНИЕ: D-43 — тёмная тема вне R1].
 
@@ -262,47 +262,49 @@
 | `ds.color.inverseSurface` | #1B1F2A | инверсная плашка: фон `AppSnackbar` и `AppTooltip` [РЕШЕНИЕ: ядро §18.2 п.15] | onInverseSurface на нём 16.46:1 |
 | `ds.color.onInverseSurface` | #FFFFFF | текст и нейтральные иконки на `inverseSurface` [РЕШЕНИЕ: ядро §18.2 п.15] | 16.46:1 |
 
-Белый текст на `warning` (5.02:1) и `info` (6.05:1) допустим; отдельные токены не вводятся — используется `onPrimary` (только в варианте A; в B `onPrimary` тёмный — ограничение 6 п. 5.3).
+Белый текст на `warning` (5.02:1) и `info` (6.05:1) допустим; отдельные токены не вводятся — используется `onPrimary` (только в варианте A; в B `onPrimary` с ADR-111 тоже белый, но заливки `info`/`warning` с текстом в компонентах не применяются — ограничение 6 п. 5.3).
 
-### 5.3. Вариант B «Оранжевый» — полная таблица токенов (те же имена) — основная палитра R1 [РЕШЕНИЕ: D-16, ред. ядра v1.9 §24.1]
+### 5.3. Вариант B «Оранжевый» — полная таблица токенов (те же имена) — основная палитра R1 [РЕШЕНИЕ: D-16, ред. ядра v1.9 §24.1; значения — ADR-111]
 
-Основная палитра R1 — выбрана заказчиком 2026-10-21 (Q-006 закрыт, кроме векторного логотипа; ядро v1.9 §24.1); токены и HEX не изменились относительно редакции до v1.9. `DsColors.lightB` — тема по умолчанию (п. 17.2, 17.7). Оранжевый #FF8700 — мода 96 % насыщенных пикселей `Logo Orange.png` [ПОДТВЕРЖДЕНО: R4 §1.5].
+Основная палитра R1 — выбрана заказчиком 2026-10-21 (Q-006 закрыт, кроме векторного логотипа; ядро v1.9 §24.1). С версии 1.7 этого документа (2026-10-29) значения токенов взяты из утверждённого прототипа экрана выбора товаров `visual/prototype/Main.dc.html` с поправками до AA [РЕШЕНИЕ: ADR-111; подтверждение заказчика — Q-333]; имена токенов и правило ролей п. 5.9 не изменились, добавлены два токена тинта [НОВОЕ ИМЯ] (DS-002, замечание 17 раздела 21). Это отклонение от HEX ядра v1.9 §24.1; ядро не редактируется. Значения редакции 2026-10-21 (`primary` #FF8700 с тёмным `onPrimary` #1B1F2A, `primaryText` #B04E00, `background` #F5F5F4 и др.) сохранены в `contracts/design-tokens/tokens.json` → `alternatives.B_2026_10_21` и в `DsColors.lightB20261021` (откат — п. 5.9 п. 8). `DsColors.lightB` — тема по умолчанию (п. 17.2, 17.7). Логотип — оранжевый #FF8700 (`brandAccent`), мода 96 % насыщенных пикселей `Logo Orange.png` [ПОДТВЕРЖДЕНО: R4 §1.5].
 
 | Токен | HEX | Роль / ограничение | Контраст-ключ |
 |---|---|---|---|
-| `ds.color.background` | #F5F5F4 | тёплый нейтральный фон | — |
-| `ds.color.surface` | #FFFFFF | | — |
-| `ds.color.surfaceVariant` | #EFEEEC | | — |
-| `ds.color.surfaceHover` | #F7F6F4 | textTertiary на нём 4.36:1 — только крупный/полужирный | — |
-| `ds.color.surfacePressed` | #EFEEEC | | — |
-| `ds.color.primary` | #FF8700 | заливка CTA (`AppButton.primary`), `CartFab`, бейджа счётчика корзины, выбранного чекбокса, свотча и краёв диапазона — **только с тёмным текстом/знаком `onPrimary`**; не текст, не единственная обводка/индикатор (роли — п. 5.9) | onPrimary 6.83:1; белый 2.41:1 — **запрещён** |
-| `ds.color.primaryHover` | #F07A00 | | тёмный 5.87:1 |
-| `ds.color.primaryPressed` | #D96A00 | | тёмный 4.71:1 |
-| `ds.color.primaryContainer` | #FFEFD9 | выбранная плитка, чип | — |
-| `ds.color.primaryContainerPressed` | #FFEAD1 | | primaryText на нём 4.56:1 |
-| `ds.color.onPrimary` | #1B1F2A | **тёмный** текст на оранжевом | 6.83:1 |
-| `ds.color.primaryText` | #B04E00 | текст-ссылки, текст `outlined`/`text`/`tonal`-кнопок, цены и итоги, активные иконки, обводки и полосы выбранного элемента, индикаторы вкладок и прогресса [РЕШЕНИЕ: ядро §17.5; основной текстовый оранжевый — ядро v1.9 §24.1] | 5.34:1 на surface |
-| `ds.color.textPrimary` | #1B1F2A | | 16.46:1 |
-| `ds.color.textSecondary` | #5A6373 | | 6.06:1 |
-| `ds.color.textTertiary` | #6B7484 | только на surface | 4.71:1 |
-| `ds.color.border` | #DAD8D4 | | декоративный |
-| `ds.color.borderStrong` | #7D8797 | | 3.63:1 |
-| `ds.color.success` / `successContainer` | #15803D / #DCFCE7 | | 5.02 / 4.57 |
-| `ds.color.warning` / `warningContainer` | **#8A6A00 / #FEF9C3** | смещён в жёлтый (hue ≈ 46°), чтобы отойти от бренда (hue ≈ 32°); всегда с иконкой «треугольник !» и текстом | 5.07 / 4.72 |
-| `ds.color.error` / `errorContainer` | #C62828 / #FDE2E2 | | 5.62 / 4.59 |
+| `ds.color.background` | #F1F6FC | холодный светлый фон страницы (прототип) | textPrimary 15.42; textTertiary 4.72 |
+| `ds.color.surface` | #FFFFFF | карточки, панели, шапка, drawer | — |
+| `ds.color.surfaceVariant` | #EAF1FB | фон поля поиска в шапке, заголовков таблиц, вторичных панелей | textTertiary 4.51 (плейсхолдер) |
+| `ds.color.surfaceHover` | #F6F9FE | | textTertiary 4.86 |
+| `ds.color.surfacePressed` | #EAF1FB | (= surfaceVariant) | — |
+| `ds.color.primary` | #D9380F | заливка CTA (`AppButton.primary`: «+ Добавить», «Создать заказ»), `CartFab`, бейджа счётчика корзины, выбранного чекбокса, свотча и краёв диапазона — **только с `onPrimary`**; не текст (как текст проходит AA только на `surface`: 4.64, на `background` 4.27), не единственная обводка/индикатор (роли — п. 5.9) | onPrimary (белый) 4.64:1 — AA |
+| `ds.color.primaryHover` | #BF300B | | белый 5.76:1 |
+| `ds.color.primaryPressed` | #A82A09 | | белый 7.00:1 |
+| `ds.color.primaryContainer` | #FDEEE9 | тинт: выбранная плитка категории, чип, кнопка корзины в шапке, «В корзине · N» | onPrimaryContainer 6.19; primaryText 4.69 |
+| `ds.color.primaryContainerPressed` | #FCEAE4 | | primaryText на нём 4.55:1; onPrimaryContainer 6.01 |
+| `ds.color.primaryContainerBorder` [НОВОЕ ИМЯ] | #F5C6B6 | декоративная рамка тинта; не единственный признак выбранного (A11Y-004, DS-036) [РЕШЕНИЕ: ADR-111] | 1.54:1 к `surface` (декоративный) |
+| `ds.color.onPrimaryContainer` [НОВОЕ ИМЯ] | #A82A09 | текст и иконки на тинте `primaryContainer` / `primaryContainerPressed` [РЕШЕНИЕ: ADR-111] | 6.19 / 6.01:1 |
+| `ds.color.onPrimary` | #FFFFFF | **белый** текст и иконка на оранжевой заливке (ADR-111) | 4.64:1 |
+| `ds.color.primaryText` | #C9330C | текст-ссылки, текст `outlined`/`text`/`tonal`-кнопок, цены и итоги, активные иконки, обводки и полосы выбранного элемента, индикаторы вкладок и прогресса [РЕШЕНИЕ: ядро §17.5; основной текстовый оранжевый — ядро v1.9 §24.1; значение — ADR-111] | 5.30:1 на surface, 4.88:1 на background |
+| `ds.color.textPrimary` | #0E1456 | тёмно-синий основной текст (прототип) | 16.76:1 |
+| `ds.color.textSecondary` | #5B6478 | | 5.93:1 |
+| `ds.color.textTertiary` | #656E80 | плейсхолдеры, третичные подписи; ≥ 4.5:1 на `surface`, `background`, `surfaceHover`, `surfaceVariant`, `disabledBg` (значение прототипа #6B7487 даёт 4.32:1 на фоне — затемнено, ADR-111) | 5.13:1 |
+| `ds.color.border` | #E3E9F2 | | декоративный (1.22) |
+| `ds.color.borderStrong` | #7D879A | | 3.62:1 |
+| `ds.color.success` / `successContainer` | #177245 / #DCFCE7 | | 5.95 / 5.42 |
+| `ds.color.warning` / `warningContainer` | **#8A5300 / #FEF9C3** | охристый (hue ≈ 36°), отстоит от бренда (`primary` — hue ≈ 12°); всегда с иконкой «треугольник !» и текстом | 6.33 / 5.89 |
+| `ds.color.error` / `errorContainer` | #D21B1F / #FDEAEA | `errorContainer` светлее прототипного #FDE2E2 (на нём `error` 4.38:1) — ADR-111; близость `error` к `primary` — п. 5.5, Q-333 | 5.36 / 4.63 |
 | `ds.color.info` / `infoContainer` | #1F5FA8 / #E0ECFB | | 6.44 / 5.39 |
 | `ds.color.focus` | #1F5FA8 | синее кольцо — контрастно к оранжевому | 6.44:1 |
-| `ds.color.disabledBg` / `disabledText` | #E5E7EB / #9CA3AF | | исключение |
-| `ds.color.favorite` | #FEC50A | как в A; контур — `warning` палитры B #8A6A00 (п. 9.23, DS-011) | 3.19:1 к контуру |
-| `ds.color.brandAccent` | #FF8700 | = primary; логотип, splash, персонаж, иллюстрации (п. 5.8) | — |
-| `ds.color.onBrandAccent` | #1B1F2A | текст внутри иллюстраций на оранжевом (= onPrimary) [РЕШЕНИЕ: ядро §17.5] | 6.83:1 |
-| `ds.color.skeletonBase` / `skeletonHighlight` | #EFEEEC / #E6E4E1 | | декоративный |
-| `ds.color.iconButtonPressed` | #E6E4E1 | | textSecondary 4.77:1 |
-| `ds.color.overlay` | rgba(27,31,42,0.48) | | — |
-| `ds.color.onSuccess` / `onError` | #FFFFFF | | 5.02 / 5.62 |
-| `ds.color.inverseSurface` / `onInverseSurface` | #1B1F2A / #FFFFFF | снекбар, тултип — как в A [РЕШЕНИЕ: ядро §18.2 п.15] | 16.46 |
+| `ds.color.disabledBg` / `disabledText` | #EEF1F5 / #9CA3AF | | исключение (2.24) |
+| `ds.color.favorite` | #E2A93B | заливка звезды «вкл.»; контур — `warning` палитры B #8A5300 (п. 9.23, DS-011); без контура запрещена (2.11:1 к `surface`, CP-086) | 3.01:1 к контуру |
+| `ds.color.brandAccent` | #FF8700 | логотип, splash, персонаж, иллюстрации (п. 5.8); с ADR-111 **≠ `primary`**; белый на нём запрещён (2.41:1, CP-087) | — |
+| `ds.color.onBrandAccent` | #0E1456 | текст внутри иллюстраций на оранжевом [РЕШЕНИЕ: ядро §17.5] | 6.96:1 |
+| `ds.color.skeletonBase` / `skeletonHighlight` | #EAF1FB / #E3E9F2 | | декоративный (1.07) |
+| `ds.color.iconButtonPressed` | #E3E9F2 | | textSecondary 4.86:1 |
+| `ds.color.overlay` | rgba(14,20,86,0.28) | затемнение под диалогами, шторками и drawer (прототип) | — |
+| `ds.color.onSuccess` / `onError` | #FFFFFF | | 5.95 / 5.36 |
+| `ds.color.inverseSurface` / `onInverseSurface` | #0E1456 / #FFFFFF | снекбар, тултип, тост «Добавлено» [РЕШЕНИЕ: ядро §18.2 п.15] | 16.76 |
 
-Ограничения варианта B (обязательны в R1 — ядро v1.9 §24.1; проверяются DS-098): (1) белый текст на оранжевом запрещён; (2) весь «текстовый» оранжевый — `primaryText #B04E00`; (3) выбранный элемент обозначается полосой `primaryText`, а не `primary` (2.41:1 не проходит 1.4.11); (4) warning — жёлто-охристый с обязательной иконкой; (5) оранжевый никогда — статус; (6) `onPrimary` в B тёмный, поэтому на тёмных фонах (`inverseSurface`, фото, видоискатель камеры, полноэкранная галерея) белый текст/знак задаётся `onInverseSurface`, а заливки `info`/`warning` с текстом в компонентах не используются (статусы — контейнер + цветной текст + иконка).
+Ограничения варианта B (обязательны в R1 — ядро v1.9 §24.1 в редакции ADR-111; проверяются DS-098): (1) текст и иконка на оранжевой заливке — только `onPrimary` с контрастом ≥ 4.5:1 (белый на #D9380F — 4.64:1, на hover — 5.76:1, на pressed — 7.00:1); белый текст запрещён на оранжевых заливках ниже 4.5:1, в том числе на `brandAccent` #FF8700 (2.41:1, CP-087) — правило проверяет `scripts/check_contrast.py` («allowed ⇔ ≥ 4.5»); (2) весь «текстовый» оранжевый — `primaryText #C9330C`; `primary` как текст не применяется (AA только на `surface`); текст на тинте — `onPrimaryContainer` #A82A09 или `primaryText`; (3) выбранный элемент обозначается полосой, весом 700 или залитой иконкой `primaryText`, а не только `primary`, тинтом или рамкой `primaryContainerBorder` (правило ролей DS-098, A11Y-004); (4) warning — охристый #8A5300 с обязательной иконкой; (5) оранжевый никогда — статус; близость `primary` к `error` — п. 5.5, Q-333; (6) на тёмных фонах (`inverseSurface`, фото, видоискатель камеры, полноэкранная галерея) белый текст и знак задаются `onInverseSurface`, а заливки `info`/`warning` с текстом в компонентах не используются (статусы — контейнер + цветной текст + иконка).
 
 ### 5.4. Таблицы контраста WCAG (вывод `contrast.py`)
 
@@ -357,51 +359,52 @@
 
 #### 5.4.2. Вариант B — пары текст/фон
 
+Значения палитры B по ADR-111 (2026-10-29); вывод `scripts/check_contrast.py` по `contracts/design-tokens/tokens.json` 1.1.0 (пары CP-001…CP-090). Таблица редакции 2026-10-21 (#FF8700 с тёмным `onPrimary`) заменена; её значения — `alternatives.B_2026_10_21`.
+
 | Текст (токен) | HEX | Фон (токен) | HEX | Коэф. | Обычный | Крупный |
 |---|---|---|---|---|---|---|
-| textPrimary | #1B1F2A | surface | #FFFFFF | 16.46:1 | AAA | AAA |
-| textPrimary | #1B1F2A | background | #F5F5F4 | 15.09:1 | AAA | AAA |
-| textPrimary | #1B1F2A | surfaceVariant | #EFEEEC | 14.19:1 | AAA | AAA |
-| textPrimary | #1B1F2A | primaryContainer | #FFEFD9 | 14.58:1 | AAA | AAA |
-| textSecondary | #5A6373 | surface | #FFFFFF | 6.06:1 | AA | AAA |
-| textSecondary | #5A6373 | background | #F5F5F4 | 5.55:1 | AA | AAA |
-| textSecondary | #5A6373 | surfaceVariant | #EFEEEC | 5.22:1 | AA | AAA |
-| **primary (как текст)** | #FF8700 | surface | #FFFFFF | **2.41:1** | **FAIL** | **FAIL** |
-| primary (как текст) | #FF8700 | background | #F5F5F4 | 2.21:1 | FAIL | FAIL |
-| primary (как текст) | #FF8700 | primaryContainer | #FFEFD9 | 2.13:1 | FAIL | FAIL |
-| onPrimary (тёмный) | #1B1F2A | primary | #FF8700 | 6.83:1 | AA | AAA |
-| onPrimary (тёмный) | #1B1F2A | primaryHover | #F07A00 | 5.87:1 | AA | AAA |
-| onPrimary (тёмный) | #1B1F2A | primaryPressed | #D96A00 | 4.71:1 | AA | AAA |
-| **белый на primary** | #FFFFFF | #FF8700 | — | **2.41:1** | **FAIL** | **FAIL** |
-| белый на primaryPressed | #FFFFFF | #D96A00 | — | 3.49:1 | FAIL | AA |
-| primaryText | #B04E00 | surface | #FFFFFF | 5.34:1 | AA | AAA |
-| primaryText | #B04E00 | primaryContainer | #FFEFD9 | 4.73:1 | AA | AAA |
-| primaryText | #B04E00 | background | #F5F5F4 | 4.89:1 | AA | AAA |
-| success | #15803D | surface | #FFFFFF | 5.02:1 | AA | AAA |
-| success | #15803D | successContainer | #DCFCE7 | 4.57:1 | AA | AAA |
-| warning | #8A6A00 | surface | #FFFFFF | 5.07:1 | AA | AAA |
-| warning | #8A6A00 | warningContainer | #FEF9C3 | 4.72:1 | AA | AAA |
-| error | #C62828 | surface | #FFFFFF | 5.62:1 | AA | AAA |
-| error | #C62828 | errorContainer | #FDE2E2 | 4.59:1 | AA | AAA |
+| textPrimary | #0E1456 | surface | #FFFFFF | 16.76:1 | AAA | AAA |
+| textPrimary | #0E1456 | background | #F1F6FC | 15.42:1 | AAA | AAA |
+| textPrimary | #0E1456 | surfaceVariant | #EAF1FB | 14.74:1 | AAA | AAA |
+| textPrimary | #0E1456 | primaryContainer | #FDEEE9 | 14.83:1 | AAA | AAA |
+| textSecondary | #5B6478 | surface | #FFFFFF | 5.93:1 | AA | AAA |
+| textSecondary | #5B6478 | background | #F1F6FC | 5.46:1 | AA | AAA |
+| textSecondary | #5B6478 | surfaceVariant | #EAF1FB | 5.22:1 | AA | AAA |
+| primary (как текст — не применяется, DS-098) | #D9380F | surface | #FFFFFF | 4.64:1 | AA | AAA |
+| primary (как текст) | #D9380F | background | #F1F6FC | 4.27:1 | FAIL | AA |
+| primary (как текст) | #D9380F | primaryContainer | #FDEEE9 | 4.11:1 | FAIL | AA |
+| onPrimary (белый) | #FFFFFF | primary | #D9380F | 4.64:1 | AA | AAA |
+| onPrimary (белый) | #FFFFFF | primaryHover | #BF300B | 5.76:1 | AA | AAA |
+| onPrimary (белый) | #FFFFFF | primaryPressed | #A82A09 | 7.00:1 | AA | AAA |
+| **белый на логотипном оранжевом (запрещён)** | #FFFFFF | brandAccent | #FF8700 | **2.41:1** | **FAIL** | **FAIL** |
+| primaryText | #C9330C | surface | #FFFFFF | 5.30:1 | AA | AAA |
+| primaryText | #C9330C | primaryContainer | #FDEEE9 | 4.69:1 | AA | AAA |
+| primaryText | #C9330C | background | #F1F6FC | 4.88:1 | AA | AAA |
+| onPrimaryContainer | #A82A09 | primaryContainer | #FDEEE9 | 6.19:1 | AA | AAA |
+| onPrimaryContainer | #A82A09 | primaryContainerPressed | #FCEAE4 | 6.01:1 | AA | AAA |
+| success | #177245 | surface | #FFFFFF | 5.95:1 | AA | AAA |
+| success | #177245 | successContainer | #DCFCE7 | 5.42:1 | AA | AAA |
+| warning | #8A5300 | surface | #FFFFFF | 6.33:1 | AA | AAA |
+| warning | #8A5300 | warningContainer | #FEF9C3 | 5.89:1 | AA | AAA |
+| error | #D21B1F | surface | #FFFFFF | 5.36:1 | AA | AAA |
+| error | #D21B1F | errorContainer | #FDEAEA | 4.63:1 | AA | AAA |
 | info | #1F5FA8 | surface | #FFFFFF | 6.44:1 | AA | AAA |
 | info | #1F5FA8 | infoContainer | #E0ECFB | 5.39:1 | AA | AAA |
-| textPrimary | #1B1F2A | primaryContainer (selected) | #FFEFD9 | 14.58:1 | AAA | AAA |
-| textSecondary | #5A6373 | primaryContainer (selected) | #FFEFD9 | 5.36:1 | AA | AAA |
-| textTertiary | #6B7484 | surface | #FFFFFF | 4.71:1 | AA | AAA |
-| textTertiary | #6B7484 | background | #F5F5F4 | 4.32:1 | FAIL (только крупный/полужирный) | AA |
-| textPrimary | #1B1F2A | surfaceHover | #F7F6F4 | 15.24:1 | AAA | AAA |
-| textSecondary | #5A6373 | surfaceHover | #F7F6F4 | 5.61:1 | AA | AAA |
-| textTertiary | #6B7484 | surfaceHover | #F7F6F4 | 4.36:1 | FAIL (только крупный/полужирный) | AA |
-| textPrimary | #1B1F2A | surfacePressed | #EFEEEC | 14.19:1 | AAA | AAA |
-| textSecondary | #5A6373 | surfacePressed | #EFEEEC | 5.22:1 | AA | AAA |
-| textPrimary | #1B1F2A | primaryContainerPressed | #FFEAD1 | 14.06:1 | AAA | AAA |
-| textSecondary | #5A6373 | primaryContainerPressed | #FFEAD1 | 5.17:1 | AA | AAA |
-| textPrimary | #1B1F2A | iconButtonPressed | #E6E4E1 | 12.97:1 | AAA | AAA |
-| textSecondary | #5A6373 | iconButtonPressed | #E6E4E1 | 4.77:1 | AA | AAA |
-| primaryText | #B04E00 | surfaceHover | #F7F6F4 | 4.94:1 | AA | AAA |
-| primaryText | #B04E00 | surfacePressed | #EFEEEC | 4.60:1 | AA | AAA |
-| primaryText | #B04E00 | primaryContainerPressed | #FFEAD1 | 4.56:1 | AA | AAA |
-| disabledText | #9CA3AF | disabledBg | #E5E7EB | 2.05:1 | FAIL (исключение) | FAIL |
+| textTertiary | #656E80 | surface | #FFFFFF | 5.13:1 | AA | AAA |
+| textTertiary | #656E80 | background | #F1F6FC | 4.72:1 | AA | AAA |
+| textTertiary | #656E80 | surfaceVariant | #EAF1FB | 4.51:1 | AA | AAA |
+| textTertiary | #656E80 | disabledBg | #EEF1F5 | 4.53:1 | AA | AAA |
+| textPrimary | #0E1456 | surfaceHover | #F6F9FE | 15.88:1 | AAA | AAA |
+| textSecondary | #5B6478 | surfaceHover | #F6F9FE | 5.62:1 | AA | AAA |
+| textTertiary | #656E80 | surfaceHover | #F6F9FE | 4.86:1 | AA | AAA |
+| textPrimary | #0E1456 | primaryContainerPressed | #FCEAE4 | 14.39:1 | AAA | AAA |
+| textSecondary | #5B6478 | primaryContainerPressed | #FCEAE4 | 5.09:1 | AA | AAA |
+| textPrimary | #0E1456 | iconButtonPressed | #E3E9F2 | 13.73:1 | AAA | AAA |
+| textSecondary | #5B6478 | iconButtonPressed | #E3E9F2 | 4.86:1 | AA | AAA |
+| primaryText | #C9330C | surfaceHover | #F6F9FE | 5.02:1 | AA | AAA |
+| primaryText | #C9330C | surfaceVariant | #EAF1FB | 4.66:1 | AA | AAA |
+| primaryText | #C9330C | primaryContainerPressed | #FCEAE4 | 4.55:1 | AA | AAA |
+| disabledText | #9CA3AF | disabledBg | #EEF1F5 | 2.24:1 | FAIL (исключение) | FAIL |
 
 #### 5.4.3. Нетекстовый контраст (WCAG 1.4.11, порог 3:1)
 
@@ -414,12 +417,14 @@
 | A | skeletonHighlight / surfaceHover / surfacePressed | #E4E7EC / #F8FAFC / #EEF1F5 | surface(-Variant) | — | 1.09 / 1.05 / 1.13 | нет — декоративные, не единственный индикатор |
 | A | focus | #0053FA | surface | #FFFFFF | 5.80:1 | да |
 | A | success / error / warning иконки | — | surface | #FFFFFF | 5.02 / 5.62 / 5.02 | да |
-| B | **primary (оранжевая иконка/обводка)** | #FF8700 | surface | #FFFFFF | **2.41:1** | **нет** — не единственный индикатор |
-| B | primaryText (иконка) | #B04E00 | surface | #FFFFFF | 5.34:1 | да |
+| B | primary (заливка/иконка/обводка) | #D9380F | surface | #FFFFFF | 4.64:1 | да — но как единственный индикатор не применяется (DS-098) |
+| B | primaryText (иконка) | #C9330C | surface | #FFFFFF | 5.30:1 | да |
 | B | focus | #1F5FA8 | surface | #FFFFFF | 6.44:1 | да |
-| B | warning | #8A6A00 | surface | #FFFFFF | 5.07:1 | да |
-| B | borderStrong | #7D8797 | surface / background | #FFFFFF / #F5F5F4 | 3.63 / 3.33 | да |
-| B | skeletonHighlight / surfaceHover / surfacePressed | #E6E4E1 / #F7F6F4 / #EFEEEC | surface(-Variant) | — | 1.09 / 1.08 / 1.16 | нет — декоративные |
+| B | warning | #8A5300 | surface | #FFFFFF | 6.33:1 | да |
+| B | borderStrong | #7D879A | surface / background | #FFFFFF / #F1F6FC | 3.62 / 3.33 | да |
+| B | primaryContainerBorder (рамка тинта) | #F5C6B6 | surface | #FFFFFF | 1.54:1 | нет — декоративная, выбранное передаёт индикатор формы |
+| B | border | #E3E9F2 | surface | #FFFFFF | 1.22:1 | нет — допустимо для разделителей, не для полей |
+| B | skeletonHighlight / surfaceHover / surfacePressed | #E3E9F2 / #F6F9FE / #EAF1FB | surface(-Variant) | — | 1.07 / 1.06 / 1.14 | нет — декоративные |
 
 #### 5.4.4. Дополнительные пары схемы A+ — историческая альтернатива (та же формула, расширенный список пар `contrast.py`; для палитры B — п. 5.4.5)
 
@@ -445,28 +450,33 @@
 | successContainer / errorContainer / infoContainer | inverseSurface #1B1F2A | 14.98 / 13.44 / 14.34 | AAA | AAA | иконки вариантов `AppSnackbar` |
 | success / error / info | inverseSurface #1B1F2A | 3.28 / 2.93 / 2.72 | FAIL | FAIL | на `inverseSurface` не используются (error/info не проходят 1.4.11) |
 
-#### 5.4.5. Дополнительные пары палитры B — основная палитра R1 (та же формула `contrast.py`) [РЕШЕНИЕ: ядро v1.9 §24.1]
+#### 5.4.5. Дополнительные пары палитры B — основная палитра R1 (та же формула `contrast.py`) [РЕШЕНИЕ: ядро v1.9 §24.1; значения — ADR-111]
 
 | Текст / элемент | Фон | Коэф. | Обычный | Крупный | Применение |
 |---|---|---|---|---|---|
-| onPrimary #1B1F2A | primary #FF8700 / primaryHover #F07A00 / primaryPressed #D96A00 | 6.83 / 5.87 / 4.71 | AA | AAA | текст и иконка `AppButton.primary`, `CartFab`, бейдж корзины, галочка чекбокса, число на крае диапазона |
-| primaryText #B04E00 | surface / background / primaryContainer | 5.34 / 4.89 / 4.73 | AA | AAA | цены, итоги, ссылки, текст `outlined`/`text`/`tonal`, выбранная категория и вкладка |
-| primaryText #B04E00 | surfaceVariant #EFEEEC | 4.60 | AA | AAA | ссылка на вторичной панели |
-| primaryText #B04E00 | iconButtonPressed #E6E4E1 | 4.20 | FAIL (текст) | AA | только иконка в pressed `AppIconButton` (1.4.11 ≥ 3:1 — да); текст на этом фоне не применяется |
-| primaryText #B04E00 (полоса, контур, трек, индикатор) | surface #FFFFFF | 5.34 | — | — | полоса выбранного 3 px, контур выбранного чекбокса, радио, трек `AppSwitch`, индикатор вкладки и прогресса (1.4.11 — да) |
-| surface #FFFFFF (ползунок) | primaryText #B04E00 | 5.34 | AA | AAA | ползунок `AppSwitch` на треке `primaryText` |
-| **primary #FF8700 как обводка / индикатор** | surface / primaryContainer / surfaceVariant | **2.41 / 2.13 / 2.08** | FAIL | FAIL | как единственный индикатор не используется (DS-098) |
-| primaryText #B04E00 | primary #FF8700 | 2.21 | FAIL | FAIL | контур чекбокса к собственной оранжевой заливке — декоративен; к окружающему `surface` — 5.34:1, состояние передаёт галочка `onPrimary` 6.83:1 |
-| focus #1F5FA8 | surface / background | 6.44 / 5.90 | — | — | кольцо фокуса (1.4.11 — да) |
-| focus #1F5FA8 | primary #FF8700 | 2.67 | — | — | кольцо рисуется с отступом 2 px снаружи элемента, поэтому сравнивается с `surface`/`background`, а не с оранжевой заливкой |
-| success / error / warning / info | background #F5F5F4 | 4.60 / 5.15 / 4.65 / 5.90 | AA | AAA | статусный текст на фоне страницы |
-| primaryText #B04E00 | warningContainer #FEF9C3 | 4.97 | AA | AAA | ссылка внутри баннера предупреждения |
-| textSecondary | successContainer / errorContainer / warningContainer / infoContainer | 5.52 / 4.95 / 5.64 / 5.07 | AA | AAA | текст баннеров |
-| borderStrong #7D8797 | surfaceVariant #EFEEEC | 3.13 | — | — | поля ввода на вторичных панелях (1.4.11 — да) |
-| favorite #FEC50A | контур warning #8A6A00 | 3.19 | — | — | звезда «вкл.» (п. 9.23, DS-011) |
-| onInverseSurface #FFFFFF | inverseSurface #1B1F2A | 16.46 | AAA | AAA | снекбар, тултип, кнопки полноэкранной галереи, рамка видоискателя (ANIM-030) |
-| primaryContainer #FFEFD9 | inverseSurface #1B1F2A | 14.58 | AAA | AAA | кнопка действия `AppSnackbar` |
-| белый #FFFFFF | info #1F5FA8 / warning #8A6A00 | 6.44 / 5.07 | AA | AAA | справочно: заливки `info`/`warning` с текстом в компонентах R1 не применяются (ограничение 6 п. 5.3) |
+| onPrimary #FFFFFF | primary #D9380F / primaryHover #BF300B / primaryPressed #A82A09 | 4.64 / 5.76 / 7.00 | AA | AAA | текст и иконка `AppButton.primary`, `CartFab`, бейдж корзины, галочка чекбокса, число на крае диапазона (ADR-111) |
+| **белый #FFFFFF** | **brandAccent #FF8700** | **2.41** | FAIL | FAIL | запрещён: белый на оранжевых заливках ниже 4.5:1 (CP-087) |
+| primaryText #C9330C | surface / background / primaryContainer | 5.30 / 4.88 / 4.69 | AA | AAA | цены, итоги, ссылки, текст `outlined`/`text`/`tonal`, выбранная категория и вкладка |
+| primaryText #C9330C | surfaceVariant #EAF1FB | 4.66 | AA | AAA | ссылка на вторичной панели |
+| primaryText #C9330C | iconButtonPressed #E3E9F2 | 4.34 | FAIL (текст) | AA | только иконка в pressed `AppIconButton` (1.4.11 ≥ 3:1 — да); текст на этом фоне не применяется |
+| onPrimaryContainer #A82A09 | primaryContainer #FDEEE9 / primaryContainerPressed #FCEAE4 | 6.19 / 6.01 | AA | AAA | текст и иконки на тинте: выбранная плитка категории, кнопка корзины в шапке, «В корзине · N» (ADR-111) |
+| textTertiary #656E80 | surfaceVariant #EAF1FB / disabledBg #EEF1F5 | 4.51 / 4.53 | AA | AAA | плейсхолдер поиска в шапке; подпись «Нет в наличии» на отключённой кнопке карточки (ADR-111) |
+| primaryText #C9330C (полоса, контур, трек, индикатор) | surface #FFFFFF | 5.30 | — | — | полоса выбранного 3 px, контур выбранного чекбокса, радио, трек `AppSwitch`, индикатор вкладки и прогресса (1.4.11 — да) |
+| surface #FFFFFF (ползунок) | primaryText #C9330C | 5.30 | AA | AAA | ползунок `AppSwitch` на треке `primaryText` |
+| primary #D9380F как обводка / индикатор | surface / primaryContainer / surfaceVariant | 4.64 / 4.11 / 4.08 | — | — | 3:1 проходит, но как единственный индикатор не используется — правило ролей DS-098 (индикаторы — `primaryText`) |
+| primaryText #C9330C | primary #D9380F | 1.14 | FAIL | FAIL | контур чекбокса к собственной оранжевой заливке — декоративен; к окружающему `surface` — 5.30:1, состояние передаёт галочка `onPrimary` 4.64:1 |
+| focus #1F5FA8 | surface / background | 6.44 / 5.93 | — | — | кольцо фокуса (1.4.11 — да) |
+| focus #1F5FA8 | primary #D9380F | 1.39 | — | — | кольцо рисуется с отступом 2 px снаружи элемента, поэтому сравнивается с `surface`/`background`, а не с оранжевой заливкой |
+| success / error / warning / info | background #F1F6FC | 5.48 / 4.93 / 5.83 / 5.93 | AA | AAA | статусный текст на фоне страницы |
+| primaryText #C9330C | warningContainer #FEF9C3 | 4.93 | AA | AAA | ссылка внутри баннера предупреждения |
+| textSecondary | successContainer / errorContainer / warningContainer / infoContainer | 5.40 / 5.12 / 5.52 / 4.96 | AA | AAA | текст баннеров |
+| borderStrong #7D879A | surfaceVariant #EAF1FB | 3.18 | — | — | поля ввода на вторичных панелях (1.4.11 — да) |
+| favorite #E2A93B | контур warning #8A5300 | 3.01 | — | — | звезда «вкл.» (п. 9.23, DS-011); запас минимальный (3.0055) |
+| favorite #E2A93B | surface #FFFFFF | 2.11 | — | — | без контура не применяется (CP-086) |
+| primaryContainerBorder #F5C6B6 | surface #FFFFFF | 1.54 | — | — | рамка тинта — декоративная (CP-090) |
+| onInverseSurface #FFFFFF | inverseSurface #0E1456 | 16.76 | AAA | AAA | снекбар, тост, тултип, кнопки полноэкранной галереи, рамка видоискателя (ANIM-030) |
+| primaryContainer #FDEEE9 | inverseSurface #0E1456 | 14.83 | AAA | AAA | кнопка действия `AppSnackbar` |
+| белый #FFFFFF | info #1F5FA8 / warning #8A5300 | 6.44 / 6.33 | AA | AAA | справочно: заливки `info`/`warning` с текстом в компонентах R1 не применяются (ограничение 6 п. 5.3) |
 
 ### 5.5. Симуляция нарушений цветовосприятия
 
@@ -480,15 +490,19 @@
 | A | primary #0053FA vs error | 129 | 110 | 136 | 113 |
 | A | primary vs success | 146 | 117 | 116 | 27 |
 | A | primary vs info #0E6A8E | 83 | 60 | 64 | **18** |
-| B | success vs error | 105 | **16** | 21 | 113 |
-| B | success vs warning #8A6A00 | 55 | **17** | 27 | 56 |
-| B | error vs warning | 58 | 26 | **6** | 58 |
-| B | primary #FF8700 vs error | 47 | 48 | 37 | 30 |
-| B | primary vs warning | 47 | 23 | 33 | 41 |
-| B | primaryText #B04E00 vs error | 28 | 21 | **9** | 23 |
-| B | primaryText vs warning | 33 | **7** | **3** | 36 |
+| B (ADR-111) | success #177245 vs error #D21B1F | 108 | **13** | 38 | 118 |
+| B (ADR-111) | success vs warning #8A5300 | 63 | 23 | 34 | 67 |
+| B (ADR-111) | error vs warning | 49 | **13** | **9** | 54 |
+| B (ADR-111) | **primary #D9380F vs error #D21B1F** | **12** | **15** | **8** | **8** |
+| B (ADR-111) | primary vs warning | 45 | **3** | **15** | 52 |
+| B (ADR-111) | primary vs success | 105 | 24 | 46 | 117 |
+| B (ADR-111) | primaryText #C9330C vs error | **12** | **12** | **4** | **10** |
+| B (ADR-111) | primaryText vs warning | 40 | **1** | **10** | 46 |
+| B (Q-333, вариант) | primary #D9380F vs error #C0182B | 23 | 27 | **19** | **9** |
+| B до ADR-111 | primary #FF8700 vs error #C62828 | 47 | 48 | 37 | 30 |
+| B до ADR-111 | primaryText #B04E00 vs error #C62828 | 28 | 21 | **9** | 23 |
 
-Вывод: в обоих вариантах пары «успех / ошибка / предупреждение» неразличимы при красно-зелёных формах → обязательны **иконка + подпись + (для остатков) число** (A11Y-004). В варианте B дополнительно сливаются «текстовый» оранжевый и warning/error — поэтому в основной палитре B (ядро v1.9 §24.1) обязательны ограничения п. 5.3 и DS-098: `primaryText` никогда не обозначает статус, статус всегда передаётся иконкой и текстом, `warning` смещён в жёлтый и всегда с иконкой `warning`.
+Вывод: в обоих вариантах пары «успех / ошибка / предупреждение» неразличимы при красно-зелёных формах → обязательны **иконка + подпись + (для остатков) число** (A11Y-004). В варианте B дополнительно сливаются «текстовый» оранжевый и warning/error — поэтому в основной палитре B (ядро v1.9 §24.1) обязательны ограничения п. 5.3 и DS-098: `primaryText` никогда не обозначает статус, статус всегда передаётся иконкой и текстом, `warning` смещён в жёлтый и всегда с иконкой `warning`. С ADR-111 `primary` #D9380F и `primaryText` #C9330C близки к `error` #D21B1F уже при нормальном зрении (ΔE 12): бейдж корзины (`primary`) и бейдж уведомлений (`error`) различаются местом, иконкой и подписью, а не цветом; ошибка всегда показывается иконкой `error` и текстом. Заказчику предложено отдалить `error` до #C0182B (ΔE 23; белый на нём 6.16:1, на `errorContainer` 5.32:1) — Q-333.
 
 Иконки статусов фиксированы (Material Symbols Rounded): успех `check_circle`, ошибка `error`, предупреждение `warning`, информация `info`, синхронизация `sync`, офлайн `cloud_off`, долг `account_balance_wallet`, просрочка `schedule`.
 
@@ -507,48 +521,51 @@
 | Дальтонизм | primary отличим от статусов (ΔE ≥ 60), кроме info при тританопии (редкая форма) | primaryText сливается с warning/error | A |
 | **Решение заказчика (2026-10-21)** | — | выбран «оранжевый» (Q-006 закрыт, кроме векторного логотипа) | **B** (ядро v1.9 §24.1) |
 
-Как палитра B закрывает критерии, по которым A была сильнее (обязательные правила п. 5.3, 5.9, DS-098): **удобство** — роли разведены однозначно (заливка — `primary`, всё текстовое и индикаторное — `primaryText`), оттенок не выбирается по месту; **читаемость** — цены, ссылки и итоги — `primaryText` 5.34:1 на `surface` (4.89:1 на `background`); в печатных формах PDF (п. 9.68) цены и итоги — `textPrimary`, оранжевым печатается только логотип; **контраст** — оранжевая заливка только с тёмным текстом (6.83:1), индикаторы выбора — `primaryText` (5.34:1), фокус — синий `focus` (6.44:1); **длительная работа** — насыщенный оранжевый только на CTA, `CartFab` и бейджах, выделения — светлым `primaryContainer` #FFEFD9, фон — нейтральный #F5F5F4; **семантика** — `warning` смещён в жёлтый (#8A6A00) и всегда с иконкой; **дальтонизм** — `primaryText` никогда не обозначает статус, статусы — иконка + текст (A11Y-004).
+Как палитра B закрывает критерии, по которым A была сильнее (обязательные правила п. 5.3, 5.9, DS-098): **удобство** — роли разведены однозначно (заливка — `primary`, всё текстовое и индикаторное — `primaryText`), оттенок не выбирается по месту; **читаемость** — цены, ссылки и итоги — `primaryText` 5.34:1 на `surface` (4.89:1 на `background`); в печатных формах PDF (п. 9.68) цены и итоги — `textPrimary`, оранжевым печатается только логотип; **контраст** — оранжевая заливка только с тёмным текстом (6.83:1), индикаторы выбора — `primaryText` (5.34:1), фокус — синий `focus` (6.44:1); **длительная работа** — насыщенный оранжевый только на CTA, `CartFab` и бейджах, выделения — светлым `primaryContainer` #FFEFD9, фон — нейтральный #F5F5F4; **семантика** — `warning` смещён в жёлтый (#8A6A00) и всегда с иконкой; **дальтонизм** — `primaryText` никогда не обозначает статус, статусы — иконка + текст (A11Y-004). Значения этого абзаца — редакции 2026-10-21; с 2026-10-29 действуют значения п. 5.3 (ADR-111), правила те же.
 
 ### 5.7. Выбор: вариант B «Оранжевый» — основная палитра R1 [РЕШЕНИЕ: D-16 в редакции ядра v1.9 §24.1]
 
-Принято по ответу заказчика 2026-10-21 (Q-006 закрыт, кроме векторного логотипа): тёплая нейтральная база (`background #F5F5F4`, `surface #FFFFFF`) + `primary #FF8700` — заливки только с тёмным `onPrimary #1B1F2A` + `primaryText #B04E00` — текст, ссылки, цены, активные иконки, обводки и полосы выбранного + синие `focus`/`info` #1F5FA8 + семантические цвета с `warning #8A6A00 / #FEF9C3`; логотип — оранжевый «C + шестиугольник + стрелка» (`Logo Orange.png`), синий логотип «дом с краном» с макетов не используется. Условие принятия — обязательные ограничения п. 5.3 и правило ролей п. 5.9 (DS-098). Макеты — эталон **компоновки**, а не цвета (ядро §24.1).
+Принято по ответу заказчика 2026-10-21 (Q-006 закрыт, кроме векторного логотипа); значения — по утверждённому прототипу (ADR-111, 2026-10-29; подтверждение заказчика — Q-333): холодная светлая база (`background #F1F6FC`, `surface #FFFFFF`, текст `textPrimary #0E1456`) + `primary #D9380F` — заливки только с белым `onPrimary #FFFFFF` (4.64:1) + `primaryText #C9330C` — текст, ссылки, цены, активные иконки, обводки и полосы выбранного + тинт `primaryContainer #FDEEE9` с текстом `onPrimaryContainer #A82A09` + синие `focus`/`info` #1F5FA8 + семантические цвета с `warning #8A5300 / #FEF9C3`; логотип — оранжевый «C + шестиугольник + стрелка» (`Logo Orange.png`), синий логотип «дом с краном» с макетов не используется. Условие принятия — обязательные ограничения п. 5.3 и правило ролей п. 5.9 (DS-098). Макеты — эталон **компоновки**, а не цвета (ядро §24.1); исключение — утверждённый прототип `visual/prototype/Main.dc.html`, по которому заданы значения цвета (ADR-111). Редакция 2026-10-21 — откат `AppTheme.light(colors: DsColors.lightB20261021)`.
 
 Историческая альтернатива: комбинированная схема A+ (D-16 в исходной редакции, до ядра v1.9) — нейтральная база + интерактивный `primary #0053FA` + семантические цвета + `brandAccent #FF8700` только как акцент. В R1 не применяется; таблица 5.2 и пары 5.4.1, 5.4.4 сохранены для сравнения и на случай пересмотра решения заказчиком (`DsColors.lightA`, п. 17.2). Тёмная тема — вне R1 (D-43).
 
-### 5.8. Правила использования оранжевого #FF8700 (`primary` = `brandAccent`) в палитре B [РЕШЕНИЕ: ядро v1.9 §24.1]
+### 5.8. Правила использования оранжевого в палитре B: `primary` #D9380F и `brandAccent` #FF8700 [РЕШЕНИЕ: ядро v1.9 §24.1; значения — ADR-111]
+
+С ADR-111 `primary` (#D9380F, заливка контролов) и `brandAccent` (#FF8700, логотип) — разные токены. Текст на оранжевой заливке допустим только с контрастом ≥ 4.5:1; поэтому белый текст на `primary` разрешён (4.64:1), а на `brandAccent` и любых других оранжевых заливках ниже 4.5:1 — запрещён.
 
 | Разрешено | Запрещено |
 |---|---|
-| заливка `AppButton.primary` (CTA), `CartFab`, бейджа счётчика корзины (`CartPanel`, `BottomNavBar`), выбранного `AppCheckbox`, свотча `VariantSelector`, краёв диапазона `DateRangePicker` — **только** с тёмным `onPrimary #1B1F2A` (6.83:1; hover 5.87:1, pressed 4.71:1) | белый текст или иконка на #FF8700 (2.41:1), `primaryHover` и `primaryPressed` |
-| логотип (знак и wordmark) на splash, в шапке `TopAppBarPos`, на экране входа — `brandAccent` | как цвет текста любого размера, цены, ссылки (2.41:1) — для них `primaryText #B04E00` |
-| детали персонажа `Mascot` (каска, бейдж, элементы одежды — суммарно ≤ 20 % площади персонажа) | как цвет статуса (успех/ошибка/предупреждение/информация/синхронизация) — оранжевый никогда не означает статус |
-| акцент в иллюстрациях `EmptyState` (10–20 % площади иллюстрации) | как единственная обводка, полоса или индикатор выбранного элемента, активной вкладки, пункта навигации, прогресса или фокуса (WCAG 1.4.11) — для них `primaryText` / `focus` |
-| линия-подсказка видоискателя камеры (ANIM-029) — декоративная, не единственный признак | большие оранжевые поверхности: фон экранов, панелей, баннеров, чипов и выделений (выделение — `primaryContainer` #FFEFD9) |
+| заливка `AppButton.primary` (CTA «+ Добавить», «Создать заказ»), `CartFab`, бейджа счётчика корзины (кнопка корзины в шапке, `BottomNavBar`), выбранного `AppCheckbox`, свотча `VariantSelector`, краёв диапазона `DateRangePicker` — **только** с `onPrimary #FFFFFF` (4.64:1; hover 5.76:1, pressed 7.00:1) | белый текст или иконка на оранжевой заливке ниже 4.5:1 — в том числе на `brandAccent` #FF8700 (2.41:1, CP-087) |
+| логотип (знак и wordmark) на splash, в шапке, на экране входа — `brandAccent` #FF8700 | `primary` как цвет текста, цены, ссылки (на `background` 4.27:1, на тинте 4.11:1) — для них `primaryText #C9330C`, на тинте — `onPrimaryContainer #A82A09` |
+| детали персонажа `Mascot` (каска, бейдж, элементы одежды — суммарно ≤ 20 % площади персонажа) — `brandAccent` | как цвет статуса (успех/ошибка/предупреждение/информация/синхронизация) — оранжевый никогда не означает статус; близость `primary` к `error` — п. 5.5, Q-333 |
+| акцент в иллюстрациях `EmptyState` (10–20 % площади иллюстрации) — `brandAccent` | как единственная обводка, полоса или индикатор выбранного элемента, активной вкладки, пункта навигации, прогресса или фокуса — для них `primaryText` / `focus` (правило ролей DS-098, хотя 3:1 #D9380F проходит) |
+| линия-подсказка видоискателя камеры (ANIM-029) — декоративная, не единственный признак | большие оранжевые поверхности: фон экранов, панелей, баннеров, чипов и выделений (выделение — `primaryContainer` #FDEEE9 с рамкой `primaryContainerBorder` #F5C6B6) |
 | — | декор в рабочих зонах каталога, корзины, оформления (SRC-B-058): допустимы только перечисленные заливки контролов |
 
-### 5.9. Правило ролей цвета палитры B (применение в разделах 9–14) [РЕШЕНИЕ: ядро v1.9 §24.1]
+### 5.9. Правило ролей цвета палитры B (применение в разделах 9–14) [РЕШЕНИЕ: ядро v1.9 §24.1; значения — ADR-111]
 
 | Роль | Токен палитры B | Контраст | Примечание |
 |---|---|---|---|
-| заливка основной CTA, `CartFab`, бейджа корзины, выбранного чекбокса, свотча, края диапазона | `primary` #FF8700 (hover `primaryHover` #F07A00, pressed `primaryPressed` #D96A00) | — | всегда с `onPrimary` |
-| текст и иконка на оранжевой заливке | `onPrimary` #1B1F2A | 6.83 / 5.87 / 4.71:1 | белый запрещён |
-| текст-ссылка, текст `AppButton.text`/`outlined`/`tonal`, цена, итог, активная иконка, подпись активного пункта навигации и вкладки | `primaryText` #B04E00 | 5.34:1 на `surface`, 4.89:1 на `background`, 4.73:1 на `primaryContainer` | — |
-| обводка поля в фокусе, обводка и полоса выбранного элемента, индикатор вкладки, точки `PinField`, индикатор `AppProgress`, радио, трек `AppSwitch`, контур выбранного чекбокса | `primaryText` | 5.34:1 к `surface` (1.4.11) | `primary` как единственный индикатор запрещён (2.41:1) |
-| выделение: выбранная строка, плитка, чип, пилюля навигации, трек прогресса | `primaryContainer` #FFEFD9 (pressed `primaryContainerPressed` #FFEAD1) | текст на нём ≥ 4.56:1 | всегда с индикатором формы (DS-036) |
-| кольцо клавиатурного фокуса | `focus` #1F5FA8 | 6.44:1 на `surface`, 5.90:1 на `background` | синее — контрастно к оранжевому |
+| заливка основной CTA, `CartFab`, бейджа корзины, выбранного чекбокса, свотча, края диапазона | `primary` #D9380F (hover `primaryHover` #BF300B, pressed `primaryPressed` #A82A09) | — | всегда с `onPrimary` |
+| текст и иконка на оранжевой заливке | `onPrimary` #FFFFFF | 4.64 / 5.76 / 7.00:1 | белый допустим только на заливках ≥ 4.5:1 (ADR-111); на `brandAccent` запрещён |
+| текст-ссылка, текст `AppButton.text`/`outlined`/`tonal`, цена, итог, активная иконка, подпись активного пункта навигации и вкладки | `primaryText` #C9330C | 5.30:1 на `surface`, 4.88:1 на `background`, 4.69:1 на `primaryContainer` | — |
+| обводка поля в фокусе, обводка и полоса выбранного элемента, индикатор вкладки, точки `PinField`, индикатор `AppProgress`, радио, трек `AppSwitch`, контур выбранного чекбокса | `primaryText` | 5.30:1 к `surface` (1.4.11) | `primary` как единственный индикатор запрещён правилом ролей (DS-098) |
+| выделение: выбранная строка, плитка, чип, пилюля навигации, трек прогресса; кнопка корзины в шапке, «В корзине · N» | `primaryContainer` #FDEEE9 (pressed `primaryContainerPressed` #FCEAE4), рамка `primaryContainerBorder` #F5C6B6 (декоративная) | текст на нём ≥ 4.55:1; `onPrimaryContainer` #A82A09 — 6.19 / 6.01:1 | всегда с индикатором формы (DS-036) |
+| кольцо клавиатурного фокуса | `focus` #1F5FA8 | 6.44:1 на `surface`, 5.93:1 на `background` | синее — контрастно к оранжевому |
 | информация, синхронизация | `info` #1F5FA8 / `infoContainer` #E0ECFB | 6.44 / 5.39:1 | оранжевый не применяется |
-| предупреждение, «мало», «долг к сроку», устаревшие данные | `warning` #8A6A00 / `warningContainer` #FEF9C3 | 5.07 / 4.72:1 | всегда иконка `warning` (или `schedule`) + текст: `StockBadge.low`, `OfflineBanner`, `ReceivableBadge.due`, `StatusChip.warning` |
-| белый текст и знак на тёмном (снекбар, тултип, полноэкранная галерея, видоискатель камеры) | `onInverseSurface` #FFFFFF | 16.46:1 на `inverseSurface` | `onPrimary` палитры B тёмный и здесь не используется |
-| логотип, персонаж, иллюстрации | `brandAccent` #FF8700 (= `primary`); текст внутри иллюстрации — `onBrandAccent` | — | п. 5.8 |
+| предупреждение, «мало», «долг к сроку», устаревшие данные | `warning` #8A5300 / `warningContainer` #FEF9C3 | 6.33 / 5.89:1 | всегда иконка `warning` (или `schedule`) + текст: `StockBadge.low`, `OfflineBanner`, `ReceivableBadge.due`, `StatusChip.warning` |
+| белый текст и знак на тёмном (снекбар, тост, тултип, полноэкранная галерея, видоискатель камеры) | `onInverseSurface` #FFFFFF | 16.76:1 на `inverseSurface` #0E1456 | — |
+| логотип, персонаж, иллюстрации | `brandAccent` #FF8700 (≠ `primary` с ADR-111); текст внутри иллюстрации — `onBrandAccent` #0E1456 | — | п. 5.8 |
 
 1. Имена токенов не меняются; поле `primaryText` в `DsColors` обязательно (п. 17.2). Раздел 9 указывает токены палитры B напрямую: `primaryText` — для текстовых и индикаторных ролей, `primary` — только для заливок; пометки «B: primaryText» прежней редакции сняты.
-2. `AppButton.primary` — `primary`/`onPrimary` (тёмный текст); `AppButton.success` и `AppButton.danger` — белый текст (`onSuccess`/`onError`).
-3. `warning` → #8A6A00 / #FEF9C3; `StockBadge.low`, `OfflineBanner`, `ReceivableBadge.due`, `StatusChip.warning` обязаны показывать иконку; контур звезды избранного — `warning` #8A6A00 (DS-011).
+2. `AppButton.primary` — `primary`/`onPrimary` (белый текст, 4.64:1 — ADR-111); `AppButton.success` и `AppButton.danger` — белый текст (`onSuccess`/`onError`).
+3. `warning` → #8A5300 / #FEF9C3; `StockBadge.low`, `OfflineBanner`, `ReceivableBadge.due`, `StatusChip.warning` обязаны показывать иконку; контур звезды избранного — `warning` #8A5300 (DS-011).
 4. `focus` → #1F5FA8; `StatusChip.info` и `SyncIndicator` — `info` #1F5FA8 или нейтральные токены, не оранжевый.
 5. Полоса выбранного элемента (`CategorySidebarItem`, `ProductCardList`, `ProductCardCompact`, `CustomerCard`, `TransactionRow`, `WarehouseStockTable`) → `primaryText`.
-6. Golden-тесты (`T-DS-*`) — эталоны палитры B; эталоны A не требуются (A — историческая альтернатива); contrast-тест (DS-012) запускается на `DsColors.lightB`.
-7. Персонаж и иллюстрации — п. 13.2 и 14.1: оранжевые акценты допустимы в пределах площадей п. 5.8.
-8. Возврат к A+ при пересмотре решения заказчиком — `AppTheme.light(colors: DsColors.lightA)`; правило ролей сохраняется (в A `primaryText` = `primary` #0053FA, `onPrimary` — белый).
+6. Golden-тесты (`T-DS-*`) — эталоны палитры B; эталоны A не требуются (A — историческая альтернатива); contrast-тест (DS-012) запускается на `DsColors.lightB`. С ADR-111 эталоны перегенерируются по протоколу §18.0.
+7. Персонаж и иллюстрации — п. 13.2 и 14.1: оранжевые акценты (`brandAccent`) допустимы в пределах площадей п. 5.8.
+8. Откат палитры ADR-111 — `AppTheme.light(colors: DsColors.lightB20261021)` (значения редакции 2026-10-21, генерируется всегда); возврат к A+ при пересмотре решения заказчиком — `AppTheme.light(colors: DsColors.lightA)`; правило ролей сохраняется (в A `primaryText` = `primary` #0053FA, `onPrimary` — белый).
+9. Тинт (ADR-111): текст и иконки на `primaryContainer` — `onPrimaryContainer` (или `primaryText`); рамка `primaryContainerBorder` — только декоративная, выбранное состояние передаётся весом 700, залитой иконкой или полосой `primaryText` (A11Y-004).
 
 ---
 
@@ -643,6 +660,12 @@
 | `ds.space.10` | 64 | отступ сверху на экране авторизации (expanded) |
 
 Базовый модуль — 4 lp; рабочий шаг — 8 lp; все размеры кратны 4.
+
+**Сопоставление размеров утверждённого прототипа со шкалами (ADR-111).** Прототип `visual/prototype/Main.dc.html` задан в CSS-пикселях с промежуточными значениями. Шкалы ядра §8.3 не меняются; размер прототипа переносится на ближайшую ступень токена:
+- радиусы: 10, 12 и 14 → `ds.radius.md` (12); 7 и 8 → `ds.radius.sm` (8);
+- отступы и зазоры: ближайшая ступень `ds.space.*`, при равном расстоянии — большая (10 → 12, 14 → 16, 18 → 20); зазор сетки карточек — 16; исключения редакции 1.11 (QA прототипа): поля колонки категорий 18 / 14 → 16 / 16 (сумма 32 и плитка 100, как в прототипе), зазоры внутри групп строки управления каталога 10 → 8 и поля её кнопок 14 → 12 (строка с подписями вида помещается в окно 1280), отступы ленты и строки управления — по видимым интервалам прототипа (≈ 24 и 16 с учётом цели 48; уточнено редакцией 1.12); исключения редакции 1.12 (QA прототипа, раунд 2) — вертикальный ритм экрана выбора товаров на medium и шире повторяет прототип с точностью до 1 lp: заголовок раздела — 22 сверху и 12 снизу (14 прототипа минус 2 лишних lp поля ленты `ScrollRibbon` для кольца фокуса), от карточек ленты до кнопок строки управления 21, от кнопок до сетки 15 — карточка ленты, кнопки строки управления и сетка стоят на 74, 243 и 298 lp от низа шапки; «Каталог» колонки категорий — `h3` 20/700 в строку 23 с отступом 14 (первая плитка — на 57 lp от верха колонки); нижнее поле карточки ленты 10; поля строки «Списка» 10 по вертикали;
+- текст: 30 → `h1` 28/700; 24 → `h2` 24/700; 21, 20 и 19 → `h3` 20/700; 18 → `title` 18/700; 17 и 16 → `bodyLg`; 15 и 14 → `body`; 13 → `label`; 12 и 12.5 → `caption`; 11 и 10 → `micro` 11; вес 800 → 700 (в сборке Inter 400–700);
+- размеры раскладки прототипа — токены `layout` (`DsBreakpoints`): `topBarHeight` 68 (шапка staff на medium+), `navDrawer` 320 (drawer навигации), `cartDrawer` 420 (drawer корзины), `catalogColumn` 132 (колонка категорий), `catalogCardMinWidth` 176 (минимальная ширина карточки сетки каталога: `DsBreakpoints.gridColumns(width, 16, minCardWidth: 176)`); прежний `cardMinWidth` 160 остаётся для SCR-40 и SCR-50.
 
 ### 7.2. Брейкпоинты `ds.breakpoint.*` и поля [РЕШЕНИЕ: ядро §8.3, §17.5 — `ds.breakpoint.large ≥ 1600`]
 
@@ -774,9 +797,27 @@
 
 ### 8.3. Раскладка `medium` (600–1023 lp, планшет)
 
+Режимы сотрудника (`seller`, `cashier`, `admin`, `owner`) — по прототипу 2026-10-29 [РЕШЕНИЕ: ADR-112; отклонение от ядра D-18 и §9 — подтверждение заказчика Q-334]:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ TopAppBarPos (full): 68 │ ☰ · знак 38 · SearchBar (≤ 680) · sync · корзина · 🔔 · аватар │
+├───────────┬──────────────────────────────────────────────────┤
+│ Каталог   │ контент: сетка по ширине (п. 7.3; каталог —       │
+│ 132       │ от 176 lp)                                        │ ┌─ drawer корзины 420 ─┐
+│ (плитки)  │                                                   │ │ по кнопке-итогу / F4 │
+└───────────┴──────────────────────────────────────────────────┘ └──────────────────────┘
+```
+
+- Навигации слева нет: разделы — drawer навигации `NavigationDrawerApp` 320 по «☰» шапки (§9.71), меню аватара и `Ctrl+1…5`; шапка — `TopAppBarPos.full` 68 с часами и датой перед колокольчиком (UI-10-005, UI-10-032); wordmark, имя у аватара и дата показываются, пока помещаются: шапка сворачивает необязательное по своей ширине, а не по классу окна (§9.57, редакция 1.15; в редакциях 1.8–1.14 на medium — без wordmark и имени).
+- Каталог (SCR-10/11/12) — колонка категорий 132 lp (`DsBreakpoints.catalogColumn`) вместо drawer и колонки 240 [РЕШЕНИЕ: ADR-112 п. 3]; колонка сворачивается до 72 кнопкой внизу (UI-10-046, настройка `sidebar_collapsed`; редакция 1.14 — паритет функций).
+- Корзина — drawer 420 lp справа (`DsBreakpoints.cartDrawer`) с затемнением по кнопке-итогу `TopAppBarCartButton` (§9.70) или F4 [РЕШЕНИЕ: ADR-112 п. 4]; карточка товара — боковая панель 400 lp в ландшафте, экран — в портрете.
+
+Режим `customer` — без изменений (D6 ADR-112):
+
 ```
 ┌───┬──────────────────────────────────────┐
-│ R │ TopAppBarPos (full): 64              │
+│ R │ TopAppBarPos (full): 68              │
 │ a ├──────────────────────────────────────┤
 │ i │ [Категории: drawer / колонка 240]    │ контент: сетка 2–3 (портрет) / 3–5 (ландшафт), п. 7.3
 │ l │                                      │
@@ -787,44 +828,50 @@
 ```
 
 - `NavigationRailApp` 72 lp слева (иконка 24 + label 12), пункты по режиму (ядро §9).
-- Категории: в портрете — drawer по кнопке «бургер»; в ландшафте ≥ 840 lp — сворачиваемая колонка 240 lp.
-- Корзина — overlay 320 lp справа (`AppBottomSheet` side-вариант) или `CartFab`; карточка товара — боковая панель 400 lp в ландшафте, экран — в портрете.
+- Категории: в портрете — полоса чипов / лист «Все категории»; в ландшафте ≥ 840 lp — колонка.
+- Корзина — экран `/cart` по кнопке шапки или `CartFab`.
 
-### 8.4. Раскладка `expanded` (1024–1599 lp, POS/десктоп — как на макетах)
+### 8.4. Раскладка `expanded` (1024–1599 lp, POS/десктоп)
+
+Режимы сотрудника — по прототипу 2026-10-29 [РЕШЕНИЕ: ADR-112; отклонение от ядра D-18 и §9 и от GEN-065 — Q-334]:
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│ TopAppBarPos: 72 │ логотип 32 · ☰ · SearchBar (flex, ≤ 720) · часы · юзер · 🔔│
-├──────────────┬────────────────────────────────────────┬────────────────┤
-│ Сайдбар      │ Контент                                 │ CartPanel      │
-│ 240–292      │ заголовок h2 · «Найдено: 124 товара»    │ 320–340        │
-│ CategorySide-│ ViewModeSegmented · SortMenu · фильтр   │ заголовок +    │
-│ barItem ×N   │ сетка 2–5 колонок (п. 7.3)              │ бейдж, CartLine│
-│ «Избранное»  │ или ProductCardList / ProductCardCompact│ ×N, Discount-  │
-│ «Недавние»   │ SCR-14 — панель 400 поверх правой части │ Input, Cart-   │
-│              │ контента (не закрывая корзину)          │ Summary, 2 CTA │
-└──────────────┴────────────────────────────────────────┴────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ TopAppBarPos: 68 │ ☰ · знак 38 «Оптомстрой» · SearchBar (≤ 680) · sync · корзина · 🔔 · аватар │
+├────────────┬────────────────────────────────────────────────────────────────────┤
+│ Каталог    │ Контент                                                            │
+│ 132        │ заголовок h1 · лента подкатегорий · строка управления              │
+│ плитки     │ сетка auto-fill от 176 lp (6 / 5 / 4 колонки при 1440 / 1280 / 1024)│
+│ категорий  │ или ProductCardList / ProductCardCompact                           │
+│            │ SCR-14 — панель 400 поверх правой части контента                   │
+└────────────┴────────────────────────────────────────────────────────────────────┘
+                     drawer корзины 420 справа поверх всего — по кнопке-итогу в шапке / F4
 ```
 
-- Ширины: сайдбар 240 (1024–1279) / 292 (≥ 1280); корзина 320 (1024–1279) / 340 (≥ 1280); контент — остаток: минимум 464 lp с боковыми полями, 416 lp без полей (при 1024 lp — 2 колонки сетки, при свёрнутом сайдбаре — 3; п. 7.3).
-- Сайдбар сворачивается кнопкой «бургер» до 72 lp (иконки + счётчики-точки); состояние запоминается локально.
+- Шапка: «☰» открывает drawer навигации (§9.71) — колонку категорий не сворачивает (её сворачивает до 72 кнопка внизу колонки, UI-10-046; выбор — настройка пользователя `sidebar_collapsed`; редакция 1.14); имя и роль пользователя — текстом; часы и дата — перед колокольчиком (UI-10-005, UI-10-032; редакция 1.14 — восстановлены, паритет функций); необязательное шапка сворачивает по своей ширине, поле поиска не уже 240 (§9.57, редакция 1.15).
+- Ширины: колонка категорий 132 (`DsBreakpoints.catalogColumn`); постоянной `CartPanel` нет — корзина в drawer 420 (`DsBreakpoints.cartDrawer`); контент — вся остальная ширина.
 - Оформление заказа (SCR-21) — модальное окно 920×min(860, 92 % высоты) с четырьмя секциями на одном экране (как на макете) и `CheckoutStepper.horizontal`.
-- Дашборд кассира (SCR-30) использует те же три зоны: сайдбар — разделы кассы, контент — плитки/списки, правая панель — выбранный заказ/клиент.
+- Дашборд кассира (SCR-30) — шапка оболочки (своей шапки на medium+ нет; часы и дата «Пн, 29 июня 2026», UI-30-013), заголовок «Касса» `h1` 700 над контентом (редакция 1.14), контент — три колонки (02 SCR-30.2).
+- Прочие экраны сотрудника (заказы, клиенты, транзакции, отчёты, админ) — шапка оболочки + свой заголовок `AppBar` (без «бургера»: drawer висит на внешнем `Scaffold` оболочки).
+
+Режим `customer` — без изменений (D6 ADR-112): rail 72 и раскладка SCR-50 (02 SCR-50.2).
 
 ### 8.5. Раскладка `large` (≥ 1600 lp)
 
-То же, что expanded; контент каталога ограничен 1200 lp по центру либо расширяется до 6 карточек в ряд (настройка `catalog_large_mode` в SCR-42: `centered` по умолчанию); сайдбар 292, корзина 340, боковые поля 32.
+То же, что expanded; контент каталога ограничен 1200 lp по центру либо расширяется до 6 карточек в ряд (настройка `catalog_large_mode` в SCR-42: `centered` по умолчанию); боковые поля 32. Сотрудник (ADR-112; редакция 1.17): колонка категорий 132 (свёрнутая — 72), постоянной корзины нет — drawer 420; режим `customer`: сайдбар 292, корзина — экран `/cart` по вкладке rail (прежде — сайдбар 292 и корзина 340 для всех).
 
 ### 8.6. Схема выбора раскладки
 
 ```mermaid
 flowchart TD
   W[MediaQuery.sizeOf.width] --> C{width < 600}
-  C -- да --> compact[compact: 1 колонка, BottomNavBar, CartFab, корзина = sheet]
-  C -- нет --> M{width < 1024}
-  M -- да --> medium[medium: NavigationRailApp 72 + контент, категории drawer/колонка 240, корзина overlay 320]
+  C -- да --> compact[compact: 1 колонка, BottomNavBar, CartFab, корзина = экран/sheet]
+  C -- нет --> R{режим customer?}
+  R -- да --> cust[customer: NavigationRailApp 72 + шапка SCR-50, как раньше]
+  R -- нет --> M{width < 1024}
+  M -- да --> medium[medium: шапка 68 с ☰, без rail; каталог — колонка 132; корзина — drawer 420]
   M -- нет --> E{width < 1600}
-  E -- да --> expanded[expanded: сайдбар 240–292 / контент / CartPanel 320–340]
+  E -- да --> expanded[expanded: шапка 68 с ☰, без rail и сайдбара; колонка 132 / контент; корзина — drawer 420]
   E -- нет --> large[large: как expanded, контент ≤ 1200 или 6 карточек]
   compact --> D1[DsDensity.standard]
   medium --> D1
@@ -832,10 +879,14 @@ flowchart TD
   large --> D2
 ```
 
+Раскладки сотрудника на medium и шире — ADR-112 (отклонение от ядра D-18 и §9, вопрос Q-334); навигация — `NavigationDrawerApp` по «☰» (§9.71) и `Ctrl+1…5`.
+
+**Перенесённые функции (редакция 1.17; паритет функций, ADR-112).** Функции прежних компонентов не удалены, а переехали: `NavigationRailApp` и сайдбар разделов сотрудника → `NavigationDrawerApp` (§9.71) и `Ctrl+1…5`; свёртывание сайдбара «бургером» → кнопка «Свернуть каталог» колонки (UI-10-046, §9.10 `sidebar`); дерево и чипы категорий со счётчиками → `CategoryTile.sidebar` и `ribbon` с пилюлей числа (§9.10) в колонке и `ScrollRibbon` (§9.73); «★ Избранное N» и «Недавние товары» сайдбара → плитка и блок «Недавние» колонки; `FilterPanel` 320 и лист SCR-13 на medium → встроенная панель (§9.25); постоянная `CartPanel` и overlay 320 → drawer 420 (§9.27); `CartFab` сотрудника на medium → `TopAppBarCartButton` (§9.70; `CartFab` — compact и `customer` на medium, §9.30); `F4`/`F8`/`F9` → обработчик кнопки-итога; своя шапка SCR-30 → шапка оболочки с часами и датой (§9.57) и заголовок «Касса» `h1`; часы и дата (`TopAppBarClock`) **сохранены**. Полная таблица — ADR-112 «Перенесённые функции», 02 П.14, `docs/stages/CAT_UI_report.md` §12.
+
 ### 8.7. Поведение при изменении класса окна
 
 - Переключение класса (поворот планшета, изменение окна Windows) не теряет состояние: корзина, поисковый запрос, выбранная категория, открытая карточка товара переносятся (`AdaptiveScaffold` держит одно дерево состояний, меняется только раскладка).
-- Открытый bottom sheet корзины на compact при переходе в medium закрывается и становится overlay-панелью; на expanded — постоянной панелью.
+- Открытый bottom sheet корзины на compact при переходе в medium закрывается и становится overlay-панелью; на expanded — постоянной панелью. Редакция 1.17 (ADR-112): у сотрудника на medium и шире постоянной панели и overlay 320 нет — корзина открывается drawer 420 (§9.27) кнопкой-итогом в шапке или `F4`; у `customer` на medium — `CartFab` и тот же drawer.
 - Модальное окно оформления на expanded при переходе в compact становится полноэкранным маршрутом `/checkout` на том же шаге.
 - Диалоги `ConfirmDialog`/`StepUpDialog` сохраняются при смене класса.
 
@@ -843,7 +894,7 @@ flowchart TD
 
 ## 9. Спецификация компонентов
 
-Имена компонентов — ровно как в ядре §8.5 (классы Flutter в `lib/design_system/components/`). Компоненты, добавленные в перечень ядром v1.2 §17.5, помечены [РЕШЕНИЕ: ядро §17.5]; каноническая спецификация всех компонентов — этот раздел (ядро §17.5). Для каждого компонента: назначение, анатомия, варианты, размеры, токены, поведение, доступность, адаптивность и таблица состояний (default / hover / pressed / focused / disabled / loading / error / selected / empty; «—» = состояние неприменимо). Hover — только при указателе (`MouseRegion`); на тач-устройствах hover не показывается. Все переходы между состояниями — `ds.motion.fast` 150 мс, если не указано иное. Цветовые токены раздела 9 указаны для основной палитры B «Оранжевый» (п. 5.3, 5.9; ядро v1.9 §24.1): `primary` #FF8700 — только заливки (CTA, `CartFab`, бейдж корзины, выбранный чекбокс, свотч, края диапазона) и всегда с `onPrimary` #1B1F2A на них; текст, ссылки, цены, активные иконки, обводки, полосы и индикаторы выбранного — `primaryText` #B04E00; фокус — `focus` #1F5FA8; `warning` #8A6A00 — всегда с иконкой и текстом. Белый текст на `primary` и `primary` как цвет текста или единственного индикатора запрещены (DS-098).
+Имена компонентов — ровно как в ядре §8.5 (классы Flutter в `lib/design_system/components/`). Компоненты, добавленные в перечень ядром v1.2 §17.5, помечены [РЕШЕНИЕ: ядро §17.5]; каноническая спецификация всех компонентов — этот раздел (ядро §17.5). Для каждого компонента: назначение, анатомия, варианты, размеры, токены, поведение, доступность, адаптивность и таблица состояний (default / hover / pressed / focused / disabled / loading / error / selected / empty; «—» = состояние неприменимо). Hover — только при указателе (`MouseRegion`); на тач-устройствах hover не показывается. Все переходы между состояниями — `ds.motion.fast` 150 мс, если не указано иное. Цветовые токены раздела 9 указаны для основной палитры B «Оранжевый» (п. 5.3, 5.9; ядро v1.9 §24.1; значения — ADR-111): `primary` #D9380F — только заливки (CTA, `CartFab`, бейдж корзины, выбранный чекбокс, свотч, края диапазона) и всегда с `onPrimary` #FFFFFF на них (4.64:1); текст, ссылки, цены, активные иконки, обводки, полосы и индикаторы выбранного — `primaryText` #C9330C; текст на тинте `primaryContainer` — `onPrimaryContainer` #A82A09; фокус — `focus` #1F5FA8; `warning` #8A5300 — всегда с иконкой и текстом. `primary` как цвет текста или единственного индикатора запрещён; белый текст запрещён на оранжевых заливках ниже 4.5:1 — `brandAccent` #FF8700 (DS-098). HEX в описаниях компонентов ниже приведены для справки; если они расходятся с таблицей п. 5.3 (значения редакции 2026-10-21), действует токен и его значение по п. 5.3 (ADR-111).
 
 Общие правила для всех компонентов (DS-030…DS-040):
 
@@ -852,22 +903,25 @@ flowchart TD
 - Loading: контрол сохраняет размер (фиксируется ширина), содержимое заменяется `AppProgress.circular 16–20`, повторные тапы игнорируются (защита от двойного запроса — ядро §11 п.6 подпункт 12).
 - Error: цвет `error`, иконка `error` 16–20, текст ошибки `caption/label` под элементом из ARB; ошибка не снимается до изменения значения или повторного запроса.
 - Selected: `primaryContainer` + индикатор формы (полоса 3 px `primaryText` слева, галочка, filled-иконка) — никогда только цвет.
-- Empty: внутри контейнеров — `EmptyState` соответствующего варианта; в контролах — плейсхолдер `textTertiary` (только на `surface`).
+- Empty: внутри контейнеров — `EmptyState` соответствующего варианта; в контролах — плейсхолдер `textTertiary` (≥ 4.5:1 на `surface`, `background`, `surfaceHover`, `surfaceVariant`, `disabledBg` — ADR-111, DS-007).
 
 ### 9.1. `AppButton`
 
 - Назначение: любое действие по нажатию (CTA, второстепенные, разрушающие).
 - Анатомия: контейнер → [иконка слева 20/24] → текст → [иконка справа]; опционально `AppProgress` вместо содержимого.
-- Варианты: `primary` (заливка `primary` #FF8700, текст и иконка `onPrimary` #1B1F2A — 6.83:1; белый текст запрещён), `secondary` (= `tonal`: `primaryContainer`/`primaryText`, 4.73:1), `tonal`, `outlined` (обводка 1.5 px `primaryText`, текст `primaryText`), `text` (текст `primaryText` без фона), `danger` (заливка `error`/`onError`), `success` (заливка `success`/`onSuccess` — «✓ Создать заказ и показать QR» с макета).
+- Варианты: `primary` (заливка `primary` #D9380F, текст и иконка `onPrimary` #FFFFFF — 4.64:1, ADR-111), `secondary` (= `tonal`: `primaryContainer`/`primaryText`, 4.69:1), `tonal`, `outlined` (обводка 1.5 px `primaryText`, текст `primaryText`), `text` (текст `primaryText` без фона), `danger` (заливка `error`/`onError`), `success` (заливка `success`/`onSuccess` — «✓ Создать заказ и показать QR» с макета).
 - Размеры: `S 36 / M 44 / L 52` (п. 7.4); ширина — по содержимому или `expand` (на всю ширину — CTA корзины/оформления/входа).
 - Токены: радиус `sm`; текст `label/body/bodyLg` 600; зазор иконка–текст `space.2`; тень нет (кроме `CartFab`).
 - Поведение: один тап = одно действие; в `loading` повторные тапы игнорируются; долгое нажатие — ничего; Enter/Space при фокусе — активирует; `danger` требует `ConfirmDialog` для необратимых операций.
 - Доступность: `Semantics(button: true, label)`; тач-цель ≥ 48 (S — невидимый паддинг до 44); контраст текста ≥ 4.5:1 во всех вариантах.
 - Адаптивность: на compact CTA — `expand`, L; на expanded — по содержимому, M; плотность не меняет размер CTA.
 
+- **Редакция 1.10 (прототип 2026-10-29, ADR-112, D5).** Размер `cta` — кнопки зоны G drawer корзины в одну строку («Отложить · F8» `outlined` и «Создать заказ · F9» `primary`, §9.27): высота 48 (цель 48), радиус `md`, подпись `body 700`, поля 12; подпись масштабируется по ширине (`fitLabel`), чтобы не переноситься в узком drawer.
+- **Редакция 1.9 (прототип 2026-10-29, ADR-112).** Размеры `card` (40 визуально, цель 48) и `cardCompact` (34, цель 44) — кнопки карточек каталога (§9.11–§9.13): радиус `md`, подпись `body 700` / `label 700`, поля 12 / 8; вариант `tint` — «уже в корзине»: заливка `primaryContainer` (hover и pressed — `primaryContainerPressed`), обводка `primaryContainerBorder` 1,5 (декоративная, 1.54:1), текст `onPrimaryContainer` (6.19:1); недоступный — как у остальных вариантов.
+
 | Состояние | Визуал | Поведение |
 |---|---|---|
-| default | по варианту; `primary`: фон #FF8700, текст и иконка #1B1F2A (`onPrimary`, 6.83:1) | активна |
+| default | по варианту; `primary`: фон #D9380F, текст и иконка #FFFFFF (`onPrimary`, 4.64:1 — ADR-111) | активна |
 | hover | `primary` → `primaryHover` #F07A00 (тёмный текст 5.87:1); `outlined/text/tonal` → фон `primaryContainer`; `danger` → затемнение 8 % (`Color.lerp(error, textPrimary, .08)`) | курсор `click` |
 | pressed | `primaryPressed` #D96A00 (тёмный текст 4.71:1); `outlined/tonal` → `primaryContainerPressed`; scale 0.98, 150 мс | — |
 | focused | кольцо `focus` | Enter/Space |
@@ -876,6 +930,8 @@ flowchart TD
 | error | — (ошибка показывается снекбаром/инлайн рядом) | — |
 | selected | — | — |
 | empty | — | — |
+
+- **Редакция 1.11 (QA прототипа 2026-10-29, раунд 1; ADR-112).** Вариант `neutral` — нейтральная контурная: фон `surface` (hover `surfaceHover`, pressed `surfacePressed`), обводка 1 — `border`, затемнённый на 12 % к `borderStrong` (≈ #D5DEEA прототипа, декоративная), подпись `textPrimary` 600 — второстепенное действие рядом с основной кнопкой («Отложить · F8» drawer корзины, §9.27): оранжевой остаётся только «Создать заказ · F9». Вариант `link` (кнопка-ссылка `info`) — **снят в редакции 1.13**: ссылки — `primaryText` (ядро §24.1, DS-098), синий `info` закреплён за фокусом и информационными статусами. Сброс фильтров («Сбросить фильтры», «Сбросить все», §9.25, SCR-10 C7) — вариант `text` (`primaryText`, CP-035/036); в прототипе ссылка синяя — пункт вопроса Q-334. Недоступные `neutral` — как у `outlined`.
 
 ### 9.2. `AppIconButton`
 
@@ -998,12 +1054,12 @@ flowchart TD
 ### 9.7. `SearchBar`
 
 - Назначение: единое поле поиска товаров по названию / артикулу / штрихкоду (SCR-10/11), поиск клиентов (SCR-31).
-- Анатомия: контейнер (фон `surfaceVariant`, радиус `sm`, высота 44 compact / 48 medium / 48 expanded) → иконка `search` 20 `textSecondary` → поле (плейсхолдер «Поиск товара по названию, коду или штрих-коду…») → [индикатор debounce / спиннер 16] → [кнопка очистки `close` 20] → кнопка сканера `AppIconButton` `barcode_scanner` 24 (на Android/iOS открывает SCR-17; на Windows — подсказка «Используйте сканер» и фокус в поле).
-- Варианты: `header` (в `TopAppBarPos`, ширина flex ≤ 720), `compact` (на всю ширину под шапкой), `customers` (плейсхолдер «Введите имя, телефон или часть имени…», без сканера).
-- Размеры: высота 44/48; иконки 20/24; тач-цель сканера 48.
-- Токены: текст `bodyLg 16/400 textPrimary`; плейсхолдер `textTertiary` — на `surfaceVariant` даёт < 4.5 → в `SearchBar` плейсхолдер `textSecondary` (5.35:1) **обязательно**.
+- Анатомия: контейнер (фон `surfaceVariant`; `header` — высота 44, радиус `md`, область ввода и тач-цель поля 48 [РЕШЕНИЕ: ADR-112]; `compact`/`customers` — высота 44 compact / 48 medium и шире, радиус `sm`) → иконка `search` (18 в `header`, иначе 20) `textSecondary` → поле (плейсхолдер «Поиск товара по названию, коду или штрих-коду…») → [индикатор debounce / спиннер 16] → [кнопка очистки `close`] → кнопка сканера `barcode_scanner` (в `header` — кнопка 32×32 с радиусом `sm` внутри поля, цель 48 × 48 — редакция 1.14; иначе `AppIconButton` 24; на Android/iOS открывает SCR-17; на Windows — подсказка «Используйте сканер» и фокус в поле).
+- Варианты: `header` (в `TopAppBarPos.full`, от логотипа, растёт до 680 lp — прототип 2026-10-29, ADR-112), `compact` (на всю ширину под шапкой), `customers` (плейсхолдер «Введите имя, телефон или часть имени…», без сканера).
+- Размеры: `header` — 44 (область ввода 48), поля 16 слева / 8 справа, зазор иконки 12, кнопки 32 (цель 48 × 48 — по высоте области ввода; редакция 1.14: исключение п. 7.4 снято — поле стоит в шапке всех экранов сотрудника, в том числе на сенсорных POS-мониторах); `compact`/`customers` — 44/48, иконки 20/24, тач-цель сканера 48.
+- Токены: текст `header` — `body 14/400 textPrimary`, иначе `bodyLg 16/400`; плейсхолдер `header` — `textTertiary` #656E80 (4.51:1 на `surfaceVariant`, ADR-111, CP-084), иначе `textSecondary`; иконка сканера `textPrimary`; hover кнопок — `surfaceHover`.
 - Поведение: debounce 300 мс, минимум 2 символа (артикул/штрихкод — любой) [РЕШЕНИЕ: D-31]; Enter/суффикс сканера — немедленный поиск; HID-сканер: буфер + суффикс Enter/Tab (D-42), при совпадении штрихкода — `matchType=barcode` → если 1 вариант и включено «сразу в корзину» — добавить в корзину, иначе открыть карточку SCR-14 (≥ 2 вариантов — SCR-15); значение по умолчанию по роли: `cashier` — «сразу в корзину», `seller` — «открыть карточку»; пользователь меняет его настройкой `scan_adds_to_cart` (`AppSwitch` SCR-42), хранится в `user_profiles.settings` (07) [РЕШЕНИЕ: ядро §19.4] (DS-087); бейдж типа совпадения по артикулу — глиф `tag` (п. 7.7); подсказки `/search/suggest` в выпадающем списке (≤ 8 строк, elevation 2); история последних 5 запросов локально; Esc — очистка.
-- Доступность: `Semantics(textField, label: «Поиск»)`, результаты объявляются «Найдено 124 товара»; горячая клавиша F2 / Ctrl+F на Windows — фокус в поиск (A11Y-009).
+- Доступность: `Semantics(textField, label: «Поиск»)` — в шапке сотрудника «Поиск товара» (`search_field_a11y`; редакция 1.13: поле стоит на всех экранах сотрудника, подпись «Результаты поиска» к полю ввода не подходит), результаты объявляются «Найдено 124 товара»; горячая клавиша F2 / Ctrl+F на Windows — фокус в поиск (A11Y-009).
 - Адаптивность: compact — под шапкой, при прокрутке вниз скрывается, вверх — появляется; expanded — в шапке.
 
 | Состояние | Визуал | Поведение |
@@ -1027,7 +1083,7 @@ flowchart TD
 - Токены: фон `surface`; выбранный — `primaryContainer` + полоса 3 px `primaryText` + текст и иконка `primaryText 600` (4.73:1 на `primaryContainer`); счётчик — `label` в пилюле `surfaceVariant` (радиус `full`, паддинг 2×8).
 - Поведение: тап — переход на SCR-12 (фильтр каталога); тап по шеврону — раскрыть/свернуть детей (ANIM-016); один уровень вложенности отображается раскрытием, глубже — через SCR-12; счётчик — число товаров в категории из кэша; клавиатура ↑/↓/Enter/→ (раскрыть)/← (свернуть).
 - Доступность: `Semantics(selected, expanded, label: «Смесители, 124 товара»)`.
-- Адаптивность: compact — не используется (вместо него `CategoryChip`/`CategoryTile`); medium — в drawer.
+- Адаптивность: compact — не используется (вместо него `CategoryChip`/`CategoryTile`); medium — в drawer. С версии 1.6 (ADR-110) на экране выбора товаров SCR-10/11/12 (expanded/large) вместо дерева `CategorySidebarItem` — колонка плиток `CategoryTile.sidebar` (§9.10); прежний вид сохраняется на SCR-50 (`/home`).
 
 | Состояние | Визуал | Поведение |
 |---|---|---|
@@ -1066,14 +1122,23 @@ flowchart TD
 
 ### 9.10. `CategoryTile` [РЕШЕНИЕ: ядро §17.5]
 
-- Назначение: карточка категории/подкатегории на экране SCR-12 (compact/medium) — «вертикальное меню категорий в виде компактных карточек с изображениями» (SRC-C-011a, SRC-C-011b, SRC-C-011c).
+- Назначение: карточка категории/подкатегории на экране SCR-12 (compact/medium) — «вертикальное меню категорий в виде компактных карточек с изображениями» (SRC-C-011a, SRC-C-011b, SRC-C-011c); с версии 1.6 (макет заказчика 2026-10-28, ADR-110) — также колонка корневых категорий и лента подкатегорий экрана выбора товаров SCR-10/11/12 на medium/expanded/large (варианты `sidebar`, `ribbon`).
 - Анатомия: карточка 96×96 … 160×120 (радиус `md`, фон `surface`, обводка `border`) → изображение категории из 1С или иконка 32 `primaryText` на фоне `primaryContainer` (круг 56) → название `label 13/500` 2 строки → счётчик `caption textSecondary`.
-- Варианты: `image` (если 1С отдаёт изображение группы — Q-022), `icon` (по умолчанию).
+- Варианты: `image` (если 1С отдаёт изображение группы — Q-022), `icon` (по умолчанию). Раскладки (версия 1.6): `grid` — лист «Все категории» (compact) и SCR-50; `sidebar` — вертикальная плитка «изображение/иконка + подпись 2 строки» в колонке 120 lp (свёрнутой 72 — только изображение с тултипом названия), счётчик визуально не показывается, он есть в тултипе и `Semantics`; `ribbon` — плитка 128×120 в горизонтальной ленте подкатегорий (прокрутка жестом, тачпадом, перетаскиванием, колесом; стрелки ‹ › на ширину видимой части, скрыты на краях).
 - Размеры: сетка 3 колонки на compact, 4–5 на medium; зазор 12.
-- Токены: как выше; выбранная (текущая) — обводка `primaryText` 2 px.
+- Токены: как выше; выбранная (текущая) — обводка `primaryText` 2 px; в раскладках `sidebar` и `ribbon` — заливка `primaryContainer` + обводка `primaryText` 1,5 + подпись `primaryText` 600, без анимации масштаба (pressed — `surfacePressed`) (версия 1.6).
 - Поведение: тап — открыть категорию (подкатегории или товары); долгое нажатие — ничего.
 - Доступность: `Semantics(button, label: «Смесители, 124 товара»)`.
-- Адаптивность: не используется на expanded.
+- Адаптивность: до версии 1.6 — не используется на expanded; с версии 1.6 (ADR-110) — `sidebar` на expanded/large и `ribbon` на medium/expanded/large в SCR-10/11/12; `grid` — лист «Все категории» на compact.
+
+- **Редакция 1.9 (прототип 2026-10-29, ADR-112) — раскладки `sidebar` и `ribbon` экрана выбора товаров SCR-10/11/12 на medium и шире; заменяет описание версии 1.6 для этих раскладок.**
+  - Общее: фон `surface`, обводка `border` 1,5, радиус `md`; выбранная — заливка `primaryContainer`, обводка `primaryContainerBorder` (декоративная) и подпись `primaryText` **700** (вес — признак не только цветом, A11Y-004); hover — обводка `primaryContainerBorder`; pressed — `surfacePressed`; фокус — кольцо; без анимации масштаба. Картинка — только изображение категории из данных (`Category.imageUrl`, `BoxFit.contain`, без подложки); фото товара не подставляется (CAT-009). Подпись — до 2 строк по центру, перенос только между словами. У плитки колонки, если самое длинное слово шире строки, шрифт уменьшается до ширины слова, но не ниже 80 %; у карточки ленты кегль не меняется (прототип: line-clamp 2). Слово, которое не помещается и так («Электроинструмент» в карточке 118), не переносится посередине: строки раскладываются по словам, лишнее обрезается многоточием; при крупном системном шрифте, если вторая строка не помещается по высоте, — одна строка с многоточием [уточнено редакцией 1.11, QA прототипа]. Заглушка карточки ленты без картинки (и «Все товары») — контурный глиф «четыре квадрата» (`DsGlyph.gridOutline` 26, `borderStrong`) в круге 56 `surfaceVariant` — и на выбранной карточке.
+  - `sidebar` — плитка колонки категорий 132 lp (`DsBreakpoints.catalogColumn`; поля колонки 20 / 16 / 24 / 20, зазор плиток 12, заголовок «Каталог» `h3 700`): во всю ширину колонки, высота ≥ 88, поля 8 (сверху) / 4 (по бокам; прототип — 6) / 12 (снизу) → изображение 46×40 или иконка по `iconKey`/названию 22 в круге 40 `surfaceVariant` → зазор 8 → подпись `caption 12/600` (`textPrimary`; выбранная — `primaryText 700`). Счётчик — в тултипе и `Semantics` (`category_tile_a11y`). Свёрнутый вид 72 экраном больше не используется (D3).
+  - `ribbon` — карточка ленты подкатегорий 118×148 (`CategoryTile.ribbonSize`; лента — §9.73): поля 8 / 8 / 12 → поле картинки высотой 92 (изображение ≤ 96×88 `contain`) → подпись `label 13/500` в 2 строки (выбранная — `primaryText 700`). Без изображения — нейтральная заглушка: круг 56 `surfaceVariant` с глифом `grid_view` `borderStrong` (3.18:1; параметр `placeholderIcon`). Первая карточка — «Все товары» (`catalog_title_all`) с той же нейтральной иконкой (без картинки родителя).
+  - **Редакция 1.12 (QA прототипа 2026-10-29, раунд 2; ADR-112).** `ribbon`: поля 8 / 8 / 10; блок подписи высотой 2 строки (`label` 13 × 1,2 × 2 ≈ 31) прижат к низу карточки, однострочная подпись стоит у верха блока — на линии первых строк двухстрочных подписей (прототип: `justify-content: space-between`, подпись с `min-height` 2 строки); число строк подпись выбирает по всей высоте под картинкой. `sidebar`: заголовок колонки «Каталог» — `h3 20/700` в строку 23 с отступом 14 (прототип 19/700, интервал normal, 14): первая плитка — на 57 lp от верха колонки, как в прототипе.
+
+  - **Редакция 1.14 (паритет функций, ADR-112).** `sidebar` и `ribbon`: число товаров (`countLabel`, `productCount` категории; у «★ Избранное» — число избранных товаров) — пилюля высотой 16 `surfaceVariant` с `micro 600 textSecondary tnum` в правом верхнем углу (поля 5); у плитки без подписи (свёрнутая колонка 72) пилюли нет — число в тултипе и `Semantics` «Смесители, 124 товара». Данные — только из дерева категорий.
+  - **Редакция 1.17 (свёрнутая колонка, 02 UI-10-046; паритет функций — прежнее свёртывание сайдбара «бургером» сохранено).** Колонка сворачивается до 72 lp (`DsBreakpoints.sidebarCollapsed`) кнопкой «Свернуть каталог» / «Развернуть каталог» (`AppIconButton` 40, цель 48) внизу колонки вне прокрутки; выбор — настройка пользователя `sidebar_collapsed`. В свёрнутой колонке `sidebar` — плитки ≈ 56 × 59 без подписи: изображение категории или иконка в светлом круге, название и число товаров — в `AppTooltip` и `Semantics`; выбранная — тинт `primaryContainer` с рамкой `primaryContainerBorder`; «★ Избранное» — иконкой после разделителя. У сайдбара-списка `customer` (expanded/large) — та же кнопка, свёрнутая ширина 72.
 
 | Состояние | Визуал | Поведение |
 |---|---|---|
@@ -1094,10 +1159,14 @@ flowchart TD
 - Варианты: `standard` (паддинг 16), `compact` (паддинг 12, название 2 строки `body`); `customer` (без остатка по складам — только статус).
 - Размеры: ширина ≥ 160; высота по содержимому (≈ 300–340); радиус `md`; обводка `border` 1 px; без тени (`elevation.0`).
 - Иконка избранного на карточках каталога — **только звезда** `star` (`FavoriteToggle`); другие глифы избранного (сердце и т. п.) с макета не переносятся; фраза макета «остатки в реальном времени» в тексты UI не переносится (D-29) [РЕШЕНИЕ: ядро §19.4] (DS-094).
-- Токены: фон `surface`; цена `primaryText` (5.34:1); кнопка «+ Добавить» — `AppButton.primary` (оранжевая заливка с тёмным текстом); «Нет в наличии» — фото opacity 0.6, кнопка disabled, бейдж `error`; «Остаток неизвестен» (`StockBadge` error) — кнопка «+ Добавить» disabled с подписью «Остаток неизвестен» (INV-052).
+- Токены: фон `surface`; цена `primaryText` (5.34:1); кнопка «+ Добавить» — `AppButton.primary` (оранжевая заливка с белым `onPrimary`, ADR-111); «Нет в наличии» — фото opacity 0.6, кнопка disabled, бейдж `error`; «Остаток неизвестен» (`StockBadge` error) — кнопка «+ Добавить» disabled с подписью «Остаток неизвестен» (INV-052).
 - Поведение: тап по фото/названию — SCR-14 (панель на expanded, экран на compact); «+ Добавить» — добавляет 1 базовую единицу выбранного варианта (товар с ≥ 2 вариантами → SCR-15 `VariantSelector`); далее кнопка заменяется `QuantityStepper` (ANIM-006); тап по числу степпера — `QuantityNumpadSheet`; повторный тап по «+» за 300 мс — засчитывается (без ожидания сервера, локальный optimistic + outbox D-32); при `STOCK_INSUFFICIENT` — число `error` + shake, подпись «Доступно 24 шт»; `PRICE_CHANGED` — бейдж «Цена изменилась» `warning` (A11Y-004).
 - Доступность: карточка — одна `Semantics`-группа «Смеситель для кухни Frap F4252, 2 350 сом, в наличии 24 шт, артикул F4252»; кнопки внутри — отдельные `Semantics`; порядок фокуса: карточка → звезда → кнопка.
 - Адаптивность: число колонок по п. 7.3; на compact при виде «сетка» — 2 колонки, кнопка M 44.
+
+- **Редакция 1.9 (прототип 2026-10-29, ADR-112; SCR-10/11/12 и SCR-50 — общая анатомия).** Белая карточка: обводка `border`, радиус `md`, поле 12, тень `elevation.2` при наведении. Сверху вниз: фото — поле высотой 150 (`ProductImage(height: 150, fit: contain, background: surface)`; без фото — плашка «Нет фото», §9.14) → `FavoriteToggle.onImage` 34 на 8/8 от углов карточки (цель 48) → [бейдж типа совпадения, SCR-11] → название `body 14/600` в 2 строки (место под 2 строки всегда) → «Арт. …» `caption textTertiary` (с числом вариантов) → строка остатка `StockBadge.inline` (§9.17) → цена `PriceText.grid` (`title 18/700 primaryText`) + «/ шт» `label textSecondary` (у вариантов — «от …») → кнопка во всю ширину `AppButton` размера `card` (40, цель 48, радиус `md`, `body 700`).
+- Кнопка по `ProductCardActionKind`: `add` — `primary` «+ Добавить»; `inCart` — `tint` «В корзине · N — ещё +1» (`catalog_card_in_cart_add_more`; одна строка с уменьшением; нажатие — ещё шаг: тот же `onAction`; N — количество строки черновика корзины по варианту, порт `catalogCartQuantitiesProvider`, клиент не вычисляет); `chooseVariant` — `tonal` «Выбрать вариант ›» (шеврон при ширине кнопки ≥ 168); `unavailable` — серая недоступная `disabledBg` с причиной `textTertiary 700` (4.53:1): «Нет в наличии», «Цена не указана», «Остаток неизвестен»; `hidden` (`owner`) — пустое место высотой 48 (кнопки ряда на одной линии). Загрузка «+ Добавить» и поглощение повторных нажатий — как раньше. «В корзине · N» заменяет `QuantityStepper` после первого добавления на карточке каталога (02 ч. B §2.3 в редакции 1.16); количество меняется в корзине.
+- Сетка SCR-10/11/12: минимум карточки 176 (`DsBreakpoints.catalogCardMinWidth`), зазор 16, высота ячейки `kProductCardGridExtent(TextScaler)` ≈ 346 при масштабе 1.0 — текстовая часть масштабируется (масштаб 1.3 — без переполнения); SCR-50 — минимум 160 (п. 7.3). Колонки на 1440 / 1280 / 1024 — 6 / 5 / 4 (без закреплённой CP).
 
 | Состояние | Визуал | Поведение |
 |---|---|---|
@@ -1122,6 +1191,9 @@ flowchart TD
 - Доступность: одна `Semantics`-группа + кнопки; высота цели ≥ 48.
 - Адаптивность: на compact — цена и кнопка в правом столбце, название 2 строки; на expanded — одна строка названия.
 
+- **Редакция 1.9 (прототип 2026-10-29, ADR-112) — medium и шире.** Каждая строка — отдельная карточка: обводка `border`, радиус `md`, поля 12/16, без разделителя, зазор между карточками 8, тень `elevation.2` при наведении. Колонки: фото 72×60 `contain` → название `body 600` (2 строки) и «Арт. …» `caption textSecondary` (редакция 1.13: кегль 12 — не `textTertiary`, DS-007) → звезда `FavoriteToggle.inline` (02 требует избранное и в «Списке»; в прототипе её нет — отличие записано в ADR-112) → остаток `StockBadge.inline` колонкой 150 → цена `PriceText.list` (`bodyLg 16/700 primaryText`) + «/ шт» справа колонкой 150 → кнопка 168×40 (`AppButton.card`) с полной подписью тех же видов, что в сетке (§9.11). Строка уже 860 lp — остаток под артикулом, цена 120, кнопка 140. compact — прежняя строка 72 с разделителем (без изменений).
+- **Редакция 1.12 (QA прототипа 2026-10-29, раунд 2; ADR-112) — medium и шире.** Поля строки 10 / 16 (прототип 10 / 14), минимальная высота 80 + обводка: строка с названием до 2 строк — 82 (было 86, прототип ≈ 82). Цена — `PriceText.list` `bodyLg 16/700` (прототип 17/800 по §7.1; 02 П.5).
+
 | Состояние | Визуал | Поведение |
 |---|---|---|
 | default | `surface`, разделитель `border` | — |
@@ -1145,6 +1217,9 @@ flowchart TD
 - Доступность: `Semantics(role: row)`; заголовки колонок — `header`.
 - Адаптивность: `default` — expanded/large и medium-ландшафт ≥ 840 lp; `row` — compact и medium < 840 lp (тач-цель «+» 48 за счёт отступа строки); при сенсорном POS (Q-008) степпер md и высота 56.
 
+- **Редакция 1.14 (паритет функций, ADR-112) — вариант `default` (таблица).** В колонке «Наименование» — миниатюра 40 (`ProductImage.thumb`, `contain`, фон `surface`, радиус `sm`; заголовок колонки — над названием, после миниатюры), название с числом вариантов и звезда `FavoriteToggle.inline` (цель 48); цена — с единицей «/ шт» (`caption textSecondary`). Строка уже 840 lp (`ProductCompactLayout.narrowBelow`) — без колонки «Артикул»: артикул второй строкой под названием (`caption textSecondary tnum`), «Наличие» 120 и «Цена» 130 остаются; горизонтальной прокрутки нет.
+- **Редакция 1.9 (прототип 2026-10-29, ADR-112) — вариант `default` (таблица).** Заголовок и строки — в одном белом контейнере с обводкой `border` и радиусом `md`; заголовок 40 закреплён внутри контейнера: `caption 600 textSecondary` (редакция 1.13, DS-007), нижняя линия `border`. Колонки (зазор 12, поля строки 16): Артикул 120 (`body textSecondary tnum`, без «Арт.») · Наименование flex (`body 600`, 1 строка; число вариантов `caption` рядом) · Наличие 150 (`catalog_compact_col_stock`; `StockBadge.inline` — статус с количеством в одну строку) · Цена 150 (`PriceText.compact`, вправо; у вариантов — «от …») · кнопка 132 (`AppButton.cardCompact`: 34 визуально, цель 44, `label 700`): «+ Добавить» / «Ещё · N» (`catalog_card_in_cart_short`, `tint`) / «Выбрать вариант» (`tonal`) / «Нет в наличии» (недоступная). Строка 50 + нижняя линия `border`; фон — у контейнера, hover — `surfaceHover`. Строка уже 720 lp — узкий набор «Наименование · Цена · кнопка», без горизонтальной прокрутки. Колонки Фото, Вар., Ед. и ☆ в таблице не показываются (UI-10-118 в редакции 02 1.16, ADR-112). Вариант `row` (compact, medium < 840) и плитка `strip` (SCR-50) — без изменений.
+
 | Состояние | Визуал | Поведение |
 |---|---|---|
 | default | `surface` | — |
@@ -1164,9 +1239,11 @@ flowchart TD
 - Варианты: `thumb` 40/48/56, `card` (1:1), `full` (галерея), `cart` 48.
 - Размеры: по месту; всегда квадрат, кроме галереи (4:3 допускается).
 - Токены: фон `surfaceVariant`; скелетон при загрузке; никаких рамок.
-- Поведение: прогрессивная загрузка: скелетон → fade-in 200 мс (ANIM-014); ошибка загрузки → заглушка (и повтор при следующем показе); **никогда не показывать фото другого товара** (ключ кэша — `sha256` из URL `/images/{sha}/{size}`); `Hero` между сеткой и SCR-14 на compact.
+- Поведение: прогрессивная загрузка: скелетон → fade-in 200 мс (ANIM-014); fade-in — только до первого кадра экземпляра: фото, уже загруженное в кэш изображений, показывается в том же кадре без проявления, а смена источника у того же виджета сохраняет прежний кадр до нового (без затухания в 0) — версия 1.6, ADR-110 (замечание заказчика 2026-10-28 «мигает весь экран»); относительный адрес `/images/{sha}/{size}` разрешается от адреса сервера API; ошибка загрузки → заглушка (и повтор при следующем показе); **никогда не показывать фото другого товара** (ключ кэша — `sha256` из URL `/images/{sha}/{size}`); `Hero` между сеткой и SCR-14 на compact.
 - Доступность: `Semantics(image: true, label: «Фото: {название}»)`; заглушка — `label: «Фото отсутствует»`.
 - Адаптивность: размер источника по lp × devicePixelRatio, не более `full`.
+
+- **Редакция 1.9 (прототип 2026-10-29, ADR-112).** Параметры `height` (неквадратное поле: ширина — по родителю, высота — `height`) и `background` (фон поля; `null` — `surfaceVariant`). Карточка сетки — поле 150 `contain` на `surface`; строка «Списка» — 72×60. С фоном заглушка рисуется плашкой: `surfaceVariant`, радиус `md`, иконка `image` 34 `borderStrong` (3.18:1) и подпись «Нет фото» (`ds_no_photo`) `caption textTertiary` (4.51:1); текст «Фото появится из 1С» прототипа не используется (не обещаем). Логика показа без повторного проявления (версия 1.6) не меняется.
 
 | Состояние | Визуал | Поведение |
 |---|---|---|
@@ -1186,7 +1263,7 @@ flowchart TD
 - Анатомия: основное фото `ProductImage.full` (квадрат ≤ 480 на expanded; на compact — ширина экрана, высота = ширина) → индикатор «2 / 5» (`caption` в пилюле `overlay` → белый текст) → лента миниатюр 56×56 (зазор 8, выбранная — рамка `primaryText` 2 px) → полноэкранный просмотр (pinch-zoom до 3×, свайп, крестик) по тапу.
 - Варианты: `single` (без ленты), `multi`.
 - Размеры: см. выше.
-- Токены: фон галереи `surfaceVariant`; полноэкранный — фон `inverseSurface` (#1B1F2A), кнопки и иконки `onInverseSurface` (#FFFFFF, 16.46:1; `onPrimary` палитры B тёмный и здесь не применяется).
+- Токены: фон галереи `surfaceVariant`; полноэкранный — фон `inverseSurface` (#1B1F2A), кнопки и иконки `onInverseSurface` (#FFFFFF, 16.46:1 на #1B1F2A; на `inverseSurface` палитры B #0E1456 — 16.76:1; `onPrimary` здесь не применяется: он — для текста на заливке `primary`, с ADR-111 белый).
 - Поведение: свайп/стрелки ←→; тап по миниатюре — crossfade 200 мс; двойной тап — zoom 2×; Esc/назад — закрыть полноэкранный режим; состояние индекса сохраняется при смене варианта только если фото общие.
 - Доступность: `Semantics(label: «Фото 2 из 5»)`; кнопки «Предыдущее/Следующее» для screen reader.
 - Адаптивность: compact — лента под фото, горизонтальная прокрутка; expanded — лента вертикальная слева от фото (ширина 64).
@@ -1214,6 +1291,8 @@ flowchart TD
 - Доступность: `Semantics(label: «2 350 сом за штуку»)` — читаемая форма без U+202F.
 - Адаптивность: размеры по варианту; при масштабе 1.3× — не ломать строку: единица переносится вниз.
 
+- **Редакция 1.9 (прототип 2026-10-29, ADR-112).** Параметр `unitStyle` — стиль единицы «/ шт» (по умолчанию `caption textSecondary`); карточки сетки и «Списка» каталога — `label 13 textSecondary`. Формат суммы — без изменений: «10 450 сом», тыйыны только при ненулевой дробной части (Q-108); формат прототипа «10 450,00 сом» не переносится.
+
 | Состояние | Визуал | Поведение |
 |---|---|---|
 | default | по варианту | — |
@@ -1236,6 +1315,8 @@ flowchart TD
 - Поведение: число — `available` из API (`stock_balance.available`), клиент не вычисляет; для `customer`-роли — без числа, только статус (правила ролей 01, `ROLE-*`; режим `customer` — R1, ядро v1.9 §24.2; по умолчанию `app_settings.customer_stock_display = status`, при `quantity` — с числом); тап на expanded — тултип по складам.
 - Доступность: `Semantics(label: «В наличии, 24 штуки»)`; цвет + иконка + текст + число.
 - Адаптивность: в сетке на compact — `compact` на фото; в списке — `inline` без фона (иконка + текст).
+
+- **Редакция 1.9 (прототип 2026-10-29, ADR-112) — вариант `inline` (строка остатка карточек каталога, «Список», «Компакт»).** Без фона: иконка 14 + текст `caption 12/500 tnum` цвета уровня: в наличии — `success` и `check_circle`; мало — `warning` и `warning_amber` (иконка обязательна); нет в наличии — `error` и `cancel` (в прототипе — серый; цвет оставлен по 03 §9.17 — отличие записано в ADR-112, вопрос заказчику Q-334); остаток неизвестен — `textSecondary` и `help`. Пилюля в карточке сетки больше не используется.
 
 | Состояние | Визуал | Поведение |
 |---|---|---|
@@ -1318,6 +1399,8 @@ flowchart TD
 | selected | — | — |
 | empty | поле «0» → в корзине не сохраняется (ввод 0 = запрос на удаление с подтверждением, CART-012); в карточке — «1» по умолчанию | — |
 
+- **Редакция 1.11 (QA прототипа 2026-10-29, раунд 1; ADR-112).** Размер `group` — строка drawer корзины на expanded/large: одна группа с общей обводкой `border` 1 и радиусом `sm`, кнопки 34×32 без фона (hover `surfaceHover`, pressed `surfacePressed`), число `body 600 tnum` без своей рамки (это кнопка нампада, а не поле ввода — обводка группы декоративная), поле 44 × 32 — визуально 112 × 32. **Редакция 1.13:** цели касания «−», числа и «+» — 44 × 44 (п. 7.4: на expanded визуально меньше допустимо, цель — нет; POS-мониторы бывают сенсорными, тип указателя не проверяется): невидимое поле 6 сверху и снизу, у «−» и «+» — 10 с внешней стороны, занимаемое место 132 × 44; кольцо фокуса — вокруг видимой части; нарушение правил — обводка группы и число `error`. Клавиши `+`/`−`, удержание «−», нампад по тапу числа — как у `sm`. На medium в drawer и на экране `/cart` — `md`.
+
 ### 9.21. `QuantityNumpadSheet`
 
 - Назначение: быстрый ввод количества (bottom sheet на compact/medium, popover на expanded) и ввод PIN (вариант `pin`).
@@ -1370,10 +1453,12 @@ flowchart TD
 - Анатомия: `AppIconButton` с иконкой `star` outlined (выкл.) / filled (вкл.).
 - Варианты: `onImage` (на фото в сетке: круг 32 `surface` 80 % + иконка 20; цель 48), `inline` (в строке списка, 40/48), `customer` (иконка `star` у клиента, cashier/admin).
 - Размеры: 20/24 иконка; 48 цель.
-- Токены [РЕШЕНИЕ: ядро §8.1]: выкл. — глиф `star` outlined цвета токена `warning` (палитра B — #8A6A00, 5.07:1 на `surface`; в исторической A — #B45309; на фото — внутри круга `surface` 80 %); вкл. — заливка `favorite #FEC50A` + контур `warning` 1 px (3.19:1 к заливке; 1.59:1 заливки к белому недостаточно, контур даёт форму) — ядро v1.9 §24.1, DS-011. Цвет `warning` здесь — часть формы звезды, а не статус (исключение из п. 5.1 п. 2, зафиксированное ядром §8.1).
+- Токены [РЕШЕНИЕ: ядро §8.1; значения — ADR-111]: выкл. — глиф `star` outlined цвета токена `warning` (палитра B — #8A5300, 6.33:1 на `surface`; в исторической A — #B45309; на фото — внутри круга `surface` 80 %); вкл. — заливка `favorite #E2A93B` + контур `warning` 1 px (3.01:1 к заливке — запас минимальный; 2.11:1 заливки к белому недостаточно, контур даёт форму, CP-086) — ядро v1.9 §24.1, DS-011. Цвет `warning` здесь — часть формы звезды, а не статус (исключение из п. 5.1 п. 2, зафиксированное ядром §8.1).
 - Поведение: тап — optimistic toggle + outbox (D-32); запрос `PUT /favorites/{products|customers}/{id}` (добавить) / `DELETE /favorites/{products|customers}/{id}` (убрать) [РЕШЕНИЕ: ядро §19.4]; на карточках каталога — только звезда (DS-094); ANIM-009 (scale 1→1.3→1, 200 мс); снекбар «Добавлено в избранное · Отменить»; ошибка сервера — откат + снекбар ошибки; не требует подтверждения.
 - Доступность: `Semantics(toggled, label: «В избранном» / «Добавить в избранное»)`.
 - Адаптивность: без изменений.
+
+- **Редакция 1.9 (прототип 2026-10-29, ADR-112).** `onImage` — круг 34 на сплошном `surface` (было 32 на 80 %), иконка 20, цель 48; в карточке сетки — на 8/8 от углов карточки. Правило контура `warning` (CP-086) не меняется.
 
 | Состояние | Визуал | Поведение |
 |---|---|---|
@@ -1398,6 +1483,8 @@ flowchart TD
 - Доступность: `Semantics(button, label: «Сортировка: по возрастанию цены»)`; меню — `menu`/`menuItem`.
 - Адаптивность: compact — иконка-кнопка без текста + bottom sheet; expanded — кнопка с текстом.
 
+- **Редакция 1.9 (прототип 2026-10-29, ADR-112).** Стиль `toolbar` (строка управления SCR-10/11/12 на medium+): кнопка 40 (цель 48), фон `surface`, обводка `border`, радиус `md`, поля 16, иконка `swap_vert` 18 и текущий пункт `body 500 textPrimary`; hover — `surfaceHover`, pressed — `surfacePressed`. Меню и лист — прежние. Касса, заказы, SCR-50 и compact — прежний стиль `standard`.
+
 | Состояние | Визуал | Поведение |
 |---|---|---|
 | default | кнопка с текущим вариантом | — |
@@ -1410,6 +1497,8 @@ flowchart TD
 | selected | пункт с `check` | — |
 | empty | — | — |
 
+- **Редакция 1.11 (QA прототипа 2026-10-29, раунд 1; ADR-112).** Стиль `toolbar`: поля 12 (прототип 14), глиф «двойная стрелка вниз · вверх» (`DsGlyph.sortArrows` 18 `textPrimary`; в Material Icons такого нет) вместо `swap_vert`.
+
 ### 9.25. `FilterPanel` / `FilterSheet`
 
 - Назначение: фильтры каталога (SCR-13): категория/подкатегория, наличие, вид цены, склад, диапазон цены, атрибуты (бренд/цвет/размер из `product_attributes`), «только с фото», «в избранном».
@@ -1420,6 +1509,8 @@ flowchart TD
 - Поведение: применение — по кнопке (sheet) или мгновенно (panel на expanded, с debounce); сброс — все секции; состояние фильтров — в URL-параметрах маршрута (go_router) для возврата «Назад»; ограничение: диапазон цены валидируется (от ≤ до).
 - Доступность: секции — `expanded`; чекбоксы — `label`; счётчик результатов `liveRegion` (polite).
 - Адаптивность: см. варианты.
+
+- **Редакция 1.9 (прототип 2026-10-29, ADR-112) — SCR-10/11/12 на medium и шире: встроенная панель вместо `FilterPanel` 320 и листа на medium.** Открывается и закрывается кнопкой «Фильтры» строки управления (§9.72); белая карточка под закреплённой строкой управления (ключ `catalog-filter-panel`): обводка `border`, радиус `md`, поля 12/16, элементы — `Wrap` 20 × 12: `AppCheckbox` «Только в наличии», «Только избранное», «Только с фото»; «Цена, сом» от / до (поля 120, целые сомы ≤ 9 цифр; «от > до» — ошибка, применение блокируется); склад (только staff, `AppDropdown`); бренды (первые 5 + «Показать все»); характеристики (только при наличии значений, ≤ 10 пар); ссылка «Сбросить фильтры» (`catalog_filters_reset`); пометка офлайна. Применение — через 300 мс; активные фильтры — чипы `CategoryChip.input` над списком. Панель всегда в дереве списка (закрытая — нулевой высоты): открытие не пересоздаёт список и фото (ADR-110). compact — лист SCR-13 без изменений.
 
 | Состояние | Визуал | Поведение |
 |---|---|---|
@@ -1438,11 +1529,13 @@ flowchart TD
 - Назначение: **только** переключатель вида списка товаров «Сетка / Список / Компакт» — каталог SCR-10, результаты поиска SCR-11 и вкладка «Товары» избранного SCR-40 (общая настройка вида) [РЕШЕНИЕ: 02 SCR-10 UI-10-013, UI-11-007, UI-40-005; CAT-010]. Не используется как универсальный сегментный переключатель: фильтры-сегменты экранов и переключатели «Мои / Все» — `AppTabs.segmented` (п. 9.49), выбор значения настройки или типа — `AppRadio` (п. 9.65) [РЕШЕНИЕ: 02 раздел 14 замечание 22, С-16 (2)].
 - Анатомия: трек `surfaceVariant` (радиус `sm`, высота 36, паддинг 2) → 2–3 сегмента с иконками `grid_view` / `view_list` / `view_headline` 20 (+ текст на expanded при ширине > 1280) → выбранный сегмент: фон `surface` + `elevation.1` (как на макете) + иконка `primaryText`.
 - Варианты: `three` (Сетка · Список · Компакт) — **на всех классах окна** в R1 (SRC-C-018 must; 02 UI-10-013, AC-UI-10-029); вид «Компакт» — `ProductCardCompact` `default` (таблица) на expanded/large и medium-ландшафте ≥ 840 lp, `ProductCardCompact` `row` (строка 44 lp) на compact и medium < 840 lp (п. 9.13). Прежний вариант `two` (без «Компакт» на compact/medium) снят.
-- Размеры: сегмент ≥ 44 ширина (цель 44 по высоте за счёт паддинга строки инструментов 48).
+- Размеры: сегмент ≥ 44 ширина; цель 44 по высоте — у самого сегмента (редакция 1.13: поле родителя область нажатия не расширяет; у стиля `toolbar` сегмент визуально 32, трек 42, цель — 44).
 - Токены: см. выше; текст `label`.
 - Поведение: смена вида — без перезапроса данных (CAT-010), набор полей и действий во всех трёх видах одинаков (02 SCR-10); выбор запоминается на пользователя и класс окна (drift `settings`, `catalog_view_mode`; дефолт: compact — список; medium/expanded — сетка) и отражается в query `view`; индикатор скользит (ANIM-017); клавиши ←→.
 - Доступность: `Semantics(radioGroup)`, сегменты `label: «Сетка»`, «Список», «Компакт» (ARB `catalog_view_grid`, `catalog_view_list`, `catalog_view_compact` — 02 §7).
 - Адаптивность: compact и medium — только иконки (три сегмента ≥ 44 lp); expanded при ширине > 1280 — иконка + текст.
+
+- **Редакция 1.9 (прототип 2026-10-29, ADR-112).** Стиль `toolbar` (строка управления SCR-10/11/12 на medium+): трек `surface` с обводкой `border`, радиус `md`, поле 4, зазор 4; сегмент 32, радиус `sm`, поля 0 12, иконка 16 + подпись `body 600`; выбранный — заливка `primaryContainer`, текст и иконка `onPrimaryContainer` **700** (вес — признак не только цветом), без тени; остальные — `textSecondary`; hover — `surfaceHover`. Подписи показываются, если строка управления помещается (оценка ширины до раскладки). Радиогруппа и ←/→ — без изменений; SCR-50 и compact — стиль `standard`.
 
 | Состояние | Визуал | Поведение |
 |---|---|---|
@@ -1455,6 +1548,9 @@ flowchart TD
 | error | — | — |
 | selected | `surface` + `elevation.1` + `primaryText` | — |
 | empty | — | — |
+
+- **Редакция 1.11 (QA прототипа 2026-10-29, раунд 1; ADR-112).** Стиль `toolbar`: текст и иконка невыбранного сегмента — `textPrimary`, осветлённый на 60 % к `textSecondary` (≈ #3D4761 прототипа; контраст выше, чем у `textSecondary`).
+- **Редакция 1.12 (QA прототипа 2026-10-29, раунд 2; ADR-112).** Стиль `toolbar`: глиф «Список» — контурный маркированный список прототипа (`DsGlyph.bulletList` 16: три линии с точками, линия 2,2, цвет сегмента) вместо залитого `view_list`; глифы «Сетка» и «Компакт» — прежние. Стиль `standard` — без изменений.
 
 ### 9.27. `CartPanel`
 
@@ -1479,7 +1575,23 @@ flowchart TD
 | selected | — | — |
 | empty | `EmptyState.cart`: иллюстрация 120, «Корзина пуста», «Добавьте товары из каталога или отсканируйте штрихкод», кнопка «К каталогу» (compact) / «Отложенные заказы (2)» если есть | CTA скрыты |
 
+**Редакция 1.10 (прототип 2026-10-29, ADR-112, D5; заменяет описание вариантов `panel` и `overlay` выше для приложения).**
+
+- Варианты: постоянной панели `panel` на expanded больше нет (вариант остаётся в компоненте для витрины и тестов). На medium, expanded и large корзина сотрудника — вариант `overlay` в виде **drawer 420** (`DsBreakpoints.cartDrawer`; в окне уже 420 — во всю ширину) справа на всю высоту окна: модальный маршрут корневого навигатора поверх любого экрана сотрудника, затемнение `overlay`, `elevation.3`, без радиуса; появление — сдвиг справа ANIM-025 (250 мс `standardDecelerate`), при reduce motion — crossfade 80 мс. `screen` (compact и прямой переход на `/cart` на широком окне — по центру, ≤ 640) — без изменений.
+- Открытие: кнопка-итог в шапке (`TopAppBarCartButton`, §9.70), `F4`, пункт «Корзина» drawer навигации; `F8`/`F9` при закрытом drawer и непустой корзине открывают его и сразу выполняют «Отложить заказ» / «Создать заказ». Закрытие: крестик (`cart_drawer_close_a11y` «Закрыть корзину»), тап по затемнению (подпись барьера — тот же ключ), `Esc`; после закрытия фокус возвращается на кнопку-инициатор (A11Y-011). Повторное открытие при открытом drawer ничего не делает; если на экране уже корзина `/cart`, кнопка ставит фокус в неё (две корзины одновременно не показываются).
+- Шапка drawer: поля 16 сверху / 20 по бокам, нижняя граница `border`; заголовок «Корзина» `h3 20/700` и приглушённый суффикс «· N поз.» (`cart_drawer_title_count`, `bodyLg 600 textTertiary`; при 0 — без суффикса) вместо бейджа; справа «Отложенные (n)», «Очистить», крестик. Под ней — строка «5 поз. · 6 шт» и индикатор сохранения (UI-20-021, UI-20-023).
+- Состав: зоны A–H без сокращений — баннеры (C), «Клиент: не выбран ›» (`cart_customer_empty`), склад и вид цены (B), строки `CartLine` с `emphasized` (§9.28; степпер `sm` на expanded/large, `md` на medium; крестик; сумма строки), скидка с 422 / «Применить лимит» / override со step-up (E), «Отложенные», очистка, диалог конфликта версий, блокировка UI-20-020 (H).
+- Низ (зоны F–G) — на фоне `background`, поля 20: «Товаров (N)» с суммой, «Итого» и сумма `h2 24/700 primaryText`, под ними примечание UI-20-034 «Итог пересчитывает сервер по ценам 1С при оформлении» (`CartSummary.note`, §9.29); причина недоступности CTA (UI-20-022); кнопки **в одну строку** размера `cta` 48 (§9.1): `outlined` «Отложить · F8» (flex 1) и `primary` «Создать заказ · F9» (flex 1,4), зазор 8. Подписи с клавишами (`cart_cta_park_hotkey`, `cart_cta_create_order_hotkey`) — только на Windows, macOS и Linux; на планшете — `cart_cta_park` / `cart_cta_create_order`; у `customer` — одна кнопка «Отправить заявку».
+- Клавиатура: при открытии фокус сразу в панели — ↑/↓, `+`/`−`, `Delete`, `Ctrl+Z` работают без `F4`; `F8`/`F9` работают внутри drawer (свой `PopupRoute` клавиши не глушит; диалог или лист над drawer — глушит).
+- Снекбары корзины («Позиция удалена · Отменить», «Заказ отложен · Открыть отложенные», ошибки) показываются в собственном `ScaffoldMessenger` drawer над затемнением и нажимаются (`AppSnackbarRegion`, §9.48): при свободной ширине слева от drawer ≥ 360 — у его левого края, иначе — внутри drawer над закреплёнными итогами и кнопками (высоту низа `CartPanel` сообщает области).
+- Переходы из drawer в маршруты веток (SCR-14 по тапу строки, SCR-24 из баннера восстановления, SCR-21) — сначала drawer закрывается, затем переход; диалоги и листы (клиент, склад, отложенные, SCR-26) открываются над drawer. HID-скан при открытом drawer добавляет товар в корзину (02 SCR-20.4).
+- Фоновые события без открытой корзины (диалог конфликта версий UI-20-027, «Корзина обновлена с сервера», «Слишком много позиций», отказы синхронизации) показывает постоянно смонтированный слушатель у кнопки-итога шапки; при видимой корзине — она сама (одна поверхность на событие); диалог конфликта — один на приложение.
+- Ключ `Idempotency-Key` «Отложить» и пометка «Подтвердил: {name}» (UI-20-033) хранятся в контроллере корзины и переживают закрытие drawer; скидка, введённая перед закрытием (пауза 500 мс не истекла), применяется сразу.
+- Ключи тестов: `cart-header-button`, `cart-drawer`, `cart-drawer-close`, `cart-drawer-scrim`, `cart-summary-note`.
+
 **Низкое окно (уточнено на этапе F (FQ-INT-F-11)) [ТИПОВО].** Если высота области панели под шапкой меньше 480 lp (Windows 1280×720 с офлайн-баннером и строкой клиента), строки (высота области строк 200 lp), итоги и кнопки прокручиваются вместе; при 480 lp и выше — как выше (строки прокручиваются внутри, итоги и кнопки закреплены снизу). Проверка — `test/design_system/cart_panel_layout_test.dart`.
+
+- **Редакция 1.11 (QA прототипа 2026-10-29, раунд 1; ADR-112).** Drawer (`overlay`): итоги и кнопки (зоны E–G) — один подвал: фон `surface`, смешанный пополам с `surfaceHover` (≈ #FBFCFE прототипа), верхняя граница `border`, без отдельного разделителя над итогами. Строка клиента: «Клиент:» `body textPrimary` и «не выбран» 700, иконка 18 `textPrimary`, шеврон `textTertiary`. «Отложить · F8» — `AppButton.neutral` (§9.1).
 
 ### 9.28. `CartLine`
 
@@ -1491,6 +1603,7 @@ flowchart TD
 - Поведение: тап по названию/фото — SCR-14 (не закрывая корзину); свайп влево на compact — удаление с кнопкой `error` «Удалить» (ANIM-008 + снекбар «Отменить» 5 с); крестик — удаление без диалога + снекбар «Отменить»; количество — см. `QuantityStepper`; строка с `VARIANT_UNAVAILABLE` — степпер disabled, кнопка «Заменить вариант».
 - Доступность: `Semantics(label: «Смеситель Frap F4252, 2 штуки, 4 700 сом»)`, действия `onDismiss` «Удалить»; порядок фокуса: название → степпер → удалить.
 - Адаптивность: compact — свайп; expanded — крестик.
+- **Редакция 1.10 (прототип 2026-10-29, ADR-112, D5).** Вариант `emphasized` — строка drawer корзины (§9.27): название `body 600`, сумма строки `body 700` (вместо `bodyLg`); остальное — как `standard` (миниатюра 48, степпер, крестик, свайп на тач-устройствах).
 
 | Состояние | Визуал | Поведение |
 |---|---|---|
@@ -1504,6 +1617,9 @@ flowchart TD
 | selected | — | — |
 | empty | — | — |
 
+- **Редакция 1.11 (QA прототипа 2026-10-29, раунд 1; ADR-112).** `emphasized`: поля 20 по бокам и 12 по вертикали, разделитель строк — `border`, осветлённый на 40 % к `surface` (≈ #EEF2F8 прототипа), внутри полей; сумма строки — `body 700` (прототип 15/800 по §7.1) одним кеглем во всех строках: поле не уже 88, уменьшается только при нехватке места в строке (раньше — фиксированное 88 с `scaleDown`, длинные суммы мельчали); крестик 16. Степпер — `QuantityStepper.group` (§9.20).
+- **Редакция 1.12 (QA прототипа 2026-10-29, раунд 2; ADR-112).** `emphasized`: название — `label 13/600 textPrimary`, до 2 строк (прототип 13/600; было `body 600`).
+
 ### 9.29. `CartSummary`
 
 - Назначение: итоги корзины/заказа/платежа (корзина, SCR-21, SCR-22, SCR-24, SCR-38).
@@ -1514,6 +1630,7 @@ flowchart TD
 - Поведение: все суммы — с сервера (`/cart/checkout-preview`, `order.totals`), клиент не считает (D-19, D-23); обновление — перекат числа (ANIM-010); отрицательные — с «−» (U+2212).
 - Доступность: `Semantics(label: «Итого 16 007 сом 50 тыйын»)` — читаемая форма; `liveRegion` на итоге.
 - Адаптивность: compact — итог `h2`; expanded — `display`.
+- **Редакция 1.10 (02 UI-20-034, ADR-112).** Слот `note` — примечание под строкой «Итого»: «Итог пересчитывает сервер по ценам 1С при оформлении» (`cart_summary_server_note`), `caption textSecondary` (редакция 1.13, DS-007), отступ сверху 4, на всю ширину; в корзине показывается при непустой корзине во всех вариантах. Слот `padding` — поля блока (в drawer корзины — 20 по бокам, как зона G). В drawer итог — `h2 24/700 primaryText`.
 
 | Состояние | Визуал | Поведение |
 |---|---|---|
@@ -1527,16 +1644,19 @@ flowchart TD
 | selected | — | — |
 | empty | скрыт (корзина пуста) | — |
 
+- **Редакция 1.11 (QA прототипа 2026-10-29, раунд 1; ADR-112).** Параметр `drawer` — подвал drawer корзины: без своего фона и разделителя (их задаёт `CartPanel`), строки «Товаров (N)», «Скидка» — подпись и сумма `body textSecondary` высотой 24, «Итого» `title 700 textPrimary`, итог `h2 700 primaryText`, строка итога 40.
+
 ### 9.30. `CartFab` [РЕШЕНИЕ: ядро §17.5]
 
 - Назначение: плавающая панель-итог корзины на compact (и medium при скрытой overlay-панели).
-- Анатомия: панель 56 lp на всю ширину минус поля 16 (радиус `md`, фон `primary`, `elevation.2`) → иконка `shopping_cart` 24 `onPrimary` + бейдж количества (круг 20 фон `onPrimary` #1B1F2A, текст `primary micro` #FF8700 — 6.83:1) → «Корзина» `body 600 onPrimary` → справа итог `bodyLg 700 onPrimary tnum` «16 007,50 сом» → шеврон `expand_less`.
+- Анатомия: панель 56 lp на всю ширину минус поля 16 (радиус `md`, фон `primary`, `elevation.2`) → иконка `shopping_cart` 24 `onPrimary` + бейдж количества (круг 20 фон `onPrimary` #FFFFFF, текст `primary micro` #D9380F — 4.64:1, ADR-111) → «Корзина» `body 600 onPrimary` → справа итог `bodyLg 700 onPrimary tnum` «16 007,50 сом» → шеврон `expand_less`.
 - Варианты: `expanded-total` (с итогом), `badge-only` (ширина по содержимому, на SCR-14 поверх кнопки «Добавить» — не используется: там кнопка «В корзину» сама CTA).
 - Размеры: 56; отступ снизу 8 над `BottomNavBar`; скрывается на SCR-20/21.
-- Токены: `primary` #FF8700 / `onPrimary` #1B1F2A (6.83:1; pressed `primaryPressed` — 4.71:1); белый текст и иконки запрещены.
+- Токены: `primary` / `onPrimary` — с ADR-111 #D9380F / белый #FFFFFF (4.64:1; hover 5.76:1, pressed `primaryPressed` 7.00:1); белый текст на оранжевом разрешён только на заливке ≥ 4.5:1 (§5.8: на `brandAccent` #FF8700 — запрещён). До ADR-111 — #FF8700 / #1B1F2A (6.83:1), белый запрещён.
 - Поведение: тап — открыть SCR-20 (sheet 92 % / экран); свайп вверх — то же; при добавлении — пульс (ANIM-006); скрыт при пустой корзине (ANIM-019 fade/slide 200 мс); на SCR-10 при прокрутке вниз не скрывается (всегда доступен).
 - Доступность: `Semantics(button, label: «Открыть корзину, 5 позиций, 16 007 сом 50 тыйын»)`.
 - Адаптивность: только compact (и medium при overlay закрытой — опционально).
+- **Редакция 1.10 (02 UI-20-019 редакции 1.16, ADR-112, D5).** Область применения: compact и `customer` на medium. У сотрудника на medium и шире вместо панели-итога — кнопка-итог в шапке (`TopAppBarCartButton`, §9.70). Тап: compact — экран `/cart`; medium и шире (`customer`) — drawer корзины 420 (§9.27; структура корзины клиента прежняя). `F4` на compact и у `customer` на medium — то же. Цвета — по палитре ADR-111 (§5.3): заливка `primary` #D9380F с белым `onPrimary`; строка «Токены» выше относится к палитре до ADR-111.
 
 | Состояние | Визуал | Поведение |
 |---|---|---|
@@ -1814,13 +1934,13 @@ flowchart TD
 ### 9.40. `SyncIndicator`
 
 - Назначение: статус синхронизации с 1С в шапке и на SCR-43 (SRC-B-054) [РЕШЕНИЕ: D-29].
-- Анатомия: иконка 20 + текст `caption` «обновлено 09:41» (`tnum`) → тап → SCR-43; в шапке на compact — только иконка с точкой-статусом.
+- Анатомия: иконка 20 + текст `caption` «обновлено 09:41» (`tnum`) → тап → SCR-43; в шапке на compact — только иконка с точкой-статусом; в шапке medium+ — адаптивный вид (ниже).
 - Варианты: `ok` (`sync` `textSecondary`, «обновлено 09:41»), `syncing` (иконка вращается `primaryText`, «обновляем…», ANIM-021), `stale` (`sync` `warning` + «данные от 08:10» — старше порога NFR-SYNC-001), `error` (`sync_problem` `error`, «ошибка синхронизации»), `offline` (`cloud_off` `warning`, «нет сети»), `inline` (в таблицах остатков/долгов: только «на 09:41»), `full` (SCR-43: карточки по сущностям `sync_entity` со статусом `sync_run_status`, временем, кнопкой «Запустить»: `senior_seller` — только `incremental` для `stock`, `prices`, `order_status` без step-up; `full`/`reconcile` и остальные сущности — `admin`/`owner` через `StepUpDialog` — ядро §17.2).
 - Размеры: 20 иконка; высота строки 24.
-- Токены: по вариантам; никогда `brandAccent` и заливка `primary` — оранжевый не означает статус (ядро v1.9 §24.1); `syncing` — иконка `primaryText` с подписью, `stale`/`offline` — `warning` #8A6A00 с иконкой.
+- Токены: по вариантам; никогда `brandAccent` и заливка `primary` — оранжевый не означает статус (ядро v1.9 §24.1); `syncing` — иконка `primaryText` только с подписью; без подписи (compact, адаптивная шапка medium+) — `textSecondary`: при «Уменьшить анимации» вращения нет, и оранжевый стал бы единственным признаком состояния (A11Y-004, редакция 1.13); `stale`/`offline` — `warning` #8A6A00 с иконкой.
 - Поведение: источник — `/sync/status` (polling 30 с на экране SCR-43, иначе по событиям); тап — SCR-43; ручной запуск — `AppButton.tonal M` «Синхронизировать» (busy при `SYNC_ALREADY_RUNNING`); состояние `error` сопровождается уведомлением `sync_error` (D-41).
 - Доступность: `Semantics(label: «Синхронизация: обновлено в 09:41»)`; изменение на `error` — объявление.
-- Адаптивность: compact — иконка; expanded — иконка + текст в шапке рядом с часами.
+- Адаптивность: compact — иконка; шапка medium+ (`ConnectedSyncIndicator(adaptive)`, прототип 2026-10-29, ADR-112): пока всё в порядке (`ok`, `never`, `syncing`) — только иконка `textSecondary` (у `syncing` — вращение) с тултипом «обновлено HH:MM» (`ds_updated_at`) и полной подписью в `Semantics`; нажимается через `DsInteractive` — фокус клавиатуры кольцом `focus`, как у соседних кнопок шапки (редакция 1.13); при `stale`, `error`, `offline` — иконка с текстом («данные от …», «ошибка синхронизации», «нет сети»). Место — первым в правой группе шапки (перед кнопкой корзины); часов рядом нет (UI-10-005 исключён).
 
 | Состояние | Визуал | Поведение |
 |---|---|---|
@@ -2005,6 +2125,10 @@ flowchart TD
 - Поведение: длительность 4 с (8 с с действием) [ТИПОВО: R4 §6 №40 — проектное предложение]; одновременно показывается один снекбар (очередь, новый заменяет старый с crossfade 150 мс); появление — ANIM-027; свайп вниз/в сторону — закрыть; действие «Отменить» для удаления строки/избранного выполняет откат optimistic-операции (D-32) — после истечения таймера откат невозможен и запись в outbox фиксируется; снекбар не используется для критических ошибок (для них — `ErrorState`/`ConfirmDialog`).
 - Доступность: `liveRegion(polite)`; текст + действие читаются screen reader; длительность при включённом screen reader — ≥ 8 с; кнопка действия фокусируема (Windows: Ctrl+Z — «Отменить» пока снекбар виден, A11Y-009 [ТИПОВО]).
 - Адаптивность: см. размеры; не перекрывает CTA корзины на expanded.
+- **Редакция 1.10 (прототип 2026-10-29, ADR-112, D5).**
+  - Вариант «тост» (`brief`, размещение `bottomEnd`): короткое подтверждение без действия — «Добавлено: {name}» (`catalog_added_toast`) после «+ Добавить» на SCR-10/11/12 medium и шире; вариант `success` (иконка `check_circle` `successContainer` на `inverseSurface`, текст `onInverseSurface`), внизу справа (поля справа и снизу 24), ширина ≤ 360, длительность 2 с (8 с при включённом screen reader), `liveRegion`. На compact тост не используется — там «Добавлено · Открыть» (`catalog_added_snackbar`).
+  - Размещение внутри drawer корзины (`AppSnackbarRegion`): drawer ставит свой `ScaffoldMessenger` и прозрачный `Scaffold` во всё окно — снекбары корзины видны и нажимаются над затемнением. Поля считаются по свободной ширине окна, а не фиксированной ширине 480 от окна: свободно слева от drawer ≥ 360 — снекбар у левого края drawer (поля 24, ширина до 480 и не шире свободной части без полей; CTA корзины не перекрывает); иначе — внутри drawer (поля 16) над закреплёнными итогами и кнопками.
+  - Длительность прочих снекбаров не меняется: 4 с, 8 с с действием или при screen reader.
 
 | Состояние | Визуал | Поведение |
 |---|---|---|
@@ -2017,6 +2141,8 @@ flowchart TD
 | error | вариант `error` с иконкой; без таймера при действии | — |
 | selected | — | — |
 | empty | — | — |
+
+- **Редакция 1.11 (QA прототипа 2026-10-29, раунд 1; ADR-112).** Вариант `success` (тост «Добавлено: …»): значок — зелёный круг 18 (`success`, осветлённый на 30 % к `successContainer`, ≈ #529B76: 5.0:1 к `inverseSurface`) с белой галочкой `onSuccess` 14 (≥ 3:1) вместо `check_circle` цвета `successContainer`.
 
 ### 9.49. `AppTabs`
 
@@ -2067,10 +2193,10 @@ flowchart TD
 ### 9.51. `NotificationBell`
 
 - Назначение: вход в центр уведомлений (SCR-44) из шапки/rail с бейджем непрочитанных [РЕШЕНИЕ: D-41].
-- Анатомия: `AppIconButton` `notifications` 24 → бейдж: круг 18 (1 цифра) / пилюля 18×24 (2 цифры) / «99+» (пилюля 18×30), фон `error` #C62828, текст `onError micro 11/600 tnum` (5.62:1 — исключение A11Y-008), смещение вправо-вверх (−4, −4), обводка `surface` 1.5 px → без непрочитанных — без бейджа (не «0»); при наличии непрочитанной ошибки синхронизации (`sync_error`) — иконка `notifications_active` + бейдж.
-- Варианты: `header` (expanded/medium), `rail` (в `NavigationRailApp`/`BottomNavBar` — тот же бейдж на иконке пункта «Профиль» или отдельном пункте), `dot` (только точка 8 — если число не важно: compact-шапка).
-- Размеры: иконка 24; бейдж 18; тач-цель 48.
-- Токены: бейдж `error`/`onError`; иконка `textSecondary`; активная (SCR-44 открыт) — `primaryText` filled.
+- Анатомия: `header` — кнопка шапки `TopAppBarIconButton` 44×44 с радиусом `md`, иконка `notifications` 22 `textPrimary` (прототип 2026-10-29, ADR-112); `dot` — `AppIconButton` 24 → бейдж: круг 18 (1 цифра) / пилюля 18×24 (2 цифры) / «99+» (пилюля 18×30), фон `error`, текст `onError micro 11/700 tnum` (исключение A11Y-008), в `header` — в точке `top 6 / right 6` квадрата, обводка `surface` 1.5 px → без непрочитанных — без бейджа (не «0»); при наличии непрочитанной ошибки синхронизации (`sync_error`) — иконка `notifications_active` + бейдж.
+- Варианты: `header` (шапка medium+: кнопка 44 по прототипу), `rail` (в `NavigationRailApp`/`BottomNavBar` — тот же бейдж на иконке пункта «Профиль» или отдельном пункте), `dot` (только точка 8 — если число не важно: compact-шапка).
+- Размеры: `header` — кнопка 44×44, иконка 22, бейдж 18, тач-цель 48; `dot` — иконка 24, точка 8, тач-цель 48.
+- Токены: бейдж `error`/`onError`; иконка `header` — `textPrimary`, `dot` — `textSecondary`; активная (SCR-44 открыт) — `primaryText` filled; hover `header` — `surfaceHover`.
 - Поведение: число — `unreadCount` из `/notifications` (сервер) + локальные; обновление по событиям (polling 60 с [ТИПОВО] / in-app события); тап — SCR-44; анимация появления бейджа scale 0→1 200 мс (ANIM-006-подобно, без пульса на каждое событие — SRC-B-078); при чтении всех — бейдж исчезает fade 150 мс.
 - Доступность: `Semantics(button, label: «Уведомления, 3 непрочитанных»)`; изменение числа не объявляется автоматически (только при открытии).
 - Адаптивность: см. варианты.
@@ -2078,7 +2204,7 @@ flowchart TD
 | Состояние | Визуал | Поведение |
 |---|---|---|
 | default | иконка + бейдж/без | — |
-| hover | фон `surfaceVariant` | тултип «Уведомления (3)» |
+| hover | фон `surfaceHover` (`header`) / `surfaceVariant` (`dot`) | тултип «Уведомления (3)» |
 | pressed | `iconButtonPressed` | открыть |
 | focused | кольцо | Enter |
 | disabled | — (офлайн — иконка остаётся, список из кэша) | — |
@@ -2118,7 +2244,7 @@ flowchart TD
 - Размеры: см. варианты; соотношение знака 1:1.
 - Токены: знак — оранжевый логотип `Logo Orange.png` «C + шестиугольник + стрелка» (`brandAccent` #FF8700 = `primary` палитры B) на белом `surface` [РЕШЕНИЕ: ядро v1.9 §24.1; Q-006 закрыт]; синий логотип макетов («дом с краном») не используется; `color` берётся из asset и не перекрашивается; `monochrome` — `textPrimary`; wordmark — `textPrimary`; векторный исходник — открытая часть Q-006 (до получения — растр, п. 2.4).
 - Поведение: ANIM-001 на splash (scale .92→1, opacity 0→1, 600 мс `ds.motion.splashLogo`); на других экранах — статичен; `Hero`-переход splash → SCR-01 (тег `splash_logo`, 300 мс) при неавторизованной сессии (ANIM-028).
-- Доступность: `Semantics(image: true, label: «Логотип Оптомстрой»)`; на splash — `liveRegion` «Загрузка» только при индикаторе.
+- Доступность: `Semantics(image: true, label: «Логотип Оптомстрой»)`; на splash — `liveRegion` «Загрузка» только при индикаторе. В шапке (`header`, тап — главный экран режима) — кнопка: `DsInteractive` (Tab, Enter/Space), кольцо `focus`, действие «нажать» в `Semantics` (A11Y-009; редакция 1.13).
 - Адаптивность: размеры по классу окна.
 
 | Состояние | Визуал | Поведение |
@@ -2138,12 +2264,12 @@ flowchart TD
 ### 9.54. `AdaptiveScaffold`
 
 - Назначение: корневой каркас, выбирающий раскладку по классу окна (раздел 8) и режиму (роли) [РЕШЕНИЕ: D-18].
-- Анатомия: `LayoutBuilder`/`MediaQuery.sizeOf` → класс окна → compact: `TopAppBarPos.compact` + тело + `CartFab` + `BottomNavBar`; medium: `NavigationRailApp` + `TopAppBarPos.full` + тело + overlay-корзина; expanded/large: `TopAppBarPos.full` + сайдбар (`CategorySidebarItem` ×N или разделы режима) + тело + `CartPanel.panel` → поверх всего — `OfflineBanner` (под шапкой), `AppSnackbar` слой, диалоги.
-- Варианты: по режиму (ядро §3.2/§9): `seller` (Каталог · Избранное · Корзина · Клиенты · Профиль), `cashier` (Касса · Каталог · Клиенты · Транзакции · Профиль), `admin` (Каталог · Клиенты · Транзакции · Админ · Профиль), `customer` (условно: Каталог · Избранное · Корзина · Мои заказы · Профиль), `auth` (без навигации: splash/вход/регистрация — одна колонка, фон `surface`).
+- Анатомия: `LayoutBuilder`/`MediaQuery.sizeOf` → класс окна → compact: `TopAppBarPos.compact` + тело + `CartFab` + `BottomNavBar`; medium и шире — по параметру `navigation` (`DsShellNavigation`): `rail` — medium: `NavigationRailApp` + `TopAppBarPos.full` + тело, expanded/large: `TopAppBarPos.full` + сайдбар или rail 72 + тело (+ `CartPanel.panel`, если передана); `none` [РЕШЕНИЕ: ADR-112] — `TopAppBarPos.full` + баннер + тело, без rail и сайдбара навигации (разделы — drawer `NavigationDrawerApp` оболочки, §9.71) → поверх всего — `OfflineBanner` (под шапкой), `AppSnackbar` слой, диалоги.
+- Варианты: по режиму (ядро §3.2/§9): `seller` (Каталог · Избранное · Корзина · Клиенты · Профиль), `cashier` (Касса · Каталог · Клиенты · Транзакции · Профиль), `admin` (Каталог · Клиенты · Транзакции · Админ · Профиль), `owner` (Каталог · Клиенты · Транзакции · Отчёты · Профиль), `customer` (Каталог · Избранное · Корзина · Мои заказы · Профиль), `auth` (без навигации: splash/вход/регистрация — одна колонка, фон `surface`). Навигация medium+: у сотрудника — `none` (drawer по «☰», ADR-112), у `customer` — `rail` (как раньше, D6).
 - Размеры: по разделу 8; тело — остаток; минимальная поддерживаемая ширина окна Windows 800×600 (при < 600 — compact-раскладка в окне) [ТИПОВО].
 - Токены: фон `background`; зоны на `surface` с границами `border`.
 - Поведение: смена класса окна не теряет состояние (п. 8.7); `StatefulShellRoute` go_router с ветками по режиму; корзина — один провайдер для всех раскладок; `SafeArea` на всех платформах; на Windows — обработка `HardwareKeyboard` для HID-сканера (D-42) и горячих клавиш (A11Y-009) на уровне каркаса; idle-блокировка 30 мин (D-12) показывает SCR-08 в режиме `overlay` поверх каркаса, сохраняя состояние экрана (корзина, прокрутка, введённые данные); при холодном старте SCR-08 открывается в полноэкранном режиме без каркаса (два режима SCR-08 — ядро §17.2; визуал — п. 12.3).
-- Доступность: порядок фокуса: шапка → навигация → контент → корзина; `Semantics` регионов (`label: «Навигация» / «Каталог» / «Корзина»`); пропуск к контенту (Windows: F2 — поиск, F4 — корзина, F6 — переключение зон [ТИПОВО]).
+- Доступность: порядок фокуса: шапка → контент → корзина (drawer навигации и корзины — модальные, фокус внутри); `Semantics` регионов (`label: «Навигация» / «Каталог» / «Корзина»`); пропуск к контенту (Windows: F2 — поиск, F4 — корзина, F6 — переключение зон [ТИПОВО]; `Ctrl+1…5` — вкладки режима, `Ctrl+Shift+N` — уведомления; сочетания экрана имеют приоритет перед сочетаниями оболочки).
 - Адаптивность: сам компонент адаптивности.
 
 | Состояние | Визуал | Поведение |
@@ -2183,7 +2309,7 @@ flowchart TD
 
 ### 9.56. `NavigationRailApp`
 
-- Назначение: вертикальная навигация medium (72 lp) и свёрнутого сайдбара expanded (72 lp) [РЕШЕНИЕ: D-18].
+- Назначение: вертикальная навигация medium (72 lp) и свёрнутого сайдбара expanded (72 lp) [РЕШЕНИЕ: D-18]. Область применения после ADR-112: режим `customer` на medium+ и витрина DS; у сотрудника на medium+ rail не показывается — разделы в drawer `NavigationDrawerApp` (§9.71).
 - Анатомия: колонка 72 (фон `surface`, правая граница `border`) → [логотип `SplashLogo.header` знак 32 сверху, отступ 16] → пункты: иконка 24 в пилюле 56×32 (активная — `primaryContainer` + filled `primaryText`) + подпись `caption 12/500` под иконкой (всегда видна), высота пункта 72, зазор 4 → внизу: `NotificationBell.rail`, `AppAvatar.sm` (меню профиля), `SyncIndicator` (иконка).
 - Варианты: `rail` (medium, подписи видны), `collapsedSidebar` (expanded при свёрнутом сайдбаре категорий — те же пункты + «бургер» для разворота), `extended` (medium-ландшафт ≥ 840: ширина 240, иконка + текст в строку 48 — поведение `CategorySidebarItem`).
 - Размеры: ширина 72 / 240 (extended); пункт 72 × 72 (цель 48 внутри); иконка 24.
@@ -2206,13 +2332,14 @@ flowchart TD
 
 ### 9.57. `TopAppBarPos`
 
-- Назначение: шапка рабочего пространства (макет каталога, ядро §14): логотип, «бургер», поиск, часы/дата, пользователь, уведомления, синхронизация.
-- Анатомия (`full`, слева направо): `AppIconButton` `menu` «бургер» 40 (сворачивает сайдбар на expanded / открывает drawer на medium) → `SplashLogo.header` (знак 32 + wordmark `title 600`, тап — на главный экран режима) → `SearchBar.header` (flex, макс. 720, мин. 320) → часы «09:41» `bodyLg 600 tnum` + дата «сб, 18 окт» `caption textSecondary` (локальное время устройства, Asia/Bishkek; обновление раз в минуту) → `SyncIndicator` (иконка + «обновлено 09:41») → `NotificationBell.header` → блок пользователя: `AppAvatar.sm` + имя `body 500` + роль `caption textSecondary` («Абдулла · Продавец», `RoleBadge.text`) — тап → меню (Профиль · Настройки · Выйти); `compact`: высота 56: [назад/логотип 24] → заголовок экрана `title 18/600` или `SearchBar.compact` (на каталоге) → `AppIconButton` сканер → `NotificationBell.dot`.
-- Варианты: `full` (medium/expanded/large, высота 64/72), `compact` (56), `modal` (в sheet/диалогах: заголовок + крестик), `auth` (экран входа: только `SplashLogo.auth` и переключатель языка `AppButton.text S` «RU» — Q-007).
-- Размеры: высота 72 (expanded/large), 64 (medium), 56 (compact); паддинг гориз. 16/24; зазоры `space.4` 16.
-- Токены: фон `surface`, нижняя граница `border` 1 px, `elevation.1`; текст `textPrimary`/`textSecondary`; активные иконки `primaryText`; логотип — `SplashLogo.header` (оранжевый знак).
-- Поведение: шапка закреплена (не скрывается при прокрутке на expanded; на compact `SearchBar.compact` скрывается при прокрутке вниз — 9.7); HID-сканер при фокусе в любом месте каталога отправляет ввод в `SearchBar` (D-42); часы — локальные, не серверные (расхождение > 5 мин с сервером → уведомление `system` [ТИПОВО]); имя пользователя — из `/me`.
-- Доступность: `Semantics(header)`; порядок фокуса слева направо; имя/роль читаются как «Абдулла, продавец».
+- Назначение: шапка рабочего пространства (прототип 2026-10-29 — ADR-112; ранее — макет каталога, ядро §14): «бургер» навигации, логотип, поиск, синхронизация, кнопка-итог корзины, уведомления, пользователь, часы и дата `TopAppBarClock` (UI-10-005, UI-10-032, UI-30-013; редакция 1.14 — восстановлены, паритет функций): «09:41» `body 600 textPrimary tnum` и «пн, 22 окт» `caption textSecondary`, выравнивание вправо, в правой группе перед колокольчиком; дату шапка сворачивает по ширине последней (у «Кассы» — сначала «Пн, 22 октября 2026» → «пн, 22 окт»; свёрнутая — в тултипе и `Semantics` «09:41, пн, 22 окт»; редакция 1.15, было — на medium только время); строки форматирует вызывающий (`DsBishkekTime`, Asia/Bishkek, перерисовка по границе минуты); у `customer` часов нет. Логотип — знак 38 и «Оптомстрой»; имя у аватара — имя и роль (до 160). Что из этого видно, решает ширина шапки, а не класс окна (редакция 1.15, ниже; в редакции 1.14 — пороги окна 840/1024/1280 lp).
+- Анатомия (`full`, medium+, слева направо): «☰» — `TopAppBarIconButton` `menu` (квадрат 44, радиус `md`, иконка 22, цель 48; подпись `shell_menu_open` «Меню разделов») — открывает drawer навигации оболочки `NavigationDrawerApp` (§9.71), показывается только при `onMenu` (у сотрудника в оболочке; у `customer` и вне оболочки нет) → зазор 8 → логотип `SplashLogo.header` (знак 38 + wordmark «Оптомстрой» `h3 20/700`, зазор 12; wordmark сворачивается по ширине — редакция 1.15; тап — главный экран режима, в семействе каталога — корень каталога) → зазор 24 → `SearchBar.header` (от логотипа, растёт до 680 lp, не по центру) → зазор 24 → правая группа с зазором 12: `SyncIndicator` (адаптивный, §9.40) → `TopAppBarCartButton` (§9.70; роли с корзиной: `seller`, `senior_seller`, `cashier`, `admin`) → `NotificationBell.header` (§9.51) → блок пользователя `TopAppBarUser`: аватар 38 (круг `primaryContainer`, инициал `primaryText body 700`) + имя `body 600 textPrimary` + роль `caption textSecondary` (имя и роль; не хватает места в шапке — только имя до 96, затем только аватар, редакция 1.15; было — от 1280 lp, редакция 1.11; `Semantics` — «Профиль: {имя}, {роль}», `profile_avatar_a11y`, редакция 1.13) — тап → меню аватара: первой строкой — заголовок с именем `body 600` и ролью `caption textSecondary` (не пункт: без фокуса и нажатия; редакция 1.13), затем Профиль · Настройки · Синхронизация · Заблокировать · Выйти (ключи `profile_title`, `profile_menu_settings`, `profile_menu_sync`, `profile_menu_lock`, `profile_logout`); `compact`: высота 56: [назад/логотип 24] → заголовок экрана `title 18/600` или `SearchBar.compact` (на каталоге) → `AppIconButton` сканер → `NotificationBell.dot` — без изменений.
+- **Редакция 1.15 (паритет функций, раунд 2; ADR-112) — сжатие `full` по доступной ширине (`TopAppBarFit`).** Шапка сама выбирает ступень сжатия во время раскладки (`AbstractLayoutBuilder`): пробует ступени по порядку и берёт первую, на которой место поля поиска не уже `TopAppBarPos.searchMinWidth` 240 (без поля поиска — строка без переполнения). **Редакция 1.16 (QA паритета функций; ADR-112):** на ступенях, где у `TopAppBarUser` видны имя или роль (всё видно, без строки «Корзина · N шт», только имя), месту поля нужно не меньше `TopAppBarPos.searchComfortWidth` 320 — имя сворачивается раньше, чем поле сжимается до 240 (поиск — главный элемент шапки; 02 П.13). Ступени сведений: всё видно → строка «Корзина · N шт» кнопки-итога свёрнута (§9.70) → у `TopAppBarUser` только имя не шире 96 → только аватар → логотип без wordmark → дата `TopAppBarClock` короткая (если вызывающий дал `shortDate`, у «Кассы») → только время. Каждая — сначала с обычными зазорами (24 у поля поиска, 12 в правой группе), затем с узкими (12 и 8). Если в строке не помещается и последняя — поле поиска уходит второй строкой (`searchRowHeight` 56, ширина до 680; шапка 124), и ступени сведений перебираются заново для первой строки; последняя ступень — без знака логотипа. Не сворачиваются никогда: «☰», `SyncIndicator`, время, итог корзины, колокольчик, аватар. Элементы читают ступень через `TopAppBarFit.of(context)`; вне шапки — ничего не свёрнуто. Перестраиваются только зависимые элементы; выбор — в том же кадре, без промежуточного переполнения и мигания; изменение размера элемента правой группы (итог корзины, текст `SyncIndicator`, часы) перекладывает шапку и выбирает ступень заново. Поле поиска переносится между строками по ключу — ввод, фокус и состояние сохраняются; состав строки постоянный, элементы правой группы не пересоздаются.
+- Варианты: `full` (medium/expanded/large, высота 68; поле поиска второй строкой — 124), `compact` (56), `modal` (в sheet/диалогах: заголовок + крестик), `auth` (экран входа: только `SplashLogo.auth` и переключатель языка `AppButton.text S` «RU» — Q-007).
+- Размеры: высота 68 (`DsBreakpoints.topBarHeight`; medium/expanded/large), 56 (compact); поля по горизонтали 24 (16 на medium и compact); элементы 44 стоят по центру строки (по 12 сверху и снизу), их тач-цели 48 помещаются в высоту шапки.
+- Токены: фон `surface`, нижняя граница `border` 1 px; `full` — без тени (прототип), `compact` — `elevation.1`; текст `textPrimary`/`textSecondary`; иконки кнопок шапки — `textPrimary`, hover — `surfaceHover`, pressed — `iconButtonPressed`, фокус — кольцо `focus`; активные иконки `primaryText`; логотип — `SplashLogo.header` (оранжевый знак `brandAccent`).
+- Поведение: шапка закреплена (не скрывается при прокрутке на medium+; на compact `SearchBar.compact` скрывается при прокрутке вниз — 9.7); HID-сканер при фокусе в любом месте каталога отправляет ввод в `SearchBar` (D-42); имя пользователя — из `/me`. Размещение (ADR-112): в семействе каталога (SCR-10/11/12) шапку рисует экран каталога (ADR-110 — одно поле поиска, шапка не пересоздаётся); на прочих ветках сотрудника на medium+ — оболочка (`StaffShellHeader`, тот же компонент), поиск ведёт в SCR-11 по Enter или паузе ввода; касса (SCR-30) на medium+ свою шапку не рисует. Заголовок окна Windows — «Оптомстрой POS» (константа продукта).
+- Доступность: `Semantics(container)`; порядок фокуса слева направо; имя/роль читаются как «Абдулла, Продавец»; «☰» — «Меню разделов».
 - Адаптивность: см. варианты.
 
 | Состояние | Визуал | Поведение |
@@ -2220,7 +2347,7 @@ flowchart TD
 | default | полная шапка | — |
 | hover | элементы — свои hover | — |
 | pressed | — | — |
-| focused | по элементам | F2 → поиск |
+| focused | по элементам (кольцо `focus`) | F2 / Ctrl+F → поиск |
 | disabled | — | — |
 | loading | имя пользователя — `SkeletonBox.text` 96 | — |
 | error | `OfflineBanner` под шапкой; `SyncIndicator.error` | — |
@@ -2507,6 +2634,105 @@ flowchart TD
 | selected (`active`, `stepDone`, `allDone`) | активный — `primaryText`; выполненные — `success`; `allDone` — `SuccessCheck` 72 в овале | — |
 | empty | — (нет камеры/разрешения — компонент не создаётся, экран показывает `EmptyState`/`ErrorState`) | — |
 
+### 9.70. `TopAppBarCartButton` [НОВОЕ ИМЯ — ADR-112]
+
+- Назначение: кнопка-итог корзины в шапке `TopAppBarPos.full` (02 UI-10-041, SCR-10.3 E10; прототип 2026-10-29): число позиций и итог корзины видны на всех экранах сотрудника; тап открывает корзину (drawer 420 на medium+, D5) [РЕШЕНИЕ: ADR-112 п. 1, п. 4].
+- Анатомия: контейнер (фон `primaryContainer`, рамка 1 px `primaryContainerBorder` — декоративная) → иконка `shopping_cart` 22 `primaryText` с бейджем числа позиций (круг/пилюля 18, `primary`/`onPrimary` `micro 11/700 tnum`, смещение −7 / −9; при 0 — без бейджа) → зазор 12 → две строки: «Корзина» (`cart_title`, `caption textSecondary`) и итог (`body 700 textPrimary tnum`, формат `PriceText`; пока итога сервера нет — «N поз.», `cart_positions_short`) → [предупреждение корзины — иконка `warning` 14 `warning` перед итогом: изменились цены, не хватает остатка, позиция недоступна].
+- Варианты: с текстом (по умолчанию); итог одной строкой без «Корзина» (`showLabel: false` или свёрнуто шапкой по ширине — `TopAppBarFit.cartLabel`, редакция 1.15; было — на medium: место отдаётся поиску, итог сервера виден всегда; редакция 1.13); только иконка с бейджем (`showText: false` — витрина). Предупреждение (`warning`): иконка `warning_amber` перед итогом и тултип с текстом «В корзине есть предупреждения» (`cart_header_warning`), та же фраза добавляется в `Semantics` (ядро §24.1: warning — иконка и текст; редакция 1.13).
+- Размеры: высота 44 (цель 48), радиус `md`, поля 12 слева / 16 справа.
+- **Редакция 1.15 (паритет функций, раунд 2).** Строку «Корзина · 6 шт» сворачивает шапка по своей ширине (§9.57, первой из необязательного), не класс окна. «5 поз. · 6 шт» — в тултипе всегда (`countTooltip`), вместе с предупреждением: состав тултипа не зависит от ступени шапки, поэтому при пробах ступеней кнопка не пересоздаётся и не теряет фокус.
+- **Редакция 1.14 (паритет функций, ADR-112).** Первая строка при непустой корзине — «Корзина · 6 шт» (`cart_header_label_units`, единицы строк, как прежняя подпись `CartFab`), не шире 160 с многоточием; на medium (`showLabel: false`) «5 поз. · 6 шт» (`cart_counter_units`) — в тултипе (`tooltip`). Неудачное сохранение корзины (записи очереди `dead`, строка `failed`) — та же иконка `warning_amber` и текст «Корзина не сохранена» (`cart_header_save_failed`) в тултипе и `Semantics`; повтор — «Ошибка сохранения · Повторить» в drawer.
+- Токены: см. анатомию; бейдж `primary` + белый `onPrimary` — 4.64:1 (ADR-111); оранжевый здесь — не статус, а акцент действия (ядро §24.1).
+- Поведение: компонент только рисует (данные — у фичи корзины через порт каталога `catalogCartButtonProvider`, FL-03); тап / Enter / Space — открыть корзину; F4 — то же (обработка у корзины).
+- Доступность: `Semantics(button, label: «Открыть корзину, 5 позиций, 16 007 сом 50 тыйын»)` (`cart_fab_a11y` / `cart_fab_a11y_nototal`); предупреждение — иконкой и в подписи, не только цветом.
+- Адаптивность: только medium+ (на compact — `CartFab`, §9.30); у `owner` и `customer` кнопки нет.
+- **Редакция 1.10 — связь с данными (ADR-112, D5).** В приложении кнопку строит фича корзины (`CartHeaderButtonView`), корень подставляет её в порт каталога `catalogCartButtonProvider` (шапка каталога и шапка оболочки — один и тот же порт). Данные — выборка из состояния корзины (перестройка только при изменении значений): число позиций — бейдж; последний итог сервера — вторая строка («≈ » перед суммой, пока изменения не подтверждены; «N поз.», пока ответа сервера нет; без локального пересчёта — D-23, MNY-001); предупреждение — изменились цены, не хватает остатка, позиция недоступна или конфликт версий. Нажатие — drawer корзины 420 (§9.27), фокус после закрытия возвращается на кнопку (параметр `focusNode`). Клавиши при закрытом drawer: `F4` — открыть, `F8`/`F9` при непустой корзине — открыть с действием; кнопка молчит, если drawer открыт, фокус в диалоге или листе, маршрут под другим экраном (SCR-21 обрабатывает `F9` сам) или на экране уже корзина `/cart`. На medium кнопка без текста (`showText: false`) — место поиску в шапке 800 lp. Вокруг кнопки — постоянно смонтированный слушатель фоновых событий корзины (§9.27).
+
+| Состояние | Визуал | Поведение |
+|---|---|---|
+| default | тинт `primaryContainer` + рамка `primaryContainerBorder`, бейдж числа позиций | — |
+| hover | фон `primaryContainerPressed` | — |
+| pressed | фон `primaryContainerPressed` | открыть корзину |
+| focused | кольцо `focus` (синее) | Enter / Space |
+| disabled | — (недоступна без корзины — кнопки нет) | — |
+| loading | вместо итога — «N поз.» до ответа сервера | — |
+| error | иконка `warning` перед итогом (предупреждения корзины) | открыть корзину |
+| selected | — | — |
+| empty | без бейджа, «0 поз.» | открыть пустую корзину |
+
+### 9.71. `NavigationDrawerApp` [НОВОЕ ИМЯ — ADR-112]
+
+- Назначение: навигация сотрудника на medium и шире вместо rail и сайдбара (D3, ADR-112 п. 2): открывается «☰» шапки, содержит все разделы роли.
+- Анатомия: панель слева шириной 320 (`DsBreakpoints.navDrawer`), фон `surface`, граница справа `border` → заголовок 68 (логотип) с нижней границей → группа 1 — 5 вкладок режима (`ShellTab`, активная ветка выделена) → разделитель → группа 2 «Другие разделы» (`shell_nav_more`, заголовок `label 600 textSecondary`) — ссылки режима, отфильтрованные guard G-7 (`isPathAllowedForRole`) → строки 48: полоса 3 px слева, иконка 24, подпись `body 500 textPrimary`.
+- Состав «Других разделов» по режимам: продавец — Отложенные заказы, Заказы, Транзакции («Корзина» — вкладка режима); кассир — Заказы, Отложенные заказы, Избранное, Корзина; администратор — Отчёты, Касса, Журнал аудита, Настройки системы, Заказы, Отложенные заказы, Избранное, Корзина; руководитель — Касса, Пользователи, Журнал аудита, Настройки системы, Заказы. Пункт «Корзина» на medium+ открывает drawer корзины (если оболочка его подключила), иначе — экран `/cart`.
+- Варианты: один.
+- Размеры: ширина 320; строка 48 (тач-цель 48); иконка 24; поля строки 12; радиус выделения `md`.
+- Токены: выбранный пункт — фон `primaryContainer`, подпись `onPrimaryContainer 600`, залитая иконка `primaryText` и полоса 3 px `primaryText` (признак не только цветом — A11Y-004); hover — `surfaceHover`, pressed — `surfacePressed`; затемнение — `overlay`.
+- Поведение: вкладка — `goBranch` (повторный выбор активной — к корню ветки), ссылка — `go(path)` (по правилу веток); ссылка на ту же ветку, что вкладка (например, Журнал аудита в ветке «Админ»), выделяется вместо вкладки; выбор закрывает drawer; Esc и тап по затемнению закрывают drawer; свайп от края не открывает (только «☰»).
+- Доступность: `Semantics`-группа «Навигация» (`shell_nav_a11y`, `scopesRoute`/`namesRoute`); пункты — `button` + `selected`; фокус при открытии — внутри панели, после закрытия возвращается в оболочку; `Ctrl+1…5` — вкладки без открытия drawer.
+- Адаптивность: только режимы сотрудника на medium+; compact — `BottomNavBar` (§9.55), `customer` — `NavigationRailApp` (§9.56).
+
+| Состояние | Визуал | Поведение |
+|---|---|---|
+| default | группы пунктов | — |
+| hover | фон `surfaceHover` | — |
+| pressed | фон `surfacePressed` | переход |
+| focused | кольцо `focus` на строке | ↑↓ Tab, Enter |
+| disabled | пункт скрыт при отсутствии права (G-7) | — |
+| loading | — | — |
+| error | — | — |
+| selected | `primaryContainer` + полоса 3 px `primaryText` + подпись `onPrimaryContainer 600` + залитая иконка | повторный выбор — к корню ветки |
+| empty | группа без пунктов не показывается | — |
+
+
+### 9.72. `ToolbarToggleButton` [НОВОЕ ИМЯ — ADR-112]
+
+- Назначение: кнопки-переключатели строки управления SCR-10/11/12 на medium и шире (прототип 2026-10-29): «Новые» (сортировка `updatedAt:desc` с возвратом к прежней; недоступна в «Недавних», на SCR-11 не показывается), «Избранные» (фильтр `favorite=true`), «Недавние» (подборка, рядом — «Очистить»), «Фильтры» (встроенная панель, §9.25). `CategoryChip` (§9.9) остаётся для полос чипов и других экранов.
+- Анатомия: кнопка 40 (цель 48), радиус `md`, поля 16 → иконка 18 → зазор 8 → подпись `body 600` → [бейдж `AppBadge.cart` с числом — активные фильтры].
+- Варианты: с подписью; только иконка с тултипом (узкая строка).
+- Размеры: высота 40 / цель 48; иконка 18.
+- Токены: невыбранная — `surface`, обводка `border`, текст и иконка `textPrimary`; выбранная — `primaryContainer`, обводка `primaryContainerBorder` (декоративная), текст и иконка `onPrimaryContainer` (6.19:1), подпись **700** и залитая иконка (`star`, `filter_alt`, `access_time_filled`) — выбранное не только цветом (A11Y-004); недоступная — `disabledBg` / `disabledText`.
+- Поведение: тап переключает; «Фильтры» подсвечена при открытой панели или активных фильтрах. Оценка ширины `estimateWidth` — для выбора «подписи / иконки / перенос» строки управления до раскладки.
+- Доступность: `Semantics(button, toggled, label)`; с бейджем — «Фильтры, 2».
+- Адаптивность: только medium и шире; compact — `CategoryChip` полосы и `AppIconButton` «Фильтры».
+
+| Состояние | Визуал | Поведение |
+|---|---|---|
+| default | `surface` + обводка `border` | — |
+| hover | `surfaceHover` (выбранная — `primaryContainerPressed`) | — |
+| pressed | `surfacePressed` | переключение |
+| focused | кольцо `focus` | Enter, Space |
+| disabled | `disabledBg` / `disabledText` | не нажимается |
+| loading | — | — |
+| error | — | — |
+| selected | `primaryContainer` + обводка `primaryContainerBorder` + `onPrimaryContainer 700` + залитая иконка | повторный тап снимает |
+| empty | — | — |
+
+- **Редакция 1.11 (QA прототипа 2026-10-29, раунд 1; ADR-112).** Поля 12 (прототип 14; было 16) — у кнопки с подписью и у кнопки-иконки. Строка управления каталога (02 П.3 п. 4): зазоры внутри групп 8, между группами 16; подборка «Недавние» в узкой строке (окно 1280) — только иконкой с тултипом (`showLabel: false`), подписи вида при этом остаются.
+
+### 9.73. `ScrollRibbon` [НОВОЕ ИМЯ — ADR-110, ADR-112]
+
+- Назначение: горизонтальная лента карточек одинакового размера — лента подкатегорий SCR-10/12 на medium и шире (`CategoryTile.ribbon`, §9.10).
+- Анатомия: видимая часть (между полями контента) обрезана со скруглением `md` → карточки с зазором 12 → стрелки ‹ › у краёв: круг 38 `surface`, обводка `border`, тень `elevation.2`, шеврон 18 `textSecondary` (редакция 1.13: синий `focus` — только индикатор фокуса и info, ядро §24.1, а стрелки фокус не получают; оранжевый не используется), цель 48; круг вынесен на 12 за край видимой части.
+- Варианты: один.
+- Размеры: высота карточки + 8 (кольцо фокуса); карточка 118×148.
+- Токены: см. анатомию.
+- Поведение: прокрутка жестом, тачпадом, перетаскиванием мышью и колесом (вертикальное колесо прокручивает ленту, пока ей есть куда; на краю — событие уходит странице); стрелка — на ширину видимой части с выравниванием по карточке; стрелки скрыты на краях; выбранная карточка при показе прокручивается в видимую часть; смена набора (другой родитель) — с начала. Карточки за краем видимой части не видны и не нажимаются.
+- Доступность: стрелки — `Semantics(button)` и тултип «Прокрутить подкатегории влево / вправо» (`category_ribbon_prev`, `category_ribbon_next`); стрелки не получают фокус клавиатуры — Tab ходит по карточкам, лента прокручивается к фокусу.
+- Адаптивность: medium и шире; compact — полоса чипов.
+
+| Состояние | Визуал | Поведение |
+|---|---|---|
+| default | карточки + стрелки у краёв | — |
+| hover | стрелка `surfaceHover` | — |
+| pressed | стрелка `surfacePressed` | прокрутка на страницу |
+| focused | кольцо на карточке | ←→ Tab |
+| disabled | стрелка на краю скрыта | — |
+| loading | — (скелетон — у вызывающего) | — |
+| error | — | — |
+| selected | выбранная карточка (§9.10) в видимой части | — |
+| empty | лента не показывается (нет непустых подкатегорий) | — |
+
 ---
 
 **Составные компоненты этапа G (уточнено на этапе G (GQ-FECASH-03)); ADR-107).** `ShiftSummaryCard` (02 UI-30-014: `PriceText` ×3 + `AppListTile`), `AwaitingPaymentList` (02 UI-30-004: `AppSectionHeader` + `TransactionRow` + `StatusChip`) и диалоги ручного подтверждения и аннулирования платежа `payment_action_dialogs` (общие для SCR-37/SCR-38) — составные компоненты `design_system/components/**`, собранные только из компонентов §9; собственных состояний и токенов не вводят, в матрицу §10 не включаются. Также этапа G — `ReturnItemRow`, `ReturnStatusChip` (обёртка `StatusChip` для `return_request_status`), `ReceivableDocumentRow`, `DiscountRuleRow`, `ReportChart`, `ReportTable` — обёртки компонентов §9 (`AppListTile`, `StatusChip`, `PriceText`).
@@ -2587,6 +2813,10 @@ flowchart TD
 | 9.67 | `SuccessCheck` | §17.5 | ● | — | — | — | — | ● | — | — | ● |
 | 9.68 | `DocumentPreview` | §17.5 | ● | ○ | ○ | ● | ● | ● | ● | — | ● |
 | 9.69 | `FaceCaptureView` (R2, вне R1) | R2 [НОВОЕ ИМЯ] | ● | — | — | — | ● | ● | ● | ● | — |
+| 9.70 | `TopAppBarCartButton` (ADR-112) | [НОВОЕ ИМЯ] | ● | ● | ● | ● | — | ● | ● | — | ● |
+| 9.71 | `NavigationDrawerApp` (ADR-112) | [НОВОЕ ИМЯ] | ● | ● | ● | ● | ● | — | — | ● | ● |
+| 9.72 | `ToolbarToggleButton` (ADR-112) | [НОВОЕ ИМЯ] | ● | ● | ● | ● | ● | — | — | ● | — |
+| 9.73 | `ScrollRibbon` (ADR-110, ADR-112) | [НОВОЕ ИМЯ] | ● | ● | ● | ● | ● | — | — | ● | ● |
 
 Итого: 59 имён ядра §8.5 в 57 разделах (`FilterPanel`/`FilterSheet` — 9.25, `SkeletonBox`/`SkeletonList` — 9.42) + 8 разделов имён ядра v1.2 §17.5 (10 имён: `CategoryTile`, `ImageGallery`, `WarehouseStockTable`, `CartFab`, `OptionTile`, `AppProgress`, `AppTooltip`, `AppCheckbox/AppRadio/AppSwitch`) = 65 разделов спецификации, 69 имён компонентов; + 2 раздела компонентов ядра v1.2 §17.5 с отдельной спецификацией (п. 9.67 `SuccessCheck`, п. 9.68 `DocumentPreview`; волна 4) — **итого 67 разделов R1, 71 имя компонента**; служебные элементы п. 9.66 — 6 (включая `RegistrationStepper`); п. 9.69 `FaceCaptureView` — условный компонент R2 (Q-003), в счёт R1, DS-030 и golden R1 не входит. Все эти имена, а также `AppDropdown`, `AppDivider`, `AppBadge`, `AppSectionHeader`, `AppListTile`, `DocumentPreview`, `SuccessCheck`, `RegistrationStepper`, включены в перечень ядра v1.2 §17.5 (замечание к ядру №7 закрыто).
 
@@ -2916,8 +3146,8 @@ sequenceDiagram
 
 | ID | Требование | Приоритет | Статус | Источник | Критерий приёмки |
 |---|---|---|---|---|---|
-| A11Y-001 | Контраст текста ≥ 4.5:1 (обычный) и ≥ 3:1 (крупный ≥ 24 px / ≥ 19 px bold) для всех пар токенов; `textPrimary` на `surface` ≥ 7:1 (AAA) | must | РЕШЕНИЕ | SRC-B-046, SRC-E-099c, R4 §3.4, WCAG 1.4.3/1.4.6 | AC-A11Y-001: `contrast.py` на токенах темы — ни одной пары текст/фон < 4.5 (кроме `disabledText`, `brandAccent`, `favorite` — исключения задокументированы; `primary` #FF8700 как цвет текста не используется — DS-098); `textContrastGuideline` проходит на всех golden-экранах |
-| A11Y-002 | Нетекстовый контраст ≥ 3:1: иконки, обводки полей (`borderStrong`), кольцо фокуса, индикаторы состояния | must | РЕШЕНИЕ | SRC-E-100l, WCAG 1.4.11, п. 5.4.3 | AC-A11Y-002: `borderStrong`/`focus`/`primaryText`/семантические иконки ≥ 3:1 на `surface` и `background`; `primary` #FF8700 (2.41:1) — только заливка с `onPrimary`, не единственный индикатор (DS-098); `border` не используется как единственная граница поля ввода |
+| A11Y-001 | Контраст текста ≥ 4.5:1 (обычный) и ≥ 3:1 (крупный ≥ 24 px / ≥ 19 px bold) для всех пар токенов; `textPrimary` на `surface` ≥ 7:1 (AAA) | must | РЕШЕНИЕ | SRC-B-046, SRC-E-099c, R4 §3.4, WCAG 1.4.3/1.4.6 | AC-A11Y-001: `contrast.py` на токенах темы — ни одной пары текст/фон < 4.5 (кроме `disabledText`, `brandAccent`, `favorite` — исключения задокументированы; `primary` как цвет текста не используется — DS-098; белый текст на оранжевой заливке — только при ≥ 4.5:1, ADR-111); `textContrastGuideline` проходит на всех golden-экранах |
+| A11Y-002 | Нетекстовый контраст ≥ 3:1: иконки, обводки полей (`borderStrong`), кольцо фокуса, индикаторы состояния | must | РЕШЕНИЕ | SRC-E-100l, WCAG 1.4.11, п. 5.4.3 | AC-A11Y-002: `borderStrong`/`focus`/`primaryText`/семантические иконки ≥ 3:1 на `surface` и `background`; `primary` #D9380F — только заливка с `onPrimary`, не единственный индикатор (DS-098, хотя 4.64:1 к `surface`); рамка тинта `primaryContainerBorder` (1.54:1) — декоративная; `border` не используется как единственная граница поля ввода |
 | A11Y-003 | Тач-цели ≥ 48×48 lp (Android/Windows-тач), ≥ 44×44 pt (iOS), интервал между целями ≥ 8 lp; визуально меньшие элементы получают невидимый паддинг | must | РЕШЕНИЕ | SRC-B-038, SRC-B-059, Material/Apple (п. 3.3), WCAG 2.5.8 | AC-A11Y-003: `androidTapTargetGuideline`/`iOSTapTargetGuideline` проходят на всех экранах; измерение `QuantityStepper`, `FavoriteToggle.onImage`, `AppIconButton` |
 | A11Y-004 | Статусы и состояния никогда не передаются только цветом: цвет + иконка + текст (+ число для остатков); выбранный элемент — цвет + форма (полоса/галочка/filled) | must | РЕШЕНИЕ | SRC-B-050, WCAG 1.4.1, п. 5.5 | AC-A11Y-004: ревью всех `StatusChip`/`StockBadge`/`ReceivableBadge`/`SyncIndicator`/selected-состояний; симуляция протанопии (п. 5.5) не теряет информации |
 | A11Y-005 | Масштаб системного текста до 1.3× без потери функций и горизонтальной прокрутки; выше — `TextScaler.clamp` (1.3 на expanded, 1.5 на compact/medium) с переносом | must | РЕШЕНИЕ | NFR-A11Y-001, п. 6.3 | AC-A11Y-005: golden-тесты при 1.0/1.3; на 1.3× все CTA видны без прокрутки на SCR-01/02/20/21 (compact 360×640) |
@@ -3129,6 +3359,7 @@ class DsColors extends ThemeExtension<DsColors> {
     required this.surfaceHover, required this.surfacePressed,
     required this.primary, required this.primaryHover, required this.primaryPressed,
     required this.primaryContainer, required this.primaryContainerPressed, required this.onPrimary,
+    required this.primaryContainerBorder, required this.onPrimaryContainer, // [НОВОЕ ИМЯ] ADR-111: рамка тинта, текст на тинте
     required this.textPrimary, required this.textSecondary, required this.textTertiary,
     required this.border, required this.borderStrong,
     required this.success, required this.successContainer, required this.onSuccess,
@@ -3140,10 +3371,11 @@ class DsColors extends ThemeExtension<DsColors> {
     required this.skeletonBase, required this.skeletonHighlight, required this.overlay,
     required this.iconButtonPressed,
     required this.inverseSurface, required this.onInverseSurface, // ядро §18.2 п.15
-    required this.primaryText, // ядро §17.5; палитра B — #B04E00 (текст, ссылки, цены, индикаторы); в A = primary
+    required this.primaryText, // ядро §17.5; палитра B — #C9330C (текст, ссылки, цены, индикаторы; ADR-111); в A = primary
   });
   // …поля Color (все обязательные)
-  static const DsColors lightB = DsColors(/* значения раздела 5.3 — основная палитра R1, ядро v1.9 §24.1 */);
+  static const DsColors lightB = DsColors(/* значения раздела 5.3 — основная палитра R1, ядро v1.9 §24.1, ADR-111 */);
+  static const DsColors lightB20261021 = DsColors(/* откат ADR-111: палитра B редакции 2026-10-21 (alternatives.B_2026_10_21) */);
   static const DsColors lightA = DsColors(/* значения раздела 5.2 — историческая альтернатива A+, в R1 не применяется */);
   static const DsColors light = lightB; // тема по умолчанию
   @override DsColors copyWith({...});
@@ -3151,7 +3383,7 @@ class DsColors extends ThemeExtension<DsColors> {
 }
 ```
 
-Имена полей — ровно имена токенов `ds.color.*` ядра §8.1 (camelCase) + 5 токенов ядра v1.2 §17.5 (`onSuccess`, `onError`, `onBrandAccent`, `iconButtonPressed`, `primaryText` — обязательное поле: в палитре B #B04E00, в исторической A = `primary`) + 2 токена ядра v1.3 §18.2 п.15 (`inverseSurface`, `onInverseSurface`). Тёмная тема (R2, D-43) — `DsColors.dark` с теми же полями.
+Имена полей — ровно имена токенов `ds.color.*` ядра §8.1 (camelCase) + 5 токенов ядра v1.2 §17.5 (`onSuccess`, `onError`, `onBrandAccent`, `iconButtonPressed`, `primaryText` — обязательное поле: в палитре B #C9330C (ADR-111), в исторической A = `primary`) + 2 токена ядра v1.3 §18.2 п.15 (`inverseSurface`, `onInverseSurface`) + 2 токена тинта [НОВОЕ ИМЯ] ADR-111 (`primaryContainerBorder`, `onPrimaryContainer`; в альтернативах — `border` и `primaryText` своего набора). `lightB20261021` генерируется всегда (откат ADR-111), `lightA` — только с флагом генератора `--with-alternative-a`. Тёмная тема (R2, D-43) — `DsColors.dark` с теми же полями.
 
 ### 17.3. `DsTypography`
 
@@ -3267,14 +3499,16 @@ abstract final class AppTheme {
   static ThemeData light({DsColors colors = DsColors.lightB}); // Material 3, useMaterial3: true; палитра B — ядро v1.9 §24.1
   // ColorScheme: primary←primary, onPrimary←onPrimary, surface←surface, error←error, onError←onError,
   // outline←borderStrong, outlineVariant←border, surfaceContainerHighest←surfaceVariant …
-  // палитра B: ColorScheme.primary (#FF8700) не годится для текста и обводок — Material-виджеты, рисующие его текстом,
-  // в экранах напрямую не применяются; только компоненты раздела 9 с ролями п. 5.9 (DS-098)
+  // onPrimaryContainer←onPrimaryContainer (ADR-111)
+  // палитра B: ColorScheme.primary (#D9380F) — заливка с белым onPrimary (4.64:1); как текст проходит AA только на
+  // surface — Material-виджеты, рисующие его текстом или единственной обводкой, в экранах напрямую не применяются;
+  // только компоненты раздела 9 с ролями п. 5.9 (DS-098)
   // VisualDensity.standard; splashFactory: InkSparkle.splashFactory выключен → NoSplash (pressed — по токенам)
   // MaterialTapTargetSize.padded (цель 48)
 }
 ```
 
-Палитра по умолчанию — B: `AppTheme.light()` = `DsColors.lightB` (ядро v1.9 §24.1). Компоненты используют `colors.primaryText` для текстовых, иконочных и индикаторных ролей и `colors.primary` только для заливок вместе с `colors.onPrimary` (п. 5.9, DS-098). Возврат к исторической A+ — одна строка: `AppTheme.light(colors: DsColors.lightA)`.
+Палитра по умолчанию — B: `AppTheme.light()` = `DsColors.lightB` (ядро v1.9 §24.1). Компоненты используют `colors.primaryText` для текстовых, иконочных и индикаторных ролей и `colors.primary` только для заливок вместе с `colors.onPrimary` (п. 5.9, DS-098). Откат палитры ADR-111 — одна строка: `AppTheme.light(colors: DsColors.lightB20261021)`; возврат к исторической A+ — `AppTheme.light(colors: DsColors.lightA)`.
 
 ### 17.8. Форматы
 
@@ -3321,17 +3555,17 @@ abstract final class DsPhoneFormat { static String display(String e164); /* +996
 
 | ID | Требование | Приоритет | Статус | Источник | Критерий приёмки |
 |---|---|---|---|---|---|
-| DS-001 | Палитра R1 — вариант B «Оранжевый» (ядро v1.9 §24.1): тёплая нейтральная база + `primary #FF8700` (заливки с `onPrimary #1B1F2A`) + `primaryText #B04E00` + `focus`/`info` #1F5FA8 + семантические цвета (`warning #8A6A00`); значения токенов `ds.color.*` ровно по таблице 5.3; схема A+ (таблица 5.2) — историческая альтернатива | must | РЕШЕНИЕ | SRC-B-044, SRC-B-045, SRC-E-100a, D-16 (ред. ядра v1.9 §24.1), Q-006 | AC-DS-001: `DsColors.lightB` совпадает с таблицей 5.3 (unit-тест по HEX, 0 расхождений); `AppTheme.light()` без параметров использует `DsColors.lightB` |
-| DS-002 | Имена токенов цвета — ровно как в ядре §8.1 (camelCase, `ds.color.<имя>`); токены ядра v1.2 §17.5 (`iconButtonPressed`, `onSuccess`, `onError`, `onBrandAccent`, `primaryText` — обязателен в основной палитре B) помечены [РЕШЕНИЕ: ядро §17.5]; токены ядра v1.3 (`inverseSurface`, `onInverseSurface`) — [РЕШЕНИЕ: ядро §18.2 п.15]; токены вне ядра не вводятся без пометки `[НОВОЕ ИМЯ]` и замечания в разделе 21 | must | РЕШЕНИЕ | ядро §8.1, §10, §17.5, §18.2 п.15 | AC-DS-002: поля `DsColors` = перечень §8.1 + 5 токенов §17.5 + 2 токена §18.2 п.15 |
+| DS-001 | Палитра R1 — вариант B «Оранжевый» (ядро v1.9 §24.1) в значениях утверждённого прототипа (ADR-111): холодная светлая база #F1F6FC + `primary #D9380F` (заливки с белым `onPrimary`, 4.64:1) + `primaryText #C9330C` + тинт `primaryContainer #FDEEE9` / `onPrimaryContainer #A82A09` + `focus`/`info` #1F5FA8 + семантические цвета (`warning #8A5300`); значения токенов `ds.color.*` ровно по таблице 5.3; откат — `DsColors.lightB20261021` (редакция 2026-10-21); схема A+ (таблица 5.2) — историческая альтернатива | must | РЕШЕНИЕ | SRC-B-044, SRC-B-045, SRC-E-100a, D-16 (ред. ядра v1.9 §24.1), Q-006, ADR-111, Q-333 | AC-DS-001: `DsColors.lightB` совпадает с таблицей 5.3 и `tokens.json` (unit-тест по HEX, 0 расхождений); `DsColors.lightB20261021` = `alternatives.B_2026_10_21`; `AppTheme.light()` без параметров использует `DsColors.lightB` |
+| DS-002 | Имена токенов цвета — ровно как в ядре §8.1 (camelCase, `ds.color.<имя>`); токены ядра v1.2 §17.5 (`iconButtonPressed`, `onSuccess`, `onError`, `onBrandAccent`, `primaryText` — обязателен в основной палитре B) помечены [РЕШЕНИЕ: ядро §17.5]; токены ядра v1.3 (`inverseSurface`, `onInverseSurface`) — [РЕШЕНИЕ: ядро §18.2 п.15]; токены вне ядра не вводятся без пометки `[НОВОЕ ИМЯ]` и замечания в разделе 21 (так введены `primaryContainerBorder` и `onPrimaryContainer` — ADR-111, замечание 17) | must | РЕШЕНИЕ | ядро §8.1, §10, §17.5, §18.2 п.15; ADR-111 | AC-DS-002: поля `DsColors` = перечень §8.1 + 5 токенов §17.5 + 2 токена §18.2 п.15 + 2 токена ADR-111 |
 | DS-003 | Два варианта палитры (A «Синий» — историческая альтернатива, B «Оранжевый» — основная) специфицированы полностью с одинаковыми именами токенов; тема по умолчанию — `DsColors.lightB`, возврат к A — `AppTheme.light(colors: DsColors.lightA)` | must | РЕШЕНИЕ (D-16, ред. ядра v1.9 §24.1) | SRC-B-043, SRC-E-098, SRC-F-042, R4 §3.2–3.3 | AC-DS-003: оба набора токенов существуют; golden каждого компонента — в палитре B (эталоны A не требуются) |
 | DS-004 | Сравнение вариантов по пяти критериям заказчика (удобство, читаемость, контраст, бренд, длительная работа) и выбор зафиксированы (раздел 5.6–5.7): выбран B по решению заказчика 2026-10-21; правила, компенсирующие критерии, по которым A сильнее, перечислены | must | РЕШЕНИЕ (D-16, ред. ядра v1.9 §24.1) | SRC-E-099, SRC-E-099a…e, SRC-F-043, SRC-A-047 | AC-DS-004: раздел 5.6 содержит все пять критериев с итогом и строку решения заказчика; п. 5.7 фиксирует выбор B |
 | DS-005 | Семантика цветов фиксирована: красный — ошибка/долг/нет в наличии; зелёный — успех/в наличии/оплачено; янтарный — предупреждение/мало/просрочка; серо-синий — информация/синхронизация; `primary` — заливки интерактивных элементов, `primaryText` — текстовый интерактив и цены; оранжевый никогда не означает статус | must | РЕШЕНИЕ | SRC-B-045, R4 §3.1 | AC-DS-005: ревью компонентов раздела 9 — нет иного использования семантических цветов |
 | DS-006 | Оранжевый #FF8700 (`brandAccent` = `primary` палитры B) используется только по п. 5.8: `brandAccent` — логотип, splash, персонаж ≤ 20 %, иллюстрации 10–20 %; `primary` — заливки CTA, `CartFab`, бейджа корзины, выбранного чекбокса, свотча и краёв диапазона с `onPrimary`; запрещён как текст, статус, цена, единственная обводка или индикатор, фон панелей, баннеров и чипов | must | РЕШЕНИЕ | D-16 (ред. ядра v1.9 §24.1), SRC-B-058, п. 5.8 | AC-DS-006: статический поиск `brandAccent` в `components/` — только `SplashLogo`, `Mascot`, `EmptyState`-иллюстрации; поля `primary`/`primaryHover`/`primaryPressed` — только в ролях заливки п. 5.9 (ревью по чек-листу, 0 нарушений) |
-| DS-007 | `textTertiary` используется только на `surface` и при размере ≥ 13 lp; плейсхолдеры на `surfaceVariant` — `textSecondary` | must | РЕШЕНИЕ | SRC-B-046, п. 5.4.1 | AC-DS-007: widget-тест + ревью по чек-листу: цвет плейсхолдера и подсказок `SearchBar`, `AppTextField`, `DiscountInput` на `surfaceVariant` = `textSecondary`; поиск `textTertiary` в `lib/` — каждое вхождение только на фоне `surface` и в стиле ≥ 13 lp; **0 нарушений** |
+| DS-007 | `textTertiary` используется при размере ≥ 13 lp и только на фонах, где он проходит 4.5:1: в палитре B (ADR-111, #656E80) — `surface`, `background`, `surfaceHover`, `surfaceVariant` (4.51:1 — плейсхолдер поиска в шапке), `disabledBg` (4.53:1); на остальных фонах плейсхолдеры — `textSecondary` | must | РЕШЕНИЕ | SRC-B-046, п. 5.4.1, п. 5.4.5; ADR-111 | AC-DS-007: widget-тест + ревью по чек-листу: поиск `textTertiary` в `lib/` — каждое вхождение на одном из перечисленных фонов и в стиле ≥ 13 lp; пары CP-021…CP-025, CP-084, CP-085 `allowed` в `check_contrast.py`; **0 нарушений** |
 | DS-008 | Цвета из макетов, не проходящие AA, не используются: #8B8FA0 → `textSecondary`, #0D9E48 → `success`, #E8202A → `error` | must | РЕШЕНИЕ (D-16; измеренные цвета — ядро §14) | SRC-B-046, ядро §14, R4 §1.5 | AC-DS-008: ни один из трёх HEX не встречается в `tokens/` |
 | DS-009 | Состояния `disabled` — единственное допустимое исключение из AA (`disabledText` 2.05:1); причина отключения при важности показывается текстом рядом | must | РЕШЕНИЕ | WCAG 1.4.3 (исключение), п. 5.2 | AC-DS-009: `AppButton.disabled` с `reason` отображает подпись |
 | DS-010 | Токены спроектированы для будущей тёмной темы без переименований (`DsColors.dark` — R2) | should | РЕШЕНИЕ | D-43, Q-006 | AC-DS-010: `DsColors` не содержит имён с привязкой к светлой теме («white», «light») |
-| DS-011 | Звезда избранного: выключенная — контур токена `warning` (палитра B — #8A6A00; в исторической A — #B45309; глиф `star` outlined); включённая — заливка `favorite #FEC50A` **с контуром** `warning` 1 px (3.19:1 к заливке); на фото — внутри круга `surface` 80 % | must | РЕШЕНИЕ | ядро §8.1, §24.1; п. 5.4.4, 5.4.5; A11Y-002 | AC-DS-011: golden `FavoriteToggle` (выкл./вкл., на `surface` и на фото); контур в обоих состояниях = `warning` текущей палитры (#8A6A00 в B) |
+| DS-011 | Звезда избранного: выключенная — контур токена `warning` (палитра B — #8A5300, ADR-111; в исторической A — #B45309; глиф `star` outlined); включённая — заливка `favorite #E2A93B` **с контуром** `warning` 1 px (3.01:1 к заливке; без контура 2.11:1 к `surface` — запрещено, CP-086); на фото — внутри круга `surface` 80 % | must | РЕШЕНИЕ | ядро §8.1, §24.1; п. 5.4.4, 5.4.5; A11Y-002; ADR-111 | AC-DS-011: golden `FavoriteToggle` (выкл./вкл., на `surface` и на фото); контур в обоих состояниях = `warning` текущей палитры (#8A5300 в B) |
 | DS-012 | Автоматическая проверка контраста всех пар токенов (эквивалент `contrast.py` R4 Приложение A) входит в CI; порог 4.5:1 текст / 3:1 нетекст; исключения — явный список | must | РЕШЕНИЕ | SRC-B-046, R4 Приложение A | AC-DS-012: тест `T-DS-012` на `DsColors.lightB` падает при изменении токена ниже порога |
 
 ### 18.2. Типографика (DS-013…DS-024)
@@ -3383,8 +3617,8 @@ abstract final class DsPhoneFormat { static String display(String e164); /* +996
 |---|---|---|---|---|---|
 | DS-041 | Классы окна: compact < 600, medium 600–1023, expanded 1024–1599, large ≥ 1600 (по ширине `MediaQuery.sizeOf`); раскладки по разделу 8 | must | РЕШЕНИЕ | SRC-B-056, SRC-E-100k, SRC-F-047, D-18 | AC-DS-041: widget-тест `AdaptiveScaffold` на 360/800/1280/1920 |
 | DS-042 | compact: одна колонка, `BottomNavBar` 80, `CartFab` 56, корзина — экран/sheet 92 %, оформление — 4 шага `CheckoutStepper.compact`, карточка товара — полноэкранный маршрут | must | РЕШЕНИЕ | D-18, п. 8.2 | AC-DS-042: golden SCR-10/20/21 при 360×640: одна колонка, `BottomNavBar` высотой 80, `CartFab` 56, корзина — лист 92 % высоты, `CheckoutStepper.compact` из 4 шагов, карточка товара — полноэкранный маршрут; размеры по `RenderBox` — допуск 0 lp; golden = эталон, утверждённый дизайнером по чек-листу п. 18.0 (0 расхождений) |
-| DS-043 | medium: `NavigationRailApp` 72 + контент; категории — drawer (портрет) / колонка 240 (ландшафт ≥ 840); корзина — overlay 320; карточка — панель 400 в ландшафте | must | РЕШЕНИЕ | D-18, п. 8.3 | AC-DS-043: golden SCR-10 при 800×1280 (портрет: `NavigationRailApp` 72, категории — drawer) и 960×600 (ландшафт ≥ 840: колонка категорий 240, карточка — панель 400); корзина — overlay 320; размеры по `RenderBox` — допуск 0 lp; golden = эталон, утверждённый дизайнером по чек-листу п. 18.0 (0 расхождений) |
-| DS-044 | expanded/large: три колонки как на макетах — сайдбар 240 (1024–1279) / 292 (≥ 1280), контент ≥ 464 с полями (416 без полей), `CartPanel` 320/340; оформление — модальное окно 920×min(860, 92 %) с четырьмя секциями; large — контент ≤ 1200 по центру или 6 карточек | must | РЕШЕНИЕ (D-18; трёхколоночная схема — факт макета, ядро §14) | ядро §14, D-18, п. 8.4–8.5 | AC-DS-044: golden SCR-10/21 при 1100×800, 1280×800 и 1920×1080: сайдбар 240 / 292 / 292, `CartPanel` 320 / 340 / 340, контент ≥ 464 lp; окно оформления 920 × min(860, 92 % высоты) с 4 секциями; при 1920 — контент ≤ 1200 по центру (`centered`); размеры по `RenderBox` — допуск 0 lp; golden = эталон, утверждённый дизайнером по чек-листу п. 18.0 (0 расхождений) |
+| DS-043 | medium: `NavigationRailApp` 72 + контент (режим `customer`; у сотрудника — без rail, шапка 68 с «☰» и drawer навигации, колонка каталога 132, корзина — drawer 420 — [РЕШЕНИЕ: ADR-112], п. 8.3); категории — drawer (портрет) / колонка 240 (ландшафт ≥ 840); корзина — overlay 320; карточка — панель 400 в ландшафте | must | РЕШЕНИЕ | D-18, п. 8.3 | AC-DS-043: golden SCR-10 при 800×1280 (портрет: `NavigationRailApp` 72, категории — drawer) и 960×600 (ландшафт ≥ 840: колонка категорий 240, карточка — панель 400); корзина — overlay 320; размеры по `RenderBox` — допуск 0 lp; golden = эталон, утверждённый дизайнером по чек-листу п. 18.0 (0 расхождений) |
+| DS-044 | expanded/large (у сотрудника — по ADR-112: без сайдбара навигации и постоянной `CartPanel`, колонка каталога 132 + контент, корзина — drawer 420, п. 8.4; ниже — прежняя схема ядра D-18, откат ADR-112 п. 9): три колонки как на макетах — сайдбар 240 (1024–1279) / 292 (≥ 1280), контент ≥ 464 с полями (416 без полей), `CartPanel` 320/340; оформление — модальное окно 920×min(860, 92 %) с четырьмя секциями; large — контент ≤ 1200 по центру или 6 карточек | must | РЕШЕНИЕ (D-18; трёхколоночная схема — факт макета, ядро §14) | ядро §14, D-18, п. 8.4–8.5 | AC-DS-044: golden SCR-10/21 при 1100×800, 1280×800 и 1920×1080: сайдбар 240 / 292 / 292, `CartPanel` 320 / 340 / 340, контент ≥ 464 lp; окно оформления 920 × min(860, 92 % высоты) с 4 секциями; при 1920 — контент ≤ 1200 по центру (`centered`); размеры по `RenderBox` — допуск 0 lp; golden = эталон, утверждённый дизайнером по чек-листу п. 18.0 (0 расхождений) |
 | DS-045 | Плотность `DsDensity`: standard (compact/medium) и compact (expanded/large) автоматически; плотность не уменьшает тач-цель ниже 44/48 | must | РЕШЕНИЕ | SRC-B-042, п. 8.1 | AC-DS-045: unit `DsDensity.forWindowClass`; тач-цели при compact-плотности ≥ 44 |
 | DS-046 | Смена класса окна (поворот, изменение окна Windows) не теряет состояние: корзина, поиск, категория, открытая карточка, шаг оформления, диалоги (п. 8.7) | must | РЕШЕНИЕ | SRC-F-016, SRC-B-056 | AC-DS-046: integration: поворот на SCR-21 шаг 2 → шаг 2 на новой раскладке |
 | DS-047 | Основные действия на compact — в нижней трети экрана; поиск закреплён сверху, но доступен из нижней панели; `CartFab` не скрывается при прокрутке | must | ТИПОВО | SRC-B-059, правило 9 раздела 3.4 | AC-DS-047: widget-тест при 360×640 + ревью по чек-листу: основные CTA SCR-10/20/21/22 (по таблицам элементов 02) расположены в нижней трети экрана (верх кнопки ≥ 2/3 высоты); после прокрутки списка на 2000 lp `CartFab` видим, `SearchBar` остаётся на месте; в `BottomNavBar` есть переход к поиску; **0 нарушений** |
@@ -3403,7 +3637,7 @@ abstract final class DsPhoneFormat { static String display(String e164); /* +996
 | DS-055 | Карточки товара: сетка (`ProductCardGrid`) — фото 1:1, звезда (цель 48), статус наличия, название 2 строки, артикул, цена `title/700`, кнопка «+ Добавить» → степпер; список (`ProductCardList`) 72/64; компакт (`ProductCardCompact`) 48 — таблица; обязательные поля, которых нет на макете: артикул, остаток, единица | must | РЕШЕНИЕ | SRC-E-100f, SRC-F-029, SRC-F-030, ядро §14 | AC-DS-055: golden 3 видов × 3 состояния наличия |
 | DS-056 | Поля ввода (`AppTextField`, `PhoneField`, `OtpField`, `PinField`, `SearchBar`): высоты 40/48/56, обводка `borderStrong` 1 px → `primaryText` 2 px в фокусе → `error` 2 px; подпись над полем; ошибка под полем; `maxLength` для полей 1С | must | РЕШЕНИЕ | SRC-E-100g | AC-DS-056: golden = эталон, утверждённый дизайнером по чек-листу п. 18.0 (0 расхождений) для 5 полей (`AppTextField`, `PhoneField`, `OtpField`, `PinField`, `SearchBar`) × высоты 40/48/56 × {default, focused, error, disabled}; widget-тест: обводка 1 px `borderStrong` → 2 px `primaryText` в фокусе → 2 px `error`; подпись над полем, ошибка под полем; `maxLength` полей 1С = длинам 07/08 (0 несовпадений) |
 | DS-057 | Корзина (`CartPanel/CartLine/CartSummary/DiscountInput/CartFab`) отображает все состояния промта: пустая, с товарами, изменение количества, удаление, изменение цены (`warningContainer` + баннер), недостаточный остаток (`error`-полоса + подпись), устаревшие данные («данные от 09:41»), ошибка оформления (CTA disabled + причина) | must | РЕШЕНИЕ | SRC-F-031, D-32, D-41 | AC-DS-057: golden = эталон, утверждённый дизайнером по чек-листу п. 18.0 (0 расхождений) для 8 состояний корзины (пустая; с товарами; изменение количества; удаление; изменение цены — `warningContainer` + баннер; недостаточный остаток — `error`-полоса + подпись; устаревшие данные «данные от 09:41»; ошибка оформления — CTA disabled + причина) — 8/8 |
-| DS-058 | Бейдж счётчика корзины — `primary`/`onPrimary` (палитра B: #FF8700 с тёмным текстом #1B1F2A, 6.83:1; не красный); красный `error` — только уведомления, долг, ошибки | must | РЕШЕНИЕ | п. 9.27, DS-005 | AC-DS-058: golden = эталон, утверждённый дизайнером по чек-листу п. 18.0 (0 расхождений) для шапки `CartPanel`; widget-тест: фон бейджа счётчика = `primary`, текст = `onPrimary` (#1B1F2A; белый — 0 вхождений); токен `error` в бейдже счётчика корзины — 0 вхождений |
+| DS-058 | Бейдж счётчика корзины — `primary`/`onPrimary` (палитра B по ADR-111: #D9380F с белым текстом, 4.64:1; не красный — близость `primary` к `error` различается местом и иконкой, Q-333); красный `error` — только уведомления, долг, ошибки | must | РЕШЕНИЕ | п. 9.27, DS-005 | AC-DS-058: golden = эталон, утверждённый дизайнером по чек-листу п. 18.0 (0 расхождений) для шапки `CartPanel`; widget-тест: фон бейджа счётчика = `primary`, текст = `onPrimary` (белый по ADR-111; контраст ≥ 4.5:1); токен `error` в бейдже счётчика корзины — 0 вхождений |
 | DS-059 | Персонаж (`Mascot`) — 160/200 lp на белых экранах авторизации SCR-01/02/03/04/08 (SCR-07 — только `idle`; на SCR-03/04 в строке заголовка — `mini` 56/72, на SCR-06 — иллюстрация вместо персонажа — ядро §19.4, DS-091), 6 состояний Rive `MascotAuth`, независимый визуальный слой, статичные кадры при reduce-motion и при сбое asset; зелёная галочка `SuccessCheck` 48 после улыбки | must | РЕШЕНИЕ | SRC-B-069…078, SRC-F-021…023, D-40 | AC-DS-059: тест `MascotController` (`features/auth/presentation`, владелец 09 §11.3): `success` только после ответа 2xx `authenticated`; авто-retry через 1,5 с только для `OTP_INVALID`/`PIN_INVALID`/`VALIDATION_FAILED`; `typing → idle` после потери фокуса > 2 с; имена методов — п. 17.6 (ядро §18.2 п.15); golden 6 кадров виджета `Mascot` |
 | DS-060 | Иллюстрации — только в `EmptyState`, SCR-00, экранах авторизации SCR-01/02/03/04/07/08 (персонаж) и SCR-06 (`customer_link` — ядро §19.4); стиль п. 14.1; заглушка фото — `surfaceVariant` + иконка `image` `textSecondary` + «Нет фото» (≥ 120 lp); чужое фото никогда не подставляется | must | РЕШЕНИЕ | SRC-B-058, D-30, SRC-F-030 | AC-DS-060: ревью asset-папок; тест `ProductImage` при 404 → заглушка |
 
@@ -3473,7 +3707,7 @@ abstract final class DsPhoneFormat { static String display(String e164); /* +996
 
 | ID | Требование | Приоритет | Статус | Источник | Критерий приёмки |
 |---|---|---|---|---|---|
-| DS-098 | Правило ролей цвета палитры B (п. 5.9): оранжевая заливка `primary`/`primaryHover`/`primaryPressed` — только с `onPrimary #1B1F2A`; белый текст или иконка на оранжевом запрещены; текст, ссылки, цены, итоги, активные иконки, обводки и полосы выбранного, индикаторы вкладок, прогресса и радио — `primaryText #B04E00`; кольцо фокуса — `focus #1F5FA8`; `warning #8A6A00` — всегда с иконкой и текстом; оранжевый не означает статус; логотип — оранжевый `Logo Orange.png` на белом | must | РЕШЕНИЕ | ядро v1.9 §24.1; D-16; Q-006; SRC-B-044, SRC-B-046, SRC-E-099c, SRC-E-100a | AC-DS-098: (1) unit: `AppTheme.light()` → `DsColors.lightB`; (2) статический поиск в `lib/design_system/components/`: `colors.primary` в цвете `TextStyle`, `Icon`, `BorderSide` и индикаторов — **0 вхождений**; (3) widget-тест: у каждого компонента с заливкой `primary` цвет текста и иконки = `onPrimary` — 0 нарушений; (4) contrast-тест DS-012 на `DsColors.lightB` — 0 пар ниже порога вне списка исключений п. 5.4.5; (5) golden `StockBadge.low`, `OfflineBanner`, `ReceivableBadge.due`, `StatusChip.warning` содержат иконку — 0 нарушений; (6) golden `SplashLogo.splash` — оранжевый знак на `surface` #FFFFFF |
+| DS-098 | Правило ролей цвета палитры B (п. 5.9; значения — ADR-111): оранжевая заливка `primary`/`primaryHover`/`primaryPressed` (#D9380F / #BF300B / #A82A09) — только с `onPrimary` (белый, ≥ 4.5:1: 4.64 / 5.76 / 7.00); белый текст или иконка запрещены на оранжевых заливках ниже 4.5:1 — `brandAccent #FF8700` (2.41:1); текст, ссылки, цены, итоги, активные иконки, обводки и полосы выбранного, индикаторы вкладок, прогресса и радио — `primaryText #C9330C`; текст на тинте — `onPrimaryContainer #A82A09`; кольцо фокуса — `focus #1F5FA8`; `warning #8A5300` — всегда с иконкой и текстом; оранжевый не означает статус; логотип — оранжевый `Logo Orange.png` на белом | must | РЕШЕНИЕ | ядро v1.9 §24.1; D-16; Q-006; ADR-111; Q-333; SRC-B-044, SRC-B-046, SRC-E-099c, SRC-E-100a | AC-DS-098: (0) `scripts/check_contrast.py`: пара «#FFFFFF на primary» обязательна и `allowed` тогда и только тогда, когда ≥ 4.5:1, CP-087 «белый на brandAccent» — `forbidden`; (1) unit: `AppTheme.light()` → `DsColors.lightB`; (2) статический поиск в `lib/design_system/components/`: `colors.primary` в цвете `TextStyle`, `Icon`, `BorderSide` и индикаторов — **0 вхождений**; (3) widget-тест: у каждого компонента с заливкой `primary` цвет текста и иконки = `onPrimary`, контраст `onPrimary`/`primary` ≥ 4.5:1 — 0 нарушений; (4) contrast-тест DS-012 на `DsColors.lightB` — 0 пар ниже порога вне списка исключений п. 5.4.5; (5) golden `StockBadge.low`, `OfflineBanner`, `ReceivableBadge.due`, `StatusChip.warning` содержат иконку — 0 нарушений; (6) golden `SplashLogo.splash` — оранжевый знак на `surface` #FFFFFF |
 
 ---
 
@@ -3508,6 +3742,7 @@ abstract final class DsPhoneFormat { static String display(String e164); /* +996
 | Q-112 | [НОВЫЙ ВОПРОС] Формат отображения телефона: `+996 XXX XXX XXX` (ТЗ) или `+996 (700) 123-45-67` (макет); формат в печатных формах | `DsPhoneFormat`, `PhoneField`, `CustomerCard` | 3-3-3 — принято ядром v1.2 §17.2 до ответа на вопрос (хранение и API — E.164) |
 | Q-113 | [НОВЫЙ ВОПРОС] Яркость экрана и «режим покупателя» для показа QR на compact (поворот устройства к клиенту, временное повышение яркости, скрытие остальных данных) | `QrPanel.fullscreen` | `could` |
 | Q-303 | Кто такой «супер-админ» заказчика: администратор системы или владелец магазина; нужна ли отдельная роль выше администратора (ядро v1.9 §24.5) | `RoleBadge` (9.61): набор ролей и подписей; новая роль потребует иконку и стиль старших ролей | `admin` («Администратор»), не блокирует |
+| Q-333 | [НОВЫЙ ВОПРОС; 14 §3.5, ADR-111] Подтверждает ли заказчик цвета по утверждённому прототипу (заливка #D9380F с белым текстом, текст #0E1456, фон #F1F6FC); оставить `error` #D21B1F рядом с `primary` (ΔE 12) или сделать темнее (#C0182B) | п. 5.3, 5.5, 5.8, 5.9; DS-001, DS-098; `tokens.json` 1.1.0 | палитра по прототипу (ADR-111); откат — `DsColors.lightB20261021` |
 
 Вопросы других документов, влияющие на компоненты 03 (по ядру v1.4 §19.5): **Q-204** (сортировки каталога `available:desc`, `sku:asc` — `SortMenu` 9.24) — закрыт решением ядра v1.4; **Q-216** (список конфликтов привязки `GET /customers?linkStatus=proposed,conflict` — `CustomerPicker` 9.35, `CustomerCard.conflict` 9.36) — закрыт решением ядра v1.4; **Q-218(б)** (контакты ответственного за ПДн и поддержки — `GET /settings/public`: `privacyContact`, `supportContacts`; тексты ссылок «Техническая поддержка» на экранах авторизации) — закрыт решением ядра v1.4; **Q-221** (точечное обновление долга `POST /customers/{id}/receivables/refresh` — `ReceivableBadge` 9.37) — закрыт решением ядра v1.4. Остаются открытыми: Q-215 (период журналов по умолчанию — `DateRangePicker` 9.60; максимум 366 дней закреплён ядром §19.4), Q-241 (офлайн-разблокировка — вне R1; SCR-08 без сети — п. 12.3).
 
@@ -3640,6 +3875,7 @@ abstract final class DsPhoneFormat { static String display(String e164); /* +996
 | 14 | §15 (09) | Для согласования с 09_AUTH: (а) `PinField` — каноническая визуальная спецификация 03 §9.6, 09 BIO-022 должен ссылаться на неё; (б) инвариант 4 в 09 §11.1 «галочка fade 150 мс» при reduce-motion противоречит §17.5 (≤ 80 мс) — в 03 принято 80 мс; (в) имена методов `MascotController` в 03 §17.6 — `[НОВОЕ ИМЯ]`, владелец — 09 §11.3 | (б) и (в) учтены ядром v1.3 §18.2 п.15: галочка при reduce-motion — crossfade ≤ 80 мс (09 §11 выравнивает), `blink` входит в `MascotAuth`, имена методов `MascotController` — канон 03 §17.6 [РЕШЕНИЕ: ядро §18.2 п.15]; (а) — передать автору 09 |
 | 15 | §17.5, §17.6 | 02 SCR-05 UI-05-004 вводит компонент `FaceCaptureView` [НОВОЕ ИМЯ] для условного модуля FACE-SCAN (R2); в перечне ядра §17.5 его нет | Спецификация — 03 п. 9.69 (условно, вне R1, Q-003); при включении модуля R2 — добавить `FaceCaptureView` в перечень компонентов ядра §17.5 и вариант `AppProgress.stepped` `shape: ring`; до этого имя используется только в 02 SCR-05 и 03 п. 9.69 (волна 4) |
 | 16 | §8.1, §24.1 | Ядро §8.1 приводит HEX палитры A (`primary #0053FA`, контур звезды `warning #B45309`); с v1.9 основная палитра — B (§24.1), где `warning` = #8A6A00 | При следующей редакции ядра в §8.1 сослаться на 03 §5.3 как на источник значений; контур звезды — токен `warning` (#8A6A00 в B). До этого 03 следует §24.1 (высший приоритет): DS-011 и п. 9.23 используют токен `warning` (v1.9) |
+| 17 | §24.1, §8.1 | ADR-111 (2026-10-29): значения палитры B взяты из утверждённого прототипа `visual/prototype/Main.dc.html` — отклонение от HEX §24.1 (#FF8700 с тёмным `onPrimary`, `primaryText` #B04E00) и от строки «Макеты остаются эталоном компоновки, а не цвета»; правило «белый на оранжевом запрещён» сужено до оранжевых заливок ниже 4.5:1; введены токены [НОВОЕ ИМЯ] `primaryContainerBorder`, `onPrimaryContainer` (DS-002) | После ответа на Q-333 записать значения ADR-111 и два токена в §24.1 / §8.1 либо, при отказе заказчика, вернуть палитру откатом (`DsColors.lightB20261021`) и закрыть ADR-111 |
 
 ---
 
@@ -3796,7 +4032,7 @@ abstract final class DsPhoneFormat { static String display(String e164); /* +996
 |---|---|---|
 | §18 AC-DS-078 — «CI запускает T-DS-050…066» не отражает, что группа включает widget-тесты T-DS-061/064 (minor) | known | **Исправлено**: AC-DS-078 приведён к строке `T-DS-050…066` п. 17.9 — группа = golden alchemist + widget-тесты `T-DS-053`, `T-DS-061` (правила движения), `T-DS-064` (reduce-motion); измеримый результат — 0 падений, изменение golden без ревью дизайнера блокирует merge. ID требований и тестов не изменены |
 
-## 25. Журнал технических уточнений этапов D–G (версии 1.1–1.5, 2026-10-22 — 2026-10-24)
+## 25. Журнал технических уточнений этапов D–G и переноса прототипа (версии 1.1–1.17, 2026-10-22 — 2026-10-29)
 
 | Пункт | Что уточнено | Раздел |
 |---|---|---|
@@ -3814,5 +4050,16 @@ abstract final class DsPhoneFormat { static String display(String e164); /* +996
 | ревью закрытия F, второй круг (RS-6; версия 1.4) | §16.8: статус «замена временных ключей — бэклог FE» снят — `pos-app` использует все 26 ключей (02 SCR-25 «Уточнения» п. (3) обновлён) | §16.8 |
 | GQ-FECASH-03 (spec-sync G; ADR-107; версия 1.5) | составные компоненты и обёртки этапа G вне реестра §9 | §10 (примечание перед матрицей) |
 | GQ-FERET-01, GQ-FERET-02, GQ-FECUST-01, 02, 06, 11, 15, GQ-FECASH-04, GQ-FEADM-01, 02, 04, 05, 06, 11, GQ-FECM-01, FIX-G-FE-SETTINGS-LABELS, FIX-G-FE-OVERDUE-TOTAL, FIX-G-FE-LIMIT-NOT-SET, FIX-G-FE-OUTBOX-LABELS, FIX-G-FE-PRINT (spec-sync G; версия 1.5) | новый §16.9 — ключи ARB, запрошенные реализацией этапа G (не внесены; внесение — одним изменением с заменой временных ключей) | §16.9 |
+| CQ-LAY-01, CQ-LAY-02, CQ-STAB (фото), REV (фото) (макет заказчика 2026-10-28; ADR-110; версия 1.6) | `CategoryTile` — раскладки `sidebar` (колонка категорий 120/72 lp) и `ribbon` (лента подкатегорий 128×120) на экране выбора товаров; `CategorySidebarItem` остаётся на SCR-50; `ProductImage` — fade-in только до первого кадра, кэшированное фото без проявления, относительный адрес фото от адреса API; новых ключей ARB нет | §9.8, §9.10, §9.14 |
+| ADR-111, Q-333 (палитра по утверждённому прототипу `visual/prototype/Main.dc.html`, одобрение пользователя 2026-10-29; версия 1.7) | значения палитры B по прототипу с поправками до AA (`textTertiary` #656E80, `errorContainer` #FDEAEA); белый `onPrimary` на `primary` #D9380F (4.64:1), запрет белого — только для оранжевых заливок ниже 4.5:1 (`brandAccent`); токены [НОВОЕ ИМЯ] `primaryContainerBorder`, `onPrimaryContainer`; таблицы контраста и симуляции пересчитаны (`tokens.json` 1.1.0, пары CP-001…CP-090); сопоставление размеров прототипа со шкалами и layout-токены; откат — `alternatives.B_2026_10_21` / `DsColors.lightB20261021`; ядро не редактируется (замечание 17 раздела 21) | §1, §5.1, §5.2, §5.3, §5.4.2, §5.4.3, §5.4.5, §5.5, §5.6, §5.7, §5.8, §5.9, §7.1, §9, §9.1, §9.11, §9.23, §9.30, §17.2, §17.7, §18 (DS-001, DS-002, DS-007, DS-011, DS-058, DS-098), §15 (A11Y-001, A11Y-002), §19, §21 |
+| ADR-112, Q-334 (шапка и навигация сотрудника по утверждённому прототипу `visual/prototype/Main.dc.html`, одобрение пользователя 2026-10-29; версия 1.8) | раскладки medium/expanded сотрудника без rail и сайдбара, drawer навигации по «☰»; `TopAppBarPos.full` 68: «☰» слева от логотипа, знак 38 + «Оптомстрой» `h3 700`, поиск от логотипа до 680, правая группа sync → корзина → колокольчик → аватар, без часов и даты; `TopAppBarUser` 38; `SearchBar.header` 44 (область ввода 48), плейсхолдер `textTertiary`; `NotificationBell.header` 44; адаптивный `SyncIndicator`; `AdaptiveScaffold.navigation` (`rail` / `none`); `NavigationRailApp` — только `customer`; новые компоненты [НОВОЕ ИМЯ] `TopAppBarCartButton` (§9.70) и `NavigationDrawerApp` (§9.71); ядро не редактируется (отклонение D-18, §9 — ADR-112, Q-334) | §8.3, §8.4, §8.6, §9.7, §9.40, §9.51, §9.54, §9.56, §9.57, §9.70, §9.71, §10, §18 (DS-043, DS-044) |
+| ADR-112, Q-334 (экран выбора товаров по утверждённому прототипу `visual/prototype/Main.dc.html`, одобрение пользователя 2026-10-29; версия 1.9) | колонка категорий 132 на medium и шире; `CategoryTile` `sidebar` (≥ 88) и `ribbon` 118×148 с нейтральной заглушкой; `ScrollRibbon` (стрелки 38, шеврон `focus`, обрезка видимой части); строка управления — новый `ToolbarToggleButton`, стиль `toolbar` у `ViewModeSegmented` и `SortMenu`; встроенная панель фильтров; карточки: сетка (фото 150 `contain`, звезда 34, «/ шт», кнопки `AppButton.card`, `inCart` «В корзине · N — ещё +1», серая «Нет в наличии», `kProductCardGridExtent`, сетка от 176 с зазором 16), «Список» (карточки с зазором 8), «Компакт» (таблица Артикул · Наименование · Наличие · Цена · кнопка); `StockBadge.inline` 14/`caption`; `ProductImage` `height`/`background`; `PriceText.unitStyle`; `AppButton` `card`/`cardCompact`/`tint` | §9.1, §9.10–§9.14, §9.16, §9.17, §9.23–§9.26, §9.72, §9.73, §10 |
+| ADR-112, Q-334 (корзина сотрудника по утверждённому прототипу `visual/prototype/Main.dc.html`, одобрение пользователя 2026-10-29; D5; версия 1.10) | `CartPanel.overlay` — drawer 420 справа на medium, expanded и large (модальный маршрут корня, затемнение `overlay`, `elevation.3`, ANIM-025 / crossfade 80 мс; ×, затемнение, `Esc`; фокус — на кнопку-инициатор); заголовок «Корзина · N поз.»; кнопки зоны G в одну строку (`AppButton.cta` 48, подписи с `F8`/`F9` на настольных платформах); постоянной CP нет; `CartLine.emphasized`; `CartSummary.note` (UI-20-034) и `padding`; `CartFab` — compact и `customer` на medium; `AppSnackbar` — тост «Добавлено: {name}» (`brief`, `bottomEnd`, ≤ 360, 2 с / 8 с) и `AppSnackbarRegion` (снекбары корзины над затемнением); `TopAppBarCartButton` — связь с данными корзины, `focusNode`, клавиши `F4`/`F8`/`F9` при закрытом drawer | §9.1, §9.27–§9.30, §9.48, §9.70 |
+| ADR-112, Q-334 (QA прототипа `visual/prototype/Main.dc.html`, раунд 1; версия 1.11) | `AppButton.neutral` и `link`; `QuantityStepper.group`; `CartLine.emphasized` — сумма строки одним кеглем, поля 20, светлый разделитель; подвал drawer `CartPanel` и `CartSummary.drawer`; подпись `CategoryTile` без переноса внутри слова (у ленты — без уменьшения кегля), контурная заглушка ленты; глифы `DsGlyph` (сетка, штрихкод в рамке, двойная стрелка); значок успеха `AppSnackbar`; поля `ToolbarToggleButton` и `SortMenu.toolbar` 12, сегменты вида ≈ #3D4761; исключения §7.1 для полей колонки категорий и зазоров строки управления | §7.1, §9.1, §9.10, §9.20, §9.24, §9.26, §9.27, §9.28, §9.29, §9.48, §9.72 |
+| ADR-112, Q-334 (QA прототипа `visual/prototype/Main.dc.html`, раунд 2; версия 1.12) | вертикальный ритм экрана выбора товаров на medium и шире — по прототипу с точностью до 1 lp (заголовок 22 / 12, лента → строка управления 21, строка → сетка 15, «Каталог» в строку 23 с отступом 14) — исключения §7.1; `CategoryTile.ribbon` — блок подписи в 2 строки у низа карточки, нижнее поле 10; строка `ProductCardList` на medium+ — поля 10, высота 82; глиф `DsGlyph.bulletList` у сегмента «Список» стиля `toolbar`; `CartLine.emphasized` — название `label 13/600`; новых токенов и ключей ARB нет | §7.1, §9.10, §9.12, §9.26, §9.28 |
+| ADR-112, Q-334 (ревью переноса прототипа, раунд 3; версия 1.13) | `SyncIndicator` без подписи: `syncing` — `textSecondary`, фокус — `DsInteractive` + кольцо `focus`; `QuantityStepper.group` — визуально 112 × 32, цели 44 × 44; `ViewModeSegmented.toolbar` — цель 44 по высоте; `AppButton.link` снят — сброс фильтров `text` (`primaryText`); `ScrollRibbon` — шеврон `textSecondary`; подписи 12 lp («Арт.», заголовок «Компакта», «Нет фото», примечание итога) — `textSecondary` (DS-007); `SplashLogo.header` — кнопка с фокусом; `TopAppBarPos` — заголовок меню аватара с именем и ролью, `Semantics` «Профиль: {имя}, {роль}»; `TopAppBarCartButton` — `showLabel` (medium) и тултип предупреждения; `SearchBar.header` — `search_field_a11y` | §9.1, §9.7, §9.11, §9.13, §9.20, §9.26, §9.29, §9.40, §9.53, §9.57, §9.70, §9.73 |
+| ADR-112, Q-334 (паритет функций, раунд 2; версия 1.15) | `TopAppBarPos.full` сжимается по доступной ширине (`TopAppBarFit`): поле поиска не уже 240, порядок сворачивания необязательного, узкие зазоры, поле поиска второй строкой (шапка 124); `TopAppBarClock.shortDate`; `TopAppBarUser` и логотип — по ступени; `TopAppBarCartButton.countTooltip` | §8 (раскладка), §9.57, §9.70 |
+| ADR-112, Q-334 (QA паритета функций на окне Windows; версия 1.16) | `TopAppBarPos.searchComfortWidth` 320: пока у аватара видны имя или роль, поле поиска шапки `full` не уже 320 (имя сворачивается раньше, чем поле сжимается до `searchMinWidth` 240); `CategoryTile.sidebar` с пилюлей числа — картинка и подпись по центру плитки (`Stack` передаёт телу ограничения рамки); новых токенов и ключей ARB нет | §9.10, §9.57 |
+| ADR-111, ADR-112 (синхронизация документов-владельцев с реализацией переноса; версия 1.17) | шапка medium — по доступной ширине, с часами и датой (снято «без wordmark и имени»); колонка категорий сворачивается до 72 (UI-10-046); large — ширины сотрудника (132 / drawer 420) и `customer` (292); сводка перенесённых функций; `CartFab` и полноэкранная галерея — белый `onPrimary` по ADR-111 вместо прежнего «белый запрещён»; свёрнутая колонка категорий — плитки-иконки с тултипами (§9.10); код и токены не менялись | §8.3, §8.5, §8.6, §8.7, §9.10, §9.15, §9.30 |
 
 Конец документа.

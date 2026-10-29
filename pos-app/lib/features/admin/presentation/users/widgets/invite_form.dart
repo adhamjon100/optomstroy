@@ -19,6 +19,7 @@ import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/features/admin/domain/users/invitation.dart';
 import 'package:optomstroy/features/admin/domain/users/step_up.dart';
+import 'package:optomstroy/features/admin/presentation/common/admin_format.dart';
 import 'package:optomstroy/features/admin/presentation/users/admin_failure_text.dart';
 import 'package:optomstroy/features/admin/presentation/users/admin_users_controller.dart';
 import 'package:optomstroy/features/admin/presentation/users/widgets/admin_actions.dart';
@@ -77,7 +78,8 @@ class _InviteFormState extends ConsumerState<InviteForm> {
   @override
   void initState() {
     super.initState();
-    final now = ref.read(clockProvider).nowUtc().toLocal();
+    // «Сегодня» — день магазина Asia/Bishkek (02 §0.1), а не пояса машины.
+    final now = AdminFormat.wall(ref.read(clockProvider).nowUtc());
     _today = DateTime(now.year, now.month, now.day);
     _expiresAt = InvitationRules.defaultExpiry(_today);
     final initialRole = widget.initial?.roleCodes.firstOrNull;

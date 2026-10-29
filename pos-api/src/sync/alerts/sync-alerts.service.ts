@@ -258,6 +258,49 @@ export class SyncAlertService {
     return created;
   }
 
+  /**
+   * Несовместимая версия API расширения 1С (05 ONEC-095, F13): тревога `sync_error` администратору; повтор — не чаще
+   * раза в `repeatMinutes` для той же версии (окно в ключе дедупликации). Текст — версии и действие, без ПДн.
+   */
+  async onecApiIncompatible(info: {
+    readonly apiVersion: string;
+    readonly extensionVersion: string | null;
+  }): Promise<number> {
+    const bucket = Math.floor(Date.now() / (this.repeatMinutes * 60_000));
+    const created = await this.notify(COUNT_MISMATCH_ROLES, {
+      severity: 'error',
+      title: 'Обмен с 1С приостановлен: несовместимая версия',
+      body:
+        `Расширение 1С сообщает версию API «${info.apiVersion}»` +
+        `${info.extensionVersion ? ` (расширение ${info.extensionVersion})` : ''}, POS поддерживает другую. ` +
+        'Обмен приостановлен, данные не потеряны. Обновите backend POS или расширение 1С.',
+      payload: {
+        trigger: 'api_incompatible',
+        apiVersion: info.apiVersion,
+        ...(info.extensionVersion ? { extensionVersion: info.extensionVersion } : {}),
+      },
+      dedupeKey: `sync_error:api_incompatible:${info.apiVersion}:${bucket}`,
+    });
+    if (created > 0) {
+      this.log.error(
+        { apiVersion: info.apiVersion, extensionVersion: info.extensionVersion, recipients: created },
+        'sync.alert.api_incompatible: несовместимая версия API расширения 1С (05 ONEC-095)',
+      );
+    }
+    return created;
+  }
+
+  /** Версия API расширения снова совместима — обмен возобновлён (одно уведомление на снятие паузы). */
+  async onecApiRestored(info: { readonly apiVersion: string }): Promise<number> {
+    return this.notify(COUNT_MISMATCH_ROLES, {
+      severity: 'info',
+      title: 'Обмен с 1С возобновлён',
+      body: `Версия API расширения 1С «${info.apiVersion}» совместима с POS. Обмен с 1С снова выполняется.`,
+      payload: { trigger: 'api_restored', apiVersion: info.apiVersion },
+      dedupeKey: `sync_error:api_restored:${Date.now()}`,
+    });
+  }
+
   private async notify(
     roles: readonly string[],
     n: {

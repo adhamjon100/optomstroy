@@ -283,21 +283,18 @@ class _SyncStatusScreenState extends ConsumerState<SyncStatusScreen> with Widget
     final tab = tabs.contains(_tab) ? _tab : SyncStatusTab.entities;
     final expanded =
         !widget.sheet && (context.windowClass == WindowClass.expanded || context.windowClass == WindowClass.large);
+    // «Сейчас» для меток времени (тик 30 с; в тестах — `FixedClock` / переопределённый `syncNowProvider`).
+    final DateTime now = ref.watch(syncNowProvider).value ?? ref.read(clockProvider).nowUtc();
 
     final body = <Widget>[
       if (offline)
-        _LocalSummary(freshness: freshness)
+        _LocalSummary(freshness: freshness, now: now)
       else if (view.status == null && view.failure == null)
         const _SummarySkeleton()
       else if (view.status == null)
         ErrorState.inline(message: l10n.error_internal, onRetry: () => unawaited(_refresh()), retrying: view.loading)
       else ...<Widget>[
-        _SummaryCard(
-          status: view.status!,
-          role: role,
-          failed: view.failure != null,
-          now: ref.watch(syncNowProvider).value ?? ref.read(clockProvider).nowUtc(),
-        ),
+        _SummaryCard(status: view.status!, role: role, failed: view.failure != null, now: now),
         ..._staleBanners(context, view.status!, role),
       ],
       if (journal) ...<Widget>[
@@ -306,12 +303,13 @@ class _SyncStatusScreenState extends ConsumerState<SyncStatusScreen> with Widget
       ],
       SizedBox(height: context.space.s2),
       if (!journal || tab == SyncStatusTab.entities)
-        ..._entitiesZone(context, view, role, offline: offline)
+        ..._entitiesZone(context, view, role, offline: offline, now: now)
       else if (tab == SyncStatusTab.errors || tab == SyncStatusTab.outbox)
         _journalTab(view, tab)
       else
         _RunsList(
           view: view,
+          now: now,
           entity: _runsEntity,
           onEntity: _filterRuns,
           onOpen: (r) => unawaited(_openRun(r.id, initial: r)),
@@ -366,6 +364,7 @@ class _SyncStatusScreenState extends ConsumerState<SyncStatusScreen> with Widget
                     ? OfflineBannerVariant.offline
                     : (online == OnlineStatus.serverDown ? OfflineBannerVariant.serverDown : null),
                 dataAsOf: freshness.asOf,
+                now: now,
               ),
               Expanded(
                 child: RefreshIndicator(
@@ -402,9 +401,17 @@ class _SyncStatusScreenState extends ConsumerState<SyncStatusScreen> with Widget
 
   /// Зона B: офлайн — метки устройства; иначе — сущности сервера; до первого ответа — скелетон
   /// (при ошибке без данных скелетон не показывается — ошибка уже в зоне A).
-  List<Widget> _entitiesZone(BuildContext context, SyncStatusViewState view, RoleCode? role, {required bool offline}) {
-    if (offline) return _localRows(context, ref.watch(localSyncStatesProvider).value ?? const <LocalEntitySync>[]);
-    if (view.status != null) return _entityRows(context, view, role);
+  List<Widget> _entitiesZone(
+    BuildContext context,
+    SyncStatusViewState view,
+    RoleCode? role, {
+    required bool offline,
+    required DateTime now,
+  }) {
+    if (offline) {
+      return _localRows(context, ref.watch(localSyncStatesProvider).value ?? const <LocalEntitySync>[], now);
+    }
+    if (view.status != null) return _entityRows(context, view, role, now);
     if (view.failure != null) return const <Widget>[];
     return List<Widget>.generate(
       8,
@@ -433,7 +440,7 @@ class _SyncStatusScreenState extends ConsumerState<SyncStatusScreen> with Widget
     ];
   }
 
-  List<Widget> _entityRows(BuildContext context, SyncStatusViewState view, RoleCode? role) {
+  List<Widget> _entityRows(BuildContext context, SyncStatusViewState view, RoleCode? role, DateTime now) {
     final status = view.status!;
     final known = {for (final e in status.entities) e.entityValue: e};
     final rows = <Widget>[];
@@ -446,6 +453,7 @@ class _SyncStatusScreenState extends ConsumerState<SyncStatusScreen> with Widget
           status: s,
           role: role,
           busy: view.busy.contains(e),
+          now: now,
           onMenu: () => unawaited(_openRunDialog(entity: e)),
           onTap: SyncRunPolicy.canViewJournal(role) && !widget.sheet ? () => _filterRuns(e) : null,
         ),
@@ -454,10 +462,9 @@ class _SyncStatusScreenState extends ConsumerState<SyncStatusScreen> with Widget
     return rows;
   }
 
-  List<Widget> _localRows(BuildContext context, List<LocalEntitySync> local) {
+  List<Widget> _localRows(BuildContext context, List<LocalEntitySync> local, DateTime now) {
     final l10n = AppLocalizations.of(context);
     final byEntity = {for (final l in local) l.entity: l};
-    final now = ref.watch(syncNowProvider).value ?? ref.read(clockProvider).nowUtc();
     return <Widget>[
       for (final value in catalogCacheEntityOrder)
         if (SyncLabels.cacheEntity(value) case final e?)
@@ -465,7 +472,7 @@ class _SyncStatusScreenState extends ConsumerState<SyncStatusScreen> with Widget
             title: SyncLabels.entity(l10n, e),
             trailing: byEntity[value]?.asOf == null
                 ? Text(l10n.sync_never, style: context.text.caption.copyWith(color: context.colors.textSecondary))
-                : SyncIndicator.inline(time: byEntity[value]!.asOf!, stale: byEntity[value]!.isStale(now)),
+                : SyncIndicator.inline(time: byEntity[value]!.asOf!, stale: byEntity[value]!.isStale(now), now: now),
           ),
     ];
   }
@@ -536,7 +543,7 @@ class _SummaryCard extends StatelessWidget {
             runSpacing: context.space.s2,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: <Widget>[
-              SyncIndicator(variant: indicator, time: last),
+              SyncIndicator(variant: indicator, time: last, now: now),
               StatusChip(
                 label: status.onecReachable ? l10n.sync_onec_reachable : l10n.sync_onec_unreachable,
                 variant: status.onecReachable ? StatusChipVariant.success : StatusChipVariant.error,
@@ -546,7 +553,7 @@ class _SummaryCard extends StatelessWidget {
           ),
           SizedBox(height: context.space.s3),
           Text(
-            last == null ? l10n.sync_never : l10n.sync_last_success(_time(context, last)),
+            last == null ? l10n.sync_never : l10n.sync_last_success(_time(context, last, now)),
             style: context.text.body.copyWith(color: context.colors.textPrimary),
           ),
           if (!status.onecReachable) ...<Widget>[
@@ -555,7 +562,7 @@ class _SummaryCard extends StatelessWidget {
           ],
           SizedBox(height: context.space.s1),
           Text(
-            l10n.sync_checked_at(_time(context, status.checkedAt)),
+            l10n.sync_checked_at(_time(context, status.checkedAt, now)),
             style: context.text.caption.copyWith(
               color: failed || staleStatus ? context.colors.warning : context.colors.textSecondary,
             ),
@@ -575,9 +582,10 @@ class _SummaryCard extends StatelessWidget {
 
 /// Офлайн: «Каталог на устройстве обновлён HH:MM» по `sync_meta`.
 class _LocalSummary extends StatelessWidget {
-  const _LocalSummary({required this.freshness});
+  const _LocalSummary({required this.freshness, required this.now});
 
   final DataFreshness freshness;
+  final DateTime now;
 
   @override
   Widget build(BuildContext context) {
@@ -587,10 +595,10 @@ class _LocalSummary extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          SyncIndicator(variant: SyncIndicatorVariant.offline, time: at),
+          SyncIndicator(variant: SyncIndicatorVariant.offline, time: at, now: now),
           SizedBox(height: context.space.s2),
           Text(
-            at == null ? l10n.sync_never : l10n.sync_local_updated_at(_time(context, at)),
+            at == null ? l10n.sync_never : l10n.sync_local_updated_at(_time(context, at, now)),
             style: context.text.body.copyWith(color: context.colors.textPrimary),
           ),
         ],
@@ -599,7 +607,8 @@ class _LocalSummary extends StatelessWidget {
   }
 }
 
-String _time(BuildContext context, DateTime t) => dsTimeLabel(context, t);
+/// Время магазина (Asia/Bishkek) относительно «сейчас» экрана — не часов и пояса машины.
+String _time(BuildContext context, DateTime t, DateTime now) => dsTimeLabel(context, t, nowUtc: now);
 
 class _Tabs extends StatelessWidget {
   const _Tabs({required this.tabs, required this.selected, required this.onSelect});
@@ -696,6 +705,7 @@ class _EntityRow extends StatelessWidget {
     required this.status,
     required this.role,
     required this.busy,
+    required this.now,
     required this.onMenu,
     this.onTap,
   });
@@ -704,6 +714,7 @@ class _EntityRow extends StatelessWidget {
   final SyncServerEntity status;
   final RoleCode? role;
   final bool busy;
+  final DateTime now;
   final VoidCallback onMenu;
 
   /// Переход к «Прогонам» с фильтром сущности (UI-43-002).
@@ -713,9 +724,9 @@ class _EntityRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final parts = <String>[
-      status.lastSuccessAt == null ? l10n.sync_never : l10n.ds_updated_at(_time(context, status.lastSuccessAt!)),
+      status.lastSuccessAt == null ? l10n.sync_never : l10n.ds_updated_at(_time(context, status.lastSuccessAt!, now)),
       if (status.intervalSec != null) l10n.sync_interval((status.intervalSec! / 60).ceil()),
-      if (status.nextRunAt != null) l10n.sync_next_run(_time(context, status.nextRunAt!)),
+      if (status.nextRunAt != null) l10n.sync_next_run(_time(context, status.nextRunAt!, now)),
     ];
     final chips = <Widget>[
       if (status.running || busy)
@@ -724,7 +735,7 @@ class _EntityRow extends StatelessWidget {
         StatusChip(
           label: status.lastSuccessAt == null
               ? l10n.sync_never
-              : l10n.ds_data_as_of(_time(context, status.lastSuccessAt!)),
+              : l10n.ds_data_as_of(_time(context, status.lastSuccessAt!, now)),
           variant: StatusChipVariant.warning,
           icon: Icons.schedule_rounded,
           dense: true,
@@ -772,9 +783,16 @@ class _EntityRow extends StatelessWidget {
 
 /// Вкладка «Прогоны» (UI-43-009).
 class _RunsList extends ConsumerWidget {
-  const _RunsList({required this.view, required this.entity, required this.onEntity, required this.onOpen});
+  const _RunsList({
+    required this.view,
+    required this.now,
+    required this.entity,
+    required this.onEntity,
+    required this.onOpen,
+  });
 
   final SyncStatusViewState view;
+  final DateTime now;
 
   /// Фильтр сущности (`null` — все).
   final SyncEntity? entity;
@@ -857,7 +875,7 @@ class _RunsList extends ConsumerWidget {
                 subtitle: <String>[
                   if (mode != null) SyncLabels.mode(l10n, mode),
                   SyncLabels.trigger(l10n, r),
-                  if (r.startedAt != null) _time(context, r.startedAt!),
+                  if (r.startedAt != null) _time(context, r.startedAt!, now),
                 ].join(' · '),
                 trailing: StatusChip(label: text, variant: variant, dense: true),
               );

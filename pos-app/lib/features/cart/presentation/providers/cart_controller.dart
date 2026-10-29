@@ -27,6 +27,7 @@ import 'package:optomstroy/features/cart/domain/entities/cart.dart';
 import 'package:optomstroy/features/cart/domain/repositories/cart_repository.dart';
 import 'package:optomstroy/features/cart/domain/sync/cart_sync.dart';
 import 'package:optomstroy/features/cart/presentation/cart_formats.dart';
+import 'package:uuid/uuid.dart';
 
 /// Копия старше этого срока при открытии — баннер «Данные от {time} — обновляем…», CTA ждёт `GET /cart`
 /// (CART-016, `cart_stale_minutes` 15 мин [НЕ ПОДТВЕРЖДЕНО, Q-020]).
@@ -410,6 +411,8 @@ final class CartController extends Notifier<CartState> {
   final StreamController<CartNotice> _notices = StreamController<CartNotice>.broadcast();
   Timer? _catalogRetry;
   bool _disposed = false;
+  String? _parkKey;
+  Percent? _approvedDiscount;
 
   @override
   CartState build() {
@@ -417,6 +420,8 @@ final class CartController extends Notifier<CartState> {
     ref.watch(appDatabaseProvider);
     _sync = ref.watch(cartSyncProvider);
     _disposed = false;
+    _parkKey = null;
+    _approvedDiscount = null;
     ref.onDispose(() {
       _disposed = true;
       _debounce.dispose();
@@ -682,6 +687,21 @@ final class CartController extends Notifier<CartState> {
     }
     return f;
   }
+
+  /// `Idempotency-Key` «Отложить заказ» (08 §2.7): создаётся при первой попытке и остаётся тем же для повтора после
+  /// сетевого сбоя — в том числе после закрытия и нового открытия drawer корзины (D5, ADR-112). Сбрасывает
+  /// [releaseParkKey] (успех или иной отказ) и смена пользователя.
+  String parkIdempotencyKey() => _parkKey ??= const Uuid().v4();
+
+  /// Следующее «Отложить» — с новым ключом.
+  void releaseParkKey() => _parkKey = null;
+
+  /// Скидка, подтверждённая override старшего в этой сессии (UI-20-033 «Подтвердил: {name}», пока она применена);
+  /// живёт в контроллере, а не в панели — переживает закрытие drawer корзины. Сбрасывается сменой пользователя.
+  Percent? approvedDiscount() => _approvedDiscount;
+
+  /// Запомнить скидку, подтверждённую override старшего ([approvedDiscount]).
+  void markDiscountApproved(Percent percent) => _approvedDiscount = percent;
 
   /// «Отложить заказ» (UI-20-015/026): `POST /cart/park` с ключом [idempotencyKey] (создан при нажатии и
   /// переиспользуется при повторе) → новая пустая `active` (CART-030).

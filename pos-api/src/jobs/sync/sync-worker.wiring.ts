@@ -42,6 +42,7 @@ import { type ChangeJobPublisher, PgBossChangeJobPublisher } from '../../sync/ap
 import { CustomerOrderChangeHandler } from '../../sync/apply/customer-order.change-handler.js';
 import { DeferredDocumentsHandler } from '../../sync/apply/deferred-documents.handler.js';
 import { QrPaymentStatusChangeHandler } from '../../sync/apply/qr-payment-status.handler.js';
+import { OnecApiCompatibility } from '../../sync/alerts/onec-api-compat.js';
 import { OnecAuthPause } from '../../sync/alerts/onec-auth-pause.js';
 import { ensurePaymentsQueues } from '../payments/payments-jobs.js';
 import { CatalogSyncHandler } from './catalog-sync.handler.js';
@@ -96,6 +97,8 @@ export interface SyncWorkerWiring {
   readonly changeJobs: PgBossChangeJobPublisher;
   /** Пауза чтения после 401/403 (05 §6.5). */
   readonly authPause: OnecAuthPause;
+  /** Пауза обмена при несовместимой версии API расширения (05 ONEC-095). */
+  readonly apiCompat: OnecApiCompatibility;
   readonly source: CatalogFullSource | null;
   readonly gateway: OnecGateway | undefined;
 }
@@ -143,6 +146,7 @@ export function createSyncWorkerWiring(o: SyncWorkerWiringOptions): SyncWorkerWi
   // Очередь `payments.onec-qr-status` создаёт модуль payments; здесь — идемпотентно до первой публикации.
   const changeJobs = new PgBossChangeJobPublisher((boss) => ensurePaymentsQueues(boss));
   const authPause = new OnecAuthPause(o.pool, { alerts, log: applyLog });
+  const apiCompat = new OnecApiCompatibility(o.pool, { alerts, log: applyLog });
   const changeHandlers =
     o.changeHandlers ??
     defaultChangeHandlers({ salesHistoryMonths: o.config.SALES_HISTORY_MONTHS, publisher: changeJobs, log: applyLog });
@@ -157,6 +161,7 @@ export function createSyncWorkerWiring(o: SyncWorkerWiringOptions): SyncWorkerWi
           ...(source ? { slices: source } : {}),
           catalogChanges,
           authPause,
+          apiCompat,
         })
     : undefined;
   const changes = changesFor?.(tracker);
@@ -204,6 +209,7 @@ export function createSyncWorkerWiring(o: SyncWorkerWiringOptions): SyncWorkerWi
     catalogChanges,
     changeJobs,
     authPause,
+    apiCompat,
     source,
     gateway,
   };

@@ -9,6 +9,7 @@ import {
   type SyncTrigger,
 } from '../../common/enums.js';
 import { isOnecAuthFailure } from '../../integrations/onec/onec-error.js';
+import { OnecApiCompatibility, OnecApiPausedError } from '../../sync/alerts/onec-api-compat.js';
 import { OnecAuthPause } from '../../sync/alerts/onec-auth-pause.js';
 import { SyncAlertService } from '../../sync/alerts/sync-alerts.service.js';
 import type { SyncJobPayload } from '../../sync/scheduler/sync-queues.js';
@@ -28,6 +29,11 @@ export type SyncJobOutcome =
   | { readonly status: 'skipped'; readonly code: 'SYNC_ALREADY_RUNNING'; readonly activeRunId?: string }
   /** Пауза чтения после 401/403 (05 §6.5): к 1С не обращались; ручной прогон завершён `failed` с причиной. */
   | { readonly status: 'skipped'; readonly code: 'ONEC_AUTH_PAUSED'; readonly until: string; readonly runId?: string }
+  /**
+   * Обмен приостановлен из-за несовместимой версии API расширения (05 ONEC-095, F13): к 1С не обращались (или цикл
+   * `/changes` остановился на `/health`); ручной прогон завершён `failed` с причиной, `consecutive_errors` не растёт.
+   */
+  | { readonly status: 'skipped'; readonly code: 'ONEC_API_PAUSED'; readonly reason: string; readonly runId?: string }
   /** 1С отклонила авторизацию: прогон `failed`, без повторов pg-boss (05 §6.5), пауза и тревога администратору. */
   | { readonly status: 'failed'; readonly code: 'ONEC_AUTH_FAILED'; readonly runId: string };
 
@@ -39,10 +45,13 @@ export type SyncJobOutcome =
  */
 export class SyncJobProcessor {
   private readonly authPause: OnecAuthPause | null;
+  private readonly apiPause: Pick<OnecApiCompatibility, 'active'> | null;
 
   /**
    * `authPause` — пауза чтения после 401/403 (05 §6.5); по умолчанию — отметка `sync_node_state.auth_error_at` того же
-   * пула с тревогой администратору; `null` — без паузы.
+   * пула с тревогой администратору; `null` — без паузы. `apiPause` — пауза обмена по несовместимой версии API
+   * расширения (05 ONEC-095; 05 SYNC-028: «при `paused` cron-job завершается без обращения к 1С»); по умолчанию —
+   * отметка `sync_state.paused` того же пула; `null` — без проверки.
    */
   constructor(
     private readonly registry: SyncRunRegistry,
@@ -50,11 +59,13 @@ export class SyncJobProcessor {
     private readonly db: Pick<pg.Pool, 'query'>,
     private readonly log: Logger,
     authPause?: OnecAuthPause | null,
+    apiPause?: Pick<OnecApiCompatibility, 'active'> | null,
   ) {
     this.authPause =
       authPause !== undefined
         ? authPause
         : new OnecAuthPause(db, { alerts: new SyncAlertService(db, log.child({ component: 'sync.alerts' })), log });
+    this.apiPause = apiPause !== undefined ? apiPause : new OnecApiCompatibility(db, { log });
   }
 
   async process(job: SyncJobMeta, raw: unknown): Promise<SyncJobOutcome> {
@@ -64,6 +75,9 @@ export class SyncJobProcessor {
     // 05 §6.5, ТЗ А.1: после 401/403 чтение из 1С — не раньше чем через 15 мин (все сущности читают 1С).
     const pause = await this.authPause?.active();
     if (pause) return this.skipPaused(payload, job, pause.until, base);
+    // 05 ONEC-095 / SYNC-028: обмен приостановлен (несовместимая версия API расширения) — к 1С не обращаемся.
+    const apiPaused = await this.apiPause?.active(payload.entity);
+    if (apiPaused) return this.skipApiPaused(payload, job, apiPaused.reason, base);
     let runId: string;
     try {
       runId = await this.registry.acquire({
@@ -117,6 +131,21 @@ export class SyncJobProcessor {
       runLog.info({ status: result.status ?? 'success', implemented: result.implemented }, 'sync.run.finished');
       return { status: 'completed', runId, implemented: result.implemented };
     } catch (e) {
+      if (e instanceof OnecApiPausedError) {
+        // Цикл `/changes` ручного прогона остановился на `/health` (ONEC-095): не ошибка прогона и не повтор.
+        await this.registry
+          .finish({
+            runId,
+            entity: payload.entity,
+            status: 'failed',
+            errorSummary: e.reason,
+            implemented: false,
+            updateState: false,
+          })
+          .catch((err: unknown) => runLog.error({ err }, 'sync.run.finish_failed'));
+        runLog.warn({ reason: e.reason }, 'sync.job.api_paused: обмен с 1С приостановлен (версия API)');
+        return { status: 'skipped', code: 'ONEC_API_PAUSED', reason: e.reason, runId };
+      }
       const message = e instanceof Error ? e.message : String(e);
       // 401/403: повтор не поможет до исправления учётных данных — без ретраев SYNC-029 (05 §6.5).
       const auth = isOnecAuthFailure(e);
@@ -173,7 +202,37 @@ export class SyncJobProcessor {
       { ...base, until: until.toISOString() },
       'sync.job.auth_paused: чтение из 1С приостановлено (401/403)',
     );
-    if (!payload.runId) return { status: 'skipped', code: 'ONEC_AUTH_PAUSED', until: until.toISOString() };
+    const runId = await this.failManualRun(
+      payload,
+      job,
+      `Чтение из 1С приостановлено до ${until.toISOString()}: 1С отклонила авторизацию (401/403). ` +
+        'Проверьте учётные данные интеграции (05 §6.5).',
+    );
+    return { status: 'skipped', code: 'ONEC_AUTH_PAUSED', until: until.toISOString(), ...(runId ? { runId } : {}) };
+  }
+
+  /** Пауза обмена по версии API (ONEC-095): как `skipPaused`, причина — `sync_state.paused_reason`. */
+  private async skipApiPaused(
+    payload: ReturnType<typeof parsePayload>,
+    job: SyncJobMeta,
+    reason: string,
+    base: Record<string, unknown>,
+  ): Promise<SyncJobOutcome> {
+    this.log.warn({ ...base, reason }, 'sync.job.api_paused: обмен с 1С приостановлен (версия API расширения)');
+    const runId = await this.failManualRun(payload, job, reason);
+    return { status: 'skipped', code: 'ONEC_API_PAUSED', reason, ...(runId ? { runId } : {}) };
+  }
+
+  /**
+   * Ручной прогон при паузе: строку, созданную `POST /sync/runs`, — в `failed` с причиной (без роста
+   * `consecutive_errors`). Плановый запуск (нет `runId`) и занятый singleton — без строки (`undefined`).
+   */
+  private async failManualRun(
+    payload: ReturnType<typeof parsePayload>,
+    job: SyncJobMeta,
+    summary: string,
+  ): Promise<string | undefined> {
+    if (!payload.runId) return undefined;
     let runId: string;
     try {
       runId = await this.registry.acquire({
@@ -185,22 +244,18 @@ export class SyncJobProcessor {
         ...(payload.userId ? { userId: payload.userId } : {}),
       });
     } catch (e) {
-      if (e instanceof SyncAlreadyRunningError) {
-        return { status: 'skipped', code: 'ONEC_AUTH_PAUSED', until: until.toISOString() };
-      }
+      if (e instanceof SyncAlreadyRunningError) return undefined;
       throw e;
     }
     await this.registry.finish({
       runId,
       entity: payload.entity,
       status: 'failed',
-      errorSummary:
-        `Чтение из 1С приостановлено до ${until.toISOString()}: 1С отклонила авторизацию (401/403). ` +
-        'Проверьте учётные данные интеграции (05 §6.5).',
+      errorSummary: summary,
       implemented: false,
       updateState: false,
     });
-    return { status: 'skipped', code: 'ONEC_AUTH_PAUSED', until: until.toISOString(), runId };
+    return runId;
   }
 }
 

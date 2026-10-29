@@ -35,6 +35,7 @@ class PriceText extends StatelessWidget {
     this.missingLabel,
     this.disabled = false,
     this.semanticLabel,
+    this.unitStyle,
   });
 
   /// Сумма; `null` — цены нет.
@@ -57,6 +58,9 @@ class PriceText extends StatelessWidget {
 
   /// Читаемая форма для screen reader («2 350 сом за штуку»).
   final String? semanticLabel;
+
+  /// Стиль единицы «/ шт»; по умолчанию `caption textSecondary` (карточки каталога по прототипу — `label`).
+  final TextStyle? unitStyle;
 
   /// Обозначение валюты в UI (03 §16.4: «сом»; код `KGS` — только API). Часть формата
   /// `DsMoneyFormat` (03 §17.1), а не строка ARB — см. E_spec_questions EQ-CAT-03.
@@ -136,7 +140,7 @@ class PriceText extends StatelessWidget {
             if (unit != null && unit!.isNotEmpty)
               TextSpan(
                 text: ' $unit',
-                style: context.text.caption.copyWith(color: c.textSecondary),
+                style: unitStyle ?? context.text.caption.copyWith(color: c.textSecondary),
               ),
           ],
         ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
+import 'package:optomstroy/design_system/components/date_range_picker.dart' show DsBishkekTime;
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -61,7 +62,8 @@ class OfflineBanner extends StatelessWidget {
   final String? actionLabel;
   final VoidCallback? onAction;
 
-  /// «Сейчас» для формата времени (тесты); по умолчанию — часы устройства.
+  /// «Сейчас» (UTC, из `clockProvider`) для формата метки: в тот же день — «09:41», иначе с датой.
+  /// Без него метка всегда с датой — компонент системные часы не читает.
   final DateTime? now;
 
   /// Иконка варианта.
@@ -87,7 +89,7 @@ class OfflineBanner extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     return switch (v) {
       OfflineBannerVariant.offline =>
-        dataAsOf == null ? l10n.ds_sync_offline : l10n.ds_offline_banner(dsTimeLabel(context, dataAsOf, now: now)),
+        dataAsOf == null ? l10n.ds_sync_offline : l10n.ds_offline_banner(dsTimeLabelOrFull(context, dataAsOf, now)),
       OfflineBannerVariant.reconnecting => l10n.ds_reconnecting,
       OfflineBannerVariant.backOnline => l10n.ds_back_online,
       OfflineBannerVariant.serverDown => l10n.ds_server_down,
@@ -171,11 +173,24 @@ class OfflineBanner extends StatelessWidget {
   }
 }
 
-/// Время метки данных: сегодня — «09:41», иначе — «12 окт., 09:41» (местное время устройства, Asia/Bishkek).
-String dsTimeLabel(BuildContext context, DateTime at, {DateTime? now}) {
-  final locale = Localizations.maybeLocaleOf(context)?.toLanguageTag() ?? 'ru';
-  final local = at.toLocal();
-  final today = (now ?? DateTime.now()).toLocal();
-  final sameDay = local.year == today.year && local.month == today.month && local.day == today.day;
-  return DateFormat(sameDay ? 'HH:mm' : 'd MMM, HH:mm', locale).format(local);
+/// Время метки данных по часам магазина Asia/Bishkek (UTC+6 круглый год; 02 §0.1, `core/utils/clock.dart`):
+/// в тот же день Бишкека, что и [nowUtc], — «09:41», иначе — «12 окт., 09:41». Пояс машины на вывод не влияет;
+/// [nowUtc] — из `clockProvider` / `syncNowProvider` вызывающего кода (в тестах — `FixedClock`).
+String dsTimeLabel(BuildContext context, DateTime at, {required DateTime nowUtc}) {
+  final String locale = Localizations.maybeLocaleOf(context)?.toLanguageTag() ?? 'ru';
+  final DateTime wall = DsBishkekTime.wall(at);
+  final DateTime today = DsBishkekTime.wall(nowUtc);
+  final bool sameDay = wall.year == today.year && wall.month == today.month && wall.day == today.day;
+  return DateFormat(sameDay ? 'HH:mm' : 'd MMM, HH:mm', locale).format(wall);
 }
+
+/// Метка времени, когда «сейчас» вызывающий код не передал: всегда с датой — «12 окт., 09:41» (Asia/Bishkek).
+/// Компоненты DS не читают системные часы (тест-страж `time_display_guard_test.dart`).
+String dsDateTimeLabel(BuildContext context, DateTime at) {
+  final String locale = Localizations.maybeLocaleOf(context)?.toLanguageTag() ?? 'ru';
+  return DateFormat('d MMM, HH:mm', locale).format(DsBishkekTime.wall(at));
+}
+
+/// [dsTimeLabel] при известном [nowUtc], иначе [dsDateTimeLabel].
+String dsTimeLabelOrFull(BuildContext context, DateTime at, DateTime? nowUtc) =>
+    nowUtc == null ? dsDateTimeLabel(context, at) : dsTimeLabel(context, at, nowUtc: nowUtc);

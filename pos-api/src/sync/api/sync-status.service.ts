@@ -56,6 +56,9 @@ const RULE_RE = /^FREQ=MINUTELY;INTERVAL=(\d+)$/;
  * полный. `overall` (05 §7.6.1): `failed` — 1С недоступна дольше `SYNC_ALERT_UNREACHABLE_MIN`, либо сущность с
  * `consecutive_errors ≥ 3`, либо `outbox.dead > 0`; `degraded` — устаревшая сущность (порог 1: возраст > 2×
  * интервала = `max_age_warning_sec`), `outbox.failed > 0` или заказы ручного оформления старше SLA; иначе `ok`.
+ * Сущность `paused` (в R1 — только автоматически при несовместимой версии API расширения, 05 ONEC-095/F13,
+ * SYNC-028) — тоже `degraded` («сущности `paused`, `degraded`»); причина паузы — `sync_state.paused_reason`
+ * (в ответ не выводится — поля в контракте нет, см. known_issues), текст — в уведомлении и в ручном прогоне.
  */
 @Injectable()
 export class SyncStatusService {
@@ -79,6 +82,7 @@ export class SyncStatusService {
     const entities: SyncEntityStatusDto[] = [];
     let anyStale = false;
     let anyFailing = false;
+    let anyPaused = false;
     for (const entity of SYNC_ENTITY_VALUES) {
       const r = byEntity.get(entity);
       const maxAge = r?.max_age_warning_sec ?? null;
@@ -88,6 +92,7 @@ export class SyncStatusService {
       // Сущность без расписания (нет строки sync_state) в «устаревание» не входит; без успеха — устарела.
       const isStale = r?.schedule_cron ? ageSec === undefined || (maxAge !== null && ageSec > maxAge) : false;
       if (isStale) anyStale = true;
+      if (r?.paused) anyPaused = true;
       const consecutiveErrors = Number(r?.consecutive_errors ?? 0);
       if (consecutiveErrors >= this.options.consecutiveErrorsThreshold) anyFailing = true;
       const e: SyncEntityStatusDto = {
@@ -119,7 +124,7 @@ export class SyncStatusService {
     const overall: SyncStatusDto['overall'] =
       unreachableAlert || anyFailing || outbox.dead > 0
         ? 'failed'
-        : anyStale || outbox.failed > 0 || overSla
+        : anyStale || anyPaused || outbox.failed > 0 || overSla
           ? 'degraded'
           : 'ok';
     return {

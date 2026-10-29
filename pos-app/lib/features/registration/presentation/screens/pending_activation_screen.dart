@@ -10,6 +10,7 @@ import 'package:optomstroy/design_system/components/app_bottom_sheet.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/app_snackbar.dart';
 import 'package:optomstroy/design_system/components/confirm_dialog.dart';
+import 'package:optomstroy/design_system/components/date_range_picker.dart' show DsBishkekTime;
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
@@ -103,12 +104,9 @@ class _PendingActivationScreenState extends ConsumerState<PendingActivationScree
       ),
       _ => (l10n.pending_status_waiting, StatusChipVariant.warning),
     };
-    final checked = s.checkedAt?.toLocal();
-    final checkedText = checked == null
-        ? null
-        : l10n.pending_checked_at(
-            '${checked.hour.toString().padLeft(2, '0')}:${checked.minute.toString().padLeft(2, '0')}',
-          );
+    // Время и дата — по часам магазина Asia/Bishkek (02 §0.1), не пояса машины.
+    final checked = s.checkedAt;
+    final checkedText = checked == null ? null : l10n.pending_checked_at(DsBishkekTime.time(checked));
 
     Widget row(String key, String value) => Padding(
       padding: EdgeInsets.symmetric(vertical: context.space.s2),
@@ -148,12 +146,7 @@ class _PendingActivationScreenState extends ConsumerState<PendingActivationScree
             row(l10n.pending_field_name, account?.fullName ?? '—'),
             row(l10n.pending_field_phone, phone),
             if (account?.registeredAt != null)
-              row(
-                l10n.pending_field_registered,
-                '${account!.registeredAt!.toLocal().day.toString().padLeft(2, '0')}.'
-                '${account.registeredAt!.toLocal().month.toString().padLeft(2, '0')}.'
-                '${account.registeredAt!.toLocal().year}',
-              ),
+              row(l10n.pending_field_registered, DsBishkekTime.date(account!.registeredAt!)),
             SizedBox(height: context.space.s4),
             Wrap(
               spacing: context.space.s2,

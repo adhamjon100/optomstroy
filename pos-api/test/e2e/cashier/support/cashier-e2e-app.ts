@@ -5,8 +5,10 @@ import { AdminModule } from '../../../../src/admin/admin.module.js';
 import { CustomersModule } from '../../../../src/customers/customers.module.js';
 import type { OnecConfirmedPayload, OnecFailedPayload } from '../../../../src/common/jobs/contracts/queues.js';
 import { CustomerOnecResultsHandler } from '../../../../src/customers/jobs/customer-onec-results.handler.js';
+import { createOrdersWorkerWiring, type OrdersWorkerWiring } from '../../../../src/jobs/orders/orders-worker.wiring.js';
 import { OutboxDispatcher } from '../../../../src/jobs/outbox/outbox-dispatcher.js';
 import { ReturnsModule } from '../../../../src/returns/returns.module.js';
+import { SyncApiModule } from '../../../../src/sync/api/sync-api.module.js';
 import { OnecOutboxDelivery } from '../../../../src/sync/outbox/onec-outbox.delivery.js';
 import { schedulerConfigFromEnv } from '../../../../src/sync/scheduler/scheduler.config.js';
 import { TransactionsModule } from '../../../../src/transactions/transactions.module.js';
@@ -31,6 +33,8 @@ export class CashierE2eApp extends CashierTestApp {
   readonly published: { name: string; data: Record<string, unknown> }[] = [];
   dispatcher!: OutboxDispatcher;
   results!: CustomerOnecResultsHandler;
+  /** Сборка обработчиков заказов pos-worker (хуки диспетчера, сверщик `outbox.reconcile-aggregates`). */
+  orderWiring!: OrdersWorkerWiring;
   private handled = 0;
 
   override async start(opts: PosFixtureOptions = {}): Promise<this> {
@@ -39,10 +43,14 @@ export class CashierE2eApp extends CashierTestApp {
     await super.start({
       ...opts,
       env: { QR_PROVIDER: 'none', ...(opts.env ?? {}) },
-      modules: opts.modules ?? G_E2E_MODULES,
+      // + HTTP API модуля sync (`POST /sync/outbox/{id}/retry` — ручной повтор элемента очереди «в 1С»).
+      modules: opts.modules ?? [...G_E2E_MODULES, SyncApiModule.forRoot()],
     });
     const log = pino({ level: 'silent' });
     this.results = new CustomerOnecResultsHandler(this.db, log);
+    // Хуки диспетчера — как в pos-worker: `createOrdersWorkerWiring` (реальный NotificationsPortService над тем же
+    // пулом): `dead` заказа и запаркованный заказ POS-клиента → уведомления `sync_error` (05 SYNC-042; G-KI-12).
+    this.orderWiring = createOrdersWorkerWiring({ config: this.config, pool: this.pool, log });
     this.dispatcher = new OutboxDispatcher(
       this.pool,
       new OnecOutboxDelivery(this.onec, { timeoutMs: 2_000 }),
@@ -55,6 +63,7 @@ export class CashierE2eApp extends CashierTestApp {
       schedulerConfigFromEnv(this.config, {}).outbox,
       'test-cashier-e2e-worker',
       log,
+      this.orderWiring.outboxHooks,
     );
     return this;
   }

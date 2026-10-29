@@ -1,4 +1,4 @@
--- docs/erd/schema_v1.sql — DDL схемы БД «Оптомстрой POS» после migrations/0001+0002+0003+0005+0006+0007+0009+0011+0012+0013+0017+0018+0019
+-- docs/erd/schema_v1.sql — DDL схемы БД «Оптомстрой POS» после migrations/0001+0002+0003+0005+0006+0007+0009+0011+0012+0013+0017+0018+0019+0020
 -- (RM-C-006 п. 5). Аналог `pg_dump --schema-only`: в embedded-postgres нет клиента pg_dump, Docker на машине
 -- нет — DDL выгружен из каталога (pg_get_functiondef/pg_get_constraintdef/pg_get_indexdef/pg_get_triggerdef)
 -- скриптом pos-api/test/db/support/schema-dump.ts; проверка — повторное применение к пустой БД даёт тот же
@@ -603,7 +603,9 @@ BEGIN
   END IF;
   IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
 
-  SELECT quantity, returned_quantity, line_total INTO si FROM shipment_items WHERE id = NEW.shipment_item_id;
+  -- Сериализация по строке реализации (G-KI-14): блокировка до подсчёта других открытых заявок.
+  SELECT quantity, returned_quantity, line_total INTO si FROM shipment_items WHERE id = NEW.shipment_item_id
+    FOR NO KEY UPDATE;
   SELECT coalesce(sum(i.quantity), 0) INTO v_other
     FROM return_request_items i JOIN return_requests r ON r.id = i.return_request_id
    WHERE i.shipment_item_id = NEW.shipment_item_id AND i.return_request_id <> NEW.return_request_id

@@ -22,6 +22,7 @@ import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/features/admin/domain/users/admin_user.dart';
 import 'package:optomstroy/features/admin/domain/users/admin_users_policy.dart';
 import 'package:optomstroy/features/admin/domain/users/step_up.dart';
+import 'package:optomstroy/features/admin/presentation/common/admin_format.dart';
 import 'package:optomstroy/features/admin/presentation/users/admin_failure_text.dart';
 import 'package:optomstroy/features/admin/presentation/users/admin_users_controller.dart';
 import 'package:optomstroy/features/admin/presentation/users/widgets/admin_actions.dart';
@@ -44,10 +45,11 @@ class _AdminUserCardState extends ConsumerState<AdminUserCard> {
 
   String _name(AdminUser u) => (u.fullName?.trim().isNotEmpty ?? false) ? u.fullName!.trim() : '—';
 
+  /// Дата (и время) по часам магазина Asia/Bishkek — не пояса машины.
   String _date(BuildContext context, DateTime? d, {bool time = false}) {
     if (d == null) return '—';
     final locale = Localizations.localeOf(context).toString();
-    return DateFormat(time ? 'd MMM, HH:mm' : 'd MMM y', locale).format(d.toLocal());
+    return DateFormat(time ? 'd MMM, HH:mm' : 'd MMM y', locale).format(AdminFormat.wall(d));
   }
 
   Future<void> _saveRole(AdminUser user, RoleCode role) async {

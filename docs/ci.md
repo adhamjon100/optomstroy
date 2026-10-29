@@ -1,14 +1,14 @@
 # CI и тестовый контур «Оптомстрой POS»
 
 Задачи: **RM-C-011** (CI) и **RM-C-012** (тестовый контур), 13_IMPLEMENTATION_ROADMAP §3.3. Владелец — `OPS` (+ `QA` для RM-C-012).
-Дата: 2026-10-21. Источники: 13 §3.3, §5.1, §5.3, §6.1; 12 §2.10–§2.11; 16 §4.1–§4.6, §8, §11; `CONTRIBUTING.md` §6; ядро R0 §20.2 п. 1–2.
+Версия 1.1 · Дата: 2026-10-21, обновлено 2026-10-28 (сверка с `infra/compose.test.yml` и `infra/docker/api/Dockerfile`, E-KI-13; журнал — §9). Источники: 13 §3.3, §5.1, §5.3, §6.1; 12 §2.10–§2.11; 16 §4.1–§4.6, §8, §11; `CONTRIBUTING.md` §6; ядро R0 §20.2 п. 1–2.
 
 | Файл | Назначение |
 |---|---|
 | `.github/workflows/ci.yml` | 12 jobs: 11 из перечня RM-C-011 и `test-contour` (RM-C-012 в CI) |
 | `infra/compose.test.yml` | тестовый контур: `caddy, api, worker, migrate, postgres, backup` |
 | `infra/caddy/Caddyfile` | pos-proxy (тест: внутренний CA; образец для prod — 16 §4.5) |
-| `infra/docker/api/Dockerfile` (+ `Dockerfile.dockerignore`) | образ `optomstroy/api` — один для api, worker и migrate |
+| `infra/docker/api/Dockerfile` (+ `Dockerfile.dockerignore`) | образ `optomstroy/api` — один для api, worker и migrate; стадии `release` (по умолчанию, прод — без фикстур) и `test-fixtures` (`release`-рантайм + `/contracts/onec/fixtures` для `ONEC_MODE=fixtures`; её собирает тестовый контур, `build.target`) |
 | `infra/docker/backup/Dockerfile`, `backup.sh` | образ `optomstroy/backup`: pg_dump 17 + age + rclone, расписание `BACKUP_SCHEDULE` |
 | `infra/docker/postgres/initdb/10-roles.sh` | роли БД `pos_migrate`, `pos_app`, `pos_readonly`, `pos_backup` при первой инициализации |
 | `infra/docker/scripts/gen-test-secrets.sh` | одноразовые секреты контура в `infra/secrets/` (вне git) |
@@ -93,9 +93,9 @@ cd pos-api && SMOKE_BASE_URL=https://localhost NODE_EXTRA_CA_CERTS=../infra/secr
 | Сервис | Образ | Сети | Порты | Секреты | Особенности |
 |---|---|---|---|---|---|
 | `caddy` | `caddy:2.11.6-alpine` | edge | **80, 443** — единственные | — | `localhost`, внутренний CA (`tls internal`), JSON-логи в stdout, без авторизации (DEPLOY-049) |
-| `api` | `optomstroy/api:test`, `node dist/main.js` | edge, backend | нет (`expose 3000`) | database_url, jwt_*, otp_pepper, pin_pepper | healthcheck `wget /health`; `user 10001`, `read_only`, `cap_drop ALL` |
-| `worker` | тот же образ, `node dist/worker.js` | edge, backend | нет | database_url, jwt_public.json | `WORKERS_ENABLED=true` |
-| `migrate` | тот же образ, `node dist/migrate.js --seed` | backend | нет | database_url, db_migrator_password | одноразовый; api и worker ждут `service_completed_successfully` |
+| `api` | `optomstroy/api:test` (стадия `test-fixtures`), `node dist/main.js` | edge, backend | нет (`expose 3000`) | database_url, jwt_private.pem, jwt_public.json, otp_pepper, pin_pepper | `WORKERS_ENABLED=false`; healthcheck `wget /health`; `user 10001`, `read_only`, `cap_drop ALL` |
+| `worker` | тот же образ, `node dist/worker.js` | edge, backend | нет | database_url, jwt_public.json, otp_pepper | `WORKERS_ENABLED=true`; `OTP_HMAC_SECRET_FILE=/run/secrets/otp_pepper` — тот же HMAC OTP, что у api: текст задания `sms.send` и возврат квоты номера (16 §4.4, EQ-AUTH-08); ключ подписи JWT и `pin_pepper` worker не получает |
+| `migrate` | тот же образ, `node dist/migrate.js --seed` | backend | нет | database_url, db_migrator_password | одноразовый; api и worker ждут `service_completed_successfully`; `pos-api/db/migrations-dev` смонтирован только для чтения и применяется лишь при `APP_ENV=dev` |
 | `postgres` | `postgres:17.10` | **только backend** | нет | pg_password (+ два секрета для initdb) | healthcheck `pg_isready -h 127.0.0.1` (TCP: временный сервер initdb не считается готовым) |
 | `backup` | `optomstroy/backup:test` | edge, backend | нет | pg_password | `daemon` по `BACKUP_SCHEDULE`; дамп сразу шифруется age, без получателя дамп не создаётся |
 
@@ -106,7 +106,7 @@ cd pos-api && SMOKE_BASE_URL=https://localhost NODE_EXTRA_CA_CERTS=../infra/secr
 - `pos_app` — api и worker, пароль из `database_url`;
 - `pos_readonly`, `pos_backup` — без пароля.
 
-Конфигурация api и worker — профиль `staging` (12 §2.11 E3): `ONEC_MODE=fixtures`, `SMS_PROVIDER=fake`, `QR_PROVIDER=none`, `OPENAPI_PUBLIC=true`. `APP_ENV=dev` можно задать переменной окружения. Тогда migrate применит и dev-миграцию `pos-api/db/migrations-dev/` (монтируется в контейнер только для чтения; в образ не входит — AC-DATA-169) и создаст `dev_outbox`, а `make test-check` сверит 64 таблицы вместо 63.
+Конфигурация api и worker — профиль `staging` (12 §2.11 E3): `ONEC_MODE=fixtures`, `SMS_PROVIDER=fake`, `QR_PROVIDER=none`, `OPENAPI_PUBLIC=true`. При `staging` таблицы `dev_outbox` нет, поэтому `FakeSmsGateway` отвечает ошибкой конфигурации `CONFIG_ERROR` (код OTP через SMS в контуре не доставляется; 07 §5.63). `APP_ENV=dev` можно задать переменной окружения. Тогда migrate применит и dev-миграцию `pos-api/db/migrations-dev/` (монтируется в контейнер только для чтения; в образ не входит — AC-DATA-169) и создаст `dev_outbox`, а `make test-check` сверит 64 таблицы вместо 63.
 
 Переменные уровня compose: `API_TAG`, `BACKUP_TAG`, `POSTGRES_USER`, `POSTGRES_DB`, `BACKUP_*`. Только для тестового контура и Caddyfile: `TEST_HTTP_PORT`, `TEST_HTTPS_PORT`, `CADDY_SITE_ADDRESS`, `CADDY_TLS`, `API_UPSTREAM`. Процесс api/worker их не читает, в 16 §4.3 они не входят.
 
@@ -153,8 +153,8 @@ cd pos-api && SMOKE_BASE_URL=https://localhost NODE_EXTRA_CA_CERTS=../infra/secr
 | Отличие | Причина |
 |---|---|
 | `APP_ENV=staging`, `ONEC_MODE=fixtures`, `SMS_PROVIDER=fake`, `QR_PROVIDER=none` | тестовый контур не подключается к рабочей 1С и не шлёт SMS (16 §11, OPS-027) |
-| Фикстуры 1С монтируются bind-mount `../contracts/onec/fixtures` → `/contracts/onec/fixtures:ro` | FakeOnecGateway (RM-C-008) читает `<корень>/contracts/onec/fixtures`; в образ фикстуры не входят |
-| Набор секретов урезан: нет SMSPro, 1С, `healthchecks_url`, `rclone.conf` | в контуре они не используются; указатели `*_FILE` на несмонтированные файлы не передаются (минимум прав) |
+| Фикстуры 1С — слой образа стадии `test-fixtures` (`/contracts/onec/fixtures`, владелец root, только чтение), не bind-mount (FQ-INT-08; 16 §4.4 прим. (2); ADR-098) | FakeOnecGateway (RM-C-008) читает `<корень>/contracts/onec/fixtures`; контур не зависит от рабочей копии на хосте Docker; в прод-образ (стадия `release`) фикстуры не входят, prod отказывает в старте при `ONEC_MODE=fixtures` (16 OPS-027) |
+| Набор секретов урезан: нет SMSPro, 1С, `healthchecks_url`, `rclone.conf`; worker получает только `database_url`, `jwt_public.json`, `otp_pepper` | в контуре они не используются; указатели `*_FILE` на несмонтированные файлы не передаются (минимум прав) |
 | Caddy: `localhost` + внутренний CA, журналы в stdout, нет `depends_on`/healthcheck | тест без домена и ACME; на сервере — `CADDY_SITE_ADDRESS=api-test.<домен>`, `CADDY_TLS=<e-mail>` (Q-032) |
 | Нет `deploy.resources.limits`, `shared_buffers=256MB` | раннер CI; лимиты — при развёртывании RM-I-002 |
 | backup не выгружает дампы (`BACKUP_REMOTE=""`), тестовая пара age лежит в `infra/secrets/` | на сервере приватный ключ age не хранится (OPS-004) |
@@ -208,3 +208,10 @@ cd pos-api && SMOKE_BASE_URL=https://localhost NODE_EXTRA_CA_CERTS=../infra/secr
 | CI-KI-08 | `CONTRIBUTING.md` §6 не перечисляет 6 проверок после ревью (B-KI-05) и шаг «генераторы — пустой diff». В `ci.yml` они есть | незначительно | ARCH: дополнить §6 по `ci.yml` |
 | CI-KI-09 | `--strict-coverage` ARB не включён: есть открытое замечание B-KI-06 | незначительно | после текстов владельца 03 добавить флаг в шаг 13 |
 | CI-KI-10 | Сверка экспорта `/openapi.json` с контрактом не блокирует (этап C) | для сведения | BE — сделать блокирующей после этапа D |
+
+## 9. Журнал
+
+| Версия | Дата | Что изменено |
+|---|---|---|
+| 1.0 | 2026-10-21 | Создан задачами RM-C-011, RM-C-012 |
+| 1.1 | 2026-10-28 | Сверка с кодом (E-KI-13, `docs/known_issues.md` v1.1): §3.2 — секреты worker (`otp_pepper`, `OTP_HMAC_SECRET_FILE`) и api, `WORKERS_ENABLED`, dev-миграции у migrate; таблица файлов — стадии `release`/`test-fixtures` Dockerfile; §5 — фикстуры 1С в слое образа `test-fixtures` вместо bind-mount, урезанный набор секретов worker; §3.2 — `FakeSmsGateway` при `staging` без `dev_outbox`. Результаты локальных проверок §1 — исторические (2026-10-21), не перезапускались |

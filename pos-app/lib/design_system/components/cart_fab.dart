@@ -10,8 +10,8 @@ import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 /// минус поля 16, радиус `md`, фон `primary`, `elevation.2` → иконка `shopping_cart` 24 `onPrimary` + бейдж
 /// (`AppBadge.onPrimary`) → «Корзина» `body 600 onPrimary` и под ней [caption] «5 поз. · 6 шт»
 /// (`cart_counter_units`, SRC-C-061) → [warning] — иконка `warning` при изменениях цен/остатков → итог
-/// `bodyLg 700 onPrimary tnum` → шеврон `expand_less`. Белый текст на `primary` запрещён (03 §5.4) — только
-/// `onPrimary`. Скрывается вызывающим при пустой корзине и на SCR-20/21.
+/// `bodyLg 700 onPrimary tnum` → шеврон `expand_less`. Текст и иконки на `primary` — только `onPrimary`
+/// (белый, 4.64:1 — ADR-111, 03 §5.4). Скрывается вызывающим при пустой корзине и на SCR-20/21.
 class CartFab extends StatelessWidget {
   /// Создаёт панель-итог.
   const CartFab({

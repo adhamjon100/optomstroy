@@ -46,6 +46,7 @@ import 'package:optomstroy/core/sync/sync_providers.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/offline_banner.dart';
 import 'package:optomstroy/design_system/components/pin_field.dart';
+import 'package:optomstroy/design_system/components/product_image.dart';
 import 'package:optomstroy/design_system/components/stock_badge.dart';
 import 'package:optomstroy/features/auth/presentation/screens/no_session_screen.dart';
 import 'package:optomstroy/features/auth/presentation/screens/otp_screen.dart';
@@ -53,6 +54,7 @@ import 'package:optomstroy/features/auth/presentation/screens/phone_screen.dart'
 import 'package:optomstroy/features/cart/cart_providers.dart';
 import 'package:optomstroy/features/cart/domain/draft/cart_draft.dart';
 import 'package:optomstroy/features/catalog/presentation/screens/customer_home_view.dart';
+import 'package:optomstroy/features/catalog/presentation/widgets/catalog_workspace.dart';
 import 'package:optomstroy/features/registration/presentation/screens/registration_form_screen.dart';
 import 'package:optomstroy/features/registration/presentation/screens/registration_security_screen.dart';
 import 'package:optomstroy/features/splash/presentation/screens/splash_screen.dart';
@@ -225,11 +227,57 @@ ProviderContainer _container(WidgetTester tester) => ProviderScope.containerOf(t
 
 Finder _input(Key key) => find.descendant(of: find.byKey(key), matching: find.byType(EditableText));
 
+/// Нажатие после окончания перехода страницы: экраны входа открываются с анимацией (Zoom на Windows), и в первые
+/// кадры точка нажатия попадает в слой перехода, а не в кнопку («would not hit test»). Ждём, пока элемент в точке
+/// нажатия станет целью hit-test, и только тогда нажимаем.
 Future<void> _tap(WidgetTester tester, Finder finder) async {
-  await tester.ensureVisible(finder);
+  await pumpUntilFound(tester, finder);
+  await tester.ensureVisible(finder.first);
   await tester.pump();
-  await tester.tap(finder);
+  // `first`-поисковик бросает StateError на пустом наборе (список перестраивается) — считаем «ещё не готово».
+  bool hittable() {
+    try {
+      return finder.hitTestable().evaluate().isNotEmpty;
+    } on StateError {
+      return false;
+    }
+  }
+
+  final DateTime deadline = DateTime.now().add(const Duration(seconds: 15));
+  while (!hittable()) {
+    if (DateTime.now().isAfter(deadline)) {
+      // Что перекрывает элемент: слой сессии (SCR-08/SCR-90/step-up) или другой экран — тексты на экране.
+      final List<String> texts = <String>[
+        for (final Text t in tester.widgetList<Text>(find.byType(Text))) ?t.data,
+      ].take(40).toList();
+      fail(
+        'элемент ${finder.describeMatch(Plurality.one)} не принимает нажатие 15 с; экран: ${_where(tester)}; '
+        'слой сессии: ${find.byKey(const Key('session-gate-scrim')).evaluate().isNotEmpty}; тексты: $texts',
+      );
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+  await tester.tap(finder.hitTestable().first);
   await tester.pump();
+}
+
+/// Фото товара загрузилось хотя бы у одной карточки: сервер отдаёт путь `/images/{sha}/card` без хоста, приложение
+/// разрешает его от `API_BASE_URL` (ProductImageBase); при ошибке загрузки была бы заглушка «Нет фото».
+Future<void> _expectProductPhotoLoaded(WidgetTester tester) async {
+  final Finder raw = find.descendant(of: find.byType(ProductImage), matching: find.byType(RawImage));
+  final DateTime deadline = DateTime.now().add(const Duration(seconds: 45));
+  while (!tester.widgetList<RawImage>(raw).any((RawImage r) => r.image != null)) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail(
+        'фото товара не загрузилось за 45 с; заглушек «Нет фото»: '
+        '${find.byKey(const ValueKey<String>('product-image-placeholder')).evaluate().length}; экран: ${_where(tester)}',
+      );
+    }
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 250)));
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+  final int loaded = tester.widgetList<RawImage>(raw).where((RawImage r) => r.image != null).length;
+  debugPrint('catalog_flow_test: фото товаров загружено у карточек: $loaded');
 }
 
 Future<void> _enterPin(WidgetTester tester, String pin) async {
@@ -262,6 +310,7 @@ Future<void> _cleanStart(WidgetTester tester) async {
 
 Future<void> _phoneAndOtp(WidgetTester tester, String nationalPhone) async {
   await pumpUntilFound(tester, find.byKey(PhoneScreen.fieldKey));
+  await pumpUntilFound(tester, _input(PhoneScreen.fieldKey).hitTestable(), timeout: const Duration(seconds: 15));
   await tester.enterText(_input(PhoneScreen.fieldKey), nationalPhone);
   await tester.pump();
   await _tap(tester, find.byKey(PhoneScreen.submitKey));
@@ -491,6 +540,7 @@ void main() {
       await pumpUntilFound(tester, find.byKey(_catalogRoot), timeout: const Duration(seconds: 60));
       expect(_where(tester), startsWith('/catalog'));
       await _waitCatalogCache(tester);
+      await _expectProductPhotoLoaded(tester);
 
       // Поиск по артикулу (SCR-11) → карточка (SCR-14) якорного товара.
       final String anchorId = await _productIdBySku(tester, 'F4252');
@@ -578,6 +628,16 @@ void main() {
       final OfflineBanner b = tester.widget<OfflineBanner>(banner.first);
       expect(b.variant, OfflineBannerVariant.offline);
       expect(b.dataAsOf, isNotNull, reason: 'возраст данных «Показаны данные от HH:MM»');
+      // Пока идёт загрузка новой выборки, на экране остаются неактивные карточки прежней (поиска F3241): ждём, когда
+      // SCR-10 покажет свою выборку из кэша (полоса загрузки скрыта), и только потом выбираем карточку.
+      final Stopwatch swCache = Stopwatch()..start();
+      final DateTime listDeadline = DateTime.now().add(const Duration(seconds: 60));
+      while (find.byKey(CatalogWorkspace.refreshBarKey).evaluate().isNotEmpty &&
+          DateTime.now().isBefore(listDeadline)) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      debugPrint('catalog_flow_test: офлайн — выборка SCR-10 показана через ${swCache.elapsedMilliseconds} мс');
       final Finder cached = find.byWidgetPredicate(
         (Widget w) => w.key is ValueKey<String> && (w.key! as ValueKey<String>).value.startsWith('product-'),
       );

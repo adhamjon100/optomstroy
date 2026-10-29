@@ -16,6 +16,16 @@ export interface OnecVersionKey {
   readonly deletionMark: boolean;
 }
 
+/**
+ * Страница полной перечитки с позицией продолжения (05 SYNC-002, AC-SYNC-002): `nextSkip` — сколько строк набора
+ * источника прочитано с начала (= `$skip` следующей страницы). По нему прогон пишет `sync_runs.cursor_to`, и повтор
+ * после обрыва продолжает с этого места, не перечитывая загруженные страницы (12 T-SYNC-F03).
+ */
+export interface CatalogReadPage {
+  readonly items: readonly OnecCatalogItem[];
+  readonly nextSkip: number;
+}
+
 /** Срезы цен и остатков (05 SYNC-014, SYNC-015): в фазе 1 их нет в `/changes`. */
 export interface CatalogSliceSource {
   /** Полный срез цен указанных видов цен (ссылки 1С), страницами. */
@@ -30,6 +40,11 @@ export interface CatalogSliceSource {
 export interface CatalogFullSource extends CatalogSliceSource {
   readonly name: string;
   read(kind: CatalogReadKind): AsyncIterable<readonly OnecCatalogItem[]>;
+  /**
+   * Страницы набора, начиная со строки `startSkip` (продолжение прерванной полной загрузки с `cursor_to`,
+   * SYNC-002). Нет метода — прогон читает только с начала (`read`) и не продолжает обрыв.
+   */
+  readPages?(kind: CatalogReadKind, startSkip: number): AsyncIterable<CatalogReadPage>;
   /** Число объектов в 1С (`$count`, SYNC-003) — `undefined`, если источник не умеет. */
   count?(kind: CatalogReadKind): Promise<number | undefined>;
   /** Ключи и DataVersion всех объектов (фаза 0). */
@@ -87,6 +102,14 @@ export class SyntheticCatalogSource implements CatalogFullSource {
 
   read(kind: CatalogReadKind): AsyncIterable<readonly OnecCatalogItem[]> {
     return asyncChunks(this.items(kind), this.pageSize);
+  }
+
+  async *readPages(kind: CatalogReadKind, startSkip: number): AsyncIterable<CatalogReadPage> {
+    const all = this.items(kind);
+    for (let i = startSkip; i < all.length; i += this.pageSize) {
+      const items = all.slice(i, i + this.pageSize);
+      yield await Promise.resolve({ items, nextSkip: i + items.length });
+    }
   }
 
   count(kind: CatalogReadKind): Promise<number> {

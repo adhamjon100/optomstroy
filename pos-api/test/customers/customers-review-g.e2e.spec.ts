@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import pino from 'pino';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CASHIER_SCENARIO_PHONES } from '../../src/integrations/onec/synthetic-cashier.js';
 import { CatalogApplier } from '../../src/sync/apply/catalog-applier.js';
 import { OnecChangesService } from '../../src/sync/apply/onec-changes.service.js';
@@ -139,6 +140,144 @@ describe('G-customers-1c-2: окно «доставлено в 1С, резуль
       [x],
     );
     expect(ob.map((o) => o.status)).toEqual(['confirmed']);
+  });
+});
+
+describe('G-KI-13: POS-клиент «в полёте» не скрывает других кандидатов 1С с тем же телефоном (05 SYNC-005, SYNC-063)', () => {
+  /** POS-клиент X, чей customer/create доставлен в 1С с неизвестным результатом, и другой клиент 1С Y с тем же номером. */
+  async function inFlightWithOther(name: string) {
+    const phone = newPhone();
+    const a = await t
+      .req('post', '/customers', w.actors.cashier, { idem: true })
+      .send({ name, customerType: 'individual', phones: [phone] });
+    expect(a.status, JSON.stringify(a.body)).toBe(201);
+    const x = a.body.id as string;
+    const cashier = t.onec.cashier!;
+    // 1С создала карточку X (externalId = X), ответ потерян: элемент outbox pending с attempts > 0 (результат неизвестен).
+    const own = cashier.createCustomer({
+      externalId: x,
+      name,
+      phone,
+      kind: 'individual',
+      dedupe: { failOnDuplicate: true },
+    });
+    await t.q(
+      `UPDATE onec_outbox SET attempts = 1, next_attempt_at = now() + interval '1 hour'
+                WHERE aggregate_type = 'customer' AND aggregate_id = $1::uuid`,
+      [x],
+    );
+    const other = cashier.createCustomer({
+      externalId: randomUUID(),
+      name: 'Другой Клиент 1С',
+      phone,
+      kind: 'individual',
+      dedupe: { failOnDuplicate: false },
+    });
+    return {
+      phone,
+      x,
+      ownRef: own.body.ref as string,
+      otherRef: other.body.ref as string,
+      code: own.body.code as string,
+    };
+  }
+  const register = (items: unknown[], hasMore = false, cursor: string | null = null) => ({
+    status: 200,
+    body: { items, hasMore, cursor },
+  });
+
+  it('регистр externalId 1С: своя карточка X — не заглушка, другая карточка Y — кандидат (строка реплики)', async () => {
+    const s = await inFlightWithOther('Клиент В Полёте');
+    const spy = vi
+      .spyOn(t.onec, 'listExternalIds')
+      .mockResolvedValueOnce(
+        register(
+          [
+            {
+              externalId: randomUUID(),
+              objectType: 'Клиент',
+              ref: randomUUID(),
+              number: 'П1',
+              date: null,
+              deletionMark: false,
+            },
+          ],
+          true,
+          'page-2',
+        ) as never,
+      )
+      .mockResolvedValueOnce(
+        register([
+          { externalId: s.x, objectType: 'Клиент', ref: s.ownRef, number: s.code, date: null, deletionMark: false },
+          { externalId: s.x, objectType: 'Заказ', ref: randomUUID(), number: 'З1', date: null, deletionMark: false },
+          'мусор',
+        ]) as never,
+      );
+    try {
+      const again = await t
+        .req('post', '/customers', w.actors.seller, { idem: true })
+        .send({ name: 'Повтор По Телефону', customerType: 'individual', phones: [s.phone] });
+      expect(again.status, JSON.stringify(again.body)).toBe(409);
+      const ids = (again.body.candidates as { id: string }[]).map((c) => c.id);
+      const rows = await rowsByPhone(s.phone);
+      const stub = rows.find((r) => r.onec_ref === s.otherRef);
+      expect(stub).toMatchObject({ source: 'onec' });
+      expect(ids.sort()).toEqual([s.x, stub!.id].sort());
+      // Своя карточка X заглушкой не стала: строк с её Ref нет, X ждёт подтверждения со своим Ref.
+      expect(rows.some((r) => r.onec_ref === s.ownRef)).toBe(false);
+      expect(rows).toHaveLength(2);
+      expect(spy).toHaveBeenCalledTimes(2);
+      const [q1] = spy.mock.calls[0] as unknown as [{ type: string; since: string; limit: number }];
+      expect(q1).toMatchObject({ type: 'Клиент', limit: 1000 });
+      expect(q1.since).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+06:00$/);
+      expect((spy.mock.calls[1] as unknown as [{ cursor: string }])[0].cursor).toBe('page-2');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('регистр недоступен или страниц больше предела — консервативно: неизвестные кандидаты 1С не показываются', async () => {
+    const s = await inFlightWithOther('Клиент Без Регистра');
+    const spy = vi.spyOn(t.onec, 'listExternalIds').mockRejectedValue(new Error('1С не ответила (тест)'));
+    try {
+      const again = await t
+        .req('post', '/customers', w.actors.seller, { idem: true })
+        .send({ name: 'Повтор По Телефону', customerType: 'individual', phones: [s.phone] });
+      expect(again.status).toBe(409);
+      expect((again.body.candidates as { id: string }[]).map((c) => c.id)).toEqual([s.x]);
+      spy.mockResolvedValue(register([], true, 'next') as never);
+      const third = await t
+        .req('post', '/customers', w.actors.seller, { idem: true })
+        .send({ name: 'Повтор По Телефону', customerType: 'individual', phones: [s.phone] });
+      expect((third.body.candidates as { id: string }[]).map((c) => c.id)).toEqual([s.x]);
+      expect((await rowsByPhone(s.phone)).map((r) => r.id)).toEqual([s.x]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('регистр недоступен, два неизвестных кандидата 1С → регистр опрошен один раз на поиск (без k × таймаут)', async () => {
+    const s = await inFlightWithOther('Клиент Два Кандидата');
+    const third = t.onec.cashier!.createCustomer({
+      externalId: randomUUID(),
+      name: 'Третий Клиент 1С',
+      phone: s.phone,
+      kind: 'individual',
+      dedupe: { failOnDuplicate: false },
+    });
+    expect(third.body.ref).toBeTruthy();
+    const spy = vi.spyOn(t.onec, 'listExternalIds').mockRejectedValue(new Error('1С не ответила (тест)'));
+    try {
+      const again = await t
+        .req('post', '/customers', w.actors.seller, { idem: true })
+        .send({ name: 'Повтор По Телефону', customerType: 'individual', phones: [s.phone] });
+      expect(again.status).toBe(409);
+      expect((again.body.candidates as { id: string }[]).map((c) => c.id)).toEqual([s.x]);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect((await rowsByPhone(s.phone)).map((r) => r.id)).toEqual([s.x]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

@@ -62,6 +62,9 @@ class CashierDashboardScreen extends ConsumerStatefulWidget {
   /// Ключ корня экрана (тесты маршрутов).
   static const ValueKey<String> rootKey = ValueKey<String>('stub-SCR-30');
 
+  /// Заголовок раздела «Касса» на medium и шире (тесты).
+  static const ValueKey<String> titleKey = ValueKey<String>('cashier-page-title');
+
   @override
   ConsumerState<CashierDashboardScreen> createState() => _CashierDashboardScreenState();
 }
@@ -90,8 +93,9 @@ class _CashierDashboardScreenState extends ConsumerState<CashierDashboardScreen>
     _scheduleClock();
   }
 
-  /// Часы шапки (HH:mm, смена минуты — UI-30-013) и таймеры TTL QR в «Ожидают оплаты» (UI-30-004): раз в секунду,
-  /// пока в `qrPending` есть показанный QR (`qr_shown`), иначе — по границе следующей минуты.
+  /// Перерисовка по времени: таймеры TTL QR в «Ожидают оплаты» (UI-30-004) — раз в секунду, пока в `qrPending` есть
+  /// показанный QR (`qr_shown`), иначе — по границе следующей минуты (относительное время в списках). Часы и дата
+  /// шапки (UI-30-013) на medium и шире — в шапке оболочки (`StaffShellHeader`, свой таймер по границе минуты).
   void _scheduleClock() {
     _clock?.cancel();
     final PosDashboard? d = ref.read(cashierDashboardControllerProvider).dashboard;
@@ -343,7 +347,8 @@ class _CashierDashboardScreenState extends ConsumerState<CashierDashboardScreen>
         child: Scaffold(
           key: CashierDashboardScreen.rootKey,
           backgroundColor: c.background,
-          appBar: _header(context, l10n, s, wc),
+          // medium+ — шапку даёт оболочка (`StaffShellHeader`, ADR-112): своя шапка только на compact.
+          appBar: wc == WindowClass.compact ? _header(context, l10n, s, wc) : null,
           body: Column(
             children: <Widget>[
               if (!online && s.dashboard != null)
@@ -356,9 +361,8 @@ class _CashierDashboardScreenState extends ConsumerState<CashierDashboardScreen>
     );
   }
 
+  /// Шапка compact (на medium+ шапку даёт оболочка): логотип, заголовок, синхронизация, аватар, колокольчик.
   PreferredSizeWidget _header(BuildContext context, AppLocalizations l10n, CashierDashboardState s, WindowClass wc) {
-    final DateTime now = _now;
-    final String locale = Localizations.localeOf(context).toLanguageTag();
     final int unread = s.dashboard?.notificationsUnread ?? 0;
     final DashboardSyncOverall? overall = s.dashboard?.sync.overall;
     final RoleCode? role = ref.watch(cashierViewerRoleProvider);
@@ -372,8 +376,6 @@ class _CashierDashboardScreenState extends ConsumerState<CashierDashboardScreen>
       logo: logo == null ? null : Builder(builder: logo),
       title: l10n.cashier_title,
       actions: <Widget>[
-        if (wc != WindowClass.compact)
-          TopAppBarClock(time: DsBishkekTime.time(now), date: DsBishkekTime.headerDate(now, locale)),
         if (syncIndicator != null)
           KeyedSubtree(
             key: const ValueKey<String>('cashier-header-sync'),
@@ -393,7 +395,8 @@ class _CashierDashboardScreenState extends ConsumerState<CashierDashboardScreen>
             key: const ValueKey<String>('cashier-header-user'),
             name: name ?? roleText,
             role: name == null ? '' : roleText,
-            showText: wc == WindowClass.expanded || wc == WindowClass.large,
+            // compact: только аватар; имя и роль — в меню и `Semantics`.
+            showText: false,
             onTap: () => unawaited(_profileMenu(anchor)),
           ),
         ),
@@ -417,25 +420,40 @@ class _CashierDashboardScreenState extends ConsumerState<CashierDashboardScreen>
   ) {
     switch (s.phase) {
       case CashierDashboardPhase.forbidden:
-        return EmptyState(variant: EmptyStateVariant.noPermission, title: l10n.error_forbidden);
+        return _titled(
+          context,
+          l10n,
+          wc,
+          EmptyState(variant: EmptyStateVariant.noPermission, title: l10n.error_forbidden),
+        );
       case CashierDashboardPhase.error:
         final UiError e = UiErrorMapper.fromFailure(s.failure ?? const UnknownFailure());
-        return ErrorState.fullScreen(
-          key: const ValueKey<String>('cashier-error'),
-          title: l10n.cashier_load_error,
-          message: ErrorTexts.message(l10n, e),
-          requestId: e.requestId,
-          onRetry: () => unawaited(_ctl.load()),
+        return _titled(
+          context,
+          l10n,
+          wc,
+          ErrorState.fullScreen(
+            key: const ValueKey<String>('cashier-error'),
+            title: l10n.cashier_load_error,
+            message: ErrorTexts.message(l10n, e),
+            requestId: e.requestId,
+            onRetry: () => unawaited(_ctl.load()),
+          ),
         );
       case CashierDashboardPhase.offlineNoData:
-        return EmptyState(
-          key: const ValueKey<String>('cashier-offline'),
-          variant: EmptyStateVariant.offlineNoCache,
-          title: l10n.cashier_offline_no_data,
-          actionLabel: l10n.ds_button_retry,
-          onAction: () => unawaited(_ctl.load()),
-          secondaryActionLabel: l10n.cashier_action_catalog,
-          onSecondaryAction: () => _go(CashierLocations.catalog),
+        return _titled(
+          context,
+          l10n,
+          wc,
+          EmptyState(
+            key: const ValueKey<String>('cashier-offline'),
+            variant: EmptyStateVariant.offlineNoCache,
+            title: l10n.cashier_offline_no_data,
+            actionLabel: l10n.ds_button_retry,
+            onAction: () => unawaited(_ctl.load()),
+            secondaryActionLabel: l10n.cashier_action_catalog,
+            onSecondaryAction: () => _go(CashierLocations.catalog),
+          ),
         );
       case CashierDashboardPhase.loading:
       case CashierDashboardPhase.ready:
@@ -706,6 +724,7 @@ class _CashierDashboardScreenState extends ConsumerState<CashierDashboardScreen>
         content = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
+            _pageTitle(context, l10n),
             if (z1.isNotEmpty) ...<Widget>[column(z1), SizedBox(height: gap)],
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -722,6 +741,7 @@ class _CashierDashboardScreenState extends ConsumerState<CashierDashboardScreen>
         content = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
+            _pageTitle(context, l10n),
             if (z1.isNotEmpty) ...<Widget>[column(z1), SizedBox(height: gap)],
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -749,5 +769,36 @@ class _CashierDashboardScreenState extends ConsumerState<CashierDashboardScreen>
       ),
     );
     return RefreshIndicator(onRefresh: _ctl.load, child: scroll);
+  }
+
+  /// Заголовок раздела «Касса» на medium и шире (UI-30-013; паритет функций ADR-112): своей шапки у SCR-30 там нет —
+  /// название раздела стоит над сводкой, в стиле заголовка категории каталога (`h1 700`, прототип 2026-10-29).
+  Widget _pageTitle(BuildContext context, AppLocalizations l10n) => Padding(
+    padding: EdgeInsets.only(bottom: context.space.s4),
+    child: Semantics(
+      header: true,
+      child: Text(
+        l10n.cashier_title,
+        key: CashierDashboardScreen.titleKey,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: context.text.h1.copyWith(fontWeight: FontWeight.w700, color: context.colors.textPrimary),
+      ),
+    ),
+  );
+
+  /// Состояние без данных (ошибка, нет прав, офлайн без кэша) — на medium и шире под заголовком раздела.
+  Widget _titled(BuildContext context, AppLocalizations l10n, WindowClass wc, Widget child) {
+    if (wc == WindowClass.compact) return child;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.fromLTRB(context.space.s6, context.space.s6, context.space.s6, 0),
+          child: _pageTitle(context, l10n),
+        ),
+        Expanded(child: child),
+      ],
+    );
   }
 }

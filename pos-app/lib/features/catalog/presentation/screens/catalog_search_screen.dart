@@ -27,7 +27,7 @@ class CatalogSearchScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CatalogWorkspace(
-    key: const ValueKey<String>('stub-$screenId'),
+    key: CatalogWorkspace.stableKey,
     mode: CatalogScreenMode.search,
     q: q,
     categoryId: categoryId,

@@ -1172,3 +1172,85 @@ python scripts/trace_test_ids.py --stage G --summary
 `Optomstroy_TZ_API_1C.docx` — версия 1.0 (ADR-108 это фиксирует, но 05 §24 и 18 указывают её как Word-версию ТЗ 1.1).
 `pos-app/.dart_tool/flutter_build` удалён. Своих процессов node/postgres/flutter_tester не осталось (flutter_tester
 PID 30728, запущен 01:24, — не мой, не трогался).
+
+## Регрессия backend после доработок (2026-10-29)
+
+Полная регрессия `pos-api` и гейтов корня после доработок 2026-10-28…29 (known_issues v1.2–v1.3: G-KI-12, G-KI-13,
+G-KI-14 / миграция 0020, G-KI-16, E-KI-04, T-SYNC-F03/F09/F13). Состояние дерева — коммит `8fea341` + незакоммиченные
+правки (104 строки `git status --short`, в т. ч. параллельная работа над `pos-app/**` — не трогалась); код не менялся,
+изменены только этот журнал и `docs/known_issues.md` (`git status --short` до и после прогона совпадает). Окружение:
+Windows 11, `TEMP=TMP=D:/optomstroy/.tmp`; тяжёлые наборы — строго последовательно, повторов по памяти не понадобилось.
+Порты стенда (3000, 8080, 8091, 8092) перед local-stack свободны — демо не запущено, процессы демо не затрагивались.
+Сырые логи — `D:/optomstroy/.tmp/regr1029/*.log`. На фикстурах, фейке 1С и embedded PostgreSQL 17, **не реальная
+интеграция**. Flutter (`pos-app`) в этом прогоне не запускался.
+
+### pos-api
+```
+npm run lint                     02:41:44–02:42:27  код 0 (tsc, ESLint, Prettier: All matched files use Prettier code style)
+npm run build                    02:42:27–02:42:35  код 0; [check-dist] точки входа dist/ на месте: 5
+npm run madge                    02:42:35–02:42:40  код 0; Processed 610 files; No circular dependency found
+npm run check:permissions        02:42:40–02:42:41  код 0; актуально (77 кодов, 7 ролей)
+npm run test:all (34 набора)     02:42:44–03:02:42  код 0 с первого раза; Σ 1771 passed, 8 skipped, 0 failed;
+                                                   test:e2e — 11 passed | 3 skipped файлов, 106 passed | 7 skipped;
+                                                   test:db 14/14, test:worker 25/25, test:customers 73/73,
+                                                   test:sync-apply 65/65, test:orders 103/103, test:returns 31/31;
+                                                   onec-acceptance (мок HS на фикстурах): PASS 5, FAIL 0, вручную 15
+npm run test:cov:d               03:02:58–03:07:11  код 0; 45 passed | 3 skipped файлов; 451 passed | 7 skipped;
+                                                   All files: операторы 95.33 %, ветви 88.47 %, функции 96.32 %, строки 97.93 %
+npm run test:cov:e               03:07:11–03:13:57  код 0; 63 passed | 4 skipped файлов; 614 passed | 8 skipped;
+                                                   операторы 86.61 %, ветви 75.28 %, функции 86.92 %, строки 89.13 %
+npm run test:cov:f               03:13:57–03:23:07  код 0; 77 passed | 3 skipped файлов; 808 passed | 7 skipped;
+                                                   операторы 91.02 %, ветви 83.62 %, функции 95.07 %, строки 94.17 %
+                                                   (пороги vitest.config.cov-f.ts, в т. ч. 100 % ветвей критичных файлов F, выполнены)
+npm run test:cov:g               03:23:07–03:31:20  код 0; 65 passed | 3 skipped файлов; 737 passed | 7 skipped;
+                                                   операторы 92.06 %, ветви 82.95 %, функции 96.1 %, строки 95.17 %
+                                                   (пороги vitest.config.cov-g.ts, в т. ч. критичные файлы G — 100 %, выполнены)
+npm run test:e2e:pos             03:31:34–03:33:07  код 0; 1/1 файл, 1/1 тест
+npm run test:e2e:cashier         03:33:07–03:33:46  код 0; 1/1 файл, 1/1 тест
+node scripts/local-stack.mjs smoke          03:34:03–03:34:15  код 0; 10/10 PASS
+node scripts/local-stack.mjs auth-smoke     03:34:15–03:34:26  код 0; 15/15 PASS
+node scripts/local-stack.mjs catalog-smoke  03:34:26–03:34:50  код 0; 22/22 PASS; загрузчик фикстур:
+                                                   «предупреждения-отчёт … {"DUPLICATE_SUSPECTED":6}» — на итог не влияет (E-KI-04)
+node scripts/local-stack.mjs pos-smoke      03:34:50–03:36:15  код 0; 30/30 PASS
+node scripts/local-stack.mjs cashier-smoke  03:36:15–03:36:45  код 0; 22/22 PASS
+```
+
+### Миграции (из корня; 14 файлов 0001…0020)
+```
+node tools/pg/run-sql.mjs --repeat-strict pos-api/migrations/*.sql --check scripts/check_tables.sql
+                                 код 0; [repeat] 0 изменений (487 команд, строк DML 0); 63/63 таблиц (prod, dev_outbox нет), 45/45 enum
+node tools/pg/run-sql.mjs --set app.env=test --repeat-strict pos-api/migrations/*.sql pos-api/db/migrations-dev/0001_dev_outbox.sql
+     --check scripts/check_tables.sql --check pos-api/test/sql/check_ddl_behavior.sql
+                                 код 0; [repeat] 0 изменений (498 команд, строк DML 0); 64/64 таблиц, 45/45 enum;
+                                 check_ddl_behavior: OK — негативных сценариев 62, позитивных инвариантов 6
+```
+
+### Гейты корня (02:43; денежный гейт повторён в 03:37)
+```
+bash scripts/check_no_double_money.sh          код 1 — 7 строк нарушений MNY-002, все в pos-app/lib (pos-api — 0):
+                                               pos-app/lib/features/catalog/presentation/widgets/catalog_workspace.dart:189, 190, 193, 306
+                                               («double offset» вне design_system без пометки `money-double: allow`);
+                                               pos-app/lib/design_system/components/product_card.dart:457
+                                               («final double price = …» — ширина колонки в lp, имя попадает под денежный шаблон);
+                                               повтор в 03:37 — то же, код 1
+python -I -X utf8 scripts/check_secrets.py     код 0; файлов проверено: 2746; находок: 0
+python -I -X utf8 scripts/check_repo_layout.py код 0; файлов 2746; ошибок 0, предупреждений 8, ожидающих задач 5
+python -I -X utf8 scripts/check_env_example.py код 0; 97/97, недостающих 0, лишних 0; ключей схемы pos-api 114; ошибок 0
+python -I -X utf8 scripts/build_openapi.py --check
+                                               код 0; pos-api.v1.yaml актуален (119 путей, 141 операция)
+python -I -X utf8 scripts/check_api_paths.py   код 0; все обязательные пути и методы есть; лишних нет
+python -I -X utf8 scripts/check_onec_paths.py  код 0; ошибок 0, информационных замечаний 7
+python -I -X utf8 scripts/check_enums.py       код 0; проверок 248, расхождений 0
+python -I -X utf8 scripts/check_enum_triangle.py
+                                               код 0; ошибок 0, информационных 11
+```
+Причина красного денежного гейта: незакоммиченные правки UI каталога в `pos-app/**` (файлы изменены параллельным
+процессом Flutter, `catalog_workspace.dart` и `product_card.dart` — `M` в `git status`; на HEAD строки 457 нет). Это не
+backend: в `pos-api/src` нарушений нет. В этой задаче `pos-app/**` не трогался; исправление (пометка
+`// money-double: allow — lp` или переименование `price` → `priceWidth`) — за исполнителем Flutter (known_issues R-KI-04).
+
+Итог: backend зелёный полностью — `lint`, `build`, `madge`, `check:permissions`, `test:all` (34 набора, 1771 passed,
+0 failed), `test:cov:d/e/f/g`, `test:e2e:pos`, `test:e2e:cashier`, все пять режимов local-stack, миграции
+`--repeat-strict` (prod и test) — код 0. Подтверждены закрытия G-KI-12, G-KI-13, G-KI-14 (0020), G-KI-16, E-KI-04,
+T-SYNC-F03/F09/F13 в полном регрессе. Гейты корня зелёные, кроме `check_no_double_money.sh` (код 1, только pos-app).
+Своих процессов node/postgres после прогона не осталось.

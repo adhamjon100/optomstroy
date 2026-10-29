@@ -16,6 +16,7 @@ import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/app_icon_button.dart';
 import 'package:optomstroy/design_system/components/app_progress.dart';
 import 'package:optomstroy/design_system/components/app_snackbar.dart';
+import 'package:optomstroy/design_system/components/date_range_picker.dart' show DsBishkekTime;
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/otp_field.dart';
 import 'package:optomstroy/design_system/formats/ds_phone_format.dart';
@@ -442,7 +443,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
         leading: leading,
         banners: banners,
         keyboardMascotSize: 72,
-        footerYear: now.toLocal().year,
+        footerYear: DsBishkekTime.wall(now).year,
         mascot: (BuildContext context, double /* money-double: allow — геометрия UI */ size) => Mascot(
           controller: _mascot,
           size: size,

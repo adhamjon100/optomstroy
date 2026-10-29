@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import type { SyncEntity } from '../../common/enums.js';
+import { OnecApiPausedError } from '../../sync/alerts/onec-api-compat.js';
 import type { ApplyRunTracker } from '../../sync/apply/apply.types.js';
 import {
   type ChangesPullResult,
@@ -83,6 +84,10 @@ export class ChangesSyncHandler implements SyncEntityHandler {
       { status: result.status, messageNumber: result.messageNumber, items: result.items, adopted: tracker.used },
       'sync.changes.manual',
     );
+    if (result.status === 'paused_api') {
+      // 05 ONEC-095: версия API расширения несовместима — прогон не выполнялся (итог пишет SyncJobProcessor).
+      throw new OnecApiPausedError(result.pausedReason ?? 'обмен с 1С приостановлен: несовместимая версия API');
+    }
     if (result.status === 'skipped_locked') {
       // Идёт плановый цикл того же узла: он применит то же сообщение; свежесть сущности этим прогоном не сдвигаем.
       return { status: 'success', implemented: false, counts: { skipped: 'onec_changes_locked' } };

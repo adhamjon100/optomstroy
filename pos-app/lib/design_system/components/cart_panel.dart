@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:optomstroy/design_system/components/app_badge.dart';
 import 'package:optomstroy/design_system/components/app_icon_button.dart';
+import 'package:optomstroy/design_system/components/app_snackbar.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -10,7 +13,9 @@ enum CartPanelVariant {
   /// expanded/large: постоянная третья колонка 320/340, `elevation.1`, граница слева.
   panel,
 
-  /// medium: side sheet 320, `elevation.2`, радиус `lg` слева, крестик закрытия.
+  /// medium и шире (редакция 1.10, ADR-112): drawer 420 справа на всю высоту окна (`DsBreakpoints.cartDrawer`),
+  /// `elevation.3`, без радиуса, крестик закрытия; заголовок «Корзина · N поз.» ([CartPanel.titleSuffix]), низ
+  /// (итоги и кнопки) — подвал [CartPanel.footerColor] с верхней границей. До редакции 1.10 — side sheet 320 на medium.
   overlay,
 
   /// compact: полноэкранный маршрут `/cart`.
@@ -21,6 +26,11 @@ enum CartPanelVariant {
 /// действия справа, на `overlay` — крестик) и строка счётчиков [counter] → [banner] → [top] (клиент и склад) →
 /// [body] (список строк, прокрутка внутри) → закреплённые снизу [bottom] (скидка, итоги) и [footer] (подпись
 /// причины, «Отложить заказ», «Создать заказ →») над `SafeArea`. Фон `surface`, разделители `border`.
+///
+/// `overlay` — drawer корзины (прототип 2026-10-29): шапка с полями 16 / 20 и нижней границей, заголовок
+/// `h3 20/700` и приглушённый [titleSuffix] «· N поз.» (`bodyLg 600 textTertiary`; бейдж при суффиксе скрыт),
+/// закреплённый низ — один подвал [footerColor] с верхней границей `border` и полями зоны G 20; высоту низа панель
+/// сообщает ближайшей [AppSnackbarRegion] — снекбар узкого окна стоит над ним, а не на кнопках.
 ///
 /// Компонент — только раскладка; данные, действия и тексты передаёт экран.
 class CartPanel extends StatelessWidget {
@@ -43,6 +53,7 @@ class CartPanel extends StatelessWidget {
     this.closeLabel,
     this.semanticLabel,
     this.overlay,
+    this.titleSuffix,
   });
 
   /// Высота области под шапкой, ниже которой строки, итоги и кнопки прокручиваются вместе.
@@ -99,18 +110,51 @@ class CartPanel extends StatelessWidget {
   /// Зона H — оверлей поверх D–G (блокировка «Проверяем результат…»).
   final Widget? overlay;
 
+  /// Приглушённый суффикс заголовка («· 5 поз.», drawer); при нём бейдж числа позиций не показывается.
+  final String? titleSuffix;
+
+  /// Ключ крестика закрытия (drawer корзины; тесты).
+  static const Key closeKey = ValueKey<String>('cart-drawer-close');
+
+  /// Ключ подвала drawer (итоги и кнопки; тесты).
+  static const Key footerKey = ValueKey<String>('cart-drawer-footer');
+
+  /// Фон подвала drawer: `surface`, смешанный пополам с `surfaceHover` (≈ #FBFCFE прототипа).
+  static Color footerColor(DsColors c) => Color.lerp(c.surface, c.surfaceHover, .5)!;
+
   /// Ширина панели для ширины окна [windowWidth] (02 SCR-20.2: 320 — medium и expanded < 1280, 340 — шире).
   static double widthFor(double windowWidth) => windowWidth >= 1280 ? DsBreakpoints.cartWide : DsBreakpoints.cartNarrow;
 
   @override
   Widget build(BuildContext context) {
     final DsColors c = context.colors;
+    final bool drawer = variant == CartPanelVariant.overlay;
+    final String? suffix = titleSuffix;
+    final TextStyle titleStyle = drawer
+        ? context.text.h3.copyWith(fontWeight: FontWeight.w700, color: c.textPrimary)
+        : context.text.title.copyWith(fontWeight: FontWeight.w600, color: c.textPrimary);
+    final Widget titleText = suffix == null
+        ? Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: titleStyle)
+        : Text.rich(
+            TextSpan(
+              children: <InlineSpan>[
+                TextSpan(text: title),
+                TextSpan(
+                  text: ' $suffix',
+                  style: context.text.bodyLg.copyWith(fontWeight: FontWeight.w600, color: c.textTertiary),
+                ),
+              ],
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: titleStyle,
+          );
     final Widget header = Container(
       padding: EdgeInsetsDirectional.only(
         start: context.space.s5,
-        end: context.space.s2,
-        top: context.space.s2,
-        bottom: context.space.s1,
+        end: drawer ? context.space.s3 : context.space.s2,
+        top: drawer ? context.space.s4 : context.space.s2,
+        bottom: drawer ? context.space.s3 : context.space.s1,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -120,25 +164,27 @@ class CartPanel extends StatelessWidget {
             height: 48,
             child: Row(
               children: <Widget>[
-                Flexible(
-                  child: Semantics(
-                    header: true,
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.text.title.copyWith(fontWeight: FontWeight.w600, color: c.textPrimary),
-                    ),
+                // Заголовок занимает всё свободное место до действий (суффикс «· N поз.» не обрезается), бейдж —
+                // сразу за заголовком.
+                Expanded(
+                  child: Row(
+                    children: <Widget>[
+                      Flexible(child: Semantics(header: true, child: titleText)),
+                      if (count > 0 && suffix == null) ...<Widget>[
+                        SizedBox(width: context.space.s2),
+                        AppBadge(count: count, tone: AppBadgeTone.cart, semanticLabel: countLabel),
+                      ],
+                    ],
                   ),
                 ),
-                if (count > 0) ...<Widget>[
-                  SizedBox(width: context.space.s2),
-                  AppBadge(count: count, tone: AppBadgeTone.cart, semanticLabel: countLabel),
-                ],
-                const Spacer(),
                 ...actions,
                 if (onClose != null)
-                  AppIconButton(icon: Icons.close_rounded, semanticLabel: closeLabel ?? '', onPressed: onClose),
+                  AppIconButton(
+                    key: closeKey,
+                    icon: Icons.close_rounded,
+                    semanticLabel: closeLabel ?? '',
+                    onPressed: onClose,
+                  ),
               ],
             ),
           ),
@@ -169,6 +215,7 @@ class CartPanel extends StatelessWidget {
         ],
       ),
     );
+    final ValueNotifier<double>? reportBottom = drawer ? AppSnackbarRegion.maybeOf(context)?.bottomInset : null;
     final Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -182,22 +229,48 @@ class CartPanel extends StatelessWidget {
               Positioned.fill(
                 child: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints box) {
-                    final List<Widget> pinned = <Widget>[
-                      if (bottom != null) ...<Widget>[Divider(height: 1, thickness: 1, color: c.border), bottom!],
-                      if (footer != null)
-                        SafeArea(
-                          top: false,
-                          child: Padding(
-                            padding: EdgeInsets.fromLTRB(
-                              context.space.s5,
-                              context.space.s2,
-                              context.space.s5,
-                              context.space.s4,
+                    final Widget? footerBox = footer == null
+                        ? null
+                        : SafeArea(
+                            top: false,
+                            child: Padding(
+                              padding: drawer
+                                  ? EdgeInsets.fromLTRB(
+                                      context.space.s5,
+                                      context.space.s1,
+                                      context.space.s5,
+                                      context.space.s5,
+                                    )
+                                  : EdgeInsets.fromLTRB(
+                                      context.space.s5,
+                                      context.space.s2,
+                                      context.space.s5,
+                                      context.space.s4,
+                                    ),
+                              child: footer,
                             ),
-                            child: footer,
-                          ),
-                        ),
-                    ];
+                          );
+                    // Drawer (прототип): итоги и кнопки — один подвал [footerColor] с верхней границей `border`.
+                    final List<Widget> pinned = drawer
+                        ? <Widget>[
+                            if (bottom != null || footerBox != null)
+                              DecoratedBox(
+                                key: footerKey,
+                                decoration: BoxDecoration(
+                                  color: footerColor(c),
+                                  border: Border(top: BorderSide(color: c.border)),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: <Widget>[?bottom, ?footerBox],
+                                ),
+                              ),
+                          ]
+                        : <Widget>[
+                            if (bottom != null) ...<Widget>[Divider(height: 1, thickness: 1, color: c.border), bottom!],
+                            ?footerBox,
+                          ];
                     // Низкое окно (Windows-POS 1280×720 с баннером и строкой клиента): закреплённые итоги и кнопки
                     // не помещаются под списком — область прокручивается целиком, список строк — не ниже
                     // [minBodyHeight] (без переполнения, кнопка «Создать заказ» достижима).
@@ -213,11 +286,19 @@ class CartPanel extends StatelessWidget {
                         ),
                       );
                     }
+                    final Widget pinnedColumn = Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: pinned,
+                    );
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
                         Expanded(child: body),
-                        ...pinned,
+                        if (pinned.isNotEmpty)
+                          reportBottom == null
+                              ? pinnedColumn
+                              : _HeightReporter(notifier: reportBottom, child: pinnedColumn),
                       ],
                     );
                   },
@@ -234,11 +315,7 @@ class CartPanel extends StatelessWidget {
         color: c.surface,
         border: Border(left: BorderSide(color: c.border)),
       ),
-      CartPanelVariant.overlay => BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadiusDirectional.horizontal(start: context.radii.lg),
-        boxShadow: context.elevation.e2,
-      ),
+      CartPanelVariant.overlay => BoxDecoration(color: c.surface, boxShadow: context.elevation.e3),
       CartPanelVariant.screen => BoxDecoration(color: c.surface),
     };
     return Semantics(
@@ -247,13 +324,39 @@ class CartPanel extends StatelessWidget {
       label: semanticLabel,
       child: DecoratedBox(
         decoration: decoration,
-        child: ClipRRect(
-          borderRadius: variant == CartPanelVariant.overlay
-              ? BorderRadiusDirectional.horizontal(start: context.radii.lg).resolve(Directionality.of(context))
-              : BorderRadius.zero,
-          child: content,
-        ),
+        child: ClipRect(child: content),
       ),
     );
+  }
+}
+
+/// Сообщает высоту закреплённого низа drawer в [AppSnackbarRegion.bottomInset] (после кадра, без перестройки).
+class _HeightReporter extends SingleChildRenderObjectWidget {
+  const _HeightReporter({required this.notifier, required super.child});
+
+  final ValueNotifier<double> notifier;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderHeightReporter(notifier);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderHeightReporter renderObject) {
+    renderObject.notifier = notifier;
+  }
+}
+
+class _RenderHeightReporter extends RenderProxyBox {
+  _RenderHeightReporter(this.notifier);
+
+  ValueNotifier<double> notifier;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final double height = size.height;
+    if (notifier.value != height) {
+      final ValueNotifier<double> target = notifier;
+      SchedulerBinding.instance.addPostFrameCallback((_) => target.value = height);
+    }
   }
 }

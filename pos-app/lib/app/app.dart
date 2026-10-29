@@ -10,6 +10,7 @@ import 'package:optomstroy/core/di/core_providers.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/core/sync/sync_providers.dart';
 import 'package:optomstroy/design_system/components/env_banner.dart';
+import 'package:optomstroy/design_system/components/product_image.dart';
 import 'package:optomstroy/design_system/theme/app_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/features/session_ui/presentation/session_gate.dart';
@@ -35,11 +36,13 @@ class App extends ConsumerWidget {
     // отслеживает сам (`onSignedOut` / `onSignedIn`). До входа таймеров синхронизации нет.
     if (ref.watch(appDatabaseProvider.select((db) => db != null))) ref.watch(syncSchedulerProvider);
     final DisplayPreferences display = ref.watch(displayPreferencesProvider);
-    final environment = ref.watch(appConfigProvider).environment;
+    final AppConfig config = ref.watch(appConfigProvider);
+    final environment = config.environment;
     return MaterialApp.router(
       routerConfig: router,
-      // Название продукта не переводится (отдельного ключа ARB нет).
-      title: 'Оптомстрой',
+      // Название продукта не переводится (отдельного ключа ARB нет); заголовок окна Windows задаёт
+      // windows/runner/main.cpp тем же текстом (responsive-spec R-5, ADR-112).
+      title: 'Оптомстрой POS',
       theme: AppTheme.light(),
       themeMode: ThemeMode.light,
       locale: defaultLocale,
@@ -53,11 +56,16 @@ class App extends ConsumerWidget {
       // выбирает Splash (02 SCR-00.6; D_spec_questions SS-05, AU-05), поэтому coverColdStart: false.
       // Настройки отображения SCR-42: размер текста (UI-42-025) и «Уменьшить анимации» (UI-42-007)
       // (третий источник reduce-motion 03 §11.1 — через `MediaQuery.disableAnimations`).
+      // Фото товаров и категорий: сервер отдаёт путь `/images/{sha256}/{size}` без хоста (00_root.yaml `Image`) —
+      // разрешается от `API_BASE_URL` (ProductImageBase).
       builder: (context, child) => MediaQuery(
         data: displayMediaQuery(MediaQuery.of(context), display),
-        child: EnvBanner(
-          environmentCode: environment == AppEnvironment.prod ? null : environment.name,
-          child: AppVersionGate(child: SessionGate(coverColdStart: false, child: child ?? const SizedBox.shrink())),
+        child: ProductImageBase(
+          baseUri: config.apiBaseUrl,
+          child: EnvBanner(
+            environmentCode: environment == AppEnvironment.prod ? null : environment.name,
+            child: AppVersionGate(child: SessionGate(coverColdStart: false, child: child ?? const SizedBox.shrink())),
+          ),
         ),
       ),
     );

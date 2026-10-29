@@ -3,7 +3,8 @@ import type { Logger } from 'pino';
 import type { SyncEntity, SyncTrigger } from '../../common/enums.js';
 import type { SyncErrorCode } from '../../jobs/sync-errors.writer.js';
 import { isOnecAuthFailure, isOnecError, OnecError } from '../../integrations/onec/onec-error.js';
-import type { OnecChangesPage, OnecGateway } from '../../integrations/onec/onec-gateway.js';
+import type { OnecChangesPage, OnecGateway, OnecHealth } from '../../integrations/onec/onec-gateway.js';
+import type { OnecApiCompatibility } from '../alerts/onec-api-compat.js';
 import type { OnecAuthPause } from '../alerts/onec-auth-pause.js';
 import type { ApplyRunTracker, ApplyScope, ChangeItemHandler, EntityCounts } from './apply.types.js';
 import { type CatalogApplier, newApplyState } from './catalog-applier.js';
@@ -46,6 +47,12 @@ export interface OnecChangesOptions {
    * Нет — без паузы (тесты конвейера).
    */
   readonly authPause?: Pick<OnecAuthPause, 'active' | 'record'>;
+  /**
+   * Совместимость версии API расширения (05 ONEC-095, F13): ответ `/health` в начале цикла сверяется; несовместимая
+   * версия → сущности `paused`, цикл к `/changes` не обращается (`paused_api`, ack нет — регистрации остаются в 1С).
+   * `/health` недоступен — действует сохранённая пауза. Нет — без проверки (тесты конвейера).
+   */
+  readonly apiCompat?: Pick<OnecApiCompatibility, 'active' | 'check'>;
 }
 
 /** Справочники каталога, инкремент которых в режиме расширения идёт только через план обмена (05 SYNC-011). */
@@ -68,7 +75,9 @@ export type ChangesPullStatus =
   /** Идёт другой цикл `onec.changes` (advisory lock) — singleton на узел (SYNC-011). */
   | 'skipped_locked'
   /** Пауза чтения после 401/403 (05 §6.5): к 1С не обращались, `until` — конец паузы. */
-  | 'paused_auth';
+  | 'paused_auth'
+  /** Несовместимая версия API расширения (05 ONEC-095): `/changes` не читался, причина — `pausedReason`. */
+  | 'paused_api';
 
 export interface ChangesPullResult {
   readonly status: ChangesPullStatus;
@@ -87,6 +96,8 @@ export interface ChangesPullResult {
   readonly deferred: number;
   /** Конец паузы чтения (`paused_auth`). */
   readonly pausedUntil?: string;
+  /** Причина паузы обмена (`paused_api`, = `sync_state.paused_reason`). */
+  readonly pausedReason?: string;
 }
 
 /** Ключ advisory-lock цикла `onec.changes` (singleton на узел). */
@@ -168,7 +179,16 @@ export class OnecChangesService {
     const now = this.options.now ?? (() => new Date());
     // `since` читается под lock: параллельный цикл не может сдвинуть номер между чтением и запросом к 1С.
     let since = await this.lastMessageNumber();
-    if (this.options.reconcileWithHealth !== false) since = await this.reconcileWithHealth(since);
+    if (this.options.reconcileWithHealth !== false) {
+      const health = await this.readHealth();
+      // 05 ONEC-095: несовместимая версия API — к /changes не обращаемся (ack нет, регистрации остаются в 1С).
+      const paused = await this.apiPaused(health);
+      if (paused) {
+        this.log.warn({ reason: paused.reason }, 'onec.changes.paused_api: обмен приостановлен (версия API 1С)');
+        return { ...EMPTY_RESULT, status: 'paused_api', pausedReason: paused.reason };
+      }
+      since = await this.reconcileWithHealth(since, health);
+    }
 
     const runIds = new Map<SyncEntity, string>();
     const counts = new Map<SyncEntity, EntityCounts>();
@@ -387,18 +407,31 @@ export class OnecChangesService {
     }
   }
 
-  /** При старте цикла — продолжать с большего из `last_message_number` и `/health.lastAckMessageNumber`. */
-  private async reconcileWithHealth(since: number): Promise<number> {
+  /** `/health` в начале цикла; недоступен — `undefined` (цикл продолжается, как и раньше). */
+  private async readHealth(): Promise<OnecHealth | undefined> {
     try {
       const h = await this.gateway.getHealth();
       await this.markNodeReachable();
-      const last = h.body.lastAckMessageNumber;
-      if (typeof last === 'number' && last > since) {
-        await this.setNodeNumber(last);
-        return last;
-      }
+      return h.body;
     } catch (e) {
       this.log.debug({ err: e }, 'onec.changes.health_unavailable');
+      return undefined;
+    }
+  }
+
+  /** Пауза по версии API (ONEC-095): по ответу `/health`, без ответа — сохранённая отметка `sync_state`. */
+  private async apiPaused(health: OnecHealth | undefined): Promise<{ readonly reason: string } | null> {
+    const guard = this.options.apiCompat;
+    if (!guard) return null;
+    return health ? guard.check(health) : guard.active();
+  }
+
+  /** При старте цикла — продолжать с большего из `last_message_number` и `/health.lastAckMessageNumber`. */
+  private async reconcileWithHealth(since: number, health: OnecHealth | undefined): Promise<number> {
+    const last = health?.lastAckMessageNumber;
+    if (typeof last === 'number' && last > since) {
+      await this.setNodeNumber(last);
+      return last;
     }
     return since;
   }

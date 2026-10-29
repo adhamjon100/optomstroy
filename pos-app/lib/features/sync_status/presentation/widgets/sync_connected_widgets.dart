@@ -94,6 +94,7 @@ class _ConnectedOfflineBannerState extends ConsumerState<ConnectedOfflineBanner>
     return OfflineBanner(
       variant: variant,
       dataAsOf: freshness.asOf,
+      now: ref.watch(syncNowProvider).value ?? ref.read(clockProvider).nowUtc(),
       actionLabel: variant == OfflineBannerVariant.serverDown ? l10n.ds_button_retry : null,
       onAction: variant == OfflineBannerVariant.serverDown
           ? (widget.onRetry ?? () => ref.invalidate(backendHealthReportProvider))
@@ -105,22 +106,43 @@ class _ConnectedOfflineBannerState extends ConsumerState<ConnectedOfflineBanner>
 /// `SyncIndicator` в шапке: тап → SCR-43 поверх текущего экрана (02 SCR-43.6, AC-UI-43-015): на expanded/large
 /// у `seller`/`cashier`/`senior_seller` — side sheet 480 без смены URL ([SyncStatusSideSheet]), иначе — экран
 /// `/sync` через `push` («Назад» возвращает туда, откуда открыт; `go` заменил бы стек).
+///
+/// [adaptive] (шапка medium+, ADR-112; 02 SCR-10.3 A6, 03 §9.40): пока всё в порядке (`ok`, `never`,
+/// `syncing`) — только иконка с тултипом «обновлено HH:MM» (полная подпись — в `Semantics`); при `stale`,
+/// `error` и `offline` — иконка с текстом («данные от …», «ошибка синхронизации», «нет сети»).
 class ConnectedSyncIndicator extends ConsumerWidget {
-  const ConnectedSyncIndicator({super.key, this.compact, this.onTap});
+  const ConnectedSyncIndicator({super.key, this.compact, this.onTap, this.adaptive = false});
 
   /// Только иконка; `null` — по классу окна: compact — иконка, иначе иконка + время (02 SCR-10.3 A6).
+  /// При [adaptive] не учитывается.
   final bool? compact;
 
   /// По умолчанию — [SyncStatusSideSheet.open].
   final VoidCallback? onTap;
 
+  /// Вид по состоянию (шапка medium+): в норме — только иконка, при проблеме — иконка с текстом.
+  final bool adaptive;
+
+  /// Состояние в норме — в адаптивном режиме показывается только иконка.
+  static bool quietVariant(SyncIndicatorVariant v) =>
+      v == SyncIndicatorVariant.ok || v == SyncIndicatorVariant.never || v == SyncIndicatorVariant.syncing;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final info = ref.watch(syncIndicatorProvider);
+    final SyncIndicatorVariant variant = syncIndicatorVariantOf(info.status);
+    // «Сейчас» для метки «обновлено HH:MM» (без даты — только в тот же день Бишкека).
+    final DateTime now = ref.watch(clockProvider).nowUtc();
+    final bool iconOnly = adaptive
+        ? context.windowClass == WindowClass.compact || quietVariant(variant)
+        : compact ?? context.windowClass == WindowClass.compact;
     return SyncIndicator(
-      variant: syncIndicatorVariantOf(info.status),
+      variant: variant,
       time: info.time,
-      compact: compact ?? context.windowClass == WindowClass.compact,
+      now: now,
+      compact: iconOnly,
+      // Только иконка — подпись состояния во всплывающей подсказке (`ds_updated_at` «обновлено HH:MM» и т. п.).
+      tooltip: adaptive && iconOnly ? SyncIndicator.labelOf(context, variant, time: info.time, now: now) : null,
       onTap: onTap ?? () => unawaited(SyncStatusSideSheet.open(context, role: ref.read(syncViewerRoleProvider))),
     );
   }

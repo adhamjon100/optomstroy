@@ -1,7 +1,7 @@
 // GENERATED CODE - DO NOT EDIT BY HAND.
 // Generator: scripts/gen_tokens_dart.py (RM-B-006)
-// Source: contracts/design-tokens/tokens.json (canonical sha256 7ecbb28dd87e801deb0bbceb2845ab534f53e844aa8f18b39bf05f36dee13ced)
-// DsColors - ds.color.* (03 §5.3, §17.2); default palette B «Оранжевый», kernel v1.9 §24.1
+// Source: contracts/design-tokens/tokens.json (canonical sha256 31ea2b8fcd4858d3a96d8f15ebdd88453c981902ca331fe859ffb230f2f53d46)
+// DsColors - ds.color.* (03 §5.3, §17.2); default palette B «Оранжевый», kernel v1.9 §24.1, ADR-111
 // ignore_for_file: public_member_api_docs
 
 import 'package:flutter/material.dart';
@@ -9,8 +9,9 @@ import 'package:flutter/material.dart';
 /// Colour tokens `ds.color.*`. Field names follow kernel §8.1, §17.5, §18.2 item 15.
 ///
 /// Palette B role rule (03 §5.9, DS-098): `primary` is a fill only, always with
-/// `onPrimary`; text, prices, links and selection indicators use `primaryText`;
-/// white text on `primary`, `primaryHover`, `primaryPressed` is forbidden.
+/// `onPrimary`; text, prices, links and selection indicators use `primaryText`.
+/// ADR-111: white `onPrimary` on `primary` #D9380F is 4.64:1 (AA); white text is forbidden
+/// only on orange fills below 4.5:1, e.g. `brandAccent` #FF8700 (2.41:1).
 @immutable
 class DsColors extends ThemeExtension<DsColors> {
   const DsColors({
@@ -32,10 +33,12 @@ class DsColors extends ThemeExtension<DsColors> {
     required this.onError,
     required this.onInverseSurface,
     required this.onPrimary,
+    required this.onPrimaryContainer,
     required this.onSuccess,
     required this.overlay,
     required this.primary,
     required this.primaryContainer,
+    required this.primaryContainerBorder,
     required this.primaryContainerPressed,
     required this.primaryHover,
     required this.primaryPressed,
@@ -73,10 +76,12 @@ class DsColors extends ThemeExtension<DsColors> {
   final Color onError;
   final Color onInverseSurface;
   final Color onPrimary;
+  final Color onPrimaryContainer;
   final Color onSuccess;
   final Color overlay;
   final Color primary;
   final Color primaryContainer;
+  final Color primaryContainerBorder;
   final Color primaryContainerPressed;
   final Color primaryHover;
   final Color primaryPressed;
@@ -95,8 +100,53 @@ class DsColors extends ThemeExtension<DsColors> {
   final Color warning;
   final Color warningContainer;
 
-  /// Palette B «Оранжевый» - main R1 palette (03 §5.3; kernel v1.9 §24.1).
+  /// Palette B «Оранжевый» - main R1 palette (03 §5.3; kernel v1.9 §24.1; values ADR-111).
   static const DsColors lightB = DsColors(
+    background: Color(0xFFF1F6FC), // #F1F6FC
+    border: Color(0xFFE3E9F2), // #E3E9F2
+    borderStrong: Color(0xFF7D879A), // #7D879A
+    brandAccent: Color(0xFFFF8700), // #FF8700
+    disabledBg: Color(0xFFEEF1F5), // #EEF1F5
+    disabledText: Color(0xFF9CA3AF), // #9CA3AF
+    error: Color(0xFFD21B1F), // #D21B1F
+    errorContainer: Color(0xFFFDEAEA), // #FDEAEA
+    favorite: Color(0xFFE2A93B), // #E2A93B
+    focus: Color(0xFF1F5FA8), // #1F5FA8
+    iconButtonPressed: Color(0xFFE3E9F2), // #E3E9F2
+    info: Color(0xFF1F5FA8), // #1F5FA8
+    infoContainer: Color(0xFFE0ECFB), // #E0ECFB
+    inverseSurface: Color(0xFF0E1456), // #0E1456
+    onBrandAccent: Color(0xFF0E1456), // #0E1456
+    onError: Color(0xFFFFFFFF), // #FFFFFF
+    onInverseSurface: Color(0xFFFFFFFF), // #FFFFFF
+    onPrimary: Color(0xFFFFFFFF), // #FFFFFF
+    onPrimaryContainer: Color(0xFFA82A09), // #A82A09
+    onSuccess: Color(0xFFFFFFFF), // #FFFFFF
+    overlay: Color.fromRGBO(14, 20, 86, 0.28), // rgba(14,20,86,0.28)
+    primary: Color(0xFFD9380F), // #D9380F
+    primaryContainer: Color(0xFFFDEEE9), // #FDEEE9
+    primaryContainerBorder: Color(0xFFF5C6B6), // #F5C6B6
+    primaryContainerPressed: Color(0xFFFCEAE4), // #FCEAE4
+    primaryHover: Color(0xFFBF300B), // #BF300B
+    primaryPressed: Color(0xFFA82A09), // #A82A09
+    primaryText: Color(0xFFC9330C), // #C9330C
+    skeletonBase: Color(0xFFEAF1FB), // #EAF1FB
+    skeletonHighlight: Color(0xFFE3E9F2), // #E3E9F2
+    success: Color(0xFF177245), // #177245
+    successContainer: Color(0xFFDCFCE7), // #DCFCE7
+    surface: Color(0xFFFFFFFF), // #FFFFFF
+    surfaceHover: Color(0xFFF6F9FE), // #F6F9FE
+    surfacePressed: Color(0xFFEAF1FB), // #EAF1FB
+    surfaceVariant: Color(0xFFEAF1FB), // #EAF1FB
+    textPrimary: Color(0xFF0E1456), // #0E1456
+    textSecondary: Color(0xFF5B6478), // #5B6478
+    textTertiary: Color(0xFF656E80), // #656E80
+    warning: Color(0xFF8A5300), // #8A5300
+    warningContainer: Color(0xFFFEF9C3), // #FEF9C3
+  );
+
+  /// Rollback alternatives.B_2026_10_21 (Оранжевый (до ADR-111)): AppTheme.light(colors: ...).
+  static const DsColors lightB20261021 = DsColors(
     background: Color(0xFFF5F5F4), // #F5F5F4
     border: Color(0xFFDAD8D4), // #DAD8D4
     borderStrong: Color(0xFF7D8797), // #7D8797
@@ -115,10 +165,12 @@ class DsColors extends ThemeExtension<DsColors> {
     onError: Color(0xFFFFFFFF), // #FFFFFF
     onInverseSurface: Color(0xFFFFFFFF), // #FFFFFF
     onPrimary: Color(0xFF1B1F2A), // #1B1F2A
+    onPrimaryContainer: Color(0xFFB04E00), // #B04E00
     onSuccess: Color(0xFFFFFFFF), // #FFFFFF
     overlay: Color.fromRGBO(27, 31, 42, 0.48), // rgba(27,31,42,0.48)
     primary: Color(0xFFFF8700), // #FF8700
     primaryContainer: Color(0xFFFFEFD9), // #FFEFD9
+    primaryContainerBorder: Color(0xFFDAD8D4), // #DAD8D4
     primaryContainerPressed: Color(0xFFFFEAD1), // #FFEAD1
     primaryHover: Color(0xFFF07A00), // #F07A00
     primaryPressed: Color(0xFFD96A00), // #D96A00
@@ -161,10 +213,12 @@ class DsColors extends ThemeExtension<DsColors> {
     Color? onError,
     Color? onInverseSurface,
     Color? onPrimary,
+    Color? onPrimaryContainer,
     Color? onSuccess,
     Color? overlay,
     Color? primary,
     Color? primaryContainer,
+    Color? primaryContainerBorder,
     Color? primaryContainerPressed,
     Color? primaryHover,
     Color? primaryPressed,
@@ -202,10 +256,12 @@ class DsColors extends ThemeExtension<DsColors> {
       onError: onError ?? this.onError,
       onInverseSurface: onInverseSurface ?? this.onInverseSurface,
       onPrimary: onPrimary ?? this.onPrimary,
+      onPrimaryContainer: onPrimaryContainer ?? this.onPrimaryContainer,
       onSuccess: onSuccess ?? this.onSuccess,
       overlay: overlay ?? this.overlay,
       primary: primary ?? this.primary,
       primaryContainer: primaryContainer ?? this.primaryContainer,
+      primaryContainerBorder: primaryContainerBorder ?? this.primaryContainerBorder,
       primaryContainerPressed: primaryContainerPressed ?? this.primaryContainerPressed,
       primaryHover: primaryHover ?? this.primaryHover,
       primaryPressed: primaryPressed ?? this.primaryPressed,
@@ -250,10 +306,12 @@ class DsColors extends ThemeExtension<DsColors> {
       onError: Color.lerp(onError, other.onError, t)!,
       onInverseSurface: Color.lerp(onInverseSurface, other.onInverseSurface, t)!,
       onPrimary: Color.lerp(onPrimary, other.onPrimary, t)!,
+      onPrimaryContainer: Color.lerp(onPrimaryContainer, other.onPrimaryContainer, t)!,
       onSuccess: Color.lerp(onSuccess, other.onSuccess, t)!,
       overlay: Color.lerp(overlay, other.overlay, t)!,
       primary: Color.lerp(primary, other.primary, t)!,
       primaryContainer: Color.lerp(primaryContainer, other.primaryContainer, t)!,
+      primaryContainerBorder: Color.lerp(primaryContainerBorder, other.primaryContainerBorder, t)!,
       primaryContainerPressed: Color.lerp(primaryContainerPressed, other.primaryContainerPressed, t)!,
       primaryHover: Color.lerp(primaryHover, other.primaryHover, t)!,
       primaryPressed: Color.lerp(primaryPressed, other.primaryPressed, t)!,

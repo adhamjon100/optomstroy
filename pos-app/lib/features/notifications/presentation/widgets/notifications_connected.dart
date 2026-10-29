@@ -85,14 +85,15 @@ class NotificationsPopover extends StatelessWidget {
   static const Key viewAllKey = ValueKey<String>('notifications-view-all');
 
   /// Открыть под колокольчиком: [anchor] — прямоугольник колокольчика в глобальных координатах (по умолчанию —
-  /// правый верхний угол окна под шапкой 64). Esc / клик вне — закрыть (фокус возвращается на колокольчик).
+  /// правый верхний угол окна под шапкой 68 — `DsBreakpoints.topBarHeight`, ADR-112). Esc / клик вне — закрыть
+  /// (фокус возвращается на колокольчик).
   static Future<void> show(BuildContext context, {Rect? anchor}) {
     final GoRouter? router = GoRouter.maybeOf(context);
     final AppLocalizations l10n = AppLocalizations.of(context);
     final Size screen = MediaQuery.sizeOf(context);
-    // Под колокольчиком; без якоря — правый верхний угол под шапкой 64.
+    // Под колокольчиком; без якоря — правый верхний угол под шапкой medium+ (68, ADR-112).
     final EdgeInsets at = EdgeInsets.only(
-      top: (anchor?.bottom ?? 64) + 4,
+      top: (anchor?.bottom ?? DsBreakpoints.topBarHeight) + 4,
       right: anchor == null ? 24 : (screen.width - anchor.right).clamp(8, screen.width),
     );
     return showGeneralDialog<void>(

@@ -1,5 +1,5 @@
 // Каталог в режиме клиента (RM-E-017; 02 ч. B вариант `customer`, SCR-50.2; 10 CUST-021, CUST-022):
-// SCR-11/SCR-12 для `customer` — без часов, «бургера», сканера и постоянной корзины CP; остатки по
+// SCR-11/SCR-12 для `customer` — без «бургера», сканера и постоянной корзины CP; остатки по
 // `customer_stock_display`; корень каталога клиента — SCR-50 `/home`. Синтетические данные (на фейках).
 import 'package:flutter/material.dart' hide SearchBar;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,24 +7,37 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:optomstroy/core/enums.dart' show CustomerStockDisplay, RoleCode;
+import 'package:optomstroy/core/error/failure.dart';
+import 'package:optomstroy/core/error/result.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
+import 'package:optomstroy/design_system/components/app_button.dart';
+import 'package:optomstroy/design_system/components/category_sidebar_item.dart';
 import 'package:optomstroy/design_system/components/product_card.dart';
 import 'package:optomstroy/design_system/components/stock_badge.dart';
+import 'package:optomstroy/design_system/layout/shell_scope.dart';
 import 'package:optomstroy/design_system/theme/app_theme.dart';
+import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/features/catalog/domain/entities/catalog_query.dart';
 import 'package:optomstroy/features/catalog/domain/entities/product.dart';
+import 'package:optomstroy/features/catalog/presentation/providers/catalog_ports.dart';
 import 'package:optomstroy/features/catalog/presentation/providers/customer_mode_ports.dart';
 import 'package:optomstroy/features/catalog/presentation/screens/catalog_search_screen.dart';
 import 'package:optomstroy/features/catalog/presentation/screens/category_screen.dart';
+import 'package:optomstroy/features/catalog/presentation/state/catalog_prefs.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_card_mapper.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_header.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_logo.dart';
+import 'package:optomstroy/features/catalog/presentation/widgets/catalog_sidebar.dart';
 
 import 'support/catalog_fakes.dart';
 
 GoRouter _router(String initial) => GoRouter(
   initialLocation: initial,
   routes: <RouteBase>[
+    GoRoute(
+      path: '/cart',
+      builder: (BuildContext c, GoRouterState s) => const Scaffold(body: Text('route:/cart')),
+    ),
     GoRoute(
       path: '/home',
       builder: (BuildContext c, GoRouterState s) => const Scaffold(body: Text('route:/home')),
@@ -46,6 +59,7 @@ Future<void> _pump(
   required String initial,
   Size size = kExpanded,
   CustomerStockDisplay display = CustomerStockDisplay.status,
+  bool shell = false,
 }) async {
   setWindow(tester, size);
   final GoRouter router = _router(initial);
@@ -61,7 +75,8 @@ Future<void> _pump(
         routerConfig: router,
         builder: (BuildContext context, Widget? child) => MediaQuery(
           data: MediaQuery.of(context).copyWith(disableAnimations: true, size: size),
-          child: child!,
+          // Оболочка сотрудника на medium+ даёт шапке «бургер» (drawer навигации, ADR-112).
+          child: shell ? DsShellScope(openNavigation: () {}, child: child!) : child!,
         ),
       ),
     ),
@@ -70,11 +85,11 @@ Future<void> _pump(
 }
 
 void main() {
-  testWidgets('SCR-12 customer (E): без часов, «бургера», сканера и CP; логотип → /home', (tester) async {
-    await _pump(tester, CatalogHarness(role: RoleCode.customer), initial: '/catalog/c/c-mix');
-    expect(find.byType(CatalogHeaderClock), findsNothing);
-    expect(find.byIcon(Icons.menu_rounded), findsNothing);
+  testWidgets('SCR-12 customer (E): без «бургера», сканера, часов и CP; логотип → /home', (tester) async {
+    await _pump(tester, CatalogHarness(role: RoleCode.customer), initial: '/catalog/c/c-mix', shell: true);
+    expect(find.byIcon(Icons.menu_rounded), findsNothing, reason: 'у клиента «бургера» нет и внутри оболочки');
     expect(find.byTooltip('Сканировать штрихкод'), findsNothing);
+    expect(find.byType(CatalogHeaderClock), findsNothing, reason: 'часы и дата — рабочие элементы staff (UI-50-001)');
     expect(find.byKey(const ValueKey<String>('catalog-cart-panel')), findsNothing);
     expect(find.byType(ProductCardGrid), findsWidgets);
 
@@ -83,11 +98,85 @@ void main() {
     expect(find.text('route:/home'), findsOneWidget);
   });
 
-  testWidgets('seller (E) — часы, «бургер» и CP на месте (регрессия staff)', (tester) async {
-    await _pump(tester, CatalogHarness(), initial: '/catalog/c/c-mix');
-    expect(find.byType(CatalogHeaderClock), findsOneWidget);
+  testWidgets('seller (E) — «бургер» в оболочке, кнопка корзины в шапке вместо CP, часы и дата (регрессия staff, '
+      'ADR-112)', (tester) async {
+    await _pump(
+      tester,
+      CatalogHarness(
+        extra: <Override>[
+          catalogCartButtonProvider.overrideWithValue(
+            (BuildContext context) => const SizedBox(key: ValueKey<String>('cart-header-button'), width: 140),
+          ),
+        ],
+      ),
+      initial: '/catalog/c/c-mix',
+      shell: true,
+    );
+    expect(find.byType(CatalogHeaderClock), findsOneWidget, reason: 'часы и дата сотрудника (UI-10-005, UI-10-032)');
+    expect(find.text('09:41'), findsOneWidget);
     expect(find.byIcon(Icons.menu_rounded), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('catalog-cart-panel')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('catalog-cart-panel')), findsNothing, reason: 'постоянной CP нет');
+    expect(find.byKey(const ValueKey<String>('cart-header-button')), findsOneWidget, reason: 'кнопка-итог в шапке');
+  });
+
+  testWidgets('SCR-12 customer (E, D6): прежний сайдбар-список со счётчиками, «★ Избранное N» и «Недавние товары»; '
+      'сворачивается до 72, выбор сохраняется', (tester) async {
+    final FakeShelfPort shelf = FakeShelfPort(
+      favorites: <String>{'p1', 'p2'},
+      recent: <RecentProduct>[RecentProduct(product: product(7), viewedAt: kNow)],
+    );
+    addTearDown(shelf.dispose);
+    final InMemoryCatalogPrefs prefs = InMemoryCatalogPrefs();
+    await _pump(
+      tester,
+      CatalogHarness(role: RoleCode.customer, shelf: shelf, prefs: prefs),
+      initial: '/catalog/c/c-mix',
+      shell: true,
+    );
+    final Finder sidebar = find.byType(CatalogSidebar);
+    expect(tester.widget<CatalogSidebar>(sidebar).layout, CatalogSidebarLayout.list);
+    expect(
+      tester.getSize(sidebar).width,
+      closeTo(DsBreakpoints.sidebarWide - 1, 0.5),
+      reason: '1366 lp — 292 с линией',
+    );
+    expect(find.byType(CategorySidebarItem), findsWidgets);
+    expect(find.byKey(const ValueKey<String>('sidebar-recent')), findsOneWidget, reason: '«Недавние товары» (B5)');
+    expect(find.byKey(const ValueKey<String>('sidebar-recent-p7')), findsOneWidget);
+    expect(
+      tester.widget<CategorySidebarItem>(find.byKey(const ValueKey<String>('sidebar-favorites'))).count,
+      2,
+      reason: '«★ Избранное N» (B4)',
+    );
+    await tester.tap(find.byKey(CatalogSidebar.toggleKey));
+    await settle(tester);
+    expect(tester.getSize(sidebar).width, closeTo(DsBreakpoints.sidebarCollapsed - 1, 0.5));
+    expect(await prefs.sidebarCollapsed(), isTrue);
+  });
+
+  testWidgets('customer medium+: после «+ Добавить» тост «Добавлено: {name}» с действием «Открыть» → /cart '
+      '(кнопки корзины в шапке клиента нет)', (tester) async {
+    final _AcceptingCart port = _AcceptingCart();
+    await _pump(
+      tester,
+      CatalogHarness(role: RoleCode.customer, extra: <Override>[catalogCartPortProvider.overrideWithValue(port)]),
+      initial: '/catalog/c/c-mix',
+      shell: true,
+    );
+    await tester.tap(
+      find.descendant(of: find.byKey(const ValueKey<String>('product-p0')), matching: find.byType(AppButton)),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Добавлено: Смеситель для кухни Frap F4200'), findsOneWidget);
+    await tester.tap(find.text('Открыть'));
+    await settle(tester);
+    expect(find.text('route:/cart'), findsOneWidget);
+  });
+
+  testWidgets('seller вне оболочки (без DsShellScope) — «бургера» нет', (tester) async {
+    await _pump(tester, CatalogHarness(), initial: '/catalog/c/c-mix');
+    expect(find.byIcon(Icons.menu_rounded), findsNothing);
   });
 
   testWidgets('SCR-11 customer: status — «В наличии» без чисел; quantity — «В наличии · N шт», без «Резерв»', (
@@ -147,4 +236,13 @@ void main() {
       'Нет в наличии',
     );
   });
+}
+
+/// Порт корзины, который принимает добавление.
+final class _AcceptingCart implements CatalogCartPort {
+  @override
+  Future<Result<void>> add(ProductSummary product) async => const Success<void>(null);
+
+  @override
+  String? rejectionText(Failure f, AppLocalizations l10n) => null;
 }

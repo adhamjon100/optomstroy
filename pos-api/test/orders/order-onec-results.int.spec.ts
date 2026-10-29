@@ -8,6 +8,9 @@ import {
 } from '../../src/common/ports/index.js';
 import { OrdersModule } from '../../src/orders/orders.module.js';
 import { OrderOnecResultsHandler, type OrdersWorkerLog } from '../../src/orders/worker/order-onec-results.handler.js';
+import { OrderDependencyNotifier } from '../../src/orders/worker/order-dependency.notifier.js';
+import type { BlockedDependent } from '../../src/jobs/outbox/outbox-dispatcher.js';
+import { InMemoryNotifications } from '../support/sales-ports.fakes.js';
 import type { PosActor } from '../support/pos-fixture.js';
 import { onecRefFor, type OrderDto, orderBody, type OrdersHarness, startOrders } from './support/orders-fixture.js';
 
@@ -439,6 +442,165 @@ describe('OrderOnecResultsHandler: граничные ветви', () => {
     expect(r.failed).toBeGreaterThanOrEqual(1);
     expect(await orderStatus(lostFailed.o.id)).toBe('submit_failed');
     expect(await orderStatus(o.id)).not.toBe('submitting');
+  });
+
+  it('G-KI-12: заказ ждёт клиента (customer/create в failed/dead/cancelled) — sync_error автору заказа, автору клиента, admin и senior_seller', async () => {
+    const o = await create(a.seller);
+    const notes = new InMemoryNotifications();
+    notes.roleMembers.set('admin', [a.admin.userId]);
+    notes.roleMembers.set('senior_seller', [a.senior_seller.userId]);
+    await h.t.q(
+      `UPDATE customers SET created_by_user_id = $2::uuid WHERE id = (SELECT customer_id FROM orders WHERE id = $1)`,
+      [o.id, a.cashier.userId],
+    );
+    const log = new RecLog();
+    const notifier = new OrderDependencyNotifier({ db: h.t.db, notifications: notes, log });
+    const changedAt = new Date('2026-10-28T10:00:00Z');
+    const item = (
+      over: Partial<BlockedDependent> = {},
+      dep: Partial<BlockedDependent['dependency']> = {},
+    ): BlockedDependent => ({
+      id: randomUUID(),
+      aggregateType: 'order',
+      aggregateId: o.id,
+      operation: 'create',
+      reason: 'Ожидает элемент customer/create …',
+      ...over,
+      dependency: {
+        id: randomUUID(),
+        aggregateType: 'customer',
+        aggregateId: randomUUID(),
+        operation: 'create',
+        status: 'failed',
+        lastErrorCode: 'ONEC_REJECTED',
+        lastError: '409 POS_E_DUPLICATE: найден другой клиент',
+        changedAt,
+        ...dep,
+      },
+    });
+    const blocked = item();
+    await notifier.onBlocked([blocked]);
+    await notifier.onBlocked([blocked]); // повтор — без дублей (dedupe)
+    for (const u of [a.seller, a.cashier, a.admin, a.senior_seller]) {
+      expect(notes.of(u.userId), u.role ?? '').toHaveLength(1);
+    }
+    const n = notes.of(a.seller.userId)[0];
+    expect(n).toMatchObject({
+      kind: 'sync_error',
+      severity: 'warning',
+      title: `Заказ ${String(o.publicNumber)} ждёт клиента в 1С`,
+      payload: { orderId: o.id, outboxId: blocked.id, dependsOnOutboxId: blocked.dependency.id },
+      dedupeKey: `outbox_blocked:${blocked.id}:${blocked.dependency.id}:failed:${changedAt.getTime()}`,
+    });
+    expect(n.body).toContain('1С отклонила создание клиента (409 POS_E_DUPLICATE: найден другой клиент)');
+    // dead / cancelled без текста ошибки; автор клиента неизвестен — только автор заказа и роли.
+    await h.t.q(
+      `UPDATE customers SET created_by_user_id = NULL WHERE id = (SELECT customer_id FROM orders WHERE id = $1)`,
+      [o.id],
+    );
+    await notifier.onBlocked([item({}, { status: 'dead', lastError: null }), item({}, { status: 'cancelled' })]);
+    const bodies = notes.of(a.seller.userId).map((x) => x.body);
+    expect(bodies.some((b) => b.includes('карточка клиента не доставлена в 1С (попытки исчерпаны). '))).toBe(true);
+    expect(bodies.some((b) => b.includes('отправка клиента в 1С отозвана ('))).toBe(true);
+    expect(notes.of(a.cashier.userId)).toHaveLength(1);
+    // Не заказ / не create / основание не клиент / заказа нет — пропуск.
+    const before = notes.items.length;
+    await notifier.onBlocked([
+      item({ aggregateType: 'payment' }),
+      item({ operation: 'cancel' }),
+      item({}, { aggregateType: 'order' }),
+      item({ aggregateId: randomUUID() }),
+    ]);
+    expect(notes.items.length).toBe(before);
+    // Без порта уведомлений — ничего; порт не привязан — тихо; сбой порта — журнал, исключение не всплывает.
+    await new OrderDependencyNotifier({ db: h.t.db, notifications: null, log }).onBlocked([item()]);
+    await new OrderDependencyNotifier({ db: h.t.db, notifications: notBoundPorts.notifications, log }).onBlocked([
+      item(),
+    ]);
+    expect(log.lines).toHaveLength(0);
+    await new OrderDependencyNotifier({ db: h.t.db, notifications: { notify: boom, notifyRole: boom }, log }).onBlocked(
+      [item()],
+    );
+    expect(log.lines.map((l) => l.msg)).toEqual(['orders.outbox_blocked.notify_failed']);
+  });
+
+  it('SYNC-042: отмена во время sending create, затем 1С отклонила create → cancel cancelled, cancelRequested снят, автору запроса — order_status', async () => {
+    const o = await create(a.seller);
+    const ob = await outbox(o.id);
+    // create захвачен воркером (sending) — отмена ставится зависимой задачей cancel (enqueue_cancel_after_create).
+    await h.t.q(
+      `UPDATE onec_outbox SET status = 'sending', attempts = 1, lease_until = now() + interval '1 hour',
+              next_attempt_at = NULL WHERE id = $1`,
+      [ob.id],
+    );
+    const res = await h.t
+      .req('post', `/orders/${o.id}/cancel`, a.seller, { idem: true })
+      .send({ reason: 'Клиент передумал', reasonCode: 'customer_refused' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const cancelRow = async () =>
+      (
+        await h.t.q<{ id: string; status: string; depends_on_outbox_id: string | null; last_error: string | null }>(
+          `SELECT id, status::text AS status, depends_on_outbox_id::text AS depends_on_outbox_id, last_error
+             FROM onec_outbox WHERE aggregate_id = $1 AND operation = 'cancel'`,
+          [o.id],
+        )
+      )[0];
+    expect(await cancelRow()).toMatchObject({ status: 'pending', depends_on_outbox_id: ob.id });
+    // Запрос отмены от другого сотрудника (автор запроса ≠ автор заказа) — ему уведомление о снятии.
+    await h.t.q(`UPDATE orders SET cancel_requested_by_user_id = $2::uuid WHERE id = $1`, [o.id, a.cashier.userId]);
+    await h.t.q(
+      `UPDATE onec_outbox SET status = 'failed', lease_until = NULL, last_error_code = 'ONEC_REJECTED',
+              last_error = 'POS_E_STOCK: нет остатка (тест)', onec_response = '{"message":"нет остатка"}'::jsonb
+        WHERE id = $1`,
+      [ob.id],
+    );
+    const notes = new InMemoryNotifications();
+    const handler = new OrderOnecResultsHandler({
+      db: h.t.db,
+      notifications: notes,
+      cart: null,
+      payments: null,
+      log: new RecLog(),
+    });
+    expect(await handler.onFailed(failed(ob.id))).toBe('applied');
+    const c = await cancelRow();
+    expect(c.status).toBe('cancelled');
+    expect(c.last_error).toContain('SYNC-042');
+    const ord = await h.t.q<{ status: string; cancel_requested_at: Date | null }>(
+      `SELECT status::text AS status, cancel_requested_at FROM orders WHERE id = $1`,
+      [o.id],
+    );
+    expect(ord[0]).toMatchObject({ status: 'submit_failed', cancel_requested_at: null });
+    const mine = notes.of(a.cashier.userId).filter((n) => n.dedupeKey === `order_cancel_withdrawn:${o.id}:${c.id}`);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({ kind: 'order_status', severity: 'warning' });
+    // Повторная доставка job — пропуск, без новых уведомлений и переходов.
+    const before = notes.items.length;
+    expect(await handler.onFailed(failed(ob.id))).toBe('skipped');
+    expect(notes.items.length).toBe(before);
+
+    // Запрос отмены уже снят (cancelRequested=false), а зависимая задача cancel осталась — она отзывается, заказ не
+    // трогается повторно, уведомления о снятии нет.
+    const o2 = await create(a.seller);
+    const ob2 = await outbox(o2.id);
+    await h.t.q(
+      `UPDATE onec_outbox SET status = 'sending', attempts = 1, lease_until = now() + interval '1 hour',
+              next_attempt_at = NULL WHERE id = $1`,
+      [ob2.id],
+    );
+    const res2 = await h.t
+      .req('post', `/orders/${o2.id}/cancel`, a.seller, { idem: true })
+      .send({ reason: 'Клиент передумал', reasonCode: 'customer_refused' });
+    expect(res2.status, JSON.stringify(res2.body)).toBe(200);
+    await h.t.q(`UPDATE orders SET cancel_requested_at = NULL WHERE id = $1`, [o2.id]);
+    await h.t.q(
+      `UPDATE onec_outbox SET status = 'failed', lease_until = NULL, last_error_code = 'ONEC_REJECTED',
+              last_error = 'POS_E_STOCK: нет остатка (тест)' WHERE id = $1`,
+      [ob2.id],
+    );
+    expect(await handler.onFailed(failed(ob2.id))).toBe('applied');
+    expect((await outbox(o2.id, 'cancel')).status).toBe('cancelled');
+    expect(notes.items.some((n) => n.dedupeKey.startsWith(`order_cancel_withdrawn:${o2.id}:`))).toBe(false);
   });
 
   it('журнал проекции: предупреждение без данных пишется с пустым объектом', () => {

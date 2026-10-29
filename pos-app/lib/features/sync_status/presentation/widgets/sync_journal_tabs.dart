@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:optomstroy/core/di/core_providers.dart';
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/error/failure.dart';
 import 'package:optomstroy/core/error/result.dart';
@@ -156,7 +157,12 @@ class _SyncErrorsTabState extends ConsumerState<SyncErrorsTab> {
             child: Text(
               <String>[
                 SyncLabels.entityValue(l10n, run.entityValue),
-                if (run.startedAt != null) dsTimeLabel(context, run.startedAt!),
+                if (run.startedAt != null)
+                  dsTimeLabel(
+                    context,
+                    run.startedAt!,
+                    nowUtc: ref.watch(syncNowProvider).value ?? ref.read(clockProvider).nowUtc(),
+                  ),
               ].join(' · '),
               style: context.text.caption.copyWith(color: context.colors.textSecondary),
             ),

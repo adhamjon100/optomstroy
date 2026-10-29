@@ -82,6 +82,12 @@ abstract final class DsBishkekTime {
     return DateFormat('d MMMM', locale).format(DateTime(w.year, w.month, w.day));
   }
 
+  /// «пн, 29 июн» (дата шапки SCR-10/11/12 и прочих экранов сотрудника, 02 UI-10-032).
+  static String headerDateShort(DateTime utc, String locale) {
+    final DateTime w = wall(utc);
+    return DateFormat('E, d MMM', locale).format(DateTime(w.year, w.month, w.day)).replaceAll('.', '');
+  }
+
   /// «Пн, 29 июня 2026» (шапка SCR-30, AC-UI-30-020).
   static String headerDate(DateTime utc, String locale) {
     final DateTime w = wall(utc);

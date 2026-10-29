@@ -16,7 +16,7 @@
         "id": { "const": "optomstroy-ds-tokens" },
         "task": { "const": "RM-B-006" },
         "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
-        "palette": { "const": "B", "description": "Основная палитра R1 — B «Оранжевый» (ядро v1.9 §24.1)." },
+        "palette": { "const": "B", "description": "Основная палитра R1 — B «Оранжевый» (ядро v1.9 §24.1); значения с версии 1.1.0 — по утверждённому прототипу (ADR-111)." },
         "paletteName": { "type": "string", "minLength": 1 },
         "theme": { "const": "light", "description": "Тёмная тема вне R1 (D-43)." },
         "units": {
@@ -36,7 +36,7 @@
     "alternatives": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["A"],
+      "required": ["A", "B_2026_10_21"],
       "properties": {
         "A": {
           "type": "object",
@@ -44,6 +44,19 @@
           "required": ["status", "name", "note", "source", "color"],
           "properties": {
             "status": { "const": "historical-reference" },
+            "name": { "type": "string" },
+            "note": { "type": "string" },
+            "source": { "type": "string" },
+            "color": { "$ref": "#/$defs/colorSet" }
+          }
+        },
+        "B_2026_10_21": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "name", "note", "source", "color"],
+          "description": "Откат палитры ADR-111: блок color до 1.1.0. Генератор всегда выводит DsColors.lightB20261021.",
+          "properties": {
+            "status": { "const": "rollback" },
             "name": { "type": "string" },
             "note": { "type": "string" },
             "source": { "type": "string" },
@@ -143,7 +156,7 @@
     "layout": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sidebarNarrow", "sidebarWide", "sidebarCollapsed", "rail", "cartNarrow", "cartWide", "productPanel", "contentMaxLarge", "cardMinWidth", "gridMinColumns", "gridMaxColumns"],
+      "required": ["sidebarNarrow", "sidebarWide", "sidebarCollapsed", "rail", "cartNarrow", "cartWide", "productPanel", "contentMaxLarge", "cardMinWidth", "topBarHeight", "navDrawer", "cartDrawer", "catalogColumn", "catalogCardMinWidth", "gridMinColumns", "gridMaxColumns"],
       "properties": {
         "sidebarNarrow": { "$ref": "#/$defs/gridSize" },
         "sidebarWide": { "$ref": "#/$defs/gridSize" },
@@ -154,6 +167,11 @@
         "productPanel": { "$ref": "#/$defs/gridSize" },
         "contentMaxLarge": { "$ref": "#/$defs/gridSize" },
         "cardMinWidth": { "$ref": "#/$defs/gridSize" },
+        "topBarHeight": { "$ref": "#/$defs/gridSize", "description": "Высота шапки staff на medium+ (ADR-111/112, прототип)." },
+        "navDrawer": { "$ref": "#/$defs/gridSize", "description": "Ширина drawer навигации staff на medium+." },
+        "cartDrawer": { "$ref": "#/$defs/gridSize", "description": "Ширина drawer корзины на medium+." },
+        "catalogColumn": { "$ref": "#/$defs/gridSize", "description": "Ширина колонки категорий SCR-10/11/12 на medium+." },
+        "catalogCardMinWidth": { "$ref": "#/$defs/gridSize", "description": "Минимальная ширина карточки сетки каталога SCR-10/11/12 (cardMinWidth 160 остаётся для SCR-40/50)." },
         "gridMinColumns": { "type": "integer", "minimum": 1 },
         "gridMaxColumns": { "type": "integer", "minimum": 1 }
       }
@@ -226,7 +244,7 @@
     "colorName": {
       "enum": [
         "background", "surface", "surfaceVariant", "surfaceHover", "surfacePressed",
-        "primary", "primaryHover", "primaryPressed", "primaryContainer", "primaryContainerPressed", "onPrimary", "primaryText",
+        "primary", "primaryHover", "primaryPressed", "primaryContainer", "primaryContainerPressed", "primaryContainerBorder", "onPrimaryContainer", "onPrimary", "primaryText",
         "textPrimary", "textSecondary", "textTertiary",
         "border", "borderStrong",
         "success", "successContainer", "onSuccess",
@@ -257,7 +275,7 @@
       "additionalProperties": { "$ref": "#/$defs/colorValue" },
       "required": [
         "background", "surface", "surfaceVariant", "surfaceHover", "surfacePressed",
-        "primary", "primaryHover", "primaryPressed", "primaryContainer", "primaryContainerPressed", "onPrimary", "primaryText",
+        "primary", "primaryHover", "primaryPressed", "primaryContainer", "primaryContainerPressed", "primaryContainerBorder", "onPrimaryContainer", "onPrimary", "primaryText",
         "textPrimary", "textSecondary", "textTertiary",
         "border", "borderStrong",
         "success", "successContainer", "onSuccess",

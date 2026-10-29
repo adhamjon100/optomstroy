@@ -13,6 +13,7 @@ import 'package:optomstroy/core/error/failure.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/app_bottom_sheet.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
+import 'package:optomstroy/design_system/components/date_range_picker.dart' show DsBishkekTime;
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/phone_field.dart';
 import 'package:optomstroy/design_system/formats/ds_phone_format.dart';
@@ -335,7 +336,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
     return AuthLayout(
       key: PhoneScreen.screenKey,
       banners: banners,
-      footerYear: now.toLocal().year,
+      footerYear: DsBishkekTime.wall(now).year,
       mascot:
           (BuildContext context, double size) => // money-double: allow — геометрия UI (lp)
           Mascot(

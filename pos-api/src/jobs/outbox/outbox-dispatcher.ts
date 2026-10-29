@@ -51,7 +51,43 @@ export interface OutboxDispatcherHooks {
     row: OutboxRow,
     info: { readonly code: SyncErrorCode; readonly message: string; readonly reason: string },
   ): Promise<void>;
+  /**
+   * Зависимые элементы запаркованы, потому что основание перешло в `failed`/`dead`/`cancelled` (05 SYNC-042;
+   * known_issues G-KI-12): уведомление автору агрегата (заказ POS-клиента, не созданного в 1С) — модуль-владелец.
+   */
+  onDependencyBlocked?(items: readonly BlockedDependent[]): Promise<void>;
 }
+
+/** Запаркованный зависимый элемент outbox и его основание (05 SYNC-042; 07 §5.55 `depends_on_outbox_id`). */
+export interface BlockedDependent {
+  readonly id: string;
+  readonly aggregateType: OutboxAggregate;
+  readonly aggregateId: string;
+  readonly operation: 'create' | 'cancel';
+  /** Причина, записанная в `last_error` зависимого элемента. */
+  readonly reason: string;
+  readonly dependency: {
+    readonly id: string;
+    readonly aggregateType: OutboxAggregate;
+    readonly aggregateId: string;
+    readonly operation: 'create' | 'cancel';
+    readonly status: 'failed' | 'dead' | 'cancelled';
+    readonly lastErrorCode: string | null;
+    readonly lastError: string | null;
+    /** Момент перехода основания (`updated_at`) — ключ дедупликации уведомления. */
+    readonly changedAt: Date;
+  };
+}
+
+export interface DependencySyncResult {
+  /** Запаркованы (`next_attempt_at = NULL`, причина в `last_error`). */
+  readonly parked: number;
+  /** Сняты с парковки: основание снова в работе или доставлено (`next_attempt_at = now()`). */
+  readonly released: number;
+}
+
+/** Статусы основания, при которых зависимый элемент не отправляется (05 SYNC-042). */
+const BLOCKING_DEPENDENCY: readonly string[] = ['failed', 'dead', 'cancelled'];
 
 export interface TickResult {
   readonly claimed: number;
@@ -124,6 +160,9 @@ export class OutboxDispatcher {
       }
       return result;
     }
+    // Зависимости (05 SYNC-042): снять с парковки элементы, чьё основание снова в работе или доставлено, и
+    // запарковать с причиной элементы, чьё основание в failed/dead/cancelled, — до захвата и после отказов пачки.
+    await this.syncDependencies();
     const rows = await this.claim();
     result.claimed = rows.length;
     for (const row of rows) {
@@ -140,8 +179,64 @@ export class OutboxDispatcher {
       const applied = await this.apply(row, outcome);
       if (applied) result[applied]++;
     }
+    if (result.failed + result.dead > 0) await this.syncDependencies();
     if (rows.length > 0) this.log.info({ ...result }, 'outbox.dispatch.tick');
     return result;
+  }
+
+  /**
+   * Состояние зависимых элементов по основанию (`depends_on_outbox_id`; 05 SYNC-042; 07 §5.55, §8.2; known_issues
+   * G-KI-12). Основание в `failed`/`dead`/`cancelled` → зависимый `pending` паркуется: `next_attempt_at = NULL`
+   * (воркер его не выбирает, попытки не расходуются), причина — в `last_error`; основание снова `pending`/`sending`
+   * (ручной повтор) или доставлено (`sent`/`confirmed`) → парковка снимается (`next_attempt_at = now()`, причина
+   * стирается), и элемент уходит после доставки основания. Запаркованные фазы 0 (`NO_WRITE_CHANNEL`, SYNC-066) не
+   * трогаются. Каждый оператор — отдельная транзакция; сбой — только журнал (тик продолжается).
+   */
+  async syncDependencies(): Promise<DependencySyncResult> {
+    try {
+      const released = await this.pool.query(
+        `UPDATE onec_outbox o SET next_attempt_at = now(), last_error = NULL, updated_at = now()
+           FROM onec_outbox d
+          WHERE d.id = o.depends_on_outbox_id AND o.status = 'pending' AND o.next_attempt_at IS NULL
+            AND o.last_error_code IS DISTINCT FROM 'NO_WRITE_CHANNEL'
+            AND d.status::text <> ALL ($1::text[])`,
+        [BLOCKING_DEPENDENCY],
+      );
+      const parked = await this.pool.query<BlockedRowDb>(
+        `UPDATE onec_outbox o
+            SET next_attempt_at = NULL, updated_at = now(),
+                last_error = left(format('Ожидает элемент %s/%s %s в статусе %s%s. Отправка в 1С — после повтора и доставки основания (05 SYNC-042).',
+                                         d.aggregate_type, d.operation, d.id, d.status,
+                                         coalesce(': ' || nullif(concat_ws(' — ', d.last_error_code, d.last_error), ''), '')), 2000)
+           FROM onec_outbox d
+          WHERE d.id = o.depends_on_outbox_id AND o.status = 'pending' AND o.next_attempt_at IS NOT NULL
+            AND d.status::text = ANY ($1::text[])
+        RETURNING o.id, o.aggregate_type::text AS aggregate_type, o.aggregate_id::text AS aggregate_id, o.operation,
+                  o.last_error, d.id AS dep_id, d.aggregate_type::text AS dep_type,
+                  d.aggregate_id::text AS dep_aggregate_id, d.operation AS dep_operation, d.status::text AS dep_status,
+                  d.last_error_code AS dep_code, d.last_error AS dep_error, d.updated_at AS dep_changed_at`,
+        [BLOCKING_DEPENDENCY],
+      );
+      const result = { parked: parked.rowCount ?? 0, released: released.rowCount ?? 0 };
+      if (result.parked > 0) {
+        this.log.warn(
+          { parked: parked.rows.map((r) => ({ outboxId: r.id, dependsOn: r.dep_id, dependencyStatus: r.dep_status })) },
+          'outbox.dependency.parked: основание в failed/dead/cancelled — зависимые элементы не отправляются (SYNC-042)',
+        );
+        if (this.hooks.onDependencyBlocked) {
+          await this.hooks
+            .onDependencyBlocked(parked.rows.map(toBlocked))
+            .catch((err: unknown) => this.log.error({ err }, 'outbox.dependency.hook_failed'));
+        }
+      }
+      if (result.released > 0) {
+        this.log.info({ released: result.released }, 'outbox.dependency.released: парковка зависимых снята');
+      }
+      return result;
+    } catch (e) {
+      this.log.error({ err: e }, 'outbox.dependency.sync_failed');
+      return { parked: 0, released: 0 };
+    }
   }
 
   /**
@@ -365,6 +460,42 @@ export class OutboxDispatcher {
       payload: { aggregateType: row.aggregateType, operation: row.operation, ...details },
     });
   }
+}
+
+interface BlockedRowDb {
+  id: string;
+  aggregate_type: OutboxAggregate;
+  aggregate_id: string;
+  operation: 'create' | 'cancel';
+  last_error: string;
+  dep_id: string;
+  dep_type: OutboxAggregate;
+  dep_aggregate_id: string;
+  dep_operation: 'create' | 'cancel';
+  dep_status: 'failed' | 'dead' | 'cancelled';
+  dep_code: string | null;
+  dep_error: string | null;
+  dep_changed_at: Date;
+}
+
+function toBlocked(r: BlockedRowDb): BlockedDependent {
+  return {
+    id: r.id,
+    aggregateType: r.aggregate_type,
+    aggregateId: r.aggregate_id,
+    operation: r.operation,
+    reason: r.last_error,
+    dependency: {
+      id: r.dep_id,
+      aggregateType: r.dep_type,
+      aggregateId: r.dep_aggregate_id,
+      operation: r.dep_operation,
+      status: r.dep_status,
+      lastErrorCode: r.dep_code,
+      lastError: r.dep_error,
+      changedAt: new Date(r.dep_changed_at),
+    },
+  };
 }
 
 function toRow(r: ClaimedRow): OutboxRow & { readonly payloadIntact: boolean } {

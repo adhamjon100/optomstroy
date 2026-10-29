@@ -14,12 +14,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/app_icon_button.dart';
 import 'package:optomstroy/design_system/components/app_snackbar.dart';
 import 'package:optomstroy/design_system/components/app_switch.dart';
+import 'package:optomstroy/design_system/components/date_range_picker.dart' show DsBishkekTime;
 import 'package:optomstroy/design_system/components/empty_state.dart';
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
@@ -575,7 +575,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> with WidgetsBindingObse
       if (!r.fromCache) return null;
       final at = r.asOf;
       if (at == null) return null;
-      return l10n.scan_offline_note(DateFormat.Hm().format(at.toLocal()));
+      return l10n.scan_offline_note(DsBishkekTime.time(at));
     }
 
     String subtitleOf(ScanLookupResult r, String value) =>

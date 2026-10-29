@@ -137,6 +137,9 @@ class FakeCartSync implements CartSync {
     _events.add(CartConflictDetected(c));
   }
 
+  /// Состояние очереди отправки корзины (`queued` / `dead`) — как обработчик `cart.sync`.
+  void emitStatus(CartSyncStatus s) => _status.add(s);
+
   /// Сервер окончательно отклонил запись очереди (`dead`) — как обработчик `cart.sync`.
   void emitRejected(Failure failure, {CartLineKey? key}) => _events.add(CartSyncRejected(failure, key: key));
 

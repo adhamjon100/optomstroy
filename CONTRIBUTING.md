@@ -204,7 +204,7 @@
 | 22 | Seed прав из матрицы | `python scripts/gen_rbac_seed.py --check` | `pos-api/migrations/0002_rbac_seed.sql` совпадает с генерацией из `contracts/rbac/permissions.yaml` (правка — только в YAML) | B-AR-10 (а) |
 | 23 | Поведение DDL | `node tools/pg/run-sql.mjs --set app.env=test pos-api/migrations/0001_init.sql pos-api/migrations/0002_rbac_seed.sql pos-api/db/migrations-dev/0001_dev_outbox.sql --check pos-api/test/sql/check_ddl_behavior.sql` (перенесён из `scripts/` по RM-C-006 п. 7; в CI — `psql` на `postgres:17`) | негативные сценарии CHECK/UNIQUE/триггеров отклоняются, позитивные инварианты (`row_version`, хэш-цепочка аудита, `subject_key`, `onec_key`, повторная выдача роли) выполняются; код 0 | B-AR-10 (б) |
 | 24 | Сборка ARB | `python scripts/build_arb.py --check` | `contracts/l10n/app_*.arb` совпадают со сборкой из 02 §7 и 03 §16 (дрейф → код 1); `--strict-coverage` у шага 13 включается после текстов владельца 03 (B-AR-11) | RM-B-007, B-AR-11 |
-| 25 | Дрейф Dart-токенов (с этапа C) | `python scripts/gen_tokens_dart.py pos-app/lib/design_system/tokens --check` | сгенерированные `ds_*.dart` совпадают с `tokens.json` (вместо `dart format --set-exit-if-changed` для этого каталога, `contracts/design-tokens/NOTES.md` §4) | RM-C-003 |
+| 25 | Дрейф Dart-токенов (с этапа C) | `python scripts/gen_tokens_dart.py pos-app/lib/design_system/tokens --check` | сгенерированные `ds_*.dart` совпадают с `tokens.json`; генератор сам пишет их в форме `dart format --page-width 120`, поэтому форматирование `pos-app` проверку не ломает (`contracts/design-tokens/NOTES.md` §4) | RM-C-003 |
 
 Что в `contracts-lint` не входит. Это отдельные обязательные job-ы RM-C-011:
 

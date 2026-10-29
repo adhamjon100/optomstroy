@@ -16,6 +16,7 @@ import 'package:optomstroy/core/sync/sync_providers.dart';
 import 'package:optomstroy/design_system/components/offline_banner.dart';
 import 'package:optomstroy/design_system/components/sync_indicator.dart';
 import 'package:optomstroy/design_system/theme/app_theme.dart';
+import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/features/sync_status/presentation/widgets/sync_connected_widgets.dart';
 
 final DateTime _now = DateTime.utc(2026, 10, 19, 10);
@@ -79,7 +80,53 @@ void main() {
     expect(indicator.variant, SyncIndicatorVariant.stale);
     await tester.tap(find.byType(SyncIndicator));
     expect(taps, 1);
-    expect(tester.getSize(find.byType(InkWell)).height, greaterThanOrEqualTo(44), reason: 'touch target');
+    expect(
+      tester.getSize(find.byKey(SyncIndicator.tapTargetKey)).height,
+      greaterThanOrEqualTo(44),
+      reason: 'touch target',
+    );
+  });
+
+  testWidgets('ConnectedSyncIndicator(adaptive): в норме — только иконка с тултипом, при проблеме — с текстом', (
+    tester,
+  ) async {
+    for (final (SyncIndicatorStatus status, bool iconOnly) in <(SyncIndicatorStatus, bool)>[
+      (SyncIndicatorStatus.ok, true),
+      (SyncIndicatorStatus.syncing, true),
+      (SyncIndicatorStatus.never, true),
+      (SyncIndicatorStatus.stale, false),
+      (SyncIndicatorStatus.error, false),
+      (SyncIndicatorStatus.offline, false),
+    ]) {
+      await tester.pumpWidget(const SizedBox());
+      await _pump(tester, ConnectedSyncIndicator(adaptive: true, onTap: () {}), [
+        syncIndicatorProvider.overrideWithValue(SyncIndicatorInfo(status: status, time: _now)),
+      ]);
+      final indicator = tester.widget<SyncIndicator>(find.byType(SyncIndicator));
+      expect(indicator.compact, iconOnly, reason: status.name);
+      expect(indicator.tooltip != null, iconOnly, reason: '${status.name}: подпись — в тултипе');
+    }
+  });
+
+  testWidgets('SyncIndicator syncing только иконкой при «Уменьшить анимации»: цвет не primaryText (A11Y-004, §24.1)', (
+    tester,
+  ) async {
+    // `_pump` включает disableAnimations: вращения нет — состояние передают тултип и Semantics, а не оранжевый цвет.
+    await _pump(tester, ConnectedSyncIndicator(adaptive: true, onTap: () {}), [
+      syncIndicatorProvider.overrideWithValue(SyncIndicatorInfo(status: SyncIndicatorStatus.syncing, time: _now)),
+    ]);
+    final indicator = find.byType(SyncIndicator);
+    expect(tester.widget<SyncIndicator>(indicator).compact, isTrue);
+    expect(find.descendant(of: indicator, matching: find.byType(RotationTransition)), findsNothing);
+    final colors = tester.element(indicator).colors;
+    final icon = tester.widget<Icon>(find.descendant(of: indicator, matching: find.byType(Icon)));
+    expect(icon.color, isNot(colors.primaryText));
+    expect(icon.color, colors.textSecondary);
+    expect(
+      SyncIndicator.colorOf(colors, SyncIndicatorVariant.syncing),
+      colors.primaryText,
+      reason: 'с подписью оранжевый — украшение',
+    );
   });
 
   testWidgets('ConnectedSyncIndicator в шапке ветки /catalog: тап → SCR-43 поверх, «Назад» → каталог (AC-UI-43-015)', (

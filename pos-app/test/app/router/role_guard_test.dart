@@ -15,7 +15,7 @@ import 'package:optomstroy/core/session/session_status.dart';
 import 'package:optomstroy/features/catalog/catalog_providers.dart';
 import 'package:optomstroy/features/catalog/domain/entities/category.dart';
 import 'package:optomstroy/features/catalog/domain/repositories/catalog_repository.dart';
-import 'package:optomstroy/features/catalog/presentation/screens/catalog_screen.dart';
+import 'package:optomstroy/features/catalog/presentation/widgets/catalog_workspace.dart';
 import 'package:optomstroy/features/home/presentation/screens/customer_home_screen.dart';
 import 'package:optomstroy/features/product_details/presentation/screens/product_details_screen.dart';
 import 'package:optomstroy/features/scan/presentation/screens/scan_screen.dart';
@@ -181,8 +181,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey<String>('stub-SCR-10')), findsOneWidget);
-    expect(tester.widget<CatalogScreen>(find.byType(CatalogScreen)).preset, 'recent');
-    final container = ProviderScope.containerOf(tester.element(find.byType(CatalogScreen)));
+    // medium+ — SCR-10 рисует общий экран семейства каталога (CatalogWorkspaceScreen), compact — CatalogScreen.
+    expect(tester.widget<CatalogWorkspace>(find.byType(CatalogWorkspace)).preset, 'recent');
+    final container = ProviderScope.containerOf(tester.element(find.byType(CatalogWorkspace)));
     expect((await container.read(catalogRepositoryProvider).cachedCategories()).isSuccess, isTrue);
 
     final screens = <String, Type>{

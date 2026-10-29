@@ -24,13 +24,60 @@ abstract final class CategoryIcons {
     'history' => Icons.history_rounded,
     _ => Icons.category_rounded,
   };
+
+  /// Глиф категории: известный [key] (03 §14.4), иначе — по смыслу названия категории из 1С ([name]:
+  /// корни слов карты 03 §14.4 и ближайшие глифы Material для разделов, которых в карте нет), иначе `category`.
+  /// Картинка не выдумывается: это только иконка-заглушка, изображение категории из данных — выше по приоритету.
+  static IconData resolve({String? key, String? name}) {
+    final IconData byKey = of(key);
+    if (byKey != Icons.category_rounded || name == null) {
+      return byKey;
+    }
+    final String n = name.toLowerCase().replaceAll('ё', 'е');
+    for (final (List<String> stems, IconData icon) in _byName) {
+      if (stems.any(n.contains)) {
+        return icon;
+      }
+    }
+    return Icons.category_rounded;
+  }
+
+  /// Корни названий → глиф (порядок важен: первое совпадение).
+  static const List<(List<String>, IconData)> _byName = <(List<String>, IconData)>[
+    (<String>['вентиляц', 'кондицион', 'воздух', 'воздуш'], Icons.air_rounded),
+    (<String>['смесител', 'кран', 'вентил'], Icons.plumbing_rounded),
+    (<String>['канализац'], Icons.water_damage_rounded),
+    (<String>['сантехник', 'санфаянс', 'унитаз', 'ванн', 'раковин', 'душ'], Icons.bathtub_rounded),
+    (<String>['отоплен', 'радиатор', 'котл', 'котел', 'тепл'], Icons.thermostat_rounded),
+    (<String>['водоснаб', 'насос', 'водонагрев', 'бойлер'], Icons.water_drop_rounded),
+    (<String>['труб', 'фитинг'], Icons.plumbing_rounded),
+    (<String>['электр', 'кабел', 'провод', 'розет', 'светил', 'освещ', 'ламп'], Icons.electrical_services_rounded),
+    (<String>['плитк', 'кафел', 'керамогранит'], Icons.grid_on_rounded),
+    (<String>['крепеж', 'метиз', 'саморез', 'болт'], Icons.hardware_rounded),
+    (<String>['инструмент'], Icons.handyman_rounded),
+    (<String>['краск', 'лакокрас', 'эмал'], Icons.format_paint_rounded),
+    (<String>['строител', 'стройматериал', 'смес', 'цемент', 'кирпич'], Icons.foundation_rounded),
+  ];
 }
 
 /// Изображение категории из 1С (Q-022) или иконка по `iconKey`, иначе `category` (CAT-009):
 /// поле [size] на `surfaceVariant`; ошибка загрузки — та же иконка, фото товара не подставляется.
 class CategoryImage extends StatelessWidget {
   /// Создаёт изображение.
-  const CategoryImage({super.key, this.imageUrl, this.iconKey, this.size = 32, this.iconSize = 24, this.color});
+  const CategoryImage({
+    super.key,
+    this.imageUrl,
+    this.iconKey,
+    this.name,
+    this.size = 32,
+    this.width,
+    this.height,
+    this.iconSize = 24,
+    this.color,
+    this.background,
+    this.radius,
+    this.fit = BoxFit.cover,
+  });
 
   /// URL изображения категории (`thumb`).
   final String? imageUrl;
@@ -38,8 +85,21 @@ class CategoryImage extends StatelessWidget {
   /// Ключ иконки.
   final String? iconKey;
 
+  /// Название категории — подбор иконки по смыслу, если [iconKey] нет ([CategoryIcons.resolve]).
+  final String? name;
+
   /// Сторона поля.
   final double size;
+
+  /// Ширина/высота прямоугольного поля (лента подкатегорий); по умолчанию — [size].
+  final double? width;
+  final double? height;
+
+  /// Фон поля (по умолчанию `surfaceVariant`).
+  final Color? background;
+
+  /// Скругление (по умолчанию `radius.sm`).
+  final BorderRadius? radius;
 
   /// Размер иконки.
   final double iconSize;
@@ -47,26 +107,38 @@ class CategoryImage extends StatelessWidget {
   /// Цвет иконки (по умолчанию `textSecondary`).
   final Color? color;
 
+  /// Вписывание картинки (`cover`; плитки колонки и ленты каталога — `contain`, прототип 2026-10-29).
+  final BoxFit fit;
+
   @override
   Widget build(BuildContext context) {
     final DsColors c = context.colors;
     final Widget icon = Center(
       key: const ValueKey<String>('category-image-icon'),
-      child: Icon(CategoryIcons.of(iconKey), size: iconSize, color: color ?? c.textSecondary),
+      child: Icon(
+        CategoryIcons.resolve(key: iconKey, name: name),
+        size: iconSize,
+        color: color ?? c.textSecondary,
+      ),
     );
+    final double w = width ?? size;
+    final double h = height ?? size;
     final String? url = imageUrl;
     final Widget content;
     if (url == null || url.isEmpty) {
       content = icon;
     } else {
+      // Путь `/images/…` от сервера — от адреса API (ProductImageBase), как у фото товара.
       final ImageProvider<Object> provider = (ProductImageScope.maybeOf(context) ?? CachedNetworkImageProvider.new)(
-        url,
+        ProductImageBase.resolve(context, url),
       );
       content = Image(
         image: ResizeImage.resizeIfNeeded(ProductImage.cacheWidthOf(ProductImageSize.thumb), null, provider),
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
+        width: w,
+        height: h,
+        // Смена категории в ленте/сайдбаре не гасит уже показанную картинку (без мигания, заказчик 2026-10-28).
+        gaplessPlayback: true,
+        fit: fit,
         frameBuilder: (BuildContext context, Widget child, int? frame, bool sync) {
           if (sync) {
             return child;
@@ -81,8 +153,8 @@ class CategoryImage extends StatelessWidget {
       );
     }
     return ClipRRect(
-      borderRadius: BorderRadius.all(context.radii.sm),
-      child: Container(width: size, height: size, color: c.surfaceVariant, child: content),
+      borderRadius: radius ?? BorderRadius.all(context.radii.sm),
+      child: Container(width: w, height: h, color: background ?? c.surfaceVariant, child: content),
     );
   }
 }
@@ -197,6 +269,8 @@ class CategorySidebarItem extends StatelessWidget {
       expanded: hasChildren ? expanded : null,
       label: semanticLabel ?? (count == null ? label : '$label, $count'),
       excludeSemantics: true,
+      // Действие «нажать» для TalkBack/Narrator: жест DsInteractive из семантики исключён.
+      onTap: selected ? null : onTap,
       child: _MaybeTooltip(
         message: collapsed ? (semanticLabel ?? label) : null,
         child: DsInteractive(

@@ -1,8 +1,11 @@
-// T-CAT-018, T-CAT-021 (golden): SCR-10 «Каталог» и SCR-11 «Результаты поиска» на трёх брейкпоинтах
-// compact / medium / expanded (D-18; RM-E-007 критерий 1 — структура макета R0 §14: шапка «логотип ·
-// бургер · поиск · часы/дата · профиль · колокольчик», сайдбар категорий-карточек со счётчиками,
-// «★ Избранное», «Недавние товары · Очистить», заголовок + «Найдено: N», вид/сортировка/фильтры,
-// карточки с артикулом/остатком/ценой, CP справа; `SyncIndicator` в шапке — AC-UI-10-001/030). Палитра B, reduce-motion, синтетические данные.
+// T-CAT-018, T-CAT-021 (golden): SCR-10 «Каталог», SCR-11 «Результаты поиска» и SCR-12 «Категория» на трёх
+// брейкпоинтах compact / medium / expanded (D-18). Раскладка medium+ — по утверждённому прототипу 2026-10-29
+// (ADR-112): шапка 68 «☰ · логотип · поиск до 680 · SyncIndicator · кнопка-итог корзины · колокольчик · аватар»
+// без часов и даты, колонка «Каталог» 132 с плитками корневых категорий и «★ Избранное», заголовок раздела, лента
+// подкатегорий 118×148 с «Все товары», одна строка управления «Новые · Избранные · Недавние · Найдено: N |
+// Сетка/Список/Компакт · сортировка · Фильтры», сетка карточек от 176 с «+ Добавить» / «В корзине · N — ещё +1»;
+// постоянной CP нет — корзина открывается drawer 420 по кнопке-итогу (в эталонах закрыт). compact — без изменений.
+// AC-UI-10-001/030. Палитра B по прототипу (ADR-111), reduce-motion, синтетические данные.
 //
 // Обновить эталоны: flutter test test/features/catalog/presentation/golden --update-goldens
 import 'dart:async';
@@ -21,6 +24,7 @@ import 'package:optomstroy/features/catalog/domain/entities/search.dart';
 import 'package:optomstroy/features/catalog/presentation/providers/catalog_ports.dart';
 import 'package:optomstroy/features/catalog/presentation/screens/catalog_screen.dart';
 import 'package:optomstroy/features/catalog/presentation/screens/catalog_search_screen.dart';
+import 'package:optomstroy/features/catalog/presentation/screens/category_screen.dart';
 import 'package:optomstroy/features/sync_status/presentation/widgets/sync_connected_widgets.dart';
 
 import '../support/catalog_fakes.dart';
@@ -109,6 +113,8 @@ void main() {
   final Map<String, Widget> scenes = <String, Widget>{
     'scr10_catalog': const CatalogScreen(),
     'scr11_search': const CatalogSearchScreen(q: 'F4252'),
+    // Подкатегория «Для кухни» категории «Смесители»: лента «Все · Для кухни · Для ванной», выбрана текущая.
+    'scr12_category': const CategoryScreen(categoryId: 'c-mix-kitchen'),
   };
   // Цены в эталонах — целые тыйыны (D-19).
   assert(Money.som(2350).tyiyn == 235000, 'деньги — int');

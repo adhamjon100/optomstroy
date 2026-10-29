@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/design_system/tokens/ds_typography.dart';
@@ -65,6 +66,14 @@ class CategoryChip extends StatelessWidget {
   /// Доступен (0 совпадений — `disabled`).
   final bool enabled;
 
+  /// Оценка ширины чипа `choice` без счётчика и шеврона (до раскладки): поле слева, иконка 18 (или `check` 16
+  /// у выбранного) с зазором 4, подпись `label 500`, поле справа, обводка.
+  static double estimateWidth(BuildContext context, String label, {bool withIcon = true}) {
+    final double text = dsTextWidth(context, label, context.text.label.copyWith(fontWeight: FontWeight.w500));
+    final double start = withIcon ? context.space.s2 + 18 + context.space.s1 : context.space.s3;
+    return start + text + context.space.s3 + 3;
+  }
+
   /// Полоса скелетон-чипов (loading: 5 × 80×36).
   static Widget skeletonStrip(BuildContext context) => Row(
     children: <Widget>[
@@ -86,6 +95,8 @@ class CategoryChip extends StatelessWidget {
       enabled: enabled,
       label: count == null ? label : '$label $count',
       excludeSemantics: true,
+      // Действие «нажать» для TalkBack/Narrator: жест DsInteractive из семантики исключён.
+      onTap: enabled ? onTap : null,
       child: DsInteractive(
         onTap: enabled ? onTap : null,
         enabled: enabled,

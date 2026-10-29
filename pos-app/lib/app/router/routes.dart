@@ -22,8 +22,11 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:optomstroy/app/router/catalog_family.dart';
 import 'package:optomstroy/app/router/panel_page.dart';
+import 'package:optomstroy/app/router/pass_through_page.dart';
 import 'package:optomstroy/app/router/shells/app_shell.dart';
+import 'package:optomstroy/app/router/window_class_scope.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/features/admin/presentation/audit/audit_screen.dart';
@@ -400,6 +403,42 @@ class CatalogRoute extends GoRouteData with $CatalogRoute {
 
   @override
   Widget build(BuildContext context, GoRouterState state) => CatalogScreen(preset: preset, view: view, sort: sort);
+
+  /// medium/expanded/large — страница без анимации перехода (02 SCR-10.5 ANIM-024: SB и CP не анимируются) с экраном
+  /// всего семейства каталога ([CatalogFamilyHost] по верхней записи `/catalog` → `/catalog/c/{id}` →
+  /// `/catalog/search`, в том числе открытой `push`): переходы обновляют один экземпляр (заказчик 2026-10-28 —
+  /// «мигает весь экран»), форма страницы одна для всех классов ≥ medium. compact — обычная страница ветки
+  /// (переходы и «Назад» по navigation.md, N-7).
+  @override
+  Page<void> buildPage(BuildContext context, GoRouterState state) {
+    if (WindowClassScope.of(context) == WindowClass.compact) return super.buildPage(context, state);
+    return _catalogPage(state, CatalogFamilyHost(state: state));
+  }
+}
+
+/// Страница семейства каталога без анимации перехода; ключ go_router (шаблон пути) стабилен — `go` в другую
+/// категорию обновляет ту же страницу, а не меняет её.
+Page<void> _catalogPage(GoRouterState state, Widget child) => NoTransitionPage<void>(
+  key: state.pageKey,
+  name: state.name ?? state.path,
+  arguments: <String, String>{...state.pathParameters, ...state.uri.queryParameters},
+  restorationId: state.pageKey.value,
+  child: child,
+);
+
+/// Запись SCR-11/12 на medium+, которую рисует страница `/catalog` ([CatalogFamilyHost]).
+Page<void> _catalogPassThrough(GoRouterState state) => PassThroughPage<void>(
+  key: state.pageKey,
+  name: state.name ?? state.path,
+  arguments: <String, String>{...state.pathParameters, ...state.uri.queryParameters},
+  restorationId: state.pageKey.value,
+);
+
+/// SCR-11/12 на medium+: запись семейства прямо над `/catalog` (`go` или `push`) — без содержимого; иначе (открыта
+/// `push` не над семейством, например клиентом из `/home` или из SCR-14) — своя страница без анимации.
+Page<void> _catalogEntryPage(BuildContext context, GoRouterState state, Widget Function() build) {
+  if (catalogEntryPassesThrough(context, state)) return _catalogPassThrough(state);
+  return _catalogPage(state, build());
 }
 
 /// SCR-11 Результаты поиска (staff, customer).
@@ -427,6 +466,14 @@ class CatalogSearchRoute extends GoRouteData with $CatalogSearchRoute {
   @override
   Widget build(BuildContext context, GoRouterState state) =>
       CatalogSearchScreen(q: q, categoryId: categoryId, view: view, sort: sort);
+
+  /// medium+ — запись без содержимого (экран — страница `/catalog`), и из `go`, и `push` из SCR-12 (02 SCR-11.6:
+  /// «Назад» в категорию тем же экземпляром с её прокруткой); compact — обычная страница.
+  @override
+  Page<void> buildPage(BuildContext context, GoRouterState state) {
+    if (WindowClassScope.of(context) == WindowClass.compact) return super.buildPage(context, state);
+    return _catalogEntryPage(context, state, () => build(context, state));
+  }
 }
 
 /// SCR-13 Фильтры (маршрут-лист на compact/medium; на expanded — панель без маршрута, 02 SCR-13).
@@ -464,6 +511,14 @@ class CategoryRoute extends GoRouteData with $CategoryRoute {
   @override
   Widget build(BuildContext context, GoRouterState state) =>
       CategoryScreen(categoryId: categoryId, view: view, sort: sort, f: f);
+
+  /// medium+ — запись без содержимого (экран — страница `/catalog`, смена категории обновляет его; подкатегория на
+  /// medium — `push` той же формы); compact — обычная страница (`push`, «Назад» к родителю — navigation.md SCR-12).
+  @override
+  Page<void> buildPage(BuildContext context, GoRouterState state) {
+    if (WindowClassScope.of(context) == WindowClass.compact) return super.buildPage(context, state);
+    return _catalogEntryPage(context, state, () => build(context, state));
+  }
 }
 
 /// SCR-14 Карточка товара (staff, customer).
@@ -494,7 +549,7 @@ class ProductRoute extends GoRouteData with $ProductRoute {
   /// compact/medium — обычная страница ветки.
   @override
   Page<void> buildPage(BuildContext context, GoRouterState state) {
-    final WindowClass wc = context.windowClass;
+    final WindowClass wc = WindowClassScope.of(context);
     if (wc != WindowClass.expanded && wc != WindowClass.large) return super.buildPage(context, state);
     return PanelPage<void>(
       key: state.pageKey,

@@ -108,7 +108,11 @@ describe('Этап E: синхронизация (FakeOnecGateway) → ката�
     expect(runs.rows.filter((r) => r.status !== 'success')).toEqual([]);
     const report = await wiring.countCheck.run({ trigger: 'manual' });
     expect(report.mismatches).toBe(0);
-    const errors = await fdb.pool.query(`SELECT error_code FROM sync_errors`);
+    // Отчёт о дублях кода 1С (05 SYNC-004, 12 T-SYNC-009) — warning, не ошибка: фикстуры 1С и синтетика нумеруют
+    // справочники с одного кода. Прочих записей журнала нет.
+    const errors = await fdb.pool.query(
+      `SELECT error_code FROM sync_errors WHERE NOT (error_code = 'DUPLICATE_SUSPECTED' AND severity = 'warning')`,
+    );
     expect(errors.rows).toEqual([]);
 
     const st = await call('admin', 'get', '/sync/status');

@@ -269,6 +269,11 @@ void main() {
       );
       expect(CatalogCardMapper.action(ctx(RoleCode.seller), product(1, noPrice: true)).$2, 'Цена не указана');
       expect(CatalogCardMapper.action(ctx(RoleCode.seller), product(1, noStock: true)).$2, 'Остаток неизвестен');
+      // «Компакт» (QA прототипа 2026-10-29): короткая подпись тем же кеглем, полная — в тултипе.
+      final ProductCardData unknown = CatalogCardMapper.map(ctx(RoleCode.seller), product(1, noStock: true));
+      expect(unknown.actionShortLabel, 'Нет данных');
+      expect(unknown.actionLabel, 'Остаток неизвестен');
+      expect(CatalogCardMapper.map(ctx(RoleCode.seller), product(1, noPrice: true)).actionShortLabel, isNull);
       expect(CatalogCardMapper.action(ctx(RoleCode.seller), product(1, level: StockLevel.out)).$2, 'Нет в наличии');
       expect(CatalogCardMapper.action(ctx(RoleCode.seller), product(1)).$1, ProductCardActionKind.add);
     });

@@ -1,16 +1,20 @@
 // SCR-20 «Корзина» (02 ч. C SCR-20; 03 §9.27–§9.31; RM-F-005, RM-F-013, RM-F-015): содержимое `CartPanel` для всех
-// классов окна — `panel` (expanded, постоянная третья колонка SCR-10), `overlay` (medium, side sheet), `screen`
-// (compact, `/cart`). Зоны: A шапка и счётчики → C баннер → B клиент и склад → D строки → E скидка → F итоги →
-// G причина недоступности и действия.
+// классов окна — `overlay` (medium и шире: drawer 420 справа, `CartDrawer`; ADR-112), `screen` (compact и прямой
+// переход на `/cart`), `panel` (бывшая постоянная третья колонка SCR-10 expanded; в приложении больше не
+// используется). Зоны: A шапка и счётчики → C баннер → B клиент и склад → D строки → E скидка → F итоги →
+// G причина недоступности и действия (в drawer — в одну строку, с подсказками клавиш на настольных платформах).
 //
 // Итоги — только с сервера (D-23): пока изменения не подтверждены, «Итого» помечено «предварительно», суммы строк —
 // «≈». Режим клиента (ядро §24.2, AC-UI-20-030): без клиента, склада, скидки, «Отложить» и «Отложенные»; CTA
 // «Отправить заявку». Клавиатура Windows (03 A11Y-009): F4 — фокус в корзину, F9 — «Создать заказ», F8 — «Отложить
-// заказ»; в панели ↑/↓ — строка, `+`/`−` — количество, `Delete` — удалить, `Ctrl+Z` — «Отменить».
+// заказ»; в панели ↑/↓ — строка, `+`/`−` — количество, `Delete` — удалить, `Ctrl+Z` — «Отменить». Drawer при
+// открытии ставит фокус в панель (клавиши строк работают сразу) и выполняет намерение `F8`/`F9`, с которым его
+// открыли (`CartDrawerIntent`); при закрытом drawer `F4`/`F8`/`F9` обрабатывает кнопка-итог шапки.
 // Результат `POST /orders` неизвестен — оверлей UI-20-020 поверх зон D–G (порт корня `cartSubmissionOverlayProvider`),
 // все изменяющие действия недоступны (02 SCR-20.3 «H — оверлеи»).
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -42,6 +46,7 @@ import 'package:optomstroy/design_system/components/quantity_numpad_sheet.dart';
 import 'package:optomstroy/design_system/components/quantity_stepper.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/unit_selector.dart';
+import 'package:optomstroy/design_system/layout/route_activity.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -56,7 +61,8 @@ import 'package:optomstroy/features/cart/presentation/providers/cart_submission_
 import 'package:optomstroy/features/cart/presentation/screens/parked_carts_screen.dart';
 import 'package:optomstroy/features/cart/presentation/widgets/cart_customer_picker.dart';
 import 'package:optomstroy/features/cart/presentation/widgets/cart_dialogs.dart';
-import 'package:uuid/uuid.dart';
+import 'package:optomstroy/features/cart/presentation/widgets/cart_drawer.dart';
+import 'package:optomstroy/features/cart/presentation/widgets/cart_events_listener.dart';
 
 /// Названия склада и вида цены корзины (кэш каталога).
 final cartPlaceLabelsProvider = FutureProvider.autoDispose.family<CartPlaceLabels, (String?, String?)>(
@@ -87,21 +93,31 @@ abstract final class CartKeys {
   static Key reduce(CartLineKey k) => ValueKey<String>('cart-line-reduce-${k.variantId}-${k.packagingId ?? ''}');
 }
 
+/// Подписи кнопок зоны G с клавишами («Отложить · F8», «Создать заказ · F9») — только на настольных платформах
+/// (на планшете без клавиатуры подсказка бессмысленна, 02 UI-20-015/016 редакции 1.16).
+bool get cartHotkeyHints => switch (defaultTargetPlatform) {
+  TargetPlatform.windows || TargetPlatform.macOS || TargetPlatform.linux => true,
+  _ => false,
+};
+
 /// Содержимое корзины SCR-20.
 class CartPanelView extends ConsumerStatefulWidget {
   /// Создаёт корзину варианта [variant].
-  const CartPanelView({super.key, this.variant = CartPanelVariant.panel, this.onClose});
+  const CartPanelView({super.key, this.variant = CartPanelVariant.panel, this.onClose, this.intent});
 
   final CartPanelVariant variant;
 
-  /// Крестик `overlay`.
+  /// Крестик `overlay` (drawer).
   final VoidCallback? onClose;
+
+  /// Действие после открытия drawer (`F8`/`F9` при закрытом drawer); выполняется после первого кадра.
+  final CartDrawerIntent? intent;
 
   @override
   ConsumerState<CartPanelView> createState() => _CartPanelViewState();
 }
 
-class _CartPanelViewState extends ConsumerState<CartPanelView> {
+class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSurface {
   final TextEditingController _discount = TextEditingController();
   final FocusNode _discountFocus = FocusNode(debugLabel: 'cart-discount');
   final FocusNode _panelFocus = FocusNode(debugLabel: 'cart-panel');
@@ -110,30 +126,74 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
   Percent? _discountShown;
   int? _selected;
   CartLineKey? _lastRemoved;
-  String? _parkKey;
-  bool _conflictOpen = false;
   StreamSubscription<CartSyncEvent>? _events;
   StreamSubscription<CartNotice>? _notices;
 
-  static bool _anyConflictDialog = false;
+  /// Скидка, ожидающая паузы 500 мс, и контроллер, которому её отправить: закрытие drawer раньше паузы (или `Esc`
+  /// из поля) применяет её сразу ([dispose]), а не теряет.
+  Percent? _pendingDiscount;
+  CartController? _pendingDiscountCart;
+
+  /// Ветка на экране (`TickerMode`, обновляется в [build]) и элемент в дереве — проверки из обработчиков клавиш и
+  /// потоков не обращаются к предкам деактивированного элемента.
+  bool _tickerOn = true;
+  bool _inTree = true;
+
+  bool get _drawer => widget.variant == CartPanelVariant.overlay;
+
+  @override
+  bool get cartShown => mounted && _inTree && _tickerOn && (_drawer || dsRouteIsCurrent(context));
+
+  @override
+  bool get cartIsDrawer => _drawer;
+
+  @override
+  void focusCart() => _panelFocus.requestFocus();
 
   @override
   void initState() {
     super.initState();
+    CartSurfaces.register(this);
     HardwareKeyboard.instance.addHandler(_onGlobalKey);
     _events = ref.read(cartSyncProvider).events.listen(_onSyncEvent, onError: (Object _) {});
     _notices = ref.read(cartControllerProvider.notifier).watchNotices().listen(_onNotice);
-    // Конфликт, обнаруженный до открытия корзины (в том числе восстановленный после перезапуска), — диалог сразу.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // Drawer: фокус сразу в панель — ↑/↓, `+`/`−`, `Delete`, `Ctrl+Z` работают без `F4` (A11Y-011).
+      if (_drawer) _panelFocus.requestFocus();
+      // Конфликт, обнаруженный до открытия корзины (в том числе восстановленный после перезапуска), — диалог сразу.
       final CartVersionConflict? c = ref.read(cartControllerProvider).conflict;
-      if (c != null) unawaited(_showConflict(c));
+      if (c != null) {
+        unawaited(_showConflict(c));
+        return;
+      }
+      // `F8`/`F9` при закрытом drawer: drawer открыт с намерением — выполнить его.
+      switch (widget.intent) {
+        case CartDrawerIntent.park:
+          unawaited(_park());
+        case CartDrawerIntent.createOrder:
+          unawaited(_createOrder());
+        case null:
+          break;
+      }
     });
   }
 
+  @override
+  void deactivate() {
+    _inTree = false;
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _inTree = true;
+  }
+
   void _onNotice(CartNotice n) {
-    // Снекбар показывает одна корзина на экране (панель на expanded или экран/лист).
-    if (!mounted || !TickerMode.of(context)) return;
+    // Снекбар показывает одна корзина на экране (drawer или экран `/cart`); без корзины — слушатель шапки.
+    if (!cartShown) return;
     final AppLocalizations l10n = AppLocalizations.of(context);
     switch (n.kind) {
       case CartNoticeKind.updatedFromServer:
@@ -145,9 +205,16 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
 
   @override
   void dispose() {
+    CartSurfaces.unregister(this);
     HardwareKeyboard.instance.removeHandler(_onGlobalKey);
     unawaited(_events?.cancel());
     unawaited(_notices?.cancel());
+    // Скидка, введённая перед закрытием drawer (пауза 500 мс не истекла), — сразу на сервер.
+    final Percent? pending = _pendingDiscount;
+    final CartController? pendingCart = _pendingDiscountCart;
+    if (pending != null && pendingCart != null && _discountDebounce.isPending) {
+      unawaited(pendingCart.applyDiscount(pending));
+    }
     _discountDebounce.dispose();
     _discount.dispose();
     _discountFocus.dispose();
@@ -169,12 +236,16 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
   // Клавиатура
   // ---------------------------------------------------------------------------
 
-  /// Экран активен для F8/F9: ветка на экране (`TickerMode`), поверх нет диалога/листа (`PopupRoute`).
+  /// Экран активен для F8/F9: ветка на экране (`TickerMode`), поверх нет диалога/листа (`PopupRoute`). Свой
+  /// `PopupRoute` (drawer корзины) клавиши не глушит — фокус в нём и есть фокус корзины.
   bool get _keysActive {
-    if (!mounted || !TickerMode.of(context)) return false;
+    if (!mounted || !_inTree || !_tickerOn) return false;
     final BuildContext? fc = FocusManager.instance.primaryFocus?.context;
-    if (fc != null && ModalRoute.of(fc) is PopupRoute) return false;
-    if (widget.variant != CartPanelVariant.panel && !(ModalRoute.of(context)?.isCurrent ?? true)) return false;
+    if (fc != null) {
+      final ModalRoute<Object?>? focusRoute = ModalRoute.of(fc);
+      if (focusRoute is PopupRoute && focusRoute != ModalRoute.of(context)) return false;
+    }
+    if (widget.variant != CartPanelVariant.panel && !dsRouteIsCurrent(context)) return false;
     return true;
   }
 
@@ -247,7 +318,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
   // ---------------------------------------------------------------------------
 
   void _onSyncEvent(CartSyncEvent e) {
-    if (!mounted || e is! CartSyncRejected) return;
+    if (e is! CartSyncRejected || !cartShown) return;
     _snackError(e.failure);
   }
 
@@ -394,8 +465,14 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
     if (again != null && DateTime.now().difference(again) < _checkoutGuard) return;
     _checkoutOpenedAt = DateTime.now();
     final String? cartId = ref.read(cartControllerProvider).server?.id;
-    if (widget.variant == CartPanelVariant.overlay) widget.onClose?.call();
-    unawaited(GoRouter.of(context).push<void>(CartPaths.checkout(cartId)));
+    _pushClosingDrawer(CartPaths.checkout(cartId));
+  }
+
+  /// Переход из корзины: drawer сначала закрывается — маршруты веток (SCR-14, SCR-24) открылись бы под ним.
+  void _pushClosingDrawer(String location) {
+    final GoRouter router = GoRouter.of(context);
+    if (_drawer) widget.onClose?.call();
+    unawaited(router.push<void>(location));
   }
 
   /// Окно, в котором повторное «Создать заказ →» после перехода в SCR-21 игнорируется.
@@ -413,11 +490,13 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
 
   Future<void> _doPark(String? name) async {
     final AppLocalizations l10n = AppLocalizations.of(context);
-    final String key = _parkKey ??= const Uuid().v4();
-    final Failure? f = await _cart.park(name: name, idempotencyKey: key);
+    // Ключ живёт в контроллере: повтор после сетевого сбоя — тот же ключ и после закрытия drawer (08 §2.7); успех
+    // или иной отказ — следующая попытка с новым ключом.
+    final CartController cart = _cart;
+    final Failure? f = await cart.park(name: name, idempotencyKey: cart.parkIdempotencyKey());
+    if (f is! NetworkFailure) cart.releaseParkKey();
     if (!mounted) return;
     if (f == null) {
-      _parkKey = null;
       ref.invalidate(cartParkedCountProvider);
       AppSnackbar.show(
         context,
@@ -427,8 +506,6 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
       );
       return;
     }
-    // Сетевой сбой — тот же ключ при повторе (08 §2.7); иной отказ — новая попытка с новым ключом.
-    if (f is! NetworkFailure) _parkKey = null;
     _snackError(f);
   }
 
@@ -522,13 +599,20 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
     setState(() => _discountError = p == null ? AppLocalizations.of(context).cart_discount_invalid : null);
     if (p == null) {
       _discountDebounce.cancel();
+      _pendingDiscount = null;
       return;
     }
-    _discountDebounce(() => unawaited(_applyDiscount(p)));
+    _pendingDiscount = p;
+    _pendingDiscountCart = _cart;
+    _discountDebounce(() {
+      _pendingDiscount = null;
+      unawaited(_applyDiscount(p));
+    });
   }
 
   void _onDiscountSubmitted(String text) {
     _discountDebounce.cancel();
+    _pendingDiscount = null;
     final Percent? p = CartFormats.parsePercent(text);
     if (p == null) {
       setState(() => _discountError = AppLocalizations.of(context).cart_discount_invalid);
@@ -574,16 +658,14 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
     final String? token = await ref.read(cartStepUpProvider)('discount.approve.over_limit');
     if (token == null || !mounted) return;
     final Failure? f = await _cart.approveDiscount(percent, reason: why, stepUpToken: token);
+    if (f == null) _cart.markDiscountApproved(percent);
     if (!mounted) return;
     if (f != null) {
       _snackError(f);
     } else {
-      setState(() => _approvedPercent = percent);
+      setState(() {});
     }
   }
-
-  /// Скидка, подтверждённая override в этой сессии (UI-20-033) — «Подтвердил: {name}», пока она применена.
-  Percent? _approvedPercent;
 
   Future<void> _applyLimit(Percent limit) async {
     _discount.text = CartFormats.percent(limit);
@@ -591,20 +673,9 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
     await _applyDiscount(limit);
   }
 
-  Future<void> _showConflict(CartVersionConflict c) async {
-    if (_conflictOpen || _anyConflictDialog) return;
-    _conflictOpen = true;
-    _anyConflictDialog = true;
-    try {
-      final bool? mine = await showVersionConflictDialog(context, c);
-      if (mine == null || !mounted) return;
-      final Failure? f = await _cart.resolveConflict(applyMine: mine);
-      if (f != null) _snackError(f);
-    } finally {
-      _conflictOpen = false;
-      _anyConflictDialog = false;
-    }
-  }
+  /// Диалог UI-20-027 — один на приложение (панель или слушатель шапки, [CartConflictPrompt]).
+  Future<void> _showConflict(CartVersionConflict c) =>
+      CartConflictPrompt.show(context, _cart, c, onFailure: _snackError);
 
   // ---------------------------------------------------------------------------
   // Построение
@@ -633,6 +704,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context);
     final DsColors c = context.colors;
+    _tickerOn = TickerMode.of(context);
     final CartState s = ref.watch(cartControllerProvider);
     final OnlineStatus online = ref.watch(cartOnlineStatusProvider);
     final bool offline = online == OnlineStatus.offline || online == OnlineStatus.serverDown;
@@ -652,6 +724,14 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
     final Cart? server = s.server;
     final bool empty = lines.isEmpty;
     final bool compactLines = widget.variant == CartPanelVariant.panel;
+    // Степпер строк: `sm` в постоянной панели, группа (прототип) в drawer на expanded/large, `md` в drawer на medium
+    // и на экране.
+    final WindowClass wc = context.windowClass;
+    final QuantityStepperSize stepperSize = compactLines
+        ? QuantityStepperSize.sm
+        : (_drawer && (wc == WindowClass.expanded || wc == WindowClass.large))
+        ? QuantityStepperSize.group
+        : QuantityStepperSize.md;
     final String? reason = _ctaReason(l10n, s, offline: offline);
 
     // Зона A — шапка.
@@ -733,21 +813,33 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
     } else {
       body = ListView.builder(
         itemCount: lines.length,
-        itemBuilder: (BuildContext context, int i) =>
-            _line(l10n, c, lines[i], selected: _selected == i, dense: compactLines, offline: offline, can: can),
+        itemBuilder: (BuildContext context, int i) => _line(
+          l10n,
+          c,
+          lines[i],
+          selected: _selected == i,
+          dense: compactLines,
+          stepperSize: stepperSize,
+          offline: offline,
+          can: can,
+        ),
       );
     }
 
-    // Зоны E–F — скидка и итоги.
-    final Widget? bottom = empty
+    // Зоны E–F — скидка и итоги. Drawer показывает подвал и у пустой корзины (прототип: «Товаров (0)», «Итого»,
+    // недоступная «Создать заказ · F9» с причиной; паритет функций ADR-112); экран и панель — без подвала.
+    final bool showFooter = !empty || _drawer;
+    final Widget? bottom = !showFooter
         ? null
         : Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              if (can.canDiscount && server != null)
+              if (can.canDiscount && server != null && !empty)
                 Padding(
-                  padding: EdgeInsets.symmetric(horizontal: context.space.s5),
+                  padding: _drawer
+                      ? EdgeInsets.fromLTRB(context.space.s5, context.space.s3, context.space.s5, 0)
+                      : EdgeInsets.symmetric(horizontal: context.space.s5),
                   child: _discountInput(l10n, s, server, offline: offline),
                 ),
               CartSummary(
@@ -768,6 +860,12 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
                 loading: server == null && s.refreshing,
                 large: widget.variant == CartPanelVariant.panel,
                 preliminaryLabel: s.preliminary || offline ? l10n.cart_summary_preliminary : null,
+                // UI-20-034: итог — из ответа сервера и пересчитывается им при оформлении (MNY-001, D-23).
+                note: l10n.cart_summary_server_note,
+                drawer: _drawer,
+                padding: _drawer
+                    ? EdgeInsets.fromLTRB(context.space.s5, context.space.s4, context.space.s5, context.space.s2)
+                    : null,
               ),
             ],
           );
@@ -778,7 +876,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        if (reason != null && !empty)
+        if (reason != null && (!empty || _drawer))
           Padding(
             padding: EdgeInsets.only(bottom: context.space.s2),
             child: Row(
@@ -797,28 +895,68 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
               ],
             ),
           ),
-        if (can.canPark && !empty) ...<Widget>[
-          AppButton(
-            key: CartKeys.park,
-            label: l10n.cart_cta_park,
-            icon: Icons.bookmark_outline_rounded,
-            variant: AppButtonVariant.outlined,
-            expand: true,
-            loading: s.isBusy(CartOp.park),
-            onPressed: parkEnabled ? () => unawaited(_park()) : null,
-          ),
-          SizedBox(height: context.space.s2),
+        if (_drawer)
+          // Drawer (medium и шире, 02 UI-20-015/016 редакции 1.16): «Отложить · F8» (нейтральная контурная `neutral`,
+          // flex 1) и «Создать заказ · F9» (primary, flex 1,4) в одну строку, высота 48; у клиента — только
+          // «Отправить заявку».
+          Row(
+            children: <Widget>[
+              if (can.canPark) ...<Widget>[
+                Expanded(
+                  flex: 10,
+                  child: AppButton(
+                    key: CartKeys.park,
+                    label: cartHotkeyHints ? l10n.cart_cta_park_hotkey : l10n.cart_cta_park,
+                    variant: AppButtonVariant.neutral,
+                    size: AppButtonSize.cta,
+                    expand: true,
+                    fitLabel: true,
+                    loading: s.isBusy(CartOp.park),
+                    onPressed: parkEnabled ? () => unawaited(_park()) : null,
+                  ),
+                ),
+                SizedBox(width: context.space.s2),
+              ],
+              Expanded(
+                flex: 14,
+                child: AppButton(
+                  key: CartKeys.createOrder,
+                  label: can.customer
+                      ? l10n.cart_customer_submit
+                      : (cartHotkeyHints ? l10n.cart_cta_create_order_hotkey : l10n.cart_cta_create_order),
+                  size: AppButtonSize.cta,
+                  expand: true,
+                  fitLabel: true,
+                  loading: s.isBusy(CartOp.checkout),
+                  onPressed: _ctaEnabled(s) ? () => unawaited(_createOrder()) : null,
+                ),
+              ),
+            ],
+          )
+        else ...<Widget>[
+          if (can.canPark && !empty) ...<Widget>[
+            AppButton(
+              key: CartKeys.park,
+              label: l10n.cart_cta_park,
+              icon: Icons.bookmark_outline_rounded,
+              variant: AppButtonVariant.outlined,
+              expand: true,
+              loading: s.isBusy(CartOp.park),
+              onPressed: parkEnabled ? () => unawaited(_park()) : null,
+            ),
+            SizedBox(height: context.space.s2),
+          ],
+          if (!empty)
+            AppButton(
+              key: CartKeys.createOrder,
+              label: can.customer ? l10n.cart_customer_submit : l10n.cart_cta_create_order,
+              trailingIcon: Icons.arrow_forward_rounded,
+              size: AppButtonSize.l,
+              expand: true,
+              loading: s.isBusy(CartOp.checkout),
+              onPressed: _ctaEnabled(s) ? () => unawaited(_createOrder()) : null,
+            ),
         ],
-        if (!empty)
-          AppButton(
-            key: CartKeys.createOrder,
-            label: can.customer ? l10n.cart_customer_submit : l10n.cart_cta_create_order,
-            trailingIcon: Icons.arrow_forward_rounded,
-            size: AppButtonSize.l,
-            expand: true,
-            loading: s.isBusy(CartOp.checkout),
-            onPressed: _ctaEnabled(s) ? () => unawaited(_createOrder()) : null,
-          ),
       ],
     );
 
@@ -829,6 +967,8 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
       child: CartPanel(
         variant: widget.variant,
         title: l10n.cart_title,
+        // Drawer: «Корзина · N поз.» (UI-20-001 редакции 1.16) — суффикс вместо бейджа; при 0 — без суффикса.
+        titleSuffix: _drawer && s.positions > 0 ? l10n.cart_drawer_title_count(s.positions) : null,
         count: s.positions,
         countLabel: l10n.cart_a11y_positions(s.positions),
         counter: counter,
@@ -838,12 +978,12 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
         top: top,
         body: body,
         bottom: bottom,
-        footer: empty ? null : footer,
+        footer: showFooter ? footer : null,
         overlay: locked
             ? KeyedSubtree(key: CartKeys.lockOverlay, child: lockOverlay?.call(context) ?? const _LockFallback())
             : null,
         onClose: widget.onClose,
-        closeLabel: l10n.ds_button_close,
+        closeLabel: _drawer ? l10n.cart_drawer_close_a11y : l10n.ds_button_close,
       ),
     );
   }
@@ -911,7 +1051,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
         tone: ErrorStateTone.info,
         icon: Icons.history_rounded,
         text: text,
-        onAction: () => GoRouter.of(context).push<void>(CartPaths.order(restored)),
+        onAction: () => _pushClosingDrawer(CartPaths.order(restored)),
       );
     }
     final DateTime? at = s.local?.serverSyncedAt;
@@ -989,18 +1129,24 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
                 height: 40,
                 child: Row(
                   children: <Widget>[
-                    Icon(Icons.person_outline_rounded, size: 20, color: c.textSecondary),
+                    Icon(
+                      Icons.person_outline_rounded,
+                      size: _drawer ? 18 : 20,
+                      color: _drawer ? c.textPrimary : c.textSecondary,
+                    ),
                     SizedBox(width: context.space.s2),
                     Expanded(
-                      child: Text(
-                        customerName ?? l10n.cart_customer_empty,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.text.body.copyWith(
-                          fontWeight: FontWeight.w500,
-                          color: customerName == null ? c.textSecondary : c.textPrimary,
-                        ),
-                      ),
+                      child: customerName == null && _drawer
+                          ? _customerEmptyLabel(l10n.cart_customer_empty, c)
+                          : Text(
+                              customerName ?? l10n.cart_customer_empty,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.text.body.copyWith(
+                                fontWeight: FontWeight.w500,
+                                color: customerName == null ? c.textSecondary : c.textPrimary,
+                              ),
+                            ),
                     ),
                     if (s.isBusy(CartOp.customer))
                       const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
@@ -1018,7 +1164,11 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
                               },
                       )
                     else
-                      Icon(Icons.chevron_right_rounded, size: 20, color: offline ? c.disabledText : c.textSecondary),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 20,
+                        color: offline ? c.disabledText : (_drawer ? c.textTertiary : c.textSecondary),
+                      ),
                   ],
                 ),
               ),
@@ -1026,6 +1176,28 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
           warehouse,
         ],
       ),
+    );
+  }
+
+  /// «Клиент: **не выбран**» drawer (прототип): подпись до двоеточия — `body textPrimary`, остаток — 700.
+  Widget _customerEmptyLabel(String text, DsColors c) {
+    final TextStyle base = context.text.body.copyWith(color: c.textPrimary);
+    final int colon = text.indexOf(':');
+    return Text.rich(
+      colon <= 0
+          ? TextSpan(text: text)
+          : TextSpan(
+              children: <InlineSpan>[
+                TextSpan(text: text.substring(0, colon + 1)),
+                TextSpan(
+                  text: text.substring(colon + 1),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: base,
     );
   }
 
@@ -1039,8 +1211,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
     if (message == null &&
         rej == null &&
         approver != null &&
-        _approvedPercent != null &&
-        applied.hundredths == _approvedPercent!.hundredths) {
+        _cart.approvedDiscount()?.hundredths == applied.hundredths) {
       message = l10n.cart_discount_approved_by(approver);
     }
     if (rej != null && message == null) {
@@ -1121,6 +1292,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
     CartLineView line, {
     required bool selected,
     required bool dense,
+    required QuantityStepperSize stepperSize,
     required bool offline,
     required CartPermissions can,
   }) {
@@ -1174,7 +1346,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
     final Widget stepper = QuantityStepper(
       value: CartFormats.qty(line.quantity),
       unit: unit.isEmpty ? null : unit,
-      size: dense ? QuantityStepperSize.sm : QuantityStepperSize.md,
+      size: stepperSize,
       increaseLabel: l10n.ds_qty_increase_a11y,
       decreaseLabel: l10n.ds_qty_decrease_a11y,
       error: line.stockInsufficient,
@@ -1211,12 +1383,12 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> {
       actions: actions,
       onOpen: productId == null
           ? null
-          : () =>
-                unawaited(GoRouter.of(context).push<void>(CartPaths.product(productId, variantId: line.key.variantId))),
+          : () => _pushClosingDrawer(CartPaths.product(productId, variantId: line.key.variantId)),
       onRemove: () => _remove(line),
       removeLabel: l10n.qty_delete,
       selected: selected,
       dense: dense,
+      emphasized: _drawer,
     );
     if (widget.variant != CartPanelVariant.panel) {
       // Свайп удаления на тач-экранах (UI-20-018, A11Y-017).
@@ -1331,9 +1503,6 @@ class _CartBanner extends StatelessWidget {
     return content;
   }
 }
-
-/// Ширина side sheet корзины на medium (02 SCR-20.2: 320).
-const double cartOverlayWidth = DsBreakpoints.cartNarrow; // money-double: allow — геометрия UI (lp)
 
 /// Блокировка без оверлея корня: фон `surface` 0,9 и индикатор (UI-20-020).
 class _LockFallback extends StatelessWidget {

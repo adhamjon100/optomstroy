@@ -6,16 +6,27 @@ import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 
-/// Корневой каркас `AdaptiveScaffold` (03 §9.54, раздел 8; D-18): раскладка по классу окна.
+/// Навигация каркаса на medium и шире (03 §9.54; ADR-112).
+enum DsShellNavigation {
+  /// `NavigationRailApp` 72 на medium, rail / сайдбар на expanded/large (D-18) — режим клиента, витрина.
+  rail,
+
+  /// Без rail и сайдбара навигации: разделы — drawer по «бургеру» шапки (`NavigationDrawerApp`) и меню
+  /// аватара; оболочка сотрудника на medium+ (D3, ADR-112). compact не меняется (`BottomNavBar`).
+  none,
+}
+
+/// Корневой каркас `AdaptiveScaffold` (03 §9.54, раздел 8; D-18, ADR-112): раскладка по классу окна.
 ///
 /// * compact (< 600): шапка + тело + `CartFab` + `BottomNavBar`;
-/// * medium (600–1023): `NavigationRailApp` 72 + шапка + тело (корзина — overlay у фичи);
-/// * expanded/large (≥ 1024): шапка + сайдбар 240/292 (или rail 72 при свёрнутом сайдбаре) +
-///   тело + `CartPanel` 320/340.
+/// * medium (600–1023): [DsShellNavigation.rail] — `NavigationRailApp` 72 + шапка + тело;
+///   [DsShellNavigation.none] — шапка + тело (навигация — drawer оболочки);
+/// * expanded/large (≥ 1024): шапка + сайдбар 240/292 (или rail 72 при свёрнутом сайдбаре; при
+///   [DsShellNavigation.none] — без rail) + тело + `CartPanel` 320/340 (если переданы).
 ///
 /// Смена класса окна не теряет состояние тела и корзины (п. 8.7): они переносятся по `GlobalKey`.
 /// Без [destinations] — режим `auth` (одна колонка, фон `surface`, без навигации).
-/// Навигацию (`StatefulShellRoute`), горячие клавиши и HID-сканер подключает `app/router/shells`.
+/// Навигацию (`StatefulShellRoute`), drawer, горячие клавиши и HID-сканер подключает `app/router/shells`.
 class AdaptiveScaffold extends StatefulWidget {
   /// Создаёт каркас.
   const AdaptiveScaffold({
@@ -35,6 +46,7 @@ class AdaptiveScaffold extends StatefulWidget {
     this.railTrailing,
     this.navigationLabel,
     this.windowClass,
+    this.navigation = DsShellNavigation.rail,
   });
 
   /// Тело (контент).
@@ -82,6 +94,9 @@ class AdaptiveScaffold extends StatefulWidget {
   /// Класс окна (по умолчанию — по `MediaQuery`); для тестов и витрины.
   final WindowClass? windowClass;
 
+  /// Навигация на medium и шире: rail (по умолчанию) или без неё (drawer оболочки, ADR-112).
+  final DsShellNavigation navigation;
+
   @override
   State<AdaptiveScaffold> createState() => _AdaptiveScaffoldState();
 }
@@ -96,7 +111,13 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     final WindowClass wc = widget.windowClass ?? context.windowClass;
     final double width = MediaQuery.sizeOf(context).width;
     final bool auth = widget.destinations.isEmpty;
-    final Widget body = KeyedSubtree(key: _bodyKey, child: widget.body);
+    // Тело — отдельный узел семантики: `ModalBarrier` страниц вложенного навигатора ветки (`BlockSemantics`) иначе
+    // скрывал бы от диктора всё, что нарисовано раньше в том же узле, — шапку оболочки, rail (A11Y, WCAG 4.1.2).
+    final Widget body = Semantics(
+      container: true,
+      explicitChildNodes: true,
+      child: KeyedSubtree(key: _bodyKey, child: widget.body),
+    );
     final Widget? top = widget.topBar?.call(context, wc);
 
     if (auth) {
@@ -135,6 +156,14 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
           ),
         ],
       ),
+      WindowClass.medium when widget.navigation == DsShellNavigation.none => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          ?top,
+          ?widget.banner,
+          Expanded(child: body),
+        ],
+      ),
       WindowClass.medium => Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -167,7 +196,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
                     border: Border(right: BorderSide(color: c.border)),
                     child: widget.sidebar!,
                   )
-                else
+                else if (widget.navigation == DsShellNavigation.rail)
                   _rail(NavigationRailVariant.collapsedSidebar),
                 Expanded(child: body),
                 if (widget.cartPanel != null)

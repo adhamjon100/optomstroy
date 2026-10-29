@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, immutable, mapEquals;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -28,12 +28,14 @@ import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/core/session/pending_logout.dart' show pendingLogoutServiceProvider;
 import 'package:optomstroy/core/session/session_controller.dart';
+import 'package:optomstroy/core/session/session_state.dart' show SessionLockReason;
 import 'package:optomstroy/core/sync/auth_logout_outbox.dart';
 import 'package:optomstroy/core/sync/outbox_handlers.dart';
 import 'package:optomstroy/core/sync/outbox_queue.dart' show OutboxActionHandler;
 import 'package:optomstroy/core/sync/sync_journal_api.dart';
 import 'package:optomstroy/core/sync/sync_providers.dart';
 import 'package:optomstroy/core/utils/clock.dart';
+import 'package:optomstroy/core/utils/qty.dart';
 import 'package:optomstroy/design_system/components/date_range_picker.dart' show DsBishkekTime;
 import 'package:optomstroy/features/admin/data/admin_bindings.dart';
 import 'package:optomstroy/features/auth/auth_providers.dart' as auth;
@@ -44,9 +46,11 @@ import 'package:optomstroy/features/cart/data/cart_bindings.dart';
 import 'package:optomstroy/features/cart/data/draft/cart_draft_bindings.dart';
 import 'package:optomstroy/features/cart/domain/repositories/cart_repository.dart' show CartRepository;
 import 'package:optomstroy/features/cart/presentation/providers/cart_banner_port.dart';
+import 'package:optomstroy/features/cart/presentation/providers/cart_controller.dart'
+    show CartLineView, CartState, cartControllerProvider;
 import 'package:optomstroy/features/cart/presentation/providers/cart_submission_port.dart';
 import 'package:optomstroy/features/cart/presentation/widgets/cart_fab_view.dart';
-import 'package:optomstroy/features/cart/presentation/widgets/cart_panel_view.dart';
+import 'package:optomstroy/features/cart/presentation/widgets/cart_header_button_view.dart';
 import 'package:optomstroy/features/cashier/data/cashier_bindings.dart';
 import 'package:optomstroy/features/catalog/catalog_providers.dart' as catalog;
 import 'package:optomstroy/features/catalog/data/local/catalog_offline_bindings.dart';
@@ -159,9 +163,15 @@ final List<Override> appOverrides = <Override>[
   // История поиска — только текущего пользователя (02 SCR-10.4.A): выход, `SESSION_REVOKED`, смена пользователя
   // меняют пользователя сессии и очищают её.
   catalog_ports.catalogSessionUserProvider.overrideWith((Ref ref) => ref.watch(sessionUserIdProvider)),
-  // Вид — по классу окна: compact — только иконка, иначе иконка + «обновлено HH:MM» (02 SCR-10.3 A6).
+  // Вид — по состоянию (02 SCR-10.3 A6, ADR-112): в норме — только иконка с тултипом «обновлено HH:MM», при
+  // устаревших данных, ошибке и без сети — иконка с текстом; compact — только иконка.
   catalog_ports.catalogSyncIndicatorProvider.overrideWithValue(
-    (BuildContext context) => const ConnectedSyncIndicator(),
+    (BuildContext context) => const ConnectedSyncIndicator(adaptive: true),
+  ),
+  // «Заблокировать» в меню аватара шапки (02 SCR-10.3 A9): ручная блокировка сессии — то же, что Ctrl+L (SCR-08).
+  catalog_ports.catalogHeaderLockProvider.overrideWith(
+    (Ref ref) =>
+        () => ref.read(sessionControllerProvider.notifier).lock(SessionLockReason.manual),
   ),
   // RM-E-010: поиск по штрихкоду (SCR-17, HID в оболочке) — `SearchRepository` каталога (кэш → сеть).
   scan.scanBarcodeLookupProvider.overrideWith(
@@ -175,7 +185,8 @@ final List<Override> appOverrides = <Override>[
 /// - `outboxHandlersProvider` — обработчики core/sync (избранное, «очистить недавние») + `cart.sync` фичи cart
 ///   (07 §11.2) и `notification.read` фичи notifications; новые типы очереди дополняют этот же список;
 /// - роль и пользователь сессии для корзины (`customer` — режим клиента; «своя» отложенная на вкладке «Все»);
-/// - каталог: постоянная `CartPanel` на expanded (зона E SCR-10), `CartFab` на compact/medium, «+ Добавить».
+/// - каталог: кнопка-итог корзины в шапке medium+ (drawer 420, ADR-112), `CartFab` на compact (и у `customer` на
+///   medium), «+ Добавить».
 final List<Override> cartUiOverrides = <Override>[
   outboxHandlersProvider.overrideWith(
     (Ref ref) => <OutboxActionHandler>[
@@ -200,9 +211,15 @@ final List<Override> cartUiOverrides = <Override>[
   checkout_ports.checkoutViewerNameProvider.overrideWith(
     (Ref ref) => ref.watch(auth.authSessionProvider.select((auth.AuthSessionState s) => s.profile.displayName)),
   ),
-  catalog_ports.catalogCartPanelProvider.overrideWithValue((BuildContext context) => const CartPanelView()),
+  // Кнопка-итог в шапке medium+ (drawer корзины 420, ADR-112) и панель-итог `CartFab` (compact, `customer` на medium).
+  catalog_ports.catalogCartButtonProvider.overrideWithValue((BuildContext context) => const CartHeaderButtonView()),
   catalog_ports.catalogCartFabProvider.overrideWithValue((BuildContext context) => const CartFabView()),
   catalog_ports.catalogCartPortProvider.overrideWith(catalogCartPortFor),
+  // «В корзине · N — ещё +1» карточек каталога (ADR-112): количества черновика по варианту; карта меняется только при
+  // изменении количеств (сравнение по содержимому) — сетка не перестраивается на каждое событие корзины.
+  catalog_ports.catalogCartQuantitiesProvider.overrideWith(
+    (Ref ref) => ref.watch(cartControllerProvider.select(CartQuantities.of)).byVariant,
+  ),
   // CART-005 / UI-20-007: «Вариант» строки корзины → SCR-15 в режиме смены (лист фичи product_details).
   cart.cartVariantPickerProvider.overrideWithValue(showVariantReplaceSheet),
 ];
@@ -293,6 +310,36 @@ final appOrderDocumentPrinterProvider = Provider<orders_ports.OrderDocumentPrint
 /// Отдельный провайдер корня — точка подмены для integration_test (как [appOrderDocumentPrinterProvider]): системный
 /// диалог печати Windows блокирует прогон.
 final appCheckoutPrinterProvider = Provider<checkout_ports.CheckoutPrinter>((Ref ref) => printingCheckoutPrinter);
+
+/// Количества строк корзины-черновика по варианту для карточек каталога: только базовая единица (строки упаковок не
+/// входят), строки, скрытые на время «Отменить», не входят (`CartState.lines`), нулевые — тоже. Равенство — по
+/// содержимому карты.
+@immutable
+final class CartQuantities {
+  const CartQuantities(this.byVariant);
+
+  /// Из состояния корзины.
+  factory CartQuantities.of(CartState state) {
+    final Map<String, Qty> out = <String, Qty>{};
+    for (final CartLineView l in state.lines) {
+      if (l.key.packagingId != null || l.quantity.milli <= 0) {
+        continue;
+      }
+      out[l.key.variantId] = Qty((out[l.key.variantId]?.milli ?? 0) + l.quantity.milli);
+    }
+    return CartQuantities(Map<String, Qty>.unmodifiable(out));
+  }
+
+  /// `variantId` → количество.
+  final Map<String, Qty> byVariant;
+
+  @override
+  bool operator ==(Object other) => other is CartQuantities && mapEquals(other.byVariant, byVariant);
+
+  @override
+  int get hashCode =>
+      Object.hashAllUnordered(byVariant.entries.map((MapEntry<String, Qty> e) => Object.hash(e.key, e.value.milli)));
+}
 
 /// «+ Добавить» каталога для роли сессии: корзина пользователя; `owner` и неизвестная роль — без порта (карточка).
 catalog_ports.CatalogCartPort? catalogCartPortFor(Ref ref) {

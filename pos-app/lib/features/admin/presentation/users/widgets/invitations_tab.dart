@@ -15,6 +15,7 @@ import 'package:optomstroy/design_system/components/status_chip.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/features/admin/domain/users/invitation.dart';
 import 'package:optomstroy/features/admin/domain/users/step_up.dart';
+import 'package:optomstroy/features/admin/presentation/common/admin_format.dart';
 import 'package:optomstroy/features/admin/presentation/users/admin_failure_text.dart';
 import 'package:optomstroy/features/admin/presentation/users/admin_users_controller.dart';
 import 'package:optomstroy/features/admin/presentation/users/widgets/admin_actions.dart';
@@ -100,10 +101,10 @@ class _InvitationRow extends StatelessWidget {
       if (invitation.createdByName != null || invitation.createdAt != null)
         [
           invitation.createdByName,
-          if (invitation.createdAt != null) date.format(invitation.createdAt!.toLocal()),
+          if (invitation.createdAt != null) date.format(AdminFormat.wall(invitation.createdAt!)),
         ].whereType<String>().join(' · '),
       if (invitation.expiresAt != null && invitation.isPending)
-        '${l10n.admin_invites_expires_label} ${date.format(invitation.expiresAt!.toLocal())}',
+        '${l10n.admin_invites_expires_label} ${date.format(AdminFormat.wall(invitation.expiresAt!))}',
     ].join(' · ');
     return Padding(
       key: ValueKey<String>('admin-invitation-${invitation.id}'),

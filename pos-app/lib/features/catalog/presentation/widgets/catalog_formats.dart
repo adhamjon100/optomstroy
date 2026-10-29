@@ -1,7 +1,6 @@
-// Форматы экранов каталога (03 §16.4): время магазина Asia/Bishkek (UTC+6, без перехода), дата шапки,
+// Форматы экранов каталога (03 §16.4): время магазина Asia/Bishkek (UTC+6, без перехода),
 // количества (milli-units, без `double`), разбор строк ARB «текст · действие».
 // До появления `design_system/formats/DsDateFormat`/`DsQtyFormat` (03 §17.1) — здесь (EQ-CAT-03).
-import 'package:intl/intl.dart';
 import 'package:optomstroy/core/utils/qty.dart';
 
 abstract final class CatalogFormats {
@@ -14,13 +13,6 @@ abstract final class CatalogFormats {
   static String time(DateTime t) {
     final DateTime s = _shop(t);
     return '${s.hour.toString().padLeft(2, '0')}:${s.minute.toString().padLeft(2, '0')}';
-  }
-
-  /// «пн, 29 июн» (`caption` шапки, 02 SCR-10.1 строка 9).
-  static String headerDate(DateTime t, String locale) {
-    final DateTime s = _shop(t);
-    final DateTime local = DateTime(s.year, s.month, s.day);
-    return DateFormat('E, d MMM', locale).format(local).replaceAll('.', '');
   }
 
   /// Количество: «24», «2,5», «−3» (знаки после запятой без хвостовых нулей).

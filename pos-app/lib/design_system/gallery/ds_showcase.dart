@@ -24,7 +24,9 @@ import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/components/empty_state.dart';
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/nav_destination.dart';
+import 'package:optomstroy/design_system/components/navigation_drawer_app.dart';
 import 'package:optomstroy/design_system/components/navigation_rail_app.dart';
+import 'package:optomstroy/design_system/components/notification_bell.dart';
 import 'package:optomstroy/design_system/components/option_tile.dart';
 import 'package:optomstroy/design_system/components/otp_field.dart';
 import 'package:optomstroy/design_system/components/phone_field.dart';
@@ -32,6 +34,7 @@ import 'package:optomstroy/design_system/components/pin_field.dart';
 import 'package:optomstroy/design_system/components/search_bar.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
+import 'package:optomstroy/design_system/components/top_app_bar_cart_button.dart';
 import 'package:optomstroy/design_system/components/top_app_bar_pos.dart';
 import 'package:optomstroy/design_system/layout/adaptive_scaffold.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
@@ -811,25 +814,36 @@ abstract final class DsShowcase {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        // Шапка `full` по прототипу 2026-10-29 (ADR-112): «бургер» · логотип · поиск · корзина · колокольчик ·
+        // пользователь; часов и даты нет.
         TopAppBarPos(
           windowClass: wc,
           variant: wc == WindowClass.compact ? TopAppBarVariant.compact : TopAppBarVariant.full,
           onMenu: _noop,
-          menuLabel: 'Меню',
+          menuLabel: 'Меню разделов',
           logo: const _LogoStub(),
           search: wc == WindowClass.compact ? null : const SearchBar(onScan: _noop, scannerLabel: 'Сканировать'),
           title: 'Каталог',
           actions: <Widget>[
-            if (wc != WindowClass.compact) const TopAppBarClock(time: '09:41', date: 'сб, 18 окт'),
             if (wc == WindowClass.compact)
-              const AppIconButton(icon: Icons.barcode_reader, semanticLabel: 'Сканировать', onPressed: _noop),
-            const AppIconButton(
-              icon: Icons.notifications_outlined,
-              semanticLabel: 'Уведомления',
-              onPressed: _noop,
-              badge: AppBadge.dot(),
-            ),
+              const AppIconButton(icon: Icons.barcode_reader, semanticLabel: 'Сканировать', onPressed: _noop)
+            else
+              const TopAppBarCartButton(
+                label: 'Корзина',
+                count: 3,
+                totalText: '16 007,50 сом',
+                semanticLabel: 'Открыть корзину, 3 позиции',
+                onTap: _noop,
+              ),
           ],
+          bell: wc == WindowClass.compact
+              ? const AppIconButton(
+                  icon: Icons.notifications_outlined,
+                  semanticLabel: 'Уведомления',
+                  onPressed: _noop,
+                  badge: AppBadge.dot(),
+                )
+              : const NotificationBell(unreadCount: 2, onPressed: _noop, semanticLabel: 'Уведомления, 2 непрочитанных'),
           user: wc == WindowClass.compact
               ? null
               : TopAppBarUser(name: 'Абдулла', role: 'Продавец', onTap: _noop, showText: wc != WindowClass.medium),
@@ -838,6 +852,73 @@ abstract final class DsShowcase {
         const TopAppBarPos(variant: TopAppBarVariant.modal, title: 'Фильтры', onClose: _noop, closeLabel: 'Закрыть'),
         const SizedBox(height: 16),
         const BottomNavBar(destinations: dsShowcaseDestinations, selectedIndex: 2, onSelected: _noopValue<int>),
+        const SizedBox(height: 16),
+        // Кнопка-итог корзины (03 §9.70): с итогом, с предупреждением, без текста (узкое окно).
+        const Wrap(
+          spacing: 16,
+          runSpacing: 16,
+          children: <Widget>[
+            TopAppBarCartButton(
+              label: 'Корзина',
+              count: 5,
+              totalText: '16 007,50 сом',
+              semanticLabel: 'Открыть корзину, 5 позиций',
+              onTap: _noop,
+            ),
+            TopAppBarCartButton(
+              label: 'Корзина',
+              count: 12,
+              totalText: '12 поз.',
+              warning: true,
+              semanticLabel: 'Открыть корзину, 12 позиций',
+              onTap: _noop,
+            ),
+            TopAppBarCartButton(
+              label: 'Корзина',
+              count: 0,
+              totalText: '0 поз.',
+              showText: false,
+              semanticLabel: 'Открыть корзину',
+              onTap: _noop,
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        // Drawer навигации сотрудника (03 §9.71): вкладки режима + «Другие разделы», выбранный — тинт и полоса.
+        const SizedBox(
+          height: 520,
+          child: Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: NavigationDrawerApp(
+              semanticLabel: 'Навигация',
+              header: _LogoStub(),
+              groups: <NavigationDrawerGroup>[
+                NavigationDrawerGroup(
+                  items: <NavigationDrawerItem>[
+                    NavigationDrawerItem(
+                      icon: Icons.category_outlined,
+                      selectedIcon: Icons.category,
+                      label: 'Каталог',
+                      selected: true,
+                      onTap: _noop,
+                    ),
+                    NavigationDrawerItem(icon: Icons.star_border_rounded, label: 'Избранное', onTap: _noop),
+                    NavigationDrawerItem(icon: Icons.shopping_cart_outlined, label: 'Корзина', onTap: _noop),
+                    NavigationDrawerItem(icon: Icons.group_outlined, label: 'Клиенты', onTap: _noop),
+                    NavigationDrawerItem(icon: Icons.account_circle_outlined, label: 'Профиль', onTap: _noop),
+                  ],
+                ),
+                NavigationDrawerGroup(
+                  title: 'Другие разделы',
+                  items: <NavigationDrawerItem>[
+                    NavigationDrawerItem(icon: Icons.bookmark_border_rounded, label: 'Отложенные заказы', onTap: _noop),
+                    NavigationDrawerItem(icon: Icons.receipt_outlined, label: 'Заказы', onTap: _noop),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
         const SizedBox(height: 16),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -904,7 +985,7 @@ abstract final class DsShowcase {
         // На medium логотип — в rail (03 §9.56), в шапке не дублируется.
         logo: wc == WindowClass.medium ? null : const _LogoStub(),
         onMenu: wc == WindowClass.compact ? null : _noop,
-        menuLabel: 'Меню',
+        menuLabel: 'Меню разделов',
         title: 'Каталог',
         search: wc == WindowClass.compact ? null : const SearchBar(onScan: _noop, scannerLabel: 'Сканировать'),
         actions: const <Widget>[

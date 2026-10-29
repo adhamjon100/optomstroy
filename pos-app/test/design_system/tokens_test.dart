@@ -62,10 +62,12 @@ Map<String, Color> dsColorMap(DsColors c) => <String, Color>{
   'onError': c.onError,
   'onInverseSurface': c.onInverseSurface,
   'onPrimary': c.onPrimary,
+  'onPrimaryContainer': c.onPrimaryContainer,
   'onSuccess': c.onSuccess,
   'overlay': c.overlay,
   'primary': c.primary,
   'primaryContainer': c.primaryContainer,
+  'primaryContainerBorder': c.primaryContainerBorder,
   'primaryContainerPressed': c.primaryContainerPressed,
   'primaryHover': c.primaryHover,
   'primaryPressed': c.primaryPressed,
@@ -122,6 +124,36 @@ void main() {
           '${e.key}: dart ${dart[e.key]} != json ${e.value}',
     ];
     expect(diffs, isEmpty);
+  });
+
+  test('откат ADR-111: DsColors.lightB20261021 = alternatives.B_2026_10_21 (status rollback)', () {
+    final Map<String, Object?> alt = _obj(_obj(t['alternatives'])['B_2026_10_21']);
+    expect(alt['status'], 'rollback');
+    final Map<String, Object?> json = _obj(alt['color']);
+    final Map<String, Color> dart = dsColorMap(DsColors.lightB20261021);
+    expect(dart.keys.toSet(), json.keys.toSet(), reason: 'набор токенов цвета отката');
+    final List<String> diffs = <String>[
+      for (final MapEntry<String, Object?> e in json.entries)
+        if (dart[e.key]!.toARGB32() != _jsonColor(e.value).toARGB32())
+          '${e.key}: dart ${dart[e.key]} != json ${e.value}',
+    ];
+    expect(diffs, isEmpty);
+    // Прежняя палитра: оранжевый #FF8700 с тёмным onPrimary; новые ключи = border и primaryText набора.
+    expect(DsColors.lightB20261021.primary, const Color(0xFFFF8700));
+    expect(DsColors.lightB20261021.primaryContainerBorder, DsColors.lightB20261021.border);
+    expect(DsColors.lightB20261021.onPrimaryContainer, DsColors.lightB20261021.primaryText);
+    expect(AppTheme.light(colors: DsColors.lightB20261021).extension<DsColors>(), same(DsColors.lightB20261021));
+  });
+
+  test('палитра B по ADR-111: primary #D9380F, белый onPrimary, тинт и его рамка', () {
+    const DsColors c = DsColors.lightB;
+    expect(c.primary, const Color(0xFFD9380F));
+    expect(c.onPrimary, const Color(0xFFFFFFFF));
+    expect(c.primaryContainerBorder, const Color(0xFFF5C6B6));
+    expect(c.onPrimaryContainer, const Color(0xFFA82A09));
+    expect(c.brandAccent, const Color(0xFFFF8700), reason: 'логотип не меняется');
+    expect(contrastRatio(c.onPrimaryContainer, c.primaryContainer), greaterThanOrEqualTo(4.5));
+    expect(contrastRatio(c.onPrimaryContainer, c.primaryContainerPressed), greaterThanOrEqualTo(4.5));
   });
 
   test('ds.text.*: шкала DsTypography.inter = tokens.json', () {
@@ -226,6 +258,11 @@ void main() {
       'productPanel': DsBreakpoints.productPanel,
       'contentMaxLarge': DsBreakpoints.contentMaxLarge,
       'cardMinWidth': DsBreakpoints.cardMinWidth,
+      'topBarHeight': DsBreakpoints.topBarHeight,
+      'navDrawer': DsBreakpoints.navDrawer,
+      'cartDrawer': DsBreakpoints.cartDrawer,
+      'catalogColumn': DsBreakpoints.catalogColumn,
+      'catalogCardMinWidth': DsBreakpoints.catalogCardMinWidth,
       'gridMinColumns': DsBreakpoints.gridMinColumns,
       'gridMaxColumns': DsBreakpoints.gridMaxColumns,
     };
@@ -233,6 +270,22 @@ void main() {
     for (final MapEntry<String, num> e in dart.entries) {
       expect(e.value, _num(lay[e.key]), reason: 'layout.${e.key}');
     }
+    // Layout-токены прототипа (ADR-111): шапка, drawer навигации и корзины, колонка и карточка каталога.
+    expect(
+      <double>[
+        DsBreakpoints.topBarHeight,
+        DsBreakpoints.navDrawer,
+        DsBreakpoints.cartDrawer,
+        DsBreakpoints.catalogColumn,
+        DsBreakpoints.catalogCardMinWidth,
+      ],
+      <double>[68, 320, 420, 132, 176],
+    );
+    // gridColumns: по умолчанию cardMinWidth (160), каталог передаёт catalogCardMinWidth (176).
+    expect(DsBreakpoints.gridColumns(700, 16), 4);
+    expect(DsBreakpoints.gridColumns(700, 16, minCardWidth: DsBreakpoints.catalogCardMinWidth), 3);
+    expect(DsBreakpoints.gridColumns(1200, 16, minCardWidth: DsBreakpoints.catalogCardMinWidth), 6);
+    expect(DsBreakpoints.gridColumns(100, 16, minCardWidth: DsBreakpoints.catalogCardMinWidth), 2);
     final Map<String, Object?> den = _obj(t['density']);
     expect(DsDensity.values.map((DsDensity d) => d.name).toSet(), den.keys.toSet());
     for (final DsDensity d in DsDensity.values) {
@@ -289,7 +342,8 @@ void main() {
     Color resolve(String name) => name.startsWith('#') ? _jsonColor(name) : colors[name]!;
     final List<String> violations = <String>[];
     final List<String> mismatches = <String>[];
-    bool whiteOnPrimaryForbidden = false;
+    // ADR-111: «белый на primary» — allowed тогда и только тогда, когда ≥ 4.5 (как в check_contrast.py).
+    final List<String> whiteOnPrimary = <String>[];
     final List<Object?> pairs = contrast['pairs']! as List<Object?>;
     expect(pairs, isNotEmpty);
     for (final Object? p in pairs) {
@@ -308,12 +362,17 @@ void main() {
         }
       }
       if (fg.toUpperCase() == '#FFFFFF' && bg == 'primary' && pair['use'] == 'text') {
-        whiteOnPrimaryForbidden = pair['status'] == 'forbidden' && ratio < 3;
+        final bool consistent = (pair['status'] == 'allowed') == (ratio + 1e-9 >= 4.5);
+        whiteOnPrimary.add(
+          '${pair['id']} ${pair['status']} ${ratio.toStringAsFixed(2)}${consistent ? '' : ' — НЕСОГЛАСОВАНО'}',
+        );
       }
     }
     expect(violations, isEmpty, reason: 'пары ниже порога');
     expect(mismatches, isEmpty, reason: 'расчёт расходится с опубликованным в 03');
-    expect(whiteOnPrimaryForbidden, isTrue, reason: 'белый на primary должен быть forbidden (DS-098)');
+    expect(whiteOnPrimary, hasLength(1), reason: 'пара «#FFFFFF на primary» (text) обязательна');
+    expect(whiteOnPrimary.single, isNot(contains('НЕСОГЛАСОВАНО')), reason: 'allowed ⇔ ratio ≥ 4.5 (ADR-111)');
+    expect(whiteOnPrimary.single, startsWith('CP-032 allowed'), reason: 'белый на #D9380F — 4.64:1, allowed');
   });
 
   test('AppTheme.light(): палитра B, Material 3, ColorScheme и TextTheme по 03 §17.3, §17.7', () {
@@ -335,6 +394,7 @@ void main() {
     expect(s.onError, c.onError);
     expect(s.outline, c.borderStrong);
     expect(s.outlineVariant, c.border);
+    expect(s.onPrimaryContainer, c.onPrimaryContainer);
     expect(s.surfaceContainerHighest, c.surfaceVariant);
     expect(s.inverseSurface, c.inverseSurface);
     expect(s.onInverseSurface, c.onInverseSurface);

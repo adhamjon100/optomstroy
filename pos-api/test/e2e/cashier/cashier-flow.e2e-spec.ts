@@ -625,3 +625,112 @@ describe('AC-SYNC-049: заказ нового POS-клиента уходит �
     expect(sent.every((b) => b.customer?.ref === ref)).toBe(true);
   });
 });
+
+describe('G-KI-12 / AC-SYNC-042: заказ POS-клиента, чей customer/create в failed, получает причину и уходит после повтора клиента', () => {
+  it('отказ 1С по клиенту → заказ pending с next_attempt_at=NULL и причиной в last_error, попытки не тратятся; повтор клиента → заказ в 1С', async () => {
+    const phone = `+99655${String(Math.floor(Math.random() * 10_000_000)).padStart(7, '0')}`;
+    const c = await t
+      .req('post', '/customers', w.actors.cashier, { idem: true })
+      .send({ name: 'Клиент Отказ Один С', customerType: 'individual', phones: [phone] });
+    expect(c.status, JSON.stringify(c.body)).toBe(201);
+    const customerId = c.body.id as string;
+    const cart = await t.cartFor(w.actors.cashier, v, customerId);
+    const o = await t.order(w.actors.cashier, cart, v, 'cash');
+    expect([201, 202], JSON.stringify(o.body)).toContain(o.status);
+    const orderId = o.body.id as string;
+    type Ob = {
+      id: string;
+      status: string;
+      attempts: number;
+      parked: boolean;
+      last_error: string | null;
+      dep: string | null;
+    };
+    const outbox = async () =>
+      t.q<Ob>(
+        `SELECT id, status::text AS status, attempts, next_attempt_at IS NULL AS parked, last_error,
+                depends_on_outbox_id::text AS dep
+           FROM onec_outbox WHERE aggregate_id IN ($1::uuid, $2::uuid) AND operation = 'create' ORDER BY created_at`,
+        [customerId, orderId],
+      );
+    const [cust0, ord0] = await outbox();
+    expect(ord0.dep).toBe(cust0.id);
+    const sentOrders = () =>
+      t.onec
+        .callsOf('createOrder')
+        .map((a) => a[0] as { externalId?: string; customer?: { ref: string | null } })
+        .filter((b) => b.externalId === orderId);
+
+    // 1С отклоняет данные клиента (бизнес-отказ) → customer/create failed; заказ паркуется с понятной причиной.
+    t.onec.script('createCustomer', {
+      error: 422,
+      code: 'POS_E_VALIDATION',
+      message: 'Не заполнен вид клиента (тест)',
+    });
+    t.onec.always('createOrder', null);
+    try {
+      await t.drainOutbox();
+      let [cust, ord] = await outbox();
+      expect(cust.status).toBe('failed');
+      expect(ord).toMatchObject({ status: 'pending', attempts: 0, parked: true });
+      expect(ord.last_error).toContain(`customer/create ${cust.id}`);
+      expect(ord.last_error).toContain('failed');
+      expect(ord.last_error).toContain('ONEC_REJECTED');
+      expect(ord.last_error).toContain('SYNC-042');
+      // Следующие тики (в т. ч. «наступивший» next_attempt_at) заказ не отправляют и попыток не расходуют.
+      await t.drainOutbox();
+      [cust, ord] = await outbox();
+      expect(ord).toMatchObject({ status: 'pending', attempts: 0, parked: true });
+      expect(sentOrders()).toHaveLength(0);
+      const card = await t.req('get', `/orders/${orderId}`, w.actors.cashier);
+      expect(card.status, JSON.stringify(card.body)).toBe(200);
+      expect(card.body.status).toBe('submitting');
+
+      // Хук диспетчера из реальной сборки pos-worker (createOrdersWorkerWiring → OrderDependencyNotifier →
+      // NotificationsPortService): sync_error «ждёт клиента в 1С» автору заказа (он же автор клиента) и admin —
+      // по одному (повторные тики не дублируют: ключ дедупликации — элемент, основание, статус и момент перехода).
+      const blockedNotes = await t.q<{ user_id: string; severity: string; title_ru: string; dedupe_key: string }>(
+        `SELECT user_id::text AS user_id, severity, title_ru, dedupe_key FROM notifications
+          WHERE kind = 'sync_error' AND dedupe_key LIKE $1`,
+        [`outbox_blocked:${ord.id}:${cust.id}:failed:%`],
+      );
+      for (const u of [w.actors.cashier, w.actors.admin]) {
+        const mine = blockedNotes.filter((n) => n.user_id === u.userId);
+        expect(mine, u.role ?? '').toHaveLength(1);
+        expect(mine[0]).toMatchObject({ severity: 'warning' });
+        expect(mine[0].title_ru).toContain('ждёт клиента в 1С');
+      }
+      // Хук не сработал (сбой/падение процесса после парковки): сверщик outbox.reconcile-aggregates повторяет
+      // уведомление по запаркованному заказу — тем же ключом, без дублей при следующих запусках.
+      await t.q(`DELETE FROM notifications WHERE dedupe_key LIKE $1`, [`outbox_blocked:${ord.id}:%`]);
+      // (часть job `outbox.reconcile-aggregates` сборки pos-worker; сверщик результатов заказов здесь не запускаем)
+      for (let i = 0; i < 2; i++) expect(await t.orderWiring.blocked.reconcile()).toBeGreaterThanOrEqual(1);
+      const again = await t.q<{ user_id: string; dedupe_key: string }>(
+        `SELECT user_id::text AS user_id, dedupe_key FROM notifications WHERE dedupe_key LIKE $1`,
+        [`outbox_blocked:${ord.id}:%`],
+      );
+      expect(again.map((n) => [n.user_id, n.dedupe_key]).sort()).toEqual(
+        blockedNotes.map((n) => [n.user_id, n.dedupe_key]).sort(),
+      );
+
+      // Ручной повтор клиента через API (POST /sync/outbox/{id}/retry): парковка снимается, клиент → sent, затем заказ.
+      const retry = await t.req('post', `/sync/outbox/${cust.id}/retry`, w.actors.admin, { idem: true });
+      expect(retry.status, JSON.stringify(retry.body)).toBe(202);
+      expect(retry.body).toMatchObject({ id: cust.id, status: 'pending' });
+      // Тик без «подтягивания» next_attempt_at всех pending (drainOutbox снял бы парковку сам): снятие — по основанию.
+      await t.dispatcher.tick(); // парковка снята (основание снова pending), клиент → sent
+      [cust, ord] = await outbox();
+      expect(cust.status).toBe('sent');
+      expect(ord).toMatchObject({ status: 'pending', parked: false, last_error: null });
+      await t.drainOutbox(); // подтверждение клиента применено; заказ → 1С со ссылкой клиента
+    } finally {
+      t.onec.always('createOrder', { transport: true });
+    }
+    const ref = (
+      await t.q<{ r: string | null }>(`SELECT onec_ref::text AS r FROM customers WHERE id = $1`, [customerId])
+    )[0].r;
+    expect(ref).not.toBeNull();
+    expect(sentOrders().length).toBeGreaterThan(0);
+    expect(sentOrders().every((b) => b.customer?.ref === ref)).toBe(true);
+  });
+});

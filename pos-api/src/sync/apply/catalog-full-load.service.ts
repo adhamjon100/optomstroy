@@ -10,7 +10,7 @@ import {
   publishCatalogChanges,
 } from './catalog-change-publisher.js';
 import { refreshCatalogDerived } from './catalog-derived.js';
-import type { CatalogFullSource, CatalogReadKind } from './catalog-source.js';
+import type { CatalogFullSource, CatalogReadKind, CatalogReadPage } from './catalog-source.js';
 import {
   applyPriceRows,
   applyStockRows,
@@ -64,6 +64,31 @@ const ENTITY_READS: Readonly<Record<CatalogLoadEntity, readonly { kind: CatalogR
   prices: [{ kind: 'price_lists', table: 'price_lists' }],
   stock: [],
 };
+
+/**
+ * Сущности, полная загрузка которых после обрыва продолжается с `cursor_to` (05 SYNC-002, AC-SYNC-002; 04
+ * FLOW-033.A2; 12 T-SYNC-F03): страницы независимы (`applyItems(…, final=true)`). Не продолжаются: `barcodes` —
+ * правило ONEC-017 п. 2 выбирает привязку по всем страницам прогона (кандидаты прогона — в памяти, при разрыве
+ * выбор зависел бы от места обрыва), `prices`/`stock` — срезы применяются целиком (SYNC-013…SYNC-015),
+ * `attributes` — отдельного чтения нет. Они после обрыва читаются с начала.
+ */
+export const RESUMABLE_ENTITIES: ReadonlySet<CatalogLoadEntity> = new Set<CatalogLoadEntity>([
+  'units',
+  'categories',
+  'products',
+  'variants',
+  'warehouses',
+]);
+
+/** Позиция полной загрузки в `sync_runs.cursor_to`: набор (`CatalogReadKind`) и `$skip` следующей страницы. */
+const FULL_CURSOR_RE = /^skip:([a-z_]+):(\d+)$/;
+
+export function fullLoadCursor(kind: CatalogReadKind, skip: number): string {
+  return `skip:${kind}:${skip}`;
+}
+
+/** Не более групп дублей `onec_code` на таблицу в отчёте прогона (05 SYNC-004). */
+export const MAX_DUPLICATE_GROUPS = 1000;
 
 export type CatalogLoadMode = 'full' | 'reconcile' | 'incremental';
 
@@ -210,26 +235,143 @@ export class CatalogFullLoadService {
 
   // ------------------------------------------------------------------ справочники
 
+  /**
+   * Полная перечитка наборов сущности. Каждая страница — транзакция upsert (SYNC-002); для продолжаемых сущностей
+   * (`RESUMABLE_ENTITIES`) в той же транзакции пишется позиция `sync_runs.cursor_to` (`skip:<набор>:<$skip>`), так
+   * что данные страницы и курсор фиксируются атомарно. Повтор после обрыва продолжает с курсора (`resumePoint`).
+   */
   private async loadFull(
     req: CatalogLoadRequest,
     runIdFor: (e: SyncEntity) => Promise<string>,
     counts: Map<SyncEntity, EntityCounts>,
   ): Promise<number> {
+    const reads = ENTITY_READS[req.entity];
+    const readPages = req.source.readPages?.bind(req.source);
+    const resumable = req.mode !== 'incremental' && RESUMABLE_ENTITIES.has(req.entity) && readPages !== undefined;
+    const runId = await runIdFor(req.entity);
+    const from = resumable ? await this.resumePoint(req, runId) : undefined;
     let pages = 0;
-    for (const { kind, table } of ENTITY_READS[req.entity]) {
+    for (let i = from?.index ?? 0; i < reads.length; i++) {
+      const { kind, table } = reads[i];
       const state = newApplyState();
-      for await (const items of req.source.read(kind)) {
+      const source: AsyncIterable<CatalogReadPage> =
+        resumable && readPages
+          ? readPages(kind, from && i === from.index ? from.skip : 0)
+          : asPages(req.source.read(kind));
+      for await (const page of source) {
         pages += 1;
         await this.inTx(runIdFor, counts, async (scope) => {
-          await this.applier.applyItems(scope, state, items, true);
+          await this.applier.applyItems(scope, state, page.items, true);
           await refreshCatalogDerived(scope.client, state, { counters: false });
+          if (resumable) await setRunCursor(scope.client, runId, fullLoadCursor(kind, page.nextSkip));
         });
       }
       await this.reconcileTable(req, kind, table, runIdFor, counts, state);
       if (state.dirty.counters)
         await this.inTx(runIdFor, counts, (scope) => refreshCatalogDerived(scope.client, state));
+      if (req.mode === 'full') await this.reportDuplicateCodes(req, table, runIdFor, counts);
+      // Набор прочитан и сверен — продолжение после обрыва начнётся со следующего набора.
+      const next = reads[i + 1];
+      if (resumable && next) await setRunCursor(this.pool, runId, fullLoadCursor(next.kind, 0));
     }
     return pages;
+  }
+
+  /**
+   * Откуда продолжить полную загрузку (05 SYNC-002, AC-SYNC-002; 12 T-SYNC-F03): только если последний прогон
+   * сущности (кроме текущего) оборван (`failed`) в том же режиме и оставил `cursor_to` полной загрузки. После
+   * `partial` (расхождение сверки — полная перезагрузка, T-SYNC-F03), успешного или любого другого прогона между
+   * ними (инкремент переписывает отметки `seen_in_run_id`) — с начала. Объекты, увиденные оборванным прогоном,
+   * переносятся в текущий (`sync_entity_versions.seen_in_run_id`), иначе сверка SYNC-006 сочла бы их не
+   * встреченными и пометила удалёнными. Перенос и курсор начала (`cursor_from` = `cursor_to` = курсор обрыва) —
+   * одной транзакцией: если и этот прогон оборвётся до первой страницы, следующий продолжит с того же места.
+   */
+  private async resumePoint(
+    req: CatalogLoadRequest,
+    runId: string,
+  ): Promise<{ readonly index: number; readonly skip: number } | undefined> {
+    const r = await this.pool.query<{ id: string; status: string; mode: string; cursor_to: string | null }>(
+      `SELECT id, status::text AS status, mode::text AS mode, cursor_to FROM sync_runs
+        WHERE entity = $1 AND id <> $2 ORDER BY created_at DESC, id DESC LIMIT 1`,
+      [req.entity, runId],
+    );
+    const prev = r.rows[0];
+    if (prev?.status !== 'failed' || prev.mode !== req.mode) return undefined;
+    const m = FULL_CURSOR_RE.exec(prev.cursor_to ?? '');
+    const index = m ? ENTITY_READS[req.entity].findIndex((x) => x.kind === m[1]) : -1;
+    if (!m || index < 0) return undefined;
+    const cursor = m[0];
+    const client = await this.pool.connect();
+    let carried: number;
+    try {
+      await client.query('BEGIN');
+      const moved = await client.query(
+        `UPDATE sync_entity_versions SET seen_in_run_id = $1 WHERE entity = $2 AND seen_in_run_id = $3`,
+        [runId, req.entity, prev.id],
+      );
+      carried = moved.rowCount ?? 0;
+      await client.query(`UPDATE sync_runs SET cursor_from = $2, cursor_to = $2, updated_at = now() WHERE id = $1`, [
+        runId,
+        cursor,
+      ]);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
+    this.log.info(
+      { entity: req.entity, mode: req.mode, runId, resumedFrom: prev.id, cursor, carried },
+      'sync.catalog.resumed: полная загрузка продолжена с cursor_to оборванного прогона (SYNC-002)',
+    );
+    return { index, skip: Number(m[2]) };
+  }
+
+  /**
+   * Отчёт о дублях `onec_code` при полной загрузке (05 SYNC-004; 12 T-SYNC-009; E-KI-04): среди живых строк таблицы,
+   * увиденных в прогоне, — группы с одинаковым кодом 1С → `sync_errors` `DUPLICATE_SUSPECTED` (warning, по записи
+   * на группу: код, число объектов, их `onec_ref`). Только отчёт: строки не сливаются и не правятся, статус прогона
+   * и пометки удаления не меняются (`errors` не растёт). Отчёт виден в `GET /sync/runs/{id}/errors` и на SCR-43.
+   */
+  private async reportDuplicateCodes(
+    req: CatalogLoadRequest,
+    table: CatalogTable,
+    runIdFor: (e: SyncEntity) => Promise<string>,
+    counts: Map<SyncEntity, EntityCounts>,
+  ): Promise<void> {
+    // `barcodes`: значение уникально (UNIQUE), две привязки одного значения — `BARCODE_CONFLICT` (ONEC-017).
+    if (table === 'barcodes') return;
+    const runId = await runIdFor(req.entity);
+    const r = await this.pool.query<{ code: string; refs: string[]; n: number }>(
+      `SELECT t.onec_code AS code, array_agg(t.onec_ref::text ORDER BY t.onec_ref) AS refs, count(*)::int AS n
+         FROM ${table} t
+        WHERE NOT t.deletion_mark AND t.onec_ref IS NOT NULL AND btrim(coalesce(t.onec_code, '')) <> ''
+          AND EXISTS (SELECT 1 FROM sync_entity_versions v
+                       WHERE v.entity = $1 AND v.onec_key = t.onec_ref::text AND v.seen_in_run_id = $2)
+        GROUP BY t.onec_code HAVING count(*) > 1
+        ORDER BY t.onec_code LIMIT $3`,
+      [req.entity, runId, MAX_DUPLICATE_GROUPS],
+    );
+    if (r.rows.length === 0) return;
+    await this.inTx(runIdFor, counts, (scope) => {
+      for (const d of r.rows) {
+        scope.errors.push({
+          entity: req.entity,
+          errorCode: 'DUPLICATE_SUSPECTED',
+          severity: 'warning',
+          onecCode: d.code,
+          onecRef: d.refs[0] ?? null,
+          message: `${table}: код 1С «${d.code}» у ${d.n} объектов — проверьте карточки в 1С (отчёт без автоисправления, 05 SYNC-004)`,
+          payload: { table, field: 'onec_code', onecCode: d.code, count: d.n, refs: d.refs.slice(0, 20) },
+        });
+      }
+      return Promise.resolve();
+    });
+    this.log.warn(
+      { entity: req.entity, table, runId, groups: r.rows.length },
+      'sync.catalog.duplicates: дубли onec_code при полной загрузке (SYNC-004)',
+    );
   }
 
   /** Фаза 0 (SYNC-012): ключи + DataVersion → дочитать изменённые; ключей нет в 1С → `deletion_mark`. */
@@ -512,6 +654,20 @@ export class CatalogFullLoadService {
       client.release();
     }
   }
+}
+
+/** Страницы источника без позиции (`read`): продолжение с курсора для такого источника не выполняется. */
+async function* asPages(items: AsyncIterable<readonly OnecCatalogItem[]>): AsyncIterable<CatalogReadPage> {
+  for await (const page of items) yield { items: page, nextSkip: -1 };
+}
+
+/** Позиция полной загрузки прогона (`sync_runs.cursor_to`); `updated_at` — заодно отметка «жив». */
+async function setRunCursor(
+  db: Pick<pg.Pool, 'query'> | Pick<pg.ClientBase, 'query'>,
+  runId: string,
+  cursor: string,
+): Promise<void> {
+  await db.query(`UPDATE sync_runs SET cursor_to = $2, updated_at = now() WHERE id = $1`, [runId, cursor]);
 }
 
 function errText(e: unknown): string {

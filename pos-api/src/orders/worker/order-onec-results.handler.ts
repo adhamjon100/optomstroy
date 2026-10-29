@@ -162,6 +162,10 @@ export class OrderOnecResultsHandler {
         locked: o,
         reason: message,
       });
+      if (r.to === 'submit_failed' || r.to === 'cancelled') {
+        // Документ в 1С не создан: отменять нечего — зависимая задача `cancel` отзывается (05 SYNC-042).
+        await this.withdrawDependentCancel(tx, o, ob.id, message);
+      }
       if (r.to === 'submit_failed') {
         await this.voidOpenPayments(tx, o);
         await this.restoreCart(tx, o);
@@ -310,6 +314,57 @@ export class OrderOnecResultsHandler {
         UPDATE onec_outbox SET status = 'cancelled', cancelled_at = now(), next_attempt_at = NULL, lease_until = NULL,
                locked_by = NULL, updated_at = now()
          WHERE id = ${row.id}::uuid`);
+    }
+  }
+
+  /**
+   * 05 SYNC-042: отмена, запрошенная, пока `create` был в `sending`, ставится элементом `cancel`, зависящим от
+   * `create`; при исходе `create` в `failed` (1С отклонила создание — документа в 1С нет) этот элемент → `cancelled`
+   * (`aggregate_cancelled`, 07 §6.5), `orders.cancel_requested_at` снимается (заказ уже `submit_failed`/`cancelled`),
+   * автору запроса отмены (если это не автор заказа, которому пришло уведомление об отказе) — `order_status`.
+   * В той же транзакции, что проекция отказа: повтор job/сверщик идемпотентны. Исход `dead` (результат неизвестен)
+   * здесь не обрабатывается — known_issues G-KI-12 (остаток SYNC-042, решение владельца 05/10).
+   */
+  private async withdrawDependentCancel(
+    tx: SalesTx,
+    o: OrderRow,
+    createOutboxId: string,
+    message: string,
+  ): Promise<void> {
+    const rows = await tx.execute<{ id: string; status: OutboxStatus }>(sql`
+      SELECT id, status::text AS status FROM onec_outbox
+       WHERE depends_on_outbox_id = ${createOutboxId}::uuid AND aggregate_type = 'order'
+         AND aggregate_id = ${o.id}::uuid AND operation = 'cancel' AND status = 'pending'
+       FOR UPDATE`);
+    const cancel = rows.rows[0];
+    if (!cancel) return;
+    assertOutboxTransition(cancel.status, 'cancelled', 'aggregate_cancelled');
+    await tx.execute(sql`
+      UPDATE onec_outbox SET status = 'cancelled', cancelled_at = now(), next_attempt_at = NULL, lease_until = NULL,
+             locked_by = NULL,
+             last_error = left(${`Отозван: 1С отклонила создание заказа (${message}) — отменять в 1С нечего (05 SYNC-042).`}, 2000),
+             updated_at = now()
+       WHERE id = ${cancel.id}::uuid`);
+    if (o.cancel_requested_at === null) return;
+    await tx.execute(sql`
+      UPDATE orders SET cancel_requested_at = NULL, row_version = row_version + 1, updated_at = now()
+       WHERE id = ${o.id}::uuid`);
+    this.d.log.info(
+      { orderId: o.id, outboxId: cancel.id, dependsOn: createOutboxId },
+      'orders.cancel_withdrawn: create отклонён 1С — зависимая отмена отозвана (SYNC-042)',
+    );
+    // Автору заказа уже пришло уведомление об отказе 1С (проекция) — отдельно только автору запроса отмены.
+    const requesters = [o.cancel_requested_by_user_id].filter(isStr).filter((u) => u !== o.created_by_user_id);
+    for (const userId of requesters) {
+      await this.notify(tx, {
+        userId,
+        kind: 'order_status',
+        severity: 'warning',
+        title: `Заказ ${o.public_number}: запрос отмены снят`,
+        body: `1С отклонила создание заказа ${o.public_number}: ${message}. Документа в 1С нет — запрос отмены снят.`,
+        payload: { orderId: o.id, outboxId: cancel.id },
+        dedupeKey: `order_cancel_withdrawn:${o.id}:${cancel.id}`,
+      });
     }
   }
 

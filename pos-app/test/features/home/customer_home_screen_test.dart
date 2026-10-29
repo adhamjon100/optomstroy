@@ -13,6 +13,7 @@ import 'package:optomstroy/design_system/components/app_tooltip.dart';
 import 'package:optomstroy/design_system/components/favorite_toggle.dart';
 import 'package:optomstroy/design_system/components/price_text.dart';
 import 'package:optomstroy/design_system/components/product_card.dart';
+import 'package:optomstroy/design_system/components/product_image.dart';
 import 'package:optomstroy/design_system/components/stock_badge.dart';
 import 'package:optomstroy/features/catalog/domain/entities/catalog_query.dart';
 import 'package:optomstroy/features/catalog/domain/entities/product.dart';
@@ -184,6 +185,41 @@ void main() {
   });
 
   group('действия', () {
+    testWidgets('«Компакт» 1280 lp (паритет функций ADR-112): в строке таблицы — миниатюра, звезда (переключает '
+        'избранное, не выходя из таблицы) и цена с «/ шт»', (tester) async {
+      final HomeHarness h = HomeHarness();
+      setWindow(tester, const Size(1280, 900));
+      addTearDown(() => disposeHome(h));
+      await tester.pumpWidget(
+        homeApp(
+          h,
+          router: homeRouter(initial: '/home?view=compact'),
+          size: const Size(1280, 900),
+        ),
+      );
+      await settle(tester, frames: 10);
+      final Finder row = find.byKey(const ValueKey<String>('product-p3'));
+      await tester.ensureVisible(row);
+      await settle(tester);
+      expect(
+        tester.widget<ProductCardCompact>(find.descendant(of: row, matching: find.byType(ProductCardCompact))).variant,
+        ProductCardCompactVariant.table,
+      );
+      expect(
+        find.descendant(of: row, matching: find.byType(ProductImage)),
+        findsOneWidget,
+        reason: 'миниатюра 40',
+      );
+      final PriceText price = tester.widget<PriceText>(find.descendant(of: row, matching: find.byType(PriceText)));
+      expect(price.unit, isNotNull, reason: 'единица у цены («/ шт»)');
+      final Finder star = find.descendant(of: row, matching: find.byType(FavoriteToggle));
+      expect(star, findsOneWidget);
+      await tester.tap(star);
+      await settle(tester);
+      expect(h.shelf!.favoriteCalls, <(String, bool)>[('p3', true)]);
+      expect(find.byKey(const ValueKey<String>('route-probe')), findsNothing, reason: 'звезда не открывает карточку');
+    });
+
     testWidgets('избранное: звезда карточки → порт избранного; карточка «Избранное» — число и переход', (tester) async {
       final HomeHarness h = HomeHarness();
       await pumpHome(tester, h, size: kTallCompact);

@@ -1,6 +1,7 @@
 // Компоненты карточки товара RM-E-008 (03 §9.14, §9.15, §9.18…§9.22; ядро §17.5): ProductImage,
 // ImageGallery, WarehouseStockTable, UnitSelector, QuantityStepper, QuantityNumpadSheet,
 // VariantSelector. StockBadge — общий компонент каталога (тесты у владельца файла).
+import 'package:flutter/foundation.dart' show Uint8List;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
@@ -15,6 +16,15 @@ import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 
 import 'ds_test_support.dart';
 
+/// PNG 1×1 (прозрачный).
+final Uint8List _png1x1 = Uint8List.fromList(<int>[
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, //
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, //
+  0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, //
+  0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, //
+  0x42, 0x60, 0x82,
+]);
+
 void main() {
   group('ProductImage', () {
     testWidgets('нет фото — заглушка «Нет фото» (INV-050)', (WidgetTester tester) async {
@@ -26,6 +36,40 @@ void main() {
     testWidgets('миниатюра < 64 — заглушка без подписи', (WidgetTester tester) async {
       await pumpDs(tester, const ProductImage(url: null, dimension: 48));
       expect(find.text('Нет фото'), findsNothing);
+    });
+
+    testWidgets('относительный путь сервера `/images/{sha}/card` загружается от адреса API (ProductImageBase)', (
+      WidgetTester tester,
+    ) async {
+      final List<String> requested = <String>[];
+      await pumpDs(
+        tester,
+        ProductImageBase(
+          baseUri: Uri.parse('http://127.0.0.1:8080/api/v1'),
+          child: ProductImageScope(
+            providerFor: (String url) {
+              requested.add(url);
+              return MemoryImage(_png1x1);
+            },
+            child: const Column(
+              children: <Widget>[
+                ProductImage(url: '/images/5ae8/card', dimension: 120),
+                ProductImage(url: 'https://cdn.example.test/images/ab/card', dimension: 120),
+              ],
+            ),
+          ),
+        ),
+      );
+      expect(requested, <String>['http://127.0.0.1:8080/images/5ae8/card', 'https://cdn.example.test/images/ab/card']);
+      expect(
+        ProductImageBase.resolveAgainst(null, '/images/x/card'),
+        '/images/x/card',
+        reason: 'без адреса — как есть',
+      );
+      expect(
+        ProductImageBase.resolveAgainst(Uri.parse('http://h:3000/api/v1'), 'images/x/thumb'),
+        'http://h:3000/images/x/thumb',
+      );
     });
 
     test('путь файла по sha256 и размеру (RM-E-003)', () {

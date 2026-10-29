@@ -15,6 +15,8 @@
  * `--media-dir` (иначе `MEDIA_DIR`; при `--embedded` — временный каталог), `--report <файл JSON>`, `--embedded`,
  * `--no-fixtures` (только синтетика).
  * Код выхода: 0 — 0 ошибок маппинга и $count сошёлся по всем сущностям; 1 — есть ошибки/расхождения; 2 — параметры.
+ * Предупреждения `DUPLICATE_SUSPECTED` уровня warning (отчёт о дублях `onec_code`, SYNC-004) выводятся отдельной
+ * строкой и на код выхода не влияют.
  */
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -73,8 +75,13 @@ export interface CatalogImportReport {
   readonly loadMs: number;
   readonly counts: readonly ImportCountRow[];
   readonly countCheck: CountCheckReport;
-  /** `sync_errors` по коду: ошибки маппинга — все, кроме фото (`IMAGE_*`, `HASH_MISMATCH`). */
+  /**
+   * `sync_errors` по коду (все уровни). Ошибки маппинга — все, кроме фото (`IMAGE_*`, `HASH_MISMATCH`) и отчётных
+   * предупреждений `syncWarnings` (`DUPLICATE_SUSPECTED` уровня warning — отчёт о дублях `onec_code`, 05 SYNC-004,
+   * E-KI-04: строки не правятся, прогон success, на итог не влияет).
+   */
   readonly syncErrors: Record<string, number>;
+  readonly syncWarnings: Record<string, number>;
   readonly mappingErrors: number;
   readonly images: {
     readonly requested: number;
@@ -93,6 +100,32 @@ export interface CatalogImportReport {
 }
 
 const out = (line: string): boolean => process.stdout.write(`${line}\n`);
+
+/**
+ * Отчётное предупреждение, а не ошибка маппинга: `DUPLICATE_SUSPECTED` уровня `warning` — отчёт о дублях `onec_code`
+ * при полной загрузке (05 SYNC-004; 12 T-SYNC-009; E-KI-04). Фикстуры 1С и синтетика заведомо дают такие дубли.
+ * `DUPLICATE_SUSPECTED` уровня `error` (например, занятый код партнёра) остаётся ошибкой.
+ */
+export function isReportOnlyWarning(code: string, severity: string): boolean {
+  return code === 'DUPLICATE_SUSPECTED' && severity === 'warning';
+}
+
+/** Разбор `sync_errors` (код × уровень → число) на все коды, отчётные предупреждения и число ошибок маппинга. */
+export function classifySyncErrors(rows: readonly { code: string; severity: string; n: number }[]): {
+  syncErrors: Record<string, number>;
+  syncWarnings: Record<string, number>;
+  mappingErrors: number;
+} {
+  const syncErrors: Record<string, number> = {};
+  const syncWarnings: Record<string, number> = {};
+  let mappingErrors = 0;
+  for (const r of rows) {
+    syncErrors[r.code] = (syncErrors[r.code] ?? 0) + r.n;
+    if (isReportOnlyWarning(r.code, r.severity)) syncWarnings[r.code] = (syncWarnings[r.code] ?? 0) + r.n;
+    else if (!/^(IMAGE_|HASH_MISMATCH)/.test(r.code)) mappingErrors += r.n;
+  }
+  return { syncErrors, syncWarnings, mappingErrors };
+}
 
 function int(v: string | undefined, def: number, name: string): number {
   if (v === undefined) return def;
@@ -258,13 +291,13 @@ export async function loadCatalogFixtures(pool: pg.Pool, o: LoadCatalogFixturesO
     rmSync(dir, { recursive: true, force: true });
   }
   const imagesMs = Math.round(performance.now() - t1);
-  const errorsByCode = await pool.query<{ code: string; n: string }>(
-    `SELECT error_code::text AS code, count(*)::text AS n FROM sync_errors GROUP BY 1 ORDER BY 1`,
+  const errorsByCode = await pool.query<{ code: string; severity: string; n: string }>(
+    `SELECT error_code::text AS code, severity::text AS severity, count(*)::text AS n
+       FROM sync_errors GROUP BY 1, 2 ORDER BY 1, 2`,
   );
-  const syncErrors = Object.fromEntries(errorsByCode.rows.map((r) => [r.code, Number(r.n)]));
-  const mappingErrors = Object.entries(syncErrors)
-    .filter(([code]) => !/^(IMAGE_|HASH_MISMATCH)/.test(code))
-    .reduce((n, [, v]) => n + v, 0);
+  const { syncErrors, syncWarnings, mappingErrors } = classifySyncErrors(
+    errorsByCode.rows.map((r) => ({ code: r.code, severity: r.severity, n: Number(r.n) })),
+  );
   const images = {
     requested: photoProducts.length,
     files: imageResult.counts.files,
@@ -327,6 +360,7 @@ export async function loadCatalogFixtures(pool: pg.Pool, o: LoadCatalogFixturesO
     counts: rows,
     countCheck,
     syncErrors,
+    syncWarnings,
     mappingErrors,
     images,
     ok,
@@ -354,6 +388,11 @@ function print(r: CatalogImportReport): void {
       .join(', ')})`,
   );
   out(`[load-catalog] sync_errors: ${JSON.stringify(r.syncErrors)}; ошибок маппинга: ${r.mappingErrors}`);
+  if (Object.keys(r.syncWarnings).length > 0) {
+    out(
+      `[load-catalog] предупреждения-отчёт (на итог не влияют; дубли onec_code — SYNC-004): ${JSON.stringify(r.syncWarnings)}`,
+    );
+  }
   out(
     `[load-catalog] фото: файлов ${r.images.files}, готово ${r.images.imported}, дедупликация ${r.images.deduplicated}, ошибок ${r.images.errors}, ` +
       `товаров с фото ${r.images.productsWithPhoto}, уникальных sha256 ${r.images.distinctFiles}, каталогов в хранилище ` +

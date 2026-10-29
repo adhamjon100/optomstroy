@@ -11,6 +11,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:optomstroy/core/di/core_providers.dart';
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/error/failure.dart';
 import 'package:optomstroy/core/error/result.dart';
@@ -192,7 +193,9 @@ class _CatalogFiltersScreenState extends ConsumerState<CatalogFiltersScreen> {
           applyLabel: applyLabel,
           applyLoading: _counting,
           applyHint: none ? l10n.filters_no_results_hint : null,
-          note: _offline ? l10n.filters_offline_note(CatalogFormats.time(_asOf ?? DateTime.now())) : null,
+          note: _offline
+              ? l10n.filters_offline_note(CatalogFormats.time(_asOf ?? ref.read(clockProvider).nowUtc()))
+              : null,
           onClose: _close,
           onReset: () {
             final CatalogFilter cleared = CatalogFilterCodec.cleared(_draft);

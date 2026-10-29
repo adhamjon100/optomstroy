@@ -18,7 +18,7 @@ import {
   OnecODataError,
   type ODataRow,
 } from '../../integrations/onec/onec-odata.client.js';
-import type { CatalogFullSource, CatalogReadKind, OnecVersionKey } from './catalog-source.js';
+import type { CatalogFullSource, CatalogReadKind, CatalogReadPage, OnecVersionKey } from './catalog-source.js';
 
 /**
  * Источник фазы 0 (`ONEC_MODE=odata_only`; 05 §4, §5, §7.1–§7.2) — стандартный OData по allow-list
@@ -275,15 +275,21 @@ export class ODataCatalogSource implements CatalogFullSource {
   }
 
   async *read(kind: CatalogReadKind): AsyncIterable<readonly OnecCatalogItem[]> {
+    for await (const page of this.readPages(kind, 0)) yield page.items;
+  }
+
+  /** Страницы `$top/$skip` с позиции `startSkip`; `nextSkip` — по числу строк OData, а не элементов (SYNC-002). */
+  async *readPages(kind: CatalogReadKind, startSkip: number): AsyncIterable<CatalogReadPage> {
     const spec = READS[kind];
     const select = await this.workingSelect(spec);
-    for await (const page of this.client.pages(spec.collection, {
-      select,
-      ...(spec.filter ? { filter: spec.filter } : {}),
-    })) {
+    for await (const page of this.client.pages(
+      spec.collection,
+      { select, ...(spec.filter ? { filter: spec.filter } : {}) },
+      startSkip,
+    )) {
       const items = page.rows.map(spec.map).filter((x): x is OnecCatalogItem => x !== undefined);
       if (kind === 'products') await this.attachAttributes(items as OnecNomenclatureItem[]);
-      yield items;
+      yield { items, nextSkip: page.skip + page.rows.length };
     }
   }
 

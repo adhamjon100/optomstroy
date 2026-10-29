@@ -1,2 +1,5 @@
 # Значения машины разработки (env/README.md): не в git.
 /env/local.json
+
+# Расхождения golden-прогонов (alchemist/flutter_test пишут их рядом с тестами): не в git.
+test/**/failures/

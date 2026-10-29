@@ -7,7 +7,7 @@ import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 
 /// Вид `FavoriteToggle` (03 §9.23).
 enum FavoriteToggleVariant {
-  /// На фото в сетке: круг 32 `surface` 80 % + иконка 20; цель 48.
+  /// На фото в сетке: круг 34 `surface` (сплошной, прототип 2026-10-29) + иконка 20; цель 48.
   onImage,
 
   /// В строке списка: иконка 24, цель 48 (40 визуально).
@@ -39,6 +39,9 @@ class FavoriteToggle extends StatefulWidget {
 
   /// Вид.
   final FavoriteToggleVariant variant;
+
+  /// Диаметр круга [FavoriteToggleVariant.onImage].
+  static const double onImageSize = 34;
 
   @override
   State<FavoriteToggle> createState() => _FavoriteToggleState();
@@ -101,12 +104,12 @@ class _FavoriteToggleState extends State<FavoriteToggle> with SingleTickerProvid
                 visible: s.focused,
                 circle: true,
                 child: Container(
-                  width: onImage ? 32 : 40,
-                  height: onImage ? 32 : 40,
+                  width: onImage ? FavoriteToggle.onImageSize : 40,
+                  height: onImage ? FavoriteToggle.onImageSize : 40,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: hover ?? (onImage ? c.surface.withValues(alpha: 0.8) : Colors.transparent),
+                    color: hover ?? (onImage ? c.surface : Colors.transparent),
                   ),
                   child: animated,
                 ),

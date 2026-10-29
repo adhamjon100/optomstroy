@@ -26,6 +26,7 @@ import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/features/admin/admin_providers.dart';
 import 'package:optomstroy/features/admin/domain/users/admin_user.dart';
 import 'package:optomstroy/features/admin/domain/users/admin_users_policy.dart';
+import 'package:optomstroy/features/admin/presentation/common/admin_format.dart';
 import 'package:optomstroy/features/admin/presentation/common/admin_nav_menu.dart';
 import 'package:optomstroy/features/admin/presentation/users/admin_failure_text.dart';
 import 'package:optomstroy/features/admin/presentation/users/admin_users_controller.dart';
@@ -466,7 +467,7 @@ class _UserRow extends StatelessWidget {
     final locale = Localizations.localeOf(context).toString();
     final last = user.lastLoginAt == null
         ? null
-        : DateFormat('d MMM, HH:mm', locale).format(user.lastLoginAt!.toLocal());
+        : DateFormat('d MMM, HH:mm', locale).format(AdminFormat.wall(user.lastLoginAt!));
     final caption = context.text.caption.copyWith(color: c.textSecondary);
     return Material(
       color: selected ? c.primaryContainer : c.surface,

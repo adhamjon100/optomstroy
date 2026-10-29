@@ -1,8 +1,8 @@
 // RM-F-005 (golden): SCR-20 «Корзина» на трёх классах окна (D-18, 03 §7.2; эталоны Windows) — compact (экран `/cart`),
-// medium (side sheet `CartPanel.overlay` 320), expanded (постоянная `CartPanel.panel` 340 рядом с каталогом), корзина
+// medium и expanded (drawer корзины 420 над затемнением — `CartPanel.overlay`, ADR-112; постоянной CP нет), корзина
 // канонического примера 02 ч. C §3.2 (16 850,00 − 842,50 = 16 007,50); SCR-23 «Отложенные заказы» — compact (экран)
 // и expanded (side sheet 400); CART-005: строка с «Вариант ›» (UI-20-007) и SCR-15 в режиме смены (UI-15-007).
-// Палитра B «Оранжевый». Данные синтетические.
+// Палитра B по прототипу (ADR-111). Данные синтетические.
 //
 // Обновить эталоны: flutter test test/features/cart/golden --update-goldens
 import 'dart:async';
@@ -18,6 +18,7 @@ import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/core/utils/qty.dart';
 import 'package:optomstroy/design_system/components/cart_panel.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
+import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/features/cart/cart_providers.dart';
 import 'package:optomstroy/features/cart/domain/draft/cart_draft.dart';
 import 'package:optomstroy/features/cart/domain/entities/cart.dart';
@@ -88,26 +89,19 @@ Widget _scr20(String window, Size size) {
   return cartApp(
     size: size,
     overrides: cartOverrides(sync: sync, repo: repo, role: RoleCode.cashier),
-    cartBuilder: switch (window) {
-      'compact' => null,
-      'medium' => (BuildContext context) => Scaffold(
-        backgroundColor: context.colors.overlay,
-        body: const Align(
-          alignment: AlignmentDirectional.centerEnd,
-          child: SizedBox(width: 320, child: CartPanelView(variant: CartPanelVariant.overlay)),
-        ),
-      ),
-      _ => (BuildContext context) => Scaffold(
-        backgroundColor: context.colors.background,
-        body: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            const Expanded(child: SizedBox.expand()),
-            SizedBox(width: CartPanel.widthFor(size.width), child: const CartPanelView()),
-          ],
-        ),
-      ),
-    },
+    // medium и expanded — drawer корзины 420 справа над затемнением (ADR-112, D5): постоянной CP больше нет.
+    cartBuilder: window == 'compact'
+        ? null
+        : (BuildContext context) => Scaffold(
+            backgroundColor: context.colors.overlay,
+            body: const Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: SizedBox(
+                width: DsBreakpoints.cartDrawer,
+                child: CartPanelView(variant: CartPanelVariant.overlay),
+              ),
+            ),
+          ),
   );
 }
 

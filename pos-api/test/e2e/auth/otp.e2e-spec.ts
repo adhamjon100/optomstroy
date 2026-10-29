@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { RegistrationTokenService } from '../../../src/auth/login/registration-token.service.js';
 import { OtpCircuitBreaker } from '../../../src/auth/otp/otp-circuit-breaker.js';
 import { OTP_HMAC_SECRET_RING } from '../../../src/common/crypto/crypto.module.js';
+import { OtpHmacService } from '../../../src/common/crypto/otp-hmac.service.js';
 import type { SecretRing } from '../../../src/common/crypto/secret-ring.js';
 import { AuthE2e, freshDevice, freshIp, freshPhone, WINDOWS } from './support/auth-e2e.js';
 
@@ -537,6 +538,26 @@ describe('auth/otp e2e (RM-D-001, RM-D-014, RM-D-017)', () => {
       expect(re.test(auditText)).toBe(false);
     }
     expect(t.logs.text).not.toMatch(/\+99677\d{7}/); // полный номер не логируется
+  });
+
+  it('G-KI-16 (R1-N-01, F-KI-16): HMAC-псевдоним номера с фрагментом «996»+9 цифр — не сырой телефон: 202, а не 500', async () => {
+    // Первопричина нестабильности: проверка «сырой телефон в subject» RateLimitService искала `\+?996\d{9}` в любом
+    // месте строки и срабатывала на hex-псевдоним номера (64 hex, секрет случайный на прогон) с вероятностью ≈ 1.7e-4
+    // на номер → RangeError → 500 на `POST /auth/otp/request` в случайном тесте (в F — :588, в G — :61).
+    const hmac = t.app.get(OtpHmacService);
+    let phone = '';
+    for (let n = 0; n < 2_000_000 && phone === ''; n++) {
+      const candidate = `+99655${String(n).padStart(7, '0')}`;
+      if (/\+?996\d{9}/.test(hmac.pseudonym('phone', candidate))) phone = candidate;
+    }
+    expect(phone).not.toBe('');
+    const r = await t.otpRequest(phone, freshDevice(), freshIp());
+    expect(r.status, JSON.stringify(r.body)).toBe(202);
+    const counters = await t.pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM rate_limit_counters WHERE subject = $1`,
+      [hmac.pseudonym('phone', phone)],
+    );
+    expect(counters.rows[0].n).toBe(2); // otp_phone_15m и otp_phone_24h — квота учтена по псевдониму
   });
 
   it('T-SEC-008 (класс A, SEC-062, SEC-078): HMAC кода и текст SMS не встречаются в логах и аудите (метрик и трасс в R1 нет — только pino)', async () => {

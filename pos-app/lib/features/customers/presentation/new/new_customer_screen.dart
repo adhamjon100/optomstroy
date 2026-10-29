@@ -22,6 +22,7 @@ import 'package:optomstroy/design_system/components/app_snackbar.dart';
 import 'package:optomstroy/design_system/components/app_text_field.dart';
 import 'package:optomstroy/design_system/components/confirm_dialog.dart';
 import 'package:optomstroy/design_system/components/customer_card.dart';
+import 'package:optomstroy/design_system/components/date_range_picker.dart' show DsBishkekTime;
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/phone_field.dart';
 import 'package:optomstroy/design_system/formats/ds_phone_format.dart';
@@ -562,11 +563,8 @@ class _NewCustomerScreenState extends ConsumerState<NewCustomerScreen> {
   }
 }
 
-/// `HH:mm` местного времени.
-String _hhmm(DateTime at) {
-  final DateTime l = at.toLocal();
-  return '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
-}
+/// `HH:mm` по часам магазина Asia/Bishkek (02 §0.1).
+String _hhmm(DateTime at) => DsBishkekTime.time(at);
 
 /// Раскрытие поля (ANIM-020); при reduce-motion — мгновенно.
 class RevealSize extends StatelessWidget {

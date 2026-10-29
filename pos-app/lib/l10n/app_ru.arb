@@ -1190,9 +1190,17 @@
   "@cart_cta_create_order": {
     "description": "Экран: SCR-20. ч. C; UI-20-016. Источник: 02 §7"
   },
+  "cart_cta_create_order_hotkey": "Создать заказ · F9",
+  "@cart_cta_create_order_hotkey": {
+    "description": "Экран: SCR-20, drawer, настольные платформы. прототип 2026-10-29, ADR-112, версия 1.16; UI-20-016 с подсказкой клавиши; без клавиатуры — `cart_cta_create_order`; у customer — `cart_customer_submit`. Источник: 02 §7"
+  },
   "cart_cta_park": "Отложить заказ",
   "@cart_cta_park": {
     "description": "Экран: SCR-20. ч. C; UI-20-015. Источник: 02 §7"
+  },
+  "cart_cta_park_hotkey": "Отложить · F8",
+  "@cart_cta_park_hotkey": {
+    "description": "Экран: SCR-20, drawer, настольные платформы. прототип 2026-10-29, ADR-112, версия 1.16; UI-20-015 с подсказкой клавиши; без клавиатуры — `cart_cta_park`. Источник: 02 §7"
   },
   "cart_cta_reason_accept_prices": "Примите новые цены",
   "@cart_cta_reason_accept_prices": {
@@ -1337,6 +1345,19 @@
   "@cart_discount_override_reason_required": {
     "description": "Экран: SCR-20. ч. C; UI-20-033. Источник: 02 §7"
   },
+  "cart_drawer_close_a11y": "Закрыть корзину",
+  "@cart_drawer_close_a11y": {
+    "description": "Экран: SCR-20, drawer. прототип 2026-10-29, ADR-112, версия 1.16; крестик drawer и `barrierLabel` затемнения. Источник: 02 §7"
+  },
+  "cart_drawer_title_count": "· {count} поз.",
+  "@cart_drawer_title_count": {
+    "description": "Экран: SCR-20, drawer. прототип 2026-10-29, ADR-112, версия 1.16; приглушённый суффикс заголовка «Корзина» (UI-20-001); `{count}` — int. Источник: 02 §7",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "cart_empty_body": "Добавьте товары из каталога или отсканируйте штрихкод",
   "@cart_empty_body": {
     "description": "Экран: SCR-20. ч. C; UI-20-017. Источник: 02 §7"
@@ -1378,6 +1399,23 @@
         "type": "int"
       }
     }
+  },
+  "cart_header_label_units": "Корзина · {units}",
+  "@cart_header_label_units": {
+    "description": "Экран: SCR-10 (шапка), шапка оболочки staff expanded+. паритет функций 2026-10-29, ADR-112, версия 1.20; UI-10-041: первая строка кнопки-итога при непустой корзине — единицы, как прежняя подпись `CartFab` («Корзина · 6 шт, 12,5 м»); «5 поз. · 6 шт» — в тултипе (`cart_counter_units`); шапке не хватает места — строка свёрнута (§3.1 п. 7, версия 1.21). Источник: 02 §7",
+    "placeholders": {
+      "units": {
+        "type": "String"
+      }
+    }
+  },
+  "cart_header_save_failed": "Корзина не сохранена",
+  "@cart_header_save_failed": {
+    "description": "Экран: SCR-10 (шапка), шапка оболочки staff medium+. паритет функций 2026-10-29, ADR-112, версия 1.20; UI-10-041: тултип и добавка к `Semantics` кнопки-итога при неудачном сохранении корзины (записи очереди `dead`, строка `failed`) — иконка `warning` и текст; повтор — в drawer («Ошибка сохранения · Повторить», `cart_save_state_failed`). Источник: 02 §7"
+  },
+  "cart_header_warning": "В корзине есть предупреждения",
+  "@cart_header_warning": {
+    "description": "Экран: SCR-10 (шапка), шапка оболочки staff medium+. ревью переноса прототипа 2026-10-29, ADR-112, версия 1.19; UI-10-041: тултип кнопки-итога и добавка к `Semantics` (`cart_fab_a11y` / `cart_fab_a11y_nototal`), когда изменились цены, не хватает остатка, позиция недоступна или конфликт версий — warning всегда с иконкой и текстом (ядро §24.1). Источник: 02 §7"
   },
   "cart_items_count": "{count, plural, one{Товаров ({count})} other{Товаров ({count})}}",
   "@cart_items_count": {
@@ -1591,6 +1629,10 @@
   "cart_summary_preliminary": "предварительно",
   "@cart_summary_preliminary": {
     "description": "Экран: SCR-20. ч. C; UI-20-030. Источник: 02 §7"
+  },
+  "cart_summary_server_note": "Итог пересчитывает сервер по ценам 1С при оформлении",
+  "@cart_summary_server_note": {
+    "description": "Экран: SCR-20, зона F. прототип 2026-10-29, ADR-112, версия 1.16; подпись под «Итого», новый UI-20-034. Источник: 02 §7"
   },
   "cart_summary_total": "Итого",
   "@cart_summary_total": {
@@ -1963,7 +2005,16 @@
   },
   "catalog_added_snackbar": "Добавлено · Открыть",
   "@catalog_added_snackbar": {
-    "description": "Экран: SCR-10/11/12 (compact, medium). ч. B; v1.1; ANIM-006 (03 §11.2). Источник: 02 §7"
+    "description": "Экран: SCR-10/11/12 (compact). ч. B; v1.1; ANIM-006 (03 §11.2); версия 1.23: на medium и шире вместо снекбара — тост `catalog_added_toast` (ADR-112), у `customer` действие тоста «Открыть» — вторая часть этой строки. Источник: 02 §7"
+  },
+  "catalog_added_toast": "Добавлено: {name}",
+  "@catalog_added_toast": {
+    "description": "Экран: SCR-10/11/12, medium+. прототип 2026-10-29, ADR-112, версия 1.16; тост после «+ Добавить»; на compact остаётся `catalog_added_snackbar`. Источник: 02 §7",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   },
   "catalog_card_a11y": "{name}, {price} за {unitFull}, {stock}, артикул {sku}",
   "@catalog_card_a11y": {
@@ -1989,6 +2040,24 @@
   "catalog_card_choose_variant": "Выбрать вариант",
   "@catalog_card_choose_variant": {
     "description": "Экран: карточки. ч. B. Источник: 02 §7"
+  },
+  "catalog_card_in_cart_add_more": "В корзине · {qty} — ещё +1",
+  "@catalog_card_in_cart_add_more": {
+    "description": "Экран: SCR-10/11/12, карточки сетки и списка (SCR-50 — через общий компонент). прототип 2026-10-29, ADR-112, версия 1.16; кнопка карточки, когда товар уже в корзине (вместо `QuantityStepper`, UI-10-109); нажатие добавляет шаг; `{qty}` — String, отформатированное количество. Источник: 02 §7",
+    "placeholders": {
+      "qty": {
+        "type": "String"
+      }
+    }
+  },
+  "catalog_card_in_cart_short": "Ещё · {qty}",
+  "@catalog_card_in_cart_short": {
+    "description": "Экран: SCR-10/11/12, вид «Компакт». прототип 2026-10-29, ADR-112, версия 1.16; короткая кнопка строки таблицы для товара в корзине (UI-10-118). Источник: 02 §7",
+    "placeholders": {
+      "qty": {
+        "type": "String"
+      }
+    }
   },
   "catalog_card_max_available": "Доступно {qty} {unit}",
   "@catalog_card_max_available": {
@@ -2064,6 +2133,10 @@
   "@catalog_card_sku_missing": {
     "description": "Экран: карточки. ч. B; INV-052. Источник: 02 §7"
   },
+  "catalog_card_stock_unknown_short": "Нет данных",
+  "@catalog_card_stock_unknown_short": {
+    "description": "Экран: SCR-10/11/12, вид «Компакт». QA прототипа 2026-10-29, ADR-112, версия 1.17; короткая подпись недоступной кнопки строки таблицы при неизвестном остатке (UI-10-118) тем же кеглем, что «+ Добавить»; полная `ds_stock_unknown` — в тултипе и для экранного диктора. Источник: 02 §7"
+  },
   "catalog_card_variant_label": "{variant} · {unit} / {variant} · {unit} · в корзине {count} вар.",
   "@catalog_card_variant_label": {
     "description": "Экран: SCR-10/11/12/40. ч. B; v1.1; ICU по `count`; UI-10-119. Источник: 02 §7",
@@ -2081,7 +2154,7 @@
   },
   "catalog_compact_col_available": "Доступно",
   "@catalog_compact_col_available": {
-    "description": "Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки; CAT-UI EQ-CAT-07. Источник: 02 §7"
+    "description": "Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки; CAT-UI EQ-CAT-07; с версии 1.16 не используется: колонка убрана из «Компакта» (UI-10-118, ADR-112 п. 3), ключ сохранён до ответа на Q-334 (откат «Компакта»). Источник: 02 §7"
   },
   "catalog_compact_col_name": "Наименование",
   "@catalog_compact_col_name": {
@@ -2089,7 +2162,7 @@
   },
   "catalog_compact_col_photo_a11y": "Фото",
   "@catalog_compact_col_photo_a11y": {
-    "description": "Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118: заголовок колонки «Фото» визуально пустой, текст — только `Semantics`; CAT-UI EQ-CAT-07. Источник: 02 §7"
+    "description": "Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118: заголовок колонки «Фото» визуально пустой, текст — только `Semantics`; CAT-UI EQ-CAT-07; с версии 1.16 не используется: колонка убрана из «Компакта» (UI-10-118, ADR-112 п. 3), ключ сохранён до ответа на Q-334 (откат «Компакта»). Источник: 02 §7"
   },
   "catalog_compact_col_price": "Цена",
   "@catalog_compact_col_price": {
@@ -2097,19 +2170,23 @@
   },
   "catalog_compact_col_qty": "Кол-во",
   "@catalog_compact_col_qty": {
-    "description": "Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки; CAT-UI EQ-CAT-07. Источник: 02 §7"
+    "description": "Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки; CAT-UI EQ-CAT-07; с версии 1.16 не используется: колонка убрана из «Компакта» (UI-10-118, ADR-112 п. 3), ключ сохранён до ответа на Q-334 (откат «Компакта»). Источник: 02 §7"
   },
   "catalog_compact_col_sku": "Артикул",
   "@catalog_compact_col_sku": {
     "description": "Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки вида «Компакт»; CAT-UI EQ-CAT-07. Источник: 02 §7"
   },
+  "catalog_compact_col_stock": "Наличие",
+  "@catalog_compact_col_stock": {
+    "description": "Экран: SCR-10/11/12, вид «Компакт». прототип 2026-10-29, ADR-112, версия 1.16; заголовок колонки статуса остатка с количеством (UI-10-118). Источник: 02 §7"
+  },
   "catalog_compact_col_unit": "Ед.",
   "@catalog_compact_col_unit": {
-    "description": "Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки (единица); CAT-UI EQ-CAT-07. Источник: 02 §7"
+    "description": "Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки (единица); CAT-UI EQ-CAT-07; с версии 1.16 не используется: колонка убрана из «Компакта» (UI-10-118, ADR-112 п. 3), ключ сохранён до ответа на Q-334 (откат «Компакта»). Источник: 02 §7"
   },
   "catalog_compact_col_variants": "Вар.",
   "@catalog_compact_col_variants": {
-    "description": "Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки (варианты); CAT-UI EQ-CAT-07. Источник: 02 §7"
+    "description": "Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки (варианты); CAT-UI EQ-CAT-07; с версии 1.16 не используется: колонка убрана из «Компакта» (UI-10-118, ADR-112 п. 3), ключ сохранён до ответа на Q-334 (откат «Компакта»). Источник: 02 §7"
   },
   "catalog_empty_category_body": "Товары появятся после синхронизации с 1С",
   "@catalog_empty_category_body": {
@@ -2147,6 +2224,10 @@
   "@catalog_filters_button": {
     "description": "Экран: SCR-10/11/12. ч. B. Источник: 02 §7"
   },
+  "catalog_filters_reset": "Сбросить фильтры",
+  "@catalog_filters_reset": {
+    "description": "Экран: SCR-10/11/12, встроенная панель фильтров. прототип 2026-10-29, ADR-112, версия 1.16; ссылка сброса в панели; `filters_reset_all` «Сбросить все» остаётся для активных фильтров. Источник: 02 §7"
+  },
   "catalog_found_count": "{count, plural, one{Найдено: {count} товар} few{Найдено: {count} товара} many{Найдено: {count} товаров} other{Найдено: {count} товара}}",
   "@catalog_found_count": {
     "description": "Экран: SCR-10. ч. B; ICU plural (03 §16.3). Источник: 02 §7; формы «a / b / c» 02 §7 преобразованы в ICU plural (03 §16.3); текст совпадает с 03 §16.3",
@@ -2180,6 +2261,14 @@
   "catalog_preset_favorites": "Избранное",
   "@catalog_preset_favorites": {
     "description": "Экран: SCR-10. ч. B; чип подборки. Источник: 02 §7"
+  },
+  "catalog_preset_favorites_toolbar": "Избранные",
+  "@catalog_preset_favorites_toolbar": {
+    "description": "Экран: SCR-10/12, medium+. прототип 2026-10-29, ADR-112, версия 1.16; кнопка строки управления, `favorite=true`; `catalog_preset_favorites` остаётся для compact и SCR-50. Источник: 02 §7"
+  },
+  "catalog_preset_newest": "Новые",
+  "@catalog_preset_newest": {
+    "description": "Экран: SCR-10/12, medium+. прототип 2026-10-29, ADR-112, версия 1.16; кнопка строки управления, сортировка `updatedAt:desc` (CQ-LAY-04 пересмотрен ADR-112); `catalog_sort_newest` «Сначала новые» остаётся в меню сортировки. Источник: 02 §7"
   },
   "catalog_preset_recent": "Недавние",
   "@catalog_preset_recent": {
@@ -2233,6 +2322,14 @@
   "@catalog_sidebar_categories_title": {
     "description": "Экран: SCR-10. ч. B; макет. Источник: 02 §7"
   },
+  "catalog_sidebar_collapse": "Свернуть каталог",
+  "@catalog_sidebar_collapse": {
+    "description": "Экран: SCR-10/11/12. паритет функций 2026-10-29, ADR-112, версия 1.20; UI-10-046: кнопка внизу колонки категорий (medium+), колонка сворачивается до 72, выбор сохраняется (`sidebarCollapsed`). Источник: 02 §7"
+  },
+  "catalog_sidebar_expand": "Развернуть каталог",
+  "@catalog_sidebar_expand": {
+    "description": "Экран: SCR-10/11/12. паритет функций 2026-10-29, ADR-112, версия 1.20; UI-10-046: та же кнопка в свёрнутой колонке. Источник: 02 §7"
+  },
   "catalog_sidebar_favorites": "Избранное",
   "@catalog_sidebar_favorites": {
     "description": "Экран: SCR-10. ч. B; макет, со счётчиком. Источник: 02 §7"
@@ -2271,7 +2368,7 @@
   },
   "catalog_title_all": "Все товары",
   "@catalog_title_all": {
-    "description": "Экран: SCR-10. ч. B; заголовок корня. Источник: 02 §7"
+    "description": "Экран: SCR-10. ч. B; заголовок корня; также первая плитка ленты подкатегорий (ADR-112). Источник: 02 §7"
   },
   "catalog_view_compact": "Компакт",
   "@catalog_view_compact": {
@@ -2331,9 +2428,29 @@
   "@category_not_found_title": {
     "description": "Экран: SCR-12. ч. B. Источник: 02 §7"
   },
-  "category_tile_a11y": "{name}, {count} товаров",
+  "category_ribbon_all_a11y": "{count, plural, one{Все товары: {name}, {count} товар} few{Все товары: {name}, {count} товара} many{Все товары: {name}, {count} товаров} other{Все товары: {name}, {count} товара}}",
+  "@category_ribbon_all_a11y": {
+    "description": "Экран: SCR-10/12. ревью переноса прототипа 2026-10-29, ADR-112, версия 1.19; `Semantics` первой карточки ленты «Все товары» (`catalog_title_all`): видимая подпись входит в доступное имя (WCAG 2.5.3); `{name}` — раздел; ICU plural (03 §16.3). Источник: 02 §7",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "category_ribbon_next": "Прокрутить подкатегории вправо",
+  "@category_ribbon_next": {
+    "description": "Экран: SCR-10/12. прототип 2026-10-29, ADR-112, версия 1.16; стрелка ленты, тултип и Semantics. Источник: 02 §7"
+  },
+  "category_ribbon_prev": "Прокрутить подкатегории влево",
+  "@category_ribbon_prev": {
+    "description": "Экран: SCR-10/12. прототип 2026-10-29, ADR-112, версия 1.16; стрелка ленты, тултип и Semantics; закрывает CQ-LAY-02. Источник: 02 §7"
+  },
+  "category_tile_a11y": "{count, plural, one{{name}, {count} товар} few{{name}, {count} товара} many{{name}, {count} товаров} other{{name}, {count} товара}}",
   "@category_tile_a11y": {
-    "description": "Экран: SCR-12. ч. B; Semantics. Источник: 02 §7",
+    "description": "Экран: SCR-12. ч. B; Semantics; ICU plural (03 §16.3) — «Смесители, 124 товара» (SCR-12.8), до версии 1.19 — «{name}, {count} товаров» без склонения (ревью переноса прототипа 2026-10-29, ADR-112, версия 1.19). Источник: 02 §7",
     "placeholders": {
       "count": {
         "type": "int"
@@ -6813,6 +6930,27 @@
   "@profile_activity_label": {
     "description": "Экран: SCR-41. ч. E; поле. Источник: 02 §7"
   },
+  "profile_avatar_a11y": "Профиль: {name}, {role}",
+  "@profile_avatar_a11y": {
+    "description": "Экран: SCR-10 (шапка), шапка оболочки staff medium+. ревью переноса прототипа 2026-10-29, ADR-112, версия 1.19; UI-10-006: `Semantics` блока пользователя (аватар, имя и роль), меню UI-10-033. Источник: 02 §7",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "role": {
+        "type": "String"
+      }
+    }
+  },
+  "profile_avatar_a11y_name": "Профиль: {name}",
+  "@profile_avatar_a11y_name": {
+    "description": "Экран: SCR-10 (шапка), шапка оболочки staff medium+. ревью переноса прототипа 2026-10-29, ADR-112, версия 1.19; UI-10-006: `Semantics` блока пользователя, когда роль неизвестна (`{name}` — имя или подпись роли). Источник: 02 §7",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "profile_birthyear_error_range": "Год рождения от 1920 до {maxYear}",
   "@profile_birthyear_error_range": {
     "description": "Экран: SCR-41. ч. E; валидация. Источник: 02 §7",
@@ -8608,6 +8746,10 @@
   "@search_error_inline": {
     "description": "Экран: SCR-11. ч. B. Источник: 02 §7"
   },
+  "search_field_a11y": "Поиск товара",
+  "@search_field_a11y": {
+    "description": "Экран: SCR-10/11/12, шапка оболочки staff medium+. ревью переноса прототипа 2026-10-29, ADR-112, версия 1.19; `Semantics(textField)` поля поиска шапки (03 §9.7) и иконки поиска compact SCR-12 — вместо `search_title` «Результаты поиска» (WCAG 2.4.6, 4.1.2). Источник: 02 §7"
+  },
   "search_found_count": "Найдено: {count} по «{query}»",
   "@search_found_count": {
     "description": "Экран: SCR-11. ч. B. Источник: 02 §7",
@@ -9149,6 +9291,18 @@
   "settings_title": "Настройки",
   "@settings_title": {
     "description": "Экран: SCR-42. ч. E; заголовок. Источник: 02 §7"
+  },
+  "shell_menu_open": "Меню разделов",
+  "@shell_menu_open": {
+    "description": "Экран: оболочка staff, medium+. прототип 2026-10-29, ADR-112, версия 1.16; кнопка-бургер в шапке (UI-10-002 и все staff-экраны), тултип и Semantics; открывает drawer навигации. Источник: 02 §7"
+  },
+  "shell_nav_a11y": "Навигация",
+  "@shell_nav_a11y": {
+    "description": "Экран: оболочка staff, medium+. прототип 2026-10-29, ADR-112, версия 1.16; Semantics-метка drawer навигации (03 §9.56). Источник: 02 §7"
+  },
+  "shell_nav_more": "Другие разделы",
+  "@shell_nav_more": {
+    "description": "Экран: оболочка staff, medium+. прототип 2026-10-29, ADR-112, версия 1.16; заголовок второй группы drawer (Заказы, Отложенные заказы, Касса, Отчёты, Журнал аудита и др.); заменяет меню «Ещё» navigation.md §2.2. Источник: 02 §7"
   },
   "splash_init_error_body": "Повторите попытку. Если ошибка повторяется, обратитесь в поддержку",
   "@splash_init_error_body": {

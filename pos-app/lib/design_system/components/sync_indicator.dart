@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/app_tooltip.dart';
-import 'package:optomstroy/design_system/components/offline_banner.dart' show dsTimeLabel;
+import 'package:optomstroy/design_system/components/ds_interactive.dart';
+import 'package:optomstroy/design_system/components/offline_banner.dart' show dsTimeLabelOrFull;
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 
@@ -12,7 +13,8 @@ enum SyncIndicatorVariant {
   /// `sync` `textSecondary`, «обновлено 09:41».
   ok,
 
-  /// Иконка вращается (ANIM-021, 1 с loop) `primaryText`, «обновляем…».
+  /// Иконка вращается (ANIM-021, 1 с loop), «обновляем…»: с подписью — `primaryText`, только иконкой ([SyncIndicator.compact],
+  /// шапка medium+) — `textSecondary` (оранжевый не означает статус — ядро §24.1, A11Y-004).
   syncing,
 
   /// `sync` `warning`, «данные от 08:10» (старше порога).
@@ -80,7 +82,8 @@ class SyncIndicator extends StatefulWidget {
   /// Подробности по сущностям (hover на expanded).
   final String? tooltip;
 
-  /// «Сейчас» для формата времени (тесты).
+  /// «Сейчас» (UTC, из `clockProvider`) для формата времени: в тот же день — «09:41», иначе с датой;
+  /// без него — всегда с датой (компонент системные часы не читает).
   final DateTime? now;
 
   /// Подпись метки `inline` вместо стандартной (`null` — «данные от {time}»).
@@ -88,6 +91,9 @@ class SyncIndicator extends StatefulWidget {
 
   /// Ключ корневого элемента (тесты).
   static const Key indicatorKey = Key('sync-indicator');
+
+  /// Ключ области нажатия (цель ≥ 44; тесты).
+  static const Key tapTargetKey = Key('sync-indicator-tap');
 
   /// Иконка варианта.
   static IconData iconOf(SyncIndicatorVariant v, {bool inline = false}) => switch (v) {
@@ -99,10 +105,13 @@ class SyncIndicator extends StatefulWidget {
     SyncIndicatorVariant.offline => Icons.cloud_off_rounded,
   };
 
-  /// Цвет иконки и текста варианта.
-  static Color colorOf(DsColors c, SyncIndicatorVariant v) => switch (v) {
+  /// Цвет иконки и текста варианта. [iconOnly] — индикатор без подписи (`compact`): у `syncing` иконка
+  /// `textSecondary` — при «Уменьшить анимации» вращения нет, и оранжевый стал бы единственным признаком состояния
+  /// (ядро §24.1 «оранжевый не означает статус», A11Y-004, WCAG 1.4.1); состояние передают вращение, тултип и
+  /// `Semantics`.
+  static Color colorOf(DsColors c, SyncIndicatorVariant v, {bool iconOnly = false}) => switch (v) {
     SyncIndicatorVariant.ok || SyncIndicatorVariant.never => c.textSecondary,
-    SyncIndicatorVariant.syncing => c.primaryText,
+    SyncIndicatorVariant.syncing => iconOnly ? c.textSecondary : c.primaryText,
     SyncIndicatorVariant.stale || SyncIndicatorVariant.offline => c.warning,
     SyncIndicatorVariant.error => c.error,
   };
@@ -116,7 +125,7 @@ class SyncIndicator extends StatefulWidget {
     DateTime? now,
   }) {
     final l10n = AppLocalizations.of(context);
-    String at(DateTime t) => dsTimeLabel(context, t, now: now);
+    String at(DateTime t) => dsTimeLabelOrFull(context, t, now);
     if (inline && time != null) return l10n.ds_data_as_of(at(time));
     return switch (v) {
       SyncIndicatorVariant.ok => time == null ? l10n.sync_never : l10n.ds_updated_at(at(time)),
@@ -157,7 +166,7 @@ class _SyncIndicatorState extends State<SyncIndicator> with SingleTickerProvider
     final reduceMotion = context.motion.reduceMotion;
     _syncSpin(reduceMotion);
     final v = widget.variant;
-    final color = SyncIndicator.colorOf(colors, v);
+    final color = SyncIndicator.colorOf(colors, v, iconOnly: widget.compact);
     final label =
         widget.label ?? SyncIndicator.labelOf(context, v, time: widget.time, inline: widget.inline, now: widget.now);
     Widget icon = Icon(
@@ -223,25 +232,36 @@ class _SyncIndicatorState extends State<SyncIndicator> with SingleTickerProvider
       );
     }
 
+    final onTap = widget.onTap;
     Widget result = Semantics(
       key: SyncIndicator.indicatorKey,
       container: true,
-      button: widget.onTap != null,
+      button: onTap != null,
       liveRegion: v == SyncIndicatorVariant.error,
       label: label,
       excludeSemantics: true,
+      // Действие «нажать» для TalkBack/Narrator: жест DsInteractive из семантики исключён.
+      onTap: onTap,
       child: content,
     );
-    final onTap = widget.onTap;
     if (onTap != null) {
-      result = InkWell(
+      // Цель ≥ 44; фокус клавиатуры — кольцо `focus` (03 §5.4.5), как у соседних кнопок шапки; hover — `surfaceHover`.
+      final BorderRadius radius = BorderRadius.all(context.radii.sm);
+      final Widget semantic = result;
+      result = DsInteractive(
+        key: SyncIndicator.tapTargetKey,
         onTap: onTap,
-        borderRadius: BorderRadius.all(context.radii.sm),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-          child: Padding(
+        builder: (BuildContext context, DsInteractionState s) => DsFocusRing(
+          visible: s.focused,
+          borderRadius: radius,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             padding: EdgeInsets.symmetric(horizontal: context.space.s2),
-            child: Center(widthFactor: 1, child: result),
+            decoration: BoxDecoration(
+              color: s.pressed ? colors.surfacePressed : (s.hovered ? colors.surfaceHover : Colors.transparent),
+              borderRadius: radius,
+            ),
+            child: Center(widthFactor: 1, child: semantic),
           ),
         ),
       );

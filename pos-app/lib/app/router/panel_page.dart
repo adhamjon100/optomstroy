@@ -4,9 +4,11 @@
 // (`DsPanelPassThrough`: CP — постоянная соседняя область, SearchBar). Барьер маршрута перехватывал бы любой
 // клик по окну, в том числе по CP (02 SCR-14.2: работа с CP панель не закрывает).
 import 'package:flutter/widgets.dart';
+import 'package:optomstroy/design_system/layout/route_activity.dart';
 
-/// Прозрачная страница без барьера с плавным появлением.
-class PanelPage<T> extends Page<T> {
+/// Прозрачная страница без барьера с плавным появлением; [DsPanelPage] — экран под ней для клавиш шапки остаётся
+/// активным (`F4`/`F8`/`F9` кнопки-итога корзины, 02 §3.8).
+class PanelPage<T> extends Page<T> implements DsPanelPage {
   /// Создаёт страницу.
   const PanelPage({
     required this.child,

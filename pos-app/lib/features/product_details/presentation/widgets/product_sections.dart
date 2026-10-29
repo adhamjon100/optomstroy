@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:optomstroy/core/di/core_providers.dart';
 import 'package:optomstroy/core/enums.dart' show CustomerStockDisplay;
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/core/utils/money.dart';
@@ -444,14 +445,14 @@ String stockBadgeLabel(AppLocalizations l10n, StockBadgeLevel level, Qty? availa
 bool showsStockNumbers(ProductDetailsState s) => !s.isCustomer || s.stockDisplay == CustomerStockDisplay.quantity;
 
 /// `StockBadge` карточки (UI-14-031).
-class ProductStockBadge extends StatelessWidget {
+class ProductStockBadge extends ConsumerWidget {
   const ProductStockBadge({super.key, required this.state, this.onTap});
 
   final ProductDetailsState state;
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l10n = AppLocalizations.of(context);
     final ProductDetailsState s = state;
     final StockBalance? stock = s.stock;
@@ -460,7 +461,8 @@ class ProductStockBadge extends StatelessWidget {
     final String unit = s.baseUnit?.label ?? '';
     final String label = stockBadgeLabel(l10n, level, available, unit);
     final DateTime? asOf = stock?.asOf;
-    final bool stale = asOf != null && DateTime.now().toUtc().difference(asOf.toUtc()) > const Duration(minutes: 30);
+    final DateTime now = ref.watch(clockProvider).nowUtc();
+    final bool stale = asOf != null && now.difference(asOf.toUtc()) > const Duration(minutes: 30);
     final Widget badge = StockBadge(
       key: const ValueKey<String>('product-stock-badge'),
       level: level,
@@ -731,7 +733,7 @@ class ProductBottomBar extends StatelessWidget {
 // Зона D — остатки по складам
 
 /// `WarehouseStockTable` (UI-14-013, 025, D3): staff; `customer` — таблицы нет (02 SCR-14.10).
-class ProductStockSection extends StatelessWidget {
+class ProductStockSection extends ConsumerWidget {
   const ProductStockSection({super.key, required this.state, this.onRetry, this.showTitle = true});
 
   final ProductDetailsState state;
@@ -739,7 +741,7 @@ class ProductStockSection extends StatelessWidget {
   final bool showTitle;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final DsColors c = context.colors;
     final AppLocalizations l10n = AppLocalizations.of(context);
     final ProductDetailsState s = state;
@@ -768,7 +770,8 @@ class ProductStockSection extends StatelessWidget {
     for (final StockBalance b in v?.stockByWarehouse ?? const <StockBalance>[]) {
       if (b.asOf != null && (asOf == null || b.asOf!.isAfter(asOf))) asOf = b.asOf;
     }
-    final bool stale = asOf != null && DateTime.now().toUtc().difference(asOf.toUtc()) > const Duration(minutes: 30);
+    final bool stale =
+        asOf != null && ref.watch(clockProvider).nowUtc().difference(asOf.toUtc()) > const Duration(minutes: 30);
     final Qty? total = s.product?.availableTotal;
     final bool isDefaultVariant = v?.id == s.product?.defaultVariant?.id;
     return Column(

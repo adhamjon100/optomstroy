@@ -16,6 +16,7 @@ import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/features/admin/domain/users/emergency_login_code.dart';
 import 'package:optomstroy/features/admin/domain/users/step_up.dart';
+import 'package:optomstroy/features/admin/presentation/common/admin_format.dart';
 import 'package:optomstroy/features/admin/presentation/users/admin_failure_text.dart';
 
 typedef EmergencyCodeIssue =
@@ -214,7 +215,7 @@ class _EmergencyCodeDialogState extends State<EmergencyCodeDialog> {
   List<Widget> _shownStep(BuildContext context, AppLocalizations l10n, EmergencyLoginCode code) {
     final c = context.colors;
     final locale = Localizations.localeOf(context).toString();
-    final until = DateFormat('HH:mm', locale).format(code.expiresAt.toLocal());
+    final until = DateFormat('HH:mm', locale).format(AdminFormat.wall(code.expiresAt));
     return [
       Semantics(
         liveRegion: true,

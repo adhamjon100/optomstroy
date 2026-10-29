@@ -1,12 +1,17 @@
 // Зона D SCR-10/11/12 (02 SCR-10.3 D1–D5, D′): список товаров в виде сетка/список/компакт
 // (виртуализация, колонки сетки — 03 §7.3), подгрузка следующей страницы за 2 ряда до конца
 // («Загружаем ещё товары…», ошибка — «Повторить» без потери загруженного), состояния: скелетон,
-// пусто, ошибка (полноэкранная / inline над кэшем), нет данных офлайн.
+// пусто, ошибка (полноэкранная / inline над кэшем), нет данных офлайн. Геометрия по прототипу 2026-10-29 (ADR-112):
+// сетка — минимум карточки [CatalogProductView.minCardWidth] (SCR-10/11/12 — 176), высота ячейки
+// `kProductCardGridExtent`; «Список» medium+ — отдельные карточки с зазором 8; «Компакт» — таблица в белом контейнере
+// с обводкой. Количество товара в корзине («В корзине · N — ещё +1») — подписка карточки на своё значение.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:optomstroy/core/error/failure.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
+import 'package:optomstroy/core/utils/qty.dart';
 import 'package:optomstroy/design_system/components/app_progress.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/components/empty_state.dart';
@@ -18,6 +23,7 @@ import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/features/catalog/domain/entities/product.dart';
 import 'package:optomstroy/features/catalog/presentation/providers/catalog_list_controller.dart';
+import 'package:optomstroy/features/catalog/presentation/providers/catalog_ports.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_card_mapper.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_formats.dart';
 
@@ -55,6 +61,9 @@ class CatalogProductView extends StatelessWidget {
     this.padding = EdgeInsets.zero,
     this.scrollController,
     this.headerSlivers = const <Widget>[],
+    this.inert = false,
+    this.minCardWidth = DsBreakpoints.cardMinWidth,
+    this.gridGap,
   });
 
   final CatalogListState state;
@@ -83,25 +92,50 @@ class CatalogProductView extends StatelessWidget {
   /// Во всех фазах (скелетон, пусто, ошибка) блоки остаются на месте, меняется только зона товаров.
   final List<Widget> headerSlivers;
 
+  /// Показаны карточки прежней выборки, пока грузится новая (смена категории/поиска): карточки не нажимаются, не
+  /// получают фокус и скрыты от screen reader — нельзя добавить в корзину товар не из выбранной выборки. Если загрузка
+  /// длится дольше мгновения, карточки плавно приглушаются (без анимации при «Уменьшить анимации»). Обёртки
+  /// постоянны — смена флага не пересоздаёт карточки и фото.
+  final bool inert;
+
+  /// Минимальная ширина карточки сетки: SCR-10/11/12 — `DsBreakpoints.catalogCardMinWidth` (176), SCR-50 —
+  /// `cardMinWidth` (160).
+  final double minCardWidth; // money-double: allow — ширина карточки в lp
+
+  /// Зазор сетки; `null` — 16 на compact/medium, 12 на expanded+ (SCR-50). SCR-10/11/12 — 16.
+  final double? gridGap; // money-double: allow — зазор сетки в lp
+
   bool get _withHeader => headerSlivers.isNotEmpty;
 
   bool get _table => windowClass == WindowClass.expanded || windowClass == WindowClass.large;
 
+  /// «Список» medium+ — отдельные карточки с зазором 8 (compact — строки с разделителями).
+  bool get _cardList => view == ProductViewMode.list && windowClass != WindowClass.compact;
+
   double _gap() => // money-double: allow — геометрия UI (lp)
-      windowClass == WindowClass.compact || windowClass == WindowClass.medium ? 16 : 12;
+      gridGap ?? (windowClass == WindowClass.compact || windowClass == WindowClass.medium ? 16 : 12);
+
+  /// Высота ячейки сетки (крупный шрифт — выше; поиск — с бейджем совпадения).
+  double _extent(BuildContext context) => // money-double: allow — геометрия UI (lp)
+      kProductCardGridExtent(MediaQuery.textScalerOf(context), matchBadge: cardContext.showMatch);
 
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context);
     if (_withHeader && state.phase != CatalogListPhase.ready) {
-      return CustomScrollView(
-        key: const ValueKey<String>('catalog-products'),
-        controller: scrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: <Widget>[
-          ...headerSlivers,
-          SliverToBoxAdapter(child: _phaseBody(context, l10n)),
-        ],
+      // Та же структура (LayoutBuilder → CustomScrollView), что у готового списка: смена фазы (пусто, ошибка,
+      // скелетон ↔ товары) не пересоздаёт блоки над списком (заголовок, лента подкатегорий, панель управления).
+      return LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) => CustomScrollView(
+          key: const ValueKey<String>('catalog-products'),
+          controller: scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          cacheExtent: 600,
+          slivers: <Widget>[
+            ...headerSlivers,
+            SliverToBoxAdapter(key: const ValueKey<String>('catalog-phase-body'), child: _phaseBody(context, l10n)),
+          ],
+        ),
       );
     }
     return _phaseBody(context, l10n);
@@ -149,8 +183,7 @@ class CatalogProductView extends StatelessWidget {
         builder: (BuildContext context, BoxConstraints box) {
           final double gap = _gap(); // money-double: allow — геометрия UI (lp)
           final double width = box.maxWidth - padding.horizontal; // money-double: allow — геометрия UI (lp)
-          final int cols = DsBreakpoints.gridColumns(width, gap);
-          final double cell = (width - gap * (cols - 1)) / cols; // money-double: allow — геометрия UI (lp)
+          final int cols = DsBreakpoints.gridColumns(width, gap, minCardWidth: minCardWidth);
           return GridView.builder(
             padding: padding,
             shrinkWrap: _withHeader,
@@ -159,7 +192,7 @@ class CatalogProductView extends StatelessWidget {
               crossAxisCount: cols,
               mainAxisSpacing: gap,
               crossAxisSpacing: gap,
-              mainAxisExtent: cell + kProductCardGridBodyHeight,
+              mainAxisExtent: _extent(context),
             ),
             itemCount: cols * 2,
             itemBuilder: (BuildContext context, int i) => const ProductCardSkeleton.grid(),
@@ -171,7 +204,12 @@ class CatalogProductView extends StatelessWidget {
         shrinkWrap: _withHeader,
         physics: const NeverScrollableScrollPhysics(),
         itemCount: 10,
-        itemBuilder: (BuildContext context, int i) => const ProductCardSkeleton.list(),
+        itemBuilder: (BuildContext context, int i) => _cardList
+            ? Padding(
+                padding: EdgeInsets.only(bottom: context.space.s2),
+                child: const ProductCardSkeleton.list(),
+              )
+            : const ProductCardSkeleton.list(),
       ),
       ProductViewMode.compact => ListView.builder(
         padding: padding,
@@ -191,19 +229,42 @@ class CatalogProductView extends StatelessWidget {
   }
 
   Widget _card(BuildContext context, ProductSummary p, {required ProductCardCompactVariant compactVariant}) {
-    final ProductCardData data = CatalogCardMapper.map(cardContext, p);
     final ProductCardCallbacks cb = ProductCardCallbacks(
       onOpen: () => callbacks.onOpen(p),
       onFavorite: cardContext.favoritesEnabled ? (bool v) => callbacks.onFavorite(p, v) : null,
       onAction: () => callbacks.onAction(p),
     );
+    final String? cartKey = CatalogCardMapper.cartKey(p);
+    final Widget card = ExcludeFocus(
+      excluding: inert,
+      child: ExcludeSemantics(
+        excluding: inert,
+        // Количество в корзине — подписка самой карточки на своё значение: изменение корзины перестраивает только
+        // карточки, у которых изменилось количество, а не всю сетку и не рабочее пространство.
+        child: Consumer(
+          builder: (BuildContext context, WidgetRef ref, Widget? _) {
+            final Qty? inCart = cartKey == null
+                ? null
+                : ref.watch(catalogCartQuantitiesProvider.select((Map<String, Qty> m) => m[cartKey]));
+            final ProductCardData data = CatalogCardMapper.map(cardContext, p, cartQty: inCart);
+            return switch (view) {
+              ProductViewMode.grid => ProductCardGrid(data: data, callbacks: cb),
+              ProductViewMode.list => ProductCardList(data: data, callbacks: cb),
+              ProductViewMode.compact => ProductCardCompact(data: data, callbacks: cb, variant: compactVariant),
+            };
+          },
+        ),
+      ),
+    );
     return KeyedSubtree(
       key: ValueKey<String>('product-${p.id}'),
-      child: switch (view) {
-        ProductViewMode.grid => ProductCardGrid(data: data, callbacks: cb),
-        ProductViewMode.list => ProductCardList(data: data, callbacks: cb),
-        ProductViewMode.compact => ProductCardCompact(data: data, callbacks: cb, variant: compactVariant),
-      },
+      // «Список» medium+: зазор 8 между карточками — внутри обёртки с ключом (ключ и элемент карточки те же).
+      child: _cardList
+          ? Padding(
+              padding: EdgeInsets.only(bottom: context.space.s2),
+              child: card,
+            )
+          : card,
     );
   }
 
@@ -214,12 +275,20 @@ class CatalogProductView extends StatelessWidget {
     final ProductCardCompactVariant compactVariant = table
         ? ProductCardCompactVariant.table
         : ProductCardCompactVariant.row;
+    final Duration dim = context.motion.of(const Duration(milliseconds: 250));
+    final bool dimInstant = dim == Duration.zero;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints box) {
         final double gap = _gap(); // money-double: allow — геометрия UI (lp)
         final double contentWidth = box.maxWidth - padding.horizontal; // money-double: allow — геометрия UI (lp)
-        final int cols = DsBreakpoints.gridColumns(contentWidth, gap);
-        final double cell = (contentWidth - gap * (cols - 1)) / cols; // money-double: allow — геометрия UI (lp)
+        final int cols = DsBreakpoints.gridColumns(contentWidth, gap, minCardWidth: minCardWidth);
+        final bool compactTable = view == ProductViewMode.compact && table;
+        // Карточка ищется по id товара, а не по позиции: при обновлении выборки (кэш → сеть, смена категории)
+        // карточка и фото того же товара сохраняются, даже если он сместился в списке.
+        final Map<String, int> indexById = <String, int>{
+          for (int i = 0; i < items.length; i++) 'product-${items[i].id}': i,
+        };
+        int? findIndex(Key k) => k is ValueKey<String> ? indexById[k.value] : null;
         final List<Widget> slivers = <Widget>[
           ...headerSlivers,
           if (state.failure != null)
@@ -233,51 +302,77 @@ class CatalogProductView extends StatelessWidget {
                 ),
               ),
             ),
-          if (view == ProductViewMode.compact && table)
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _CompactHeaderDelegate(
-                ProductCompactHeaderLabels(
-                  photo: l10n.catalog_compact_col_photo_a11y,
-                  sku: l10n.catalog_compact_col_sku,
-                  name: l10n.catalog_compact_col_name,
-                  variants: l10n.catalog_compact_col_variants,
-                  stock: l10n.catalog_compact_col_available,
-                  unit: l10n.catalog_compact_col_unit,
-                  price: l10n.catalog_compact_col_price,
-                  qty: l10n.catalog_compact_col_qty,
-                  favorite: l10n.catalog_sidebar_favorites,
+          if (compactTable)
+            // «Компакт» (прототип 2026-10-29): заголовок и строки — в одном белом контейнере с обводкой `border` и
+            // радиусом `md`; заголовок закреплён внутри контейнера.
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(padding.left, padding.top, padding.right, 0),
+              sliver: DecoratedSliver(
+                decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.all(context.radii.md)),
+                sliver: DecoratedSliver(
+                  position: DecorationPosition.foreground,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: c.border),
+                    borderRadius: BorderRadius.all(context.radii.md),
+                  ),
+                  sliver: SliverMainAxisGroup(
+                    slivers: <Widget>[
+                      SliverPersistentHeader(
+                        pinned: true,
+                        delegate: _CompactHeaderDelegate(
+                          ProductCompactHeaderLabels(
+                            sku: l10n.catalog_compact_col_sku,
+                            name: l10n.catalog_compact_col_name,
+                            stock: l10n.catalog_compact_col_stock,
+                            price: l10n.catalog_compact_col_price,
+                          ),
+                        ),
+                      ),
+                      _cardsSliver(
+                        context,
+                        inert: inert,
+                        dim: dim,
+                        dimInstant: dimInstant,
+                        sliver: _rows(compactVariant, findIndex),
+                      ),
+                    ],
+                  ),
                 ),
-                padding: EdgeInsets.symmetric(horizontal: padding.left),
+              ),
+            )
+          else
+            _cardsSliver(
+              context,
+              inert: inert,
+              dim: dim,
+              dimInstant: dimInstant,
+              sliver: SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                  padding.left,
+                  view == ProductViewMode.grid || _cardList ? padding.top : 0,
+                  padding.right,
+                  0,
+                ),
+                sliver: view == ProductViewMode.grid
+                    ? SliverGrid(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: cols,
+                          mainAxisSpacing: gap,
+                          crossAxisSpacing: gap,
+                          mainAxisExtent: _extent(context),
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (BuildContext context, int i) {
+                            _maybeLoadMore(i, cols * 2);
+                            return _card(context, items[i], compactVariant: compactVariant);
+                          },
+                          childCount: items.length,
+                          findChildIndexCallback: findIndex,
+                        ),
+                      )
+                    : _rows(compactVariant, findIndex),
               ),
             ),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              padding.left,
-              view == ProductViewMode.grid ? padding.top : 0,
-              padding.right,
-              0,
-            ),
-            sliver: view == ProductViewMode.grid
-                ? SliverGrid(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: cols,
-                      mainAxisSpacing: gap,
-                      crossAxisSpacing: gap,
-                      mainAxisExtent: cell + kProductCardGridBodyHeight,
-                    ),
-                    delegate: SliverChildBuilderDelegate((BuildContext context, int i) {
-                      _maybeLoadMore(i, cols * 2);
-                      return _card(context, items[i], compactVariant: compactVariant);
-                    }, childCount: items.length),
-                  )
-                : SliverList(
-                    delegate: SliverChildBuilderDelegate((BuildContext context, int i) {
-                      _maybeLoadMore(i, 2);
-                      return _card(context, items[i], compactVariant: compactVariant);
-                    }, childCount: items.length),
-                  ),
-          ),
           SliverToBoxAdapter(child: _loadMoreRow(context, l10n, c)),
           if (footer != null) SliverToBoxAdapter(child: footer),
           SliverToBoxAdapter(child: SizedBox(height: padding.bottom)),
@@ -295,6 +390,32 @@ class CatalogProductView extends StatelessWidget {
       },
     );
   }
+
+  /// Строки списка / «Компакта» (подгрузка за 2 ряда до конца).
+  Widget _rows(ProductCardCompactVariant compactVariant, int? Function(Key key) findIndex) => SliverList(
+    delegate: SliverChildBuilderDelegate(
+      (BuildContext context, int i) {
+        _maybeLoadMore(i, 2);
+        return _card(context, items[i], compactVariant: compactVariant);
+      },
+      childCount: items.length,
+      findChildIndexCallback: findIndex,
+    ),
+  );
+
+  /// Обёртка карточек с постоянным ключом: прежняя выборка на время загрузки новой — неактивна и приглушена
+  /// ([inert]); смена флага не пересоздаёт карточки.
+  Widget _cardsSliver(
+    BuildContext context, {
+    required bool inert,
+    required Duration dim,
+    required bool dimInstant,
+    required Widget sliver,
+  }) => SliverIgnorePointer(
+    key: const ValueKey<String>('catalog-cards-sliver'),
+    ignoring: inert,
+    sliver: SliverAnimatedOpacity(opacity: inert && !dimInstant ? 0.6 : 1, duration: dim, sliver: sliver),
+  );
 
   Widget _loadMoreRow(BuildContext context, AppLocalizations l10n, DsColors c) {
     if (state.moreFailure != null) {
@@ -348,10 +469,9 @@ class CatalogProductView extends StatelessWidget {
 }
 
 class _CompactHeaderDelegate extends SliverPersistentHeaderDelegate {
-  _CompactHeaderDelegate(this.labels, {required this.padding});
+  _CompactHeaderDelegate(this.labels);
 
   final ProductCompactHeaderLabels labels;
-  final EdgeInsets padding;
 
   @override
   double get minExtent => 40; // money-double: allow — геометрия UI (lp)
@@ -364,12 +484,12 @@ class _CompactHeaderDelegate extends SliverPersistentHeaderDelegate {
     BuildContext context,
     double /* money-double: allow — геометрия UI */ shrinkOffset,
     bool overlapsContent,
-  ) => Padding(
-    padding: padding,
+  ) => ClipRRect(
+    // Верхние углы — по контейнеру таблицы (радиус `md`).
+    borderRadius: BorderRadius.vertical(top: context.radii.md),
     child: ProductCardCompactHeader(labels: labels),
   );
 
   @override
-  bool shouldRebuild(_CompactHeaderDelegate oldDelegate) =>
-      oldDelegate.labels != labels || oldDelegate.padding != padding;
+  bool shouldRebuild(_CompactHeaderDelegate oldDelegate) => oldDelegate.labels != labels;
 }

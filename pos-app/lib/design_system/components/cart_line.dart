@@ -29,6 +29,10 @@ enum CartLineTone {
 /// вызывающего) → сумма строки `bodyLg 16/700 textPrimary` (ширина ≥ 88; [preliminary] — «≈» `textSecondary`,
 /// [pending] — индикатор 16) → `AppIconButton close 20` «Удалить» (цель 44).
 ///
+/// [emphasized] — строка drawer корзины (прототип 2026-10-29, ADR-112): поля 20 по бокам и 12 по вертикали,
+/// разделитель [dividerColor] внутри полей, название `label 13/600`, сумма `body 700` одним кеглем во всех строках,
+/// крестик 16 `textSecondary`.
+///
 /// Сумма строки — только ответ сервера (D-23): компонент её не вычисляет.
 class CartLine extends StatelessWidget {
   /// Создаёт строку.
@@ -53,6 +57,7 @@ class CartLine extends StatelessWidget {
     this.onRemove,
     this.selected = false,
     this.dense = false,
+    this.emphasized = false,
     this.semanticLabel,
   });
 
@@ -114,8 +119,14 @@ class CartLine extends StatelessWidget {
   /// expanded: название в одну строку, высота 64.
   final bool dense;
 
+  /// Drawer корзины: название `body 600`, сумма строки `body 700`.
+  final bool emphasized;
+
   /// «Смеситель Frap F4252, 2 штуки, 4 700 сом».
   final String? semanticLabel;
+
+  /// Разделитель строк drawer: `border`, осветлённый на 40 % к `surface` (≈ #EEF2F8 прототипа; декоративный).
+  static Color dividerColor(DsColors c) => Color.lerp(c.border, c.surface, .4)!;
 
   @override
   Widget build(BuildContext context) {
@@ -136,12 +147,15 @@ class CartLine extends StatelessWidget {
           CartLineTone.normal => Icons.info_outline_rounded,
         };
     final Money? total = lineTotal;
+    // Сумма строки — одним кеглем во всех строках (`body 700` в drawer — прототип 15/800 по шкале 03 §7.1, иначе
+    // `bodyLg 700`): поле не уже 88 для выравнивания столбца, уменьшается только если строке не хватает места.
     final TextStyle totalStyle = context.text
-        .priceOf(context.text.bodyLg)
-        .copyWith(color: preliminary || unavailable ? c.textSecondary : c.textPrimary);
-    final Widget sum = SizedBox(
-      width: 88,
+        .priceOf(emphasized ? context.text.body : context.text.bodyLg)
+        .copyWith(fontWeight: FontWeight.w700, color: preliminary || unavailable ? c.textSecondary : c.textPrimary);
+    final Widget sum = ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 88),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.end,
         children: <Widget>[
           if (pending) ...<Widget>[const AppProgress.circular(size: 16), SizedBox(width: context.space.s1)],
@@ -180,8 +194,9 @@ class CartLine extends StatelessWidget {
                   title,
                   maxLines: dense ? 1 : 2,
                   overflow: TextOverflow.ellipsis,
-                  style: context.text.body.copyWith(
-                    fontWeight: FontWeight.w500,
+                  // Drawer (прототип): название 13/600 — `label 600`; иначе `body 500`.
+                  style: (emphasized ? context.text.label : context.text.body).copyWith(
+                    fontWeight: emphasized ? FontWeight.w600 : FontWeight.w500,
                     color: unavailable ? c.textSecondary : c.textPrimary,
                     decoration: st.hovered ? TextDecoration.underline : null,
                   ),
@@ -212,8 +227,9 @@ class CartLine extends StatelessWidget {
         ],
       ),
     );
+    // Drawer (прототип): строки с полями 20 по бокам и 12 по вертикали, разделитель внутри полей.
     final Widget body = Padding(
-      padding: EdgeInsets.all(context.space.s3),
+      padding: emphasized ? EdgeInsets.symmetric(vertical: context.space.s3) : EdgeInsets.all(context.space.s3),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -225,7 +241,8 @@ class CartLine extends StatelessWidget {
               if (onRemove != null || removeLabel.isNotEmpty)
                 AppIconButton(
                   icon: Icons.close_rounded,
-                  iconSize: 20,
+                  // Drawer (прототип): крестик 14 в кнопке 28 — у нас цель 44 (small), глиф 16.
+                  iconSize: emphasized ? 16 : 20,
                   small: true,
                   semanticLabel: removeLabel,
                   onPressed: onRemove,
@@ -239,8 +256,10 @@ class CartLine extends StatelessWidget {
               children: <Widget>[
                 if (box.maxWidth >= 320) SizedBox(width: 48 + context.space.s3),
                 quantity,
-                const Spacer(),
-                sum,
+                SizedBox(width: context.space.s2),
+                Expanded(
+                  child: Align(alignment: AlignmentDirectional.centerEnd, child: sum),
+                ),
               ],
             ),
           ),
@@ -261,20 +280,34 @@ class CartLine extends StatelessWidget {
         ],
       ),
     );
+    final Widget line = Container(
+      decoration: BoxDecoration(
+        color: bg,
+        border: Border(
+          bottom: BorderSide(color: emphasized ? dividerColor(c) : c.border),
+          left: tone == CartLineTone.error ? BorderSide(color: c.error, width: 3) : BorderSide.none,
+        ),
+      ),
+      foregroundDecoration: selected ? BoxDecoration(border: Border.all(color: c.focus, width: 2)) : null,
+      child: emphasized && tone == CartLineTone.error
+          ? Padding(
+              padding: EdgeInsetsDirectional.only(start: context.space.s2),
+              child: body,
+            )
+          : body,
+    );
     return Semantics(
       container: true,
       label: semanticLabel,
-      child: Container(
-        decoration: BoxDecoration(
-          color: bg,
-          border: Border(
-            bottom: BorderSide(color: c.border),
-            left: tone == CartLineTone.error ? BorderSide(color: c.error, width: 3) : BorderSide.none,
-          ),
-        ),
-        foregroundDecoration: selected ? BoxDecoration(border: Border.all(color: c.focus, width: 2)) : null,
-        child: body,
-      ),
+      child: emphasized
+          ? ColoredBox(
+              color: c.surface,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: context.space.s5),
+                child: line,
+              ),
+            )
+          : line,
     );
   }
 }

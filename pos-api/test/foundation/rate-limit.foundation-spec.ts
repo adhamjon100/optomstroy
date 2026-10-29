@@ -100,4 +100,20 @@ describe('common/rate-limit: счётчики в PostgreSQL rate_limit_counters 
     await expect(rl.consume([{ scope: 'otp_bogus_1m' as never, subject: 'x', limit: 3 }])).rejects.toThrow(RangeError);
     await expect(rl.consume([{ scope: 'otp_ip_1h', subject: 'x', limit: 0 }])).rejects.toThrow(RangeError);
   });
+
+  it('G-KI-16: сырой номер (с «+» где угодно или 12 цифр целиком) отвергается; hex-псевдоним и UUID с «996»+9 цифр — нет', async () => {
+    for (const subject of ['996700111222', 'dev:+996700111222', '+996700111222:dev']) {
+      await expect(rl.consume([{ scope: 'otp_phone_15m', subject, limit: 3 }])).rejects.toThrow(/HMAC/);
+    }
+    // hex-псевдоним (64 символа) с фрагментом «996»+9 цифр в начале, середине и конце; UUID с последней группой из цифр
+    const hex = [
+      '996123456789'.padEnd(64, 'a'),
+      `ab${'996123456789'}${'c'.repeat(50)}`,
+      '996123456789'.padStart(64, 'f'),
+    ];
+    for (const subject of [...hex, '0b6f2a1c-4d3e-4f5a-8b9c-996123456789']) {
+      const r = await rl.consume([{ scope: 'otp_phone_24h', subject, limit: 5 }]);
+      expect(r.allowed).toBe(true);
+    }
+  });
 });

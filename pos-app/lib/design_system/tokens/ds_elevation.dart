@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT EDIT BY HAND.
 // Generator: scripts/gen_tokens_dart.py (RM-B-006)
-// Source: contracts/design-tokens/tokens.json (canonical sha256 7ecbb28dd87e801deb0bbceb2845ab534f53e844aa8f18b39bf05f36dee13ced)
+// Source: contracts/design-tokens/tokens.json (canonical sha256 31ea2b8fcd4858d3a96d8f15ebdd88453c981902ca331fe859ffb230f2f53d46)
 // DsElevation - ds.elevation.0..3 (03 §7.6, §17.4; kernel §8.3)
 // ignore_for_file: public_member_api_docs
 
@@ -37,7 +37,7 @@ class DsElevation extends ThemeExtension<DsElevation> {
     e3: <BoxShadow>[
       BoxShadow(color: Color.fromRGBO(27, 31, 42, 0.12), offset: Offset(0, 8), blurRadius: 24, spreadRadius: 0),
     ],
-    overlay: Color.fromRGBO(27, 31, 42, 0.48),
+    overlay: Color.fromRGBO(14, 20, 86, 0.28),
   );
 
   @override

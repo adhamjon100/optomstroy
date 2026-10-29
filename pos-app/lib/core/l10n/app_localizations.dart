@@ -1563,11 +1563,23 @@ abstract class AppLocalizations {
   /// **'Создать заказ'**
   String get cart_cta_create_order;
 
+  /// Экран: SCR-20, drawer, настольные платформы. прототип 2026-10-29, ADR-112, версия 1.16; UI-20-016 с подсказкой клавиши; без клавиатуры — `cart_cta_create_order`; у customer — `cart_customer_submit`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Создать заказ · F9'**
+  String get cart_cta_create_order_hotkey;
+
   /// Экран: SCR-20. ч. C; UI-20-015. Источник: 02 §7
   ///
   /// In ru, this message translates to:
   /// **'Отложить заказ'**
   String get cart_cta_park;
+
+  /// Экран: SCR-20, drawer, настольные платформы. прототип 2026-10-29, ADR-112, версия 1.16; UI-20-015 с подсказкой клавиши; без клавиатуры — `cart_cta_park`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Отложить · F8'**
+  String get cart_cta_park_hotkey;
 
   /// Экран: SCR-20. ч. C; UI-20-022. Источник: 02 §7
   ///
@@ -1719,6 +1731,18 @@ abstract class AppLocalizations {
   /// **'Укажите причину скидки'**
   String get cart_discount_override_reason_required;
 
+  /// Экран: SCR-20, drawer. прототип 2026-10-29, ADR-112, версия 1.16; крестик drawer и `barrierLabel` затемнения. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Закрыть корзину'**
+  String get cart_drawer_close_a11y;
+
+  /// Экран: SCR-20, drawer. прототип 2026-10-29, ADR-112, версия 1.16; приглушённый суффикс заголовка «Корзина» (UI-20-001); `{count}` — int. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'· {count} поз.'**
+  String cart_drawer_title_count(int count);
+
   /// Экран: SCR-20. ч. C; UI-20-017. Источник: 02 §7
   ///
   /// In ru, this message translates to:
@@ -1754,6 +1778,24 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'{count, plural, one{Открыть корзину, {count} позиция} few{Открыть корзину, {count} позиции} many{Открыть корзину, {count} позиций} other{Открыть корзину, {count} позиции}}'**
   String cart_fab_a11y_nototal(int count);
+
+  /// Экран: SCR-10 (шапка), шапка оболочки staff expanded+. паритет функций 2026-10-29, ADR-112, версия 1.20; UI-10-041: первая строка кнопки-итога при непустой корзине — единицы, как прежняя подпись `CartFab` («Корзина · 6 шт, 12,5 м»); «5 поз. · 6 шт» — в тултипе (`cart_counter_units`); шапке не хватает места — строка свёрнута (§3.1 п. 7, версия 1.21). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Корзина · {units}'**
+  String cart_header_label_units(String units);
+
+  /// Экран: SCR-10 (шапка), шапка оболочки staff medium+. паритет функций 2026-10-29, ADR-112, версия 1.20; UI-10-041: тултип и добавка к `Semantics` кнопки-итога при неудачном сохранении корзины (записи очереди `dead`, строка `failed`) — иконка `warning` и текст; повтор — в drawer («Ошибка сохранения · Повторить», `cart_save_state_failed`). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Корзина не сохранена'**
+  String get cart_header_save_failed;
+
+  /// Экран: SCR-10 (шапка), шапка оболочки staff medium+. ревью переноса прототипа 2026-10-29, ADR-112, версия 1.19; UI-10-041: тултип кнопки-итога и добавка к `Semantics` (`cart_fab_a11y` / `cart_fab_a11y_nototal`), когда изменились цены, не хватает остатка, позиция недоступна или конфликт версий — warning всегда с иконкой и текстом (ядро §24.1). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'В корзине есть предупреждения'**
+  String get cart_header_warning;
 
   /// Общий ключ (владелец 03, ядро §18.1/§19.1). Источник: 03 §16.3; форма макета без склонения
   ///
@@ -1958,6 +2000,12 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'предварительно'**
   String get cart_summary_preliminary;
+
+  /// Экран: SCR-20, зона F. прототип 2026-10-29, ADR-112, версия 1.16; подпись под «Итого», новый UI-20-034. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Итог пересчитывает сервер по ценам 1С при оформлении'**
+  String get cart_summary_server_note;
 
   /// Экран: SCR-20. ч. C; `CartSummary`. Источник: 02 §7
   ///
@@ -2319,11 +2367,17 @@ abstract class AppLocalizations {
   /// **'обновлено {time}'**
   String cashier_updated_at(String time);
 
-  /// Экран: SCR-10/11/12 (compact, medium). ч. B; v1.1; ANIM-006 (03 §11.2). Источник: 02 §7
+  /// Экран: SCR-10/11/12 (compact). ч. B; v1.1; ANIM-006 (03 §11.2); версия 1.23: на medium и шире вместо снекбара — тост `catalog_added_toast` (ADR-112), у `customer` действие тоста «Открыть» — вторая часть этой строки. Источник: 02 §7
   ///
   /// In ru, this message translates to:
   /// **'Добавлено · Открыть'**
   String get catalog_added_snackbar;
+
+  /// Экран: SCR-10/11/12, medium+. прототип 2026-10-29, ADR-112, версия 1.16; тост после «+ Добавить»; на compact остаётся `catalog_added_snackbar`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Добавлено: {name}'**
+  String catalog_added_toast(String name);
 
   /// Экран: карточки. ч. B; Semantics. Источник: 02 §7
   ///
@@ -2336,6 +2390,18 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Выбрать вариант'**
   String get catalog_card_choose_variant;
+
+  /// Экран: SCR-10/11/12, карточки сетки и списка (SCR-50 — через общий компонент). прототип 2026-10-29, ADR-112, версия 1.16; кнопка карточки, когда товар уже в корзине (вместо `QuantityStepper`, UI-10-109); нажатие добавляет шаг; `{qty}` — String, отформатированное количество. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'В корзине · {qty} — ещё +1'**
+  String catalog_card_in_cart_add_more(String qty);
+
+  /// Экран: SCR-10/11/12, вид «Компакт». прототип 2026-10-29, ADR-112, версия 1.16; короткая кнопка строки таблицы для товара в корзине (UI-10-118). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Ещё · {qty}'**
+  String catalog_card_in_cart_short(String qty);
 
   /// Экран: карточки. ч. B; INV-042. Источник: 02 §7
   ///
@@ -2397,13 +2463,19 @@ abstract class AppLocalizations {
   /// **'Артикул не указан'**
   String get catalog_card_sku_missing;
 
+  /// Экран: SCR-10/11/12, вид «Компакт». QA прототипа 2026-10-29, ADR-112, версия 1.17; короткая подпись недоступной кнопки строки таблицы при неизвестном остатке (UI-10-118) тем же кеглем, что «+ Добавить»; полная `ds_stock_unknown` — в тултипе и для экранного диктора. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Нет данных'**
+  String get catalog_card_stock_unknown_short;
+
   /// Экран: SCR-10/11/12/40. ч. B; v1.1; ICU по `count`; UI-10-119. Источник: 02 §7
   ///
   /// In ru, this message translates to:
   /// **'{variant} · {unit} / {variant} · {unit} · в корзине {count} вар.'**
   String catalog_card_variant_label(int count, String unit, String variant);
 
-  /// Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки; CAT-UI EQ-CAT-07. Источник: 02 §7
+  /// Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки; CAT-UI EQ-CAT-07; с версии 1.16 не используется: колонка убрана из «Компакта» (UI-10-118, ADR-112 п. 3), ключ сохранён до ответа на Q-334 (откат «Компакта»). Источник: 02 §7
   ///
   /// In ru, this message translates to:
   /// **'Доступно'**
@@ -2415,7 +2487,7 @@ abstract class AppLocalizations {
   /// **'Наименование'**
   String get catalog_compact_col_name;
 
-  /// Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118: заголовок колонки «Фото» визуально пустой, текст — только `Semantics`; CAT-UI EQ-CAT-07. Источник: 02 §7
+  /// Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118: заголовок колонки «Фото» визуально пустой, текст — только `Semantics`; CAT-UI EQ-CAT-07; с версии 1.16 не используется: колонка убрана из «Компакта» (UI-10-118, ADR-112 п. 3), ключ сохранён до ответа на Q-334 (откат «Компакта»). Источник: 02 §7
   ///
   /// In ru, this message translates to:
   /// **'Фото'**
@@ -2427,7 +2499,7 @@ abstract class AppLocalizations {
   /// **'Цена'**
   String get catalog_compact_col_price;
 
-  /// Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки; CAT-UI EQ-CAT-07. Источник: 02 §7
+  /// Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки; CAT-UI EQ-CAT-07; с версии 1.16 не используется: колонка убрана из «Компакта» (UI-10-118, ADR-112 п. 3), ключ сохранён до ответа на Q-334 (откат «Компакта»). Источник: 02 §7
   ///
   /// In ru, this message translates to:
   /// **'Кол-во'**
@@ -2439,13 +2511,19 @@ abstract class AppLocalizations {
   /// **'Артикул'**
   String get catalog_compact_col_sku;
 
-  /// Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки (единица); CAT-UI EQ-CAT-07. Источник: 02 §7
+  /// Экран: SCR-10/11/12, вид «Компакт». прототип 2026-10-29, ADR-112, версия 1.16; заголовок колонки статуса остатка с количеством (UI-10-118). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Наличие'**
+  String get catalog_compact_col_stock;
+
+  /// Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки (единица); CAT-UI EQ-CAT-07; с версии 1.16 не используется: колонка убрана из «Компакта» (UI-10-118, ADR-112 п. 3), ключ сохранён до ответа на Q-334 (откат «Компакта»). Источник: 02 §7
   ///
   /// In ru, this message translates to:
   /// **'Ед.'**
   String get catalog_compact_col_unit;
 
-  /// Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки (варианты); CAT-UI EQ-CAT-07. Источник: 02 §7
+  /// Экран: SCR-10. этап E, 03 §16.7 (ADR-097); UI-10-118 заголовок колонки (варианты); CAT-UI EQ-CAT-07; с версии 1.16 не используется: колонка убрана из «Компакта» (UI-10-118, ADR-112 п. 3), ключ сохранён до ответа на Q-334 (откат «Компакта»). Источник: 02 §7
   ///
   /// In ru, this message translates to:
   /// **'Вар.'**
@@ -2505,6 +2583,12 @@ abstract class AppLocalizations {
   /// **'Фильтры'**
   String get catalog_filters_button;
 
+  /// Экран: SCR-10/11/12, встроенная панель фильтров. прототип 2026-10-29, ADR-112, версия 1.16; ссылка сброса в панели; `filters_reset_all` «Сбросить все» остаётся для активных фильтров. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Сбросить фильтры'**
+  String get catalog_filters_reset;
+
   /// Экран: SCR-10. ч. B; ICU plural (03 §16.3). Источник: 02 §7; формы «a / b / c» 02 §7 преобразованы в ICU plural (03 §16.3); текст совпадает с 03 §16.3
   ///
   /// In ru, this message translates to:
@@ -2540,6 +2624,18 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Избранное'**
   String get catalog_preset_favorites;
+
+  /// Экран: SCR-10/12, medium+. прототип 2026-10-29, ADR-112, версия 1.16; кнопка строки управления, `favorite=true`; `catalog_preset_favorites` остаётся для compact и SCR-50. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Избранные'**
+  String get catalog_preset_favorites_toolbar;
+
+  /// Экран: SCR-10/12, medium+. прототип 2026-10-29, ADR-112, версия 1.16; кнопка строки управления, сортировка `updatedAt:desc` (CQ-LAY-04 пересмотрен ADR-112); `catalog_sort_newest` «Сначала новые» остаётся в меню сортировки. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Новые'**
+  String get catalog_preset_newest;
 
   /// Экран: SCR-10. ч. B; чип подборки. Источник: 02 §7
   ///
@@ -2607,6 +2703,18 @@ abstract class AppLocalizations {
   /// **'Категории товаров'**
   String get catalog_sidebar_categories_title;
 
+  /// Экран: SCR-10/11/12. паритет функций 2026-10-29, ADR-112, версия 1.20; UI-10-046: кнопка внизу колонки категорий (medium+), колонка сворачивается до 72, выбор сохраняется (`sidebarCollapsed`). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Свернуть каталог'**
+  String get catalog_sidebar_collapse;
+
+  /// Экран: SCR-10/11/12. паритет функций 2026-10-29, ADR-112, версия 1.20; UI-10-046: та же кнопка в свёрнутой колонке. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Развернуть каталог'**
+  String get catalog_sidebar_expand;
+
   /// Экран: SCR-10. ч. B; макет, со счётчиком. Источник: 02 §7
   ///
   /// In ru, this message translates to:
@@ -2661,7 +2769,7 @@ abstract class AppLocalizations {
   /// **'По артикулу'**
   String get catalog_sort_sku;
 
-  /// Экран: SCR-10. ч. B; заголовок корня. Источник: 02 §7
+  /// Экран: SCR-10. ч. B; заголовок корня; также первая плитка ленты подкатегорий (ADR-112). Источник: 02 §7
   ///
   /// In ru, this message translates to:
   /// **'Все товары'**
@@ -2739,10 +2847,28 @@ abstract class AppLocalizations {
   /// **'Категория больше не существует'**
   String get category_not_found_title;
 
-  /// Экран: SCR-12. ч. B; Semantics. Источник: 02 §7
+  /// Экран: SCR-10/12. ревью переноса прототипа 2026-10-29, ADR-112, версия 1.19; `Semantics` первой карточки ленты «Все товары» (`catalog_title_all`): видимая подпись входит в доступное имя (WCAG 2.5.3); `{name}` — раздел; ICU plural (03 §16.3). Источник: 02 §7
   ///
   /// In ru, this message translates to:
-  /// **'{name}, {count} товаров'**
+  /// **'{count, plural, one{Все товары: {name}, {count} товар} few{Все товары: {name}, {count} товара} many{Все товары: {name}, {count} товаров} other{Все товары: {name}, {count} товара}}'**
+  String category_ribbon_all_a11y(int count, String name);
+
+  /// Экран: SCR-10/12. прототип 2026-10-29, ADR-112, версия 1.16; стрелка ленты, тултип и Semantics. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Прокрутить подкатегории вправо'**
+  String get category_ribbon_next;
+
+  /// Экран: SCR-10/12. прототип 2026-10-29, ADR-112, версия 1.16; стрелка ленты, тултип и Semantics; закрывает CQ-LAY-02. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Прокрутить подкатегории влево'**
+  String get category_ribbon_prev;
+
+  /// Экран: SCR-12. ч. B; Semantics; ICU plural (03 §16.3) — «Смесители, 124 товара» (SCR-12.8), до версии 1.19 — «{name}, {count} товаров» без склонения (ревью переноса прототипа 2026-10-29, ADR-112, версия 1.19). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'{count, plural, one{{name}, {count} товар} few{{name}, {count} товара} many{{name}, {count} товаров} other{{name}, {count} товара}}'**
   String category_tile_a11y(int count, String name);
 
   /// Экран: SCR-12. ч. B; INV-052. Источник: 02 §7
@@ -7953,6 +8079,18 @@ abstract class AppLocalizations {
   /// **'Сфера деятельности (необязательно)'**
   String get profile_activity_label;
 
+  /// Экран: SCR-10 (шапка), шапка оболочки staff medium+. ревью переноса прототипа 2026-10-29, ADR-112, версия 1.19; UI-10-006: `Semantics` блока пользователя (аватар, имя и роль), меню UI-10-033. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Профиль: {name}, {role}'**
+  String profile_avatar_a11y(String name, String role);
+
+  /// Экран: SCR-10 (шапка), шапка оболочки staff medium+. ревью переноса прототипа 2026-10-29, ADR-112, версия 1.19; UI-10-006: `Semantics` блока пользователя, когда роль неизвестна (`{name}` — имя или подпись роли). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Профиль: {name}'**
+  String profile_avatar_a11y_name(String name);
+
   /// Экран: SCR-41. ч. E; валидация. Источник: 02 §7
   ///
   /// In ru, this message translates to:
@@ -10041,6 +10179,12 @@ abstract class AppLocalizations {
   /// **'Не удалось выполнить поиск · Повторить'**
   String get search_error_inline;
 
+  /// Экран: SCR-10/11/12, шапка оболочки staff medium+. ревью переноса прототипа 2026-10-29, ADR-112, версия 1.19; `Semantics(textField)` поля поиска шапки (03 §9.7) и иконки поиска compact SCR-12 — вместо `search_title` «Результаты поиска» (WCAG 2.4.6, 4.1.2). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Поиск товара'**
+  String get search_field_a11y;
+
   /// Экран: SCR-11. ч. B. Источник: 02 §7
   ///
   /// In ru, this message translates to:
@@ -10712,6 +10856,24 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Настройки'**
   String get settings_title;
+
+  /// Экран: оболочка staff, medium+. прототип 2026-10-29, ADR-112, версия 1.16; кнопка-бургер в шапке (UI-10-002 и все staff-экраны), тултип и Semantics; открывает drawer навигации. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Меню разделов'**
+  String get shell_menu_open;
+
+  /// Экран: оболочка staff, medium+. прототип 2026-10-29, ADR-112, версия 1.16; Semantics-метка drawer навигации (03 §9.56). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Навигация'**
+  String get shell_nav_a11y;
+
+  /// Экран: оболочка staff, medium+. прототип 2026-10-29, ADR-112, версия 1.16; заголовок второй группы drawer (Заказы, Отложенные заказы, Касса, Отчёты, Журнал аудита и др.); заменяет меню «Ещё» navigation.md §2.2. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Другие разделы'**
+  String get shell_nav_more;
 
   /// Экран: SCR-00. ч. A. Источник: 02 §7
   ///

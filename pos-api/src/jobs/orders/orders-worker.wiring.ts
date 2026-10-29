@@ -13,6 +13,7 @@ import { createDatabase } from '../../db/database.js';
 import type { OnecGateway } from '../../integrations/onec/onec-gateway.js';
 import { NotificationsRepository } from '../../notifications/center/notifications.repository.js';
 import { NotificationsPortService } from '../../notifications/center/notifications-port.service.js';
+import { OrderDependencyNotifier } from '../../orders/worker/order-dependency.notifier.js';
 import { OrderOnecResultsHandler } from '../../orders/worker/order-onec-results.handler.js';
 import { parseOnecOrderDocument } from '../../orders/order-projection.js';
 import { OrderStatusSyncHandler } from '../../orders/worker/order-status-sync.handler.js';
@@ -41,7 +42,7 @@ export interface OrdersWorkerWiringOptions {
 export interface OrdersWorkerWiring {
   /** `WorkerRuntimeOptions.outboxDelivery`: канал записи заказов/платежей в 1С. */
   readonly outboxDelivery: OutboxDeliveryPort | undefined;
-  /** `WorkerRuntimeOptions.outboxHooks`: `dead` → уведомления. */
+  /** `WorkerRuntimeOptions.outboxHooks`: `dead` и запаркованный заказ POS-клиента → уведомления. */
   readonly outboxHooks: OutboxDispatcherHooks;
   /** `WorkerRuntimeOptions.extraWorkers`: `orders.onec-confirmed`, `orders.onec-failed`. */
   readonly register: (boss: PgBoss) => Promise<void>;
@@ -50,6 +51,8 @@ export interface OrdersWorkerWiring {
   /** `SyncWorkerWiringOptions.handlers`: `order_status`. */
   readonly handlers: { readonly order_status?: SyncEntityHandler };
   readonly results: OrderOnecResultsHandler;
+  /** Уведомления о заказах, запаркованных из-за клиента (хук `onDependencyBlocked` и сверщик). */
+  readonly blocked: OrderDependencyNotifier;
 }
 
 /**
@@ -87,6 +90,7 @@ export function createOrdersWorkerWiring(o: OrdersWorkerWiringOptions): OrdersWo
     payments: o.payments ?? null,
     log,
   });
+  const blocked = new OrderDependencyNotifier({ db, notifications, log });
   const writeChannel = o.config.ONEC_MODE !== 'odata_only' || o.config.ONEC_ODATA_WRITE_ENABLED;
   const outboxDelivery =
     o.gateway && writeChannel ? new OnecOutboxDelivery(o.gateway, { timeoutMs: o.config.ONEC_TIMEOUT_MS }) : undefined;
@@ -120,10 +124,21 @@ export function createOrdersWorkerWiring(o: OrdersWorkerWiringOptions): OrdersWo
 
   return {
     outboxDelivery,
-    outboxHooks: { onDead: (row, info) => results.onDead(row, `${info.code}: ${info.reason}`) },
+    outboxHooks: {
+      onDead: (row, info) => results.onDead(row, `${info.code}: ${info.reason}`),
+      // Заказ POS-клиента, чей customer/create в failed/dead/cancelled, — уведомление (05 SYNC-042; G-KI-12).
+      onDependencyBlocked: (items) => blocked.onBlocked(items),
+    },
     register,
-    jobs: { [QUEUES.outboxReconcileAggregates]: () => results.reconcile() },
+    jobs: {
+      // Потерянные результаты → заказ; уведомления по запаркованным заказам (хук мог не сработать) — повторно, без дублей.
+      [QUEUES.outboxReconcileAggregates]: async () => ({
+        ...(await results.reconcile()),
+        blockedNotified: await blocked.reconcile(),
+      }),
+    },
     handlers: statusSync ? { order_status: statusSync } : {},
     results,
+    blocked,
   };
 }

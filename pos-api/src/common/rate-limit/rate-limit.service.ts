@@ -35,6 +35,14 @@ export const RATE_LIMIT_SCOPES = Object.keys(RATE_LIMIT_WINDOWS) as readonly Rat
 export const RATE_LIMIT_RETENTION_MS = 24 * 3600 * 1000;
 const MAX_SUBJECT_LENGTH = 200;
 
+/**
+ * Сырой номер КР в subject (07 §5.12): E.164 `+996XXXXXXXXX` в любом месте строки или весь subject — те же 12 цифр
+ * без `+`. Прежний шаблон `\+?996\d{9}` без `+` и без границ совпадал с hex-псевдонимом номера (64 hex-символа,
+ * ≈ 1.7e-4 номеров при случайном секрете) — `RangeError` → 500 на `POST /auth/otp/request` (known_issues G-KI-16,
+ * R1-N-01, F-KI-16). В hex-псевдониме, UUID и IP знака `+` нет, а 12 цифр целиком они не составляют.
+ */
+const RAW_PHONE_IN_SUBJECT = /\+996\d{9}|^996\d{9}$/;
+
 export interface RateLimitRule {
   readonly scope: RateLimitScope;
   /**
@@ -81,7 +89,7 @@ function checkRule(r: RateLimitRule): void {
   if (typeof r.subject !== 'string' || r.subject.length === 0 || r.subject.length > MAX_SUBJECT_LENGTH) {
     throw new RangeError('rate-limit: subject — непустая строка до 200 символов');
   }
-  if (/\+?996\d{9}/.test(r.subject)) {
+  if (RAW_PHONE_IN_SUBJECT.test(r.subject)) {
     throw new RangeError('rate-limit: телефон в subject — только HMAC-псевдоним (07 §5.12)');
   }
 }

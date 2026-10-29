@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { SyncEntity } from '../../src/common/enums.js';
 import { RETURN_DOC_TYPE, ReturnDocsChangeHandler } from '../../src/returns/onec/return-docs.handler.js';
@@ -178,6 +179,69 @@ describe('G-returns-txn-5: параллельные заявки на один �
     );
     expect(results.filter((r) => r.status === 201)).toHaveLength(1);
     expect(results.filter((r) => r.status === 422).every((r) => r.body.code === 'RETURN_QTY_EXCEEDED')).toBe(true);
+    const open = await t.q<{ q: string }>(
+      `SELECT coalesce(sum(i.quantity), 0)::numeric(14,3)::text AS q FROM return_requests r
+         JOIN return_request_items i ON i.return_request_id = r.id
+        WHERE r.shipment_id = $1 AND r.status IN ('draft','submitted','accepted')`,
+      [s.shipmentId],
+    );
+    expect(open[0].q).toBe('50.000');
+  });
+});
+
+describe('G-KI-14: триггер return_request_items_guard сериализует прямые вставки в обход сервиса (миграция 0020)', () => {
+  it('две транзакции прямым SQL на весь остаток одной строки реализации: вторая ждёт первую и получает отказ триггера', async () => {
+    const s = await shippedOrder();
+    const si = (
+      await t.q<{ id: string; variant_id: string }>(
+        `SELECT id, variant_id FROM shipment_items WHERE shipment_id = $1::uuid`,
+        [s.shipmentId],
+      )
+    )[0];
+    const insert = async (c: pg.PoolClient): Promise<void> => {
+      const r = await c.query<{ id: string }>(
+        `INSERT INTO return_requests (public_number, shipment_id, order_id, customer_id, reason, total, created_by_user_id)
+         VALUES (next_return_public_number(), $1::uuid, $2::uuid, $3::uuid, 'defect', 5000.00, $4::uuid) RETURNING id`,
+        [s.shipmentId, s.orderId, w.customers.debtWithinLimit.id, cashier.userId],
+      );
+      await c.query(
+        `INSERT INTO return_request_items (return_request_id, shipment_item_id, variant_id, quantity, unit_price,
+                                           line_total, product_name_snapshot)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, 50, 100.00, 5000.00, 'прямая вставка')`,
+        [r.rows[0].id, si.id, si.variant_id],
+      );
+    };
+    const a = await t.pool.connect();
+    const b = await t.pool.connect();
+    try {
+      await a.query('BEGIN');
+      await b.query('BEGIN');
+      await insert(a); // первая вставка держит строку реализации до COMMIT
+      let settled = false;
+      const second = insert(b).then(
+        () => {
+          settled = true;
+          return 'inserted' as const;
+        },
+        (e: { code?: string; message?: string }) => {
+          settled = true;
+          return e;
+        },
+      );
+      await new Promise((r) => setTimeout(r, 500));
+      expect(settled, 'вторая вставка не должна пройти до COMMIT первой').toBe(false);
+      await a.query('COMMIT');
+      const out = await second;
+      expect(out).not.toBe('inserted');
+      expect(out).toMatchObject({ code: '23514' });
+      expect((out as { message: string }).message).toMatch(/exceeds returnable/);
+      await b.query('ROLLBACK');
+    } finally {
+      await a.query('ROLLBACK').catch(() => undefined);
+      await b.query('ROLLBACK').catch(() => undefined);
+      a.release();
+      b.release();
+    }
     const open = await t.q<{ q: string }>(
       `SELECT coalesce(sum(i.quantity), 0)::numeric(14,3)::text AS q FROM return_requests r
          JOIN return_request_items i ON i.return_request_id = r.id

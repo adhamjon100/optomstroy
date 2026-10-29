@@ -2,7 +2,9 @@
 // на AC-UI-20-001, 005 (нампад), 008, 012, 016, 017, 021, 022, 023, 026, 029. Остальные AC набора — в
 // cart_screen_test.dart, cart_variant_change_test.dart (AC-UI-20-007), parked/wiring-тестах. Фейковый `CartSync` и
 // сервер — test/features/cart/support; данные синтетические, без реальной 1С.
+// Тест-кейсы 12_TEST_PLAN: T-CART-033 (drawer 420 по кнопке шапки; ADR-112).
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -19,7 +21,6 @@ import 'package:optomstroy/core/models/pos_common.dart';
 import 'package:optomstroy/core/session/session_status.dart';
 import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/core/utils/qty.dart';
-import 'package:optomstroy/design_system/components/cart_panel.dart';
 import 'package:optomstroy/design_system/components/confirm_dialog.dart';
 import 'package:optomstroy/design_system/components/discount_input.dart';
 import 'package:optomstroy/design_system/components/price_text.dart';
@@ -32,7 +33,9 @@ import 'package:optomstroy/features/cart/domain/repositories/cart_repository.dar
 import 'package:optomstroy/features/cart/domain/sync/cart_sync.dart';
 import 'package:optomstroy/features/cart/presentation/providers/cart_controller.dart' show cartPermissionsFor;
 import 'package:optomstroy/features/cart/presentation/providers/cart_step_up_port.dart';
+import 'package:optomstroy/features/cart/presentation/widgets/cart_drawer.dart';
 import 'package:optomstroy/features/cart/presentation/widgets/cart_fab_view.dart';
+import 'package:optomstroy/features/cart/presentation/widgets/cart_header_button_view.dart';
 import 'package:optomstroy/features/cart/presentation/widgets/cart_panel_view.dart';
 import 'package:optomstroy/features/catalog/presentation/providers/catalog_ports.dart';
 
@@ -125,16 +128,18 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('AC-UI-20-001: expanded (1280×800) — постоянная панель 340 lp справа от каталога; compact (360×760) — '
-      'CartFab над нижней навигацией', (tester) async {
+  testWidgets('AC-UI-20-001: medium и шире (1280×800) — кнопка-итог шапки открывает drawer 420 справа поверх '
+      'каталога; Esc, крестик и затемнение закрывают, фокус — на кнопку; compact (360×760) — CartFab над нижней '
+      'навигацией', (tester) async {
     serveCart(repo, canonCart());
     sync.snapshot = localOf(canonCart());
+    repo.onListParked ??= (ParkedScope scope, String? cursor) async =>
+        const Success<PageResult<CartParkedSummary>>(PageResult<CartParkedSummary>(items: <CartParkedSummary>[]));
     final ProviderContainer root = ProviderContainer(overrides: <Override>[...cartUiOverrides]);
     addTearDown(root.dispose);
-    final CatalogCartPanelBuilder panel = root.read(catalogCartPanelProvider)!;
+    final WidgetBuilder button = root.read(catalogCartButtonProvider)!;
     final WidgetBuilder fab = root.read(catalogCartFabProvider)!;
-    expect(CartPanel.widthFor(1280), DsBreakpoints.cartWide);
-    expect(DsBreakpoints.cartWide, 340);
+    expect(DsBreakpoints.cartDrawer, 420);
 
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
@@ -143,20 +148,63 @@ void main() {
       cartApp(
         overrides: cartOverrides(sync: sync, repo: repo),
         cartBuilder: (BuildContext context) => Scaffold(
-          body: Row(
+          body: Column(
             children: <Widget>[
+              Row(
+                children: <Widget>[
+                  const Expanded(child: Text('catalog-header')),
+                  button(context),
+                ],
+              ),
               const Expanded(child: Center(child: Text('catalog-grid'))),
-              SizedBox(width: CartPanel.widthFor(1280), child: panel(context)),
             ],
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('catalog-grid'), findsOneWidget, reason: 'каталог виден одновременно с корзиной');
-    expect(tester.getSize(find.byType(CartPanelView)).width, 340);
-    expect(tester.getTopLeft(find.byType(CartPanelView)).dx, 1280 - 340, reason: 'панель справа');
+    expect(find.byType(CartPanelView), findsNothing, reason: 'постоянной CP нет (ADR-112)');
+    final Finder headerButton = find.byKey(CartHeaderButtonView.buttonKey);
+    expect(
+      find.descendant(of: headerButton, matching: find.text(money(1600750))),
+      findsOneWidget,
+      reason: 'итог',
+    );
+    expect(
+      find.descendant(of: headerButton, matching: find.text('5')),
+      findsOneWidget,
+      reason: 'бейдж позиций',
+    );
+
+    await tester.tap(headerButton);
+    await tester.pumpAndSettle();
+    final Finder drawer = find.byKey(CartDrawer.key);
+    expect(drawer, findsOneWidget);
+    expect(tester.getSize(drawer).width, 420);
+    expect(tester.getTopLeft(drawer).dx, 1280 - 420, reason: 'drawer справа');
+    expect(tester.getSize(drawer).height, 800, reason: 'на всю высоту окна');
+    expect(find.text('catalog-grid'), findsOneWidget, reason: 'каталог виден под затемнением');
     expect(find.byKey(CartKeys.line(frap)), findsOneWidget);
+    expect(find.text('Корзина · 5 поз.', findRichText: true), findsOneWidget, reason: 'заголовок «Корзина · N поз.»');
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'cart-panel', reason: 'фокус в корзине сразу');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(drawer, findsNothing, reason: 'Esc закрывает');
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'cart-header-button', reason: 'фокус — на кнопку');
+
+    await tester.tap(headerButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(CartDrawer.closeKey));
+    await tester.pumpAndSettle();
+    expect(drawer, findsNothing, reason: 'крестик закрывает');
+
+    await tester.tap(headerButton);
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(200, 400));
+    await tester.pumpAndSettle();
+    expect(drawer, findsNothing, reason: 'тап по затемнению закрывает');
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'cart-header-button');
 
     tester.view.physicalSize = const Size(360, 760);
     await tester.pumpWidget(

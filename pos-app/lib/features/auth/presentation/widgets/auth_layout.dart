@@ -27,7 +27,7 @@ class AuthLayout extends StatelessWidget {
     this.keyboardMascotSize = 96,
     this.compactMascotSize = 160,
     this.mediumMascotSize = 200,
-    this.footerYear,
+    required this.footerYear,
     this.backgroundOverride,
   });
 
@@ -68,8 +68,8 @@ class AuthLayout extends StatelessWidget {
   /// Размер персонажа medium (200; SCR-08 — 160).
   final double mediumMascotSize; // money-double: allow — геометрия UI (lp)
 
-  /// Год футера «© {year} Оптомстрой» (из Clock экрана).
-  final int? footerYear;
+  /// Год футера «© {year} Оптомстрой» — год магазина Asia/Bishkek по `clockProvider` экрана.
+  final int footerYear;
 
   /// Фон вместо `surface`/`background` (overlay SCR-08).
   final Color? backgroundOverride;
@@ -341,9 +341,9 @@ class _BrandPanel extends StatelessWidget {
 }
 
 class _Footer extends StatelessWidget {
-  const _Footer({this.year, this.padded = true, this.withSupport = false});
+  const _Footer({required this.year, this.padded = true, this.withSupport = false});
 
-  final int? year;
+  final int year;
   final bool padded;
   final bool withSupport;
 
@@ -351,11 +351,7 @@ class _Footer extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context);
     final TextStyle style = context.text.caption.copyWith(color: context.colors.textSecondary);
-    final Widget copyright = Text(
-      l10n.auth_footer_copyright('${year ?? DateTime.now().year}'),
-      style: style,
-      textAlign: TextAlign.center,
-    );
+    final Widget copyright = Text(l10n.auth_footer_copyright('$year'), style: style, textAlign: TextAlign.center);
     return Padding(
       padding: padded ? EdgeInsets.all(context.space.s4) : EdgeInsets.zero,
       child: withSupport

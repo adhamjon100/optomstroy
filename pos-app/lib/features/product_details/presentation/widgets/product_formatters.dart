@@ -2,6 +2,7 @@
 // U+202F, десятичная запятая; количества — `Qty` (milli-units) без `double` (D-19). Деньги —
 // `PriceText.format` дизайн-системы. Фото — URL `/images/{sha256}/{size}.webp` от базы API (D-30).
 import 'package:optomstroy/core/utils/qty.dart';
+import 'package:optomstroy/design_system/components/date_range_picker.dart' show DsBishkekTime;
 import 'package:optomstroy/design_system/components/product_image.dart';
 import 'package:optomstroy/features/catalog/domain/entities/catalog_refs.dart';
 
@@ -32,11 +33,8 @@ abstract final class ProductFormat {
   /// Значение для дисплея нампада («12,5», без разрядов).
   static String numpadInput(Qty q) => qty(q, group: false);
 
-  /// «09:41» (локальное время).
-  static String time(DateTime at) {
-    final DateTime l = at.toLocal();
-    return '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
-  }
+  /// «09:41» — время магазина Asia/Bishkek (02 §0.1); пояс машины не влияет.
+  static String time(DateTime at) => DsBishkekTime.time(at);
 
   /// Абсолютный URL фото размера [size]: URL сервера (`thumbUrl`/`cardUrl`/`fullUrl`), иначе
   /// `/images/{sha256}/{size}.webp` (RM-E-003); относительные — от origin [base]. Никогда не

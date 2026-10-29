@@ -31,7 +31,9 @@ import 'package:optomstroy/features/cart/presentation/cart_formats.dart';
 import 'package:optomstroy/features/cart/presentation/providers/cart_step_up_port.dart';
 import 'package:optomstroy/features/cart/presentation/providers/cart_submission_port.dart';
 import 'package:optomstroy/features/cart/presentation/widgets/cart_customer_picker.dart';
+import 'package:optomstroy/features/cart/presentation/widgets/cart_drawer.dart';
 import 'package:optomstroy/features/cart/presentation/widgets/cart_fab_view.dart';
+import 'package:optomstroy/features/cart/presentation/widgets/cart_header_button_view.dart';
 import 'package:optomstroy/features/cart/presentation/widgets/cart_panel_view.dart';
 import 'package:optomstroy/features/customers/customers_providers.dart';
 import 'package:optomstroy/features/customers/domain/entities/customer.dart';
@@ -680,8 +682,8 @@ void main() {
     expect(sync.setQuantityCalls.single, (frap, Qty.units(3)));
   });
 
-  testWidgets('F-flutter-ui-9/10: CartFab — F4 открывает корзину (medium); диктор: позиции, единицы, сумма словами '
-      '(AC-UI-20-002)', (tester) async {
+  testWidgets('F-flutter-ui-9/10: кнопка-итог шапки (medium, ADR-112) — F4 открывает drawer корзины; диктор: позиции, '
+      'единицы, сумма словами (AC-UI-20-002)', (tester) async {
     serveCart(repo, canonCart());
     sync.snapshot = localOf(canonCart());
     repo.onListParked = (ParkedScope scope, String? cursor) async =>
@@ -694,7 +696,7 @@ void main() {
       cartApp(
         overrides: cartOverrides(sync: sync, repo: repo),
         cartBuilder: (BuildContext context) => const Scaffold(
-          body: Align(alignment: Alignment.bottomCenter, child: CartFabView()),
+          body: Align(alignment: Alignment.topRight, child: CartHeaderButtonView()),
         ),
       ),
     );
@@ -703,8 +705,13 @@ void main() {
       find.bySemanticsLabel(RegExp(r'^Открыть корзину, 5 позиций, 6\s?шт, 16\s007 сом 50 тыйын$')),
       findsOneWidget,
     );
+    // medium: только иконка с бейджем (02 SCR-10.1 строка 19), CartFab у сотрудника на medium нет.
+    final Finder button = find.byKey(CartHeaderButtonView.buttonKey);
+    expect(find.descendant(of: button, matching: find.text('Корзина')), findsNothing);
+    expect(find.byType(CartFabView), findsNothing);
     await tester.sendKeyEvent(LogicalKeyboardKey.f4);
     await tester.pumpAndSettle();
+    expect(find.byKey(CartDrawer.key), findsOneWidget);
     expect(find.byKey(CartKeys.panel), findsOneWidget);
     semantics.dispose();
   });

@@ -26,16 +26,14 @@ class CategoryScreen extends StatelessWidget {
   final String? f;
 
   @override
-  Widget build(BuildContext context) => KeyedSubtree(
-    // Новая категория — новое состояние экрана (прокрутка, черновик фильтров).
-    key: ValueKey<String>('category-$categoryId'),
-    child: CatalogWorkspace(
-      key: const ValueKey<String>('stub-$screenId'),
-      mode: CatalogScreenMode.category,
-      categoryId: categoryId,
-      view: view,
-      sort: sort,
-      f: f,
-    ),
+  Widget build(BuildContext context) => CatalogWorkspace(
+    // Один экземпляр на запись: смена категории (`go`) обновляет его — прокрутка и черновик фильтров
+    // сбрасываются в `didUpdateWidget`, шапка/сайдбар/CP не пересоздаются (заказчик 2026-10-28).
+    key: CatalogWorkspace.stableKey,
+    mode: CatalogScreenMode.category,
+    categoryId: categoryId,
+    view: view,
+    sort: sort,
+    f: f,
   );
 }

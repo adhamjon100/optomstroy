@@ -7,7 +7,7 @@ import { type CatalogFixture, startCatalogFixture } from '../support/catalog-fix
 import { EmbeddedPg } from '../support/embedded-pg.js';
 
 /**
- * 05 ONEC-017 п. 2 / AC-ONEC-017, SYNC-020, SYNC-033 (д), 12 T-SYNC-005 (б) — правило привязки штрихкода
+ * 05 ONEC-017 п. 2 / AC-ONEC-017, SYNC-020, SYNC-033 (д), F9; 12 T-SYNC-005 (б), T-SYNC-F09 — правило привязки штрихкода
  * (E-KI-03 / R2-N-02): одно значение `Штрихкод` с двумя привязками в прогоне → сохраняется текущая привязка
  * `barcodes`, если она среди пришедших, иначе — наименьший ключ (`Номенклатура_Key`, `Характеристика_Key`,
  * `Упаковка_Key`); одна запись `BARCODE_CONFLICT` со ссылками обеих привязок; порядок позиций и страниц прогона
@@ -108,6 +108,7 @@ afterAll(async () => {
 });
 
 describe('Штрихкод с двумя привязками — правило 05 ONEC-017 п. 2 (E-KI-03)', () => {
+  // 12 T-SYNC-F09 (BARCODE_CONFLICT в sync_errors; привязка — по ONEC-017; сканер находит один товар — `bound`)
   it('два товара, один пакет, привязки нет: наименьший Ref_Key при любом порядке; одна запись BARCODE_CONFLICT со ссылками A и B', async () => {
     await pull([[item('2990000000101', { productRef: hi }), item('2990000000101', { productRef: lo })]]);
     await pull([[item('2990000000102', { productRef: lo }), item('2990000000102', { productRef: hi })]]);

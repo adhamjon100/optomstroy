@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:optomstroy/design_system/components/app_bottom_sheet.dart';
+import 'package:optomstroy/design_system/components/ds_glyph.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 
@@ -19,6 +21,16 @@ class SortMenuOption<T> {
   final String label;
 }
 
+/// Стиль кнопки `SortMenu`.
+enum SortMenuStyle {
+  /// Кнопка 36 с обводкой `borderStrong` (касса, заказы, SCR-50, compact).
+  standard,
+
+  /// Строка управления каталога medium+ (прототип 2026-10-29): 40 (цель 48), `surface`, обводка `border`, радиус
+  /// `md`, иконка `swap_vert` 18 и текущий пункт `body 500`.
+  toolbar,
+}
+
 /// Выбор сортировки `SortMenu` (03 §9.24): кнопка `outlined` с `swap_vert` 20 и текущим пунктом
 /// (на compact — только иконка) → меню 240 (`elevation.2`, пункты 44, активный —
 /// `primaryContainer` + `check`); на compact — `AppBottomSheet`. Повторный выбор текущего пункта
@@ -33,7 +45,23 @@ class SortMenu<T> extends StatelessWidget {
     required this.semanticLabel,
     this.iconOnly = false,
     this.sheetTitle,
+    this.style = SortMenuStyle.standard,
   });
+
+  /// Оценка ширины кнопки с подписью (до раскладки): поля 12, иконка 20, зазор 8, подпись `label 500`, обводка;
+  /// стиль `toolbar` — поля 12, глиф 18, зазор 8, подпись `body 500`.
+  static double estimateWidth(BuildContext context, String label, {SortMenuStyle style = SortMenuStyle.standard}) =>
+      style == SortMenuStyle.toolbar
+      ? context.space.s3 * 2 +
+            18 +
+            context.space.s2 +
+            dsTextWidth(context, label, context.text.body.copyWith(fontWeight: FontWeight.w500)) +
+            2
+      : context.space.s3 * 2 +
+            20 +
+            context.space.s2 +
+            dsTextWidth(context, label, context.text.label.copyWith(fontWeight: FontWeight.w500)) +
+            2;
 
   /// Пункты (≤ 8).
   final List<SortMenuOption<T>> options;
@@ -52,6 +80,9 @@ class SortMenu<T> extends StatelessWidget {
 
   /// Заголовок листа (compact).
   final String? sheetTitle;
+
+  /// Стиль кнопки (меню и лист — общие).
+  final SortMenuStyle style;
 
   String get _currentLabel {
     for (final SortMenuOption<T> o in options) {
@@ -127,6 +158,9 @@ class SortMenu<T> extends StatelessWidget {
       child: DsInteractive(
         onTap: () => unawaited(_open(context)),
         builder: (BuildContext context, DsInteractionState s) {
+          if (style == SortMenuStyle.toolbar) {
+            return _toolbarButton(context, c, s);
+          }
           final Color bg = s.pressed ? c.primaryContainerPressed : (s.hovered ? c.primaryContainer : c.surface);
           return DsFocusRing(
             visible: s.focused,
@@ -163,6 +197,50 @@ class SortMenu<T> extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// Кнопка стиля `toolbar`.
+  Widget _toolbarButton(BuildContext context, DsColors c, DsInteractionState s) {
+    final BorderRadius radius = BorderRadius.all(context.radii.md);
+    final Color bg = s.pressed ? c.surfacePressed : (s.hovered ? c.surfaceHover : c.surface);
+    return SizedBox(
+      height: 48,
+      child: Center(
+        widthFactor: 1,
+        child: DsFocusRing(
+          visible: s.focused,
+          borderRadius: radius,
+          child: Container(
+            height: 40,
+            constraints: const BoxConstraints(minWidth: 48),
+            padding: EdgeInsets.symmetric(horizontal: context.space.s3),
+            decoration: BoxDecoration(
+              color: bg,
+              border: Border.all(color: c.border),
+              borderRadius: radius,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                // Двойная стрелка «вниз · вверх» прототипа (в Material Icons такой нет).
+                DsGlyph(kind: DsGlyphKind.sortArrows, size: 18, color: c.textPrimary),
+                if (!iconOnly) ...<Widget>[
+                  SizedBox(width: context.space.s2),
+                  Flexible(
+                    child: Text(
+                      _currentLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.text.body.copyWith(fontWeight: FontWeight.w500, color: c.textPrimary),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
