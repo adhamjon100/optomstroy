@@ -16,6 +16,12 @@
   FL-11 no_cycles              граф импортов между фичами ацикличен
   AP-01 app_is_root            (дополнительно) features/**, core/**, design_system/** не импортируют app/** —
                                app/ — композиционный корень (06 §6.10), обратная зависимость дала бы цикл
+  DM-01 demo_isolated          (ADR-113, 06 §6.10) app/demo/** (точка входа веб-демо) импортируется и экспортируется
+                               только из app/demo/** — в том числе условным импортом; lib/main.dart и остальной lib/
+                               его не достают, в сборки Windows и Android демо-код не попадает. Сам app/demo/** —
+                               второй композиционный корень: опирается только на app/demo/**, app/bootstrap.dart,
+                               core/** и пакеты (без features/**, design_system/** и прочего app/**).
+                               Директивы `part` и `part of` проверяются так же, как import и export
 
 FL-08 (литералы цветов/строк), FL-09 (ручная правка сгенерированного) и FL-10
 (double для денег) — не про импорты; они — следующая итерация (custom_lint/AST).
@@ -85,6 +91,9 @@ FL02_PACKAGES = ("dio", "drift", "drift_flutter", "flutter_secure_storage")
 FL02_CORE = ("network", "database", "storage", "hardware")
 FL05_PACKAGES = ("dio", "drift", "drift_flutter")
 FL05_CORE = ("network", "database", "storage", "sync")
+DM01_DEMO = "app/demo/"
+DM01_DEMO_MAY_IMPORT = ("app/demo/", "core/")  # префиксы путей
+DM01_DEMO_MAY_IMPORT_FILES = ("app/bootstrap.dart",)
 
 GENERATED = (
     re.compile(r".*\.g\.dart$"),
@@ -92,7 +101,9 @@ GENERATED = (
     re.compile(r"^core/l10n/app_localizations.*\.dart$"),
 )
 
-DIRECTIVE = re.compile(r"^\s*(import|export)\b(.*?);", re.MULTILINE | re.DOTALL)
+# import/export и part/part of (ревью R-02: `part 'demo/x.dart';` включает файл app/demo/** в библиотеку снаружи так
+# же, как импорт). `part` — только перед строкой URI или `of`, чтобы не ловить идентификатор (`part = ...`).
+DIRECTIVE = re.compile(r"""^\s*(import|export|part(?=\s*(?:of\b|['"])))\b(.*?);""", re.MULTILINE | re.DOTALL)
 STRING = re.compile(r"""(['"])(.*?)\1""")
 
 
@@ -117,7 +128,7 @@ class Violation:
 
 
 def parse_directives(source: str) -> list[tuple[int, str]]:
-    """Возвращает (номер строки, uri) для import/export, включая условные импорты."""
+    """Возвращает (номер строки, uri) для import/export/part/part of, включая условные импорты."""
     found: list[tuple[int, str]] = []
     no_comments = re.sub(r"//[^\n]*", lambda m: " " * len(m.group(0)), source)
     no_comments = re.sub(r"/\*.*?\*/", lambda m: re.sub(r"[^\n]", " ", m.group(0)), no_comments, flags=re.DOTALL)
@@ -239,6 +250,14 @@ def check_import(file: str, line: int, uri: str) -> list[Violation]:
     if dst is not None and dst.startswith("app/") and not file.startswith("app/") and file != "main.dart":
         add("AP-01", "app/ — композиционный корень; features/core/design_system его не импортируют")
 
+    # DM-01 demo_isolated (ADR-113, 06 §6.10)
+    if dst is not None:
+        src_demo = file.startswith(DM01_DEMO)
+        if dst.startswith(DM01_DEMO) and not src_demo:
+            add("DM-01", "демо-код app/demo/** импортируется только из app/demo/** (lib/main.dart и остальной lib/ его не достают)")
+        if src_demo and not (dst.startswith(DM01_DEMO_MAY_IMPORT) or dst in DM01_DEMO_MAY_IMPORT_FILES):
+            add("DM-01", "app/demo/** опирается только на app/demo/**, app/bootstrap.dart и core/** (без features/**, design_system/** и прочего app/**)")
+
     return out
 
 
@@ -324,6 +343,64 @@ SELF_TEST: list[tuple[str, str, set[str]]] = [
     ("features/cart/cart_providers.dart", "domain/cart_repository.dart", set()),
     ("features/splash/presentation/s.dart", "package:optomstroy/app/router/routes.dart", {"AP-01"}),
     ("app/router/routes.dart", "package:optomstroy/features/splash/presentation/screens/splash_screen.dart", set()),
+    # DM-01 demo_isolated — T-DEMO-001 (12 §3.22, ADR-113): в демо-код не входят снаружи…
+    ("main.dart", "package:optomstroy/app/demo/main_web_demo.dart", {"DM-01"}),
+    ("main.dart", "app/demo/demo_overrides.dart", {"DM-01"}),
+    ("app/router/app_router.dart", "package:optomstroy/app/demo/demo_overrides.dart", {"DM-01"}),
+    ("app/bootstrap.dart", "demo/demo_bridge.dart", {"DM-01"}),
+    ("app/di/overrides.dart", "package:optomstroy/app/demo/demo_bridge_adapter.dart", {"DM-01"}),
+    ("core/di/core_providers.dart", "package:optomstroy/app/demo/demo_bridge.dart", {"AP-01", "DM-01"}),
+    ("features/catalog/data/x.dart", "package:optomstroy/app/demo/demo_bridge.dart", {"AP-01", "DM-01"}),
+    ("app/demo_like.dart", "package:optomstroy/app/demo/demo_bridge.dart", {"DM-01"}),
+    # …а сам демо-код не достаёт фичи, дизайн-систему и прочий app/**
+    ("app/demo/demo_overrides.dart", "package:optomstroy/features/cart/cart_providers.dart", {"DM-01"}),
+    ("app/demo/demo_overrides.dart", "package:optomstroy/features/cart/data/cart_bindings.dart", {"DM-01", "FL-06"}),
+    ("app/demo/main_web_demo.dart", "package:optomstroy/design_system/theme/app_theme.dart", {"DM-01"}),
+    ("app/demo/demo_overrides.dart", "package:optomstroy/app/di/overrides.dart", {"DM-01"}),
+    ("app/demo/main_web_demo.dart", "package:optomstroy/app/app.dart", {"DM-01"}),
+    ("app/demo/main_web_demo.dart", "package:optomstroy/main.dart", {"DM-01"}),
+    ("app/demo/main_web_demo.dart", "../../features/auth/auth_providers.dart", {"DM-01"}),
+    # разрешено: app/demo/**, app/bootstrap.dart, core/**, пакеты и dart:
+    ("app/demo/main_web_demo.dart", "package:optomstroy/app/bootstrap.dart", set()),
+    ("app/demo/main_web_demo.dart", "../bootstrap.dart", set()),
+    ("app/demo/demo_overrides.dart", "package:optomstroy/core/di/core_providers.dart", set()),
+    ("app/demo/demo_bridge.dart", "package:optomstroy/app/demo/demo_bridge_stub.dart", set()),
+    ("app/demo/demo_bridge.dart", "demo_bridge_web.dart", set()),
+    ("app/demo/demo_bridge_adapter.dart", "package:dio/dio.dart", set()),
+    ("app/demo/demo_bridge_web.dart", "dart:js_interop", set()),
+]
+
+# DM-01 на целых файлах: условный импорт, export и part (T-DEMO-001). (файл, текст, ожидаемые правила)
+SELF_TEST_SOURCES: list[tuple[str, str, set[str]]] = [
+    # part включает демо-код в библиотеку вне app/demo — как импорт (ревью R-02)
+    ("app/bootstrap.dart", "part 'demo/x.dart';\n", {"DM-01"}),
+    ("main.dart", "part 'package:optomstroy/app/demo/main_web_demo.dart';\n", {"DM-01"}),
+    ("app/demo/x.dart", "part of '../bootstrap.dart';\n", set()),
+    ("app/demo/x.dart", "part of '../app.dart';\n", {"DM-01"}),
+    # `part` как идентификатор — не директива
+    ("app/demo/x.dart", "var part = 'package:optomstroy/features/x/x.dart';\nvoid f() {\n  part = '../../features/y.dart';\n}\n", set()),
+    (
+        "main.dart",
+        "import 'package:optomstroy/app/app.dart'\n    if (dart.library.js_interop) 'package:optomstroy/app/demo/main_web_demo.dart';\n",
+        {"DM-01"},
+    ),
+    (
+        "app/app.dart",
+        "import 'package:optomstroy/core/network/dio_client.dart' if (dart.library.js_interop) 'demo/demo_bridge_web.dart';\n",
+        {"DM-01"},
+    ),
+    ("app/di/overrides.dart", "export 'package:optomstroy/app/demo/demo_overrides.dart' show demoOverrides;\n", {"DM-01"}),
+    (
+        "app/demo/demo_bridge.dart",
+        "import 'package:optomstroy/app/demo/demo_bridge_stub.dart'\n"
+        "    if (dart.library.js_interop) 'package:optomstroy/app/demo/demo_bridge_web.dart' as platform;\n",
+        set(),
+    ),
+    (
+        "app/demo/demo_bridge.dart",
+        "import 'demo_bridge_stub.dart' if (dart.library.js_interop) 'package:optomstroy/features/x/x_providers.dart';\n",
+        {"DM-01"},
+    ),
 ]
 
 
@@ -352,7 +429,12 @@ def self_test() -> int:
     if [u for _, u in parsed] != ["a.dart", "b.dart", "c.dart"]:
         failed += 1
         print(f"ПРОВАЛ разбор директив: {parsed}")
-    total = len(SELF_TEST) + 2
+    for file, source, expected in SELF_TEST_SOURCES:
+        got = {v.rule for v in check_sources({file: source})[0]}
+        if got != expected:
+            failed += 1
+            print(f"ПРОВАЛ {file} (исходник): ожидалось {sorted(expected)}, получено {sorted(got)}")
+    total = len(SELF_TEST) + 2 + len(SELF_TEST_SOURCES)
     print(f"self-test: {total - failed}/{total} проверок пройдено")
     return 1 if failed else 0
 

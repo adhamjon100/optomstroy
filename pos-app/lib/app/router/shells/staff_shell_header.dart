@@ -2,7 +2,7 @@
 // `CatalogHeader`, что у SCR-10/11/12 (на ветке каталога шапку рисует `CatalogWorkspace` — ADR-110, одно поле
 // поиска). Поиск ведёт в SCR-11 (`/catalog/search?q=`) по Enter или после паузы ввода при допустимой строке;
 // ввод продолжается в поле каталога (`catalogSearchFocusRequestProvider`). Сканер — SCR-17 на Android/iOS, на
-// Windows — подсказка HID-сканера; логотип — главный экран режима; колокольчик — popover на expanded/large,
+// Windows и в браузере — подсказка HID-сканера; логотип — главный экран режима; колокольчик — popover на expanded/large,
 // иначе SCR-44; меню аватара — `showCatalogProfileMenu`; часы и дата перед колокольчиком (UI-10-005, UI-10-032; на
 // ветке «Касса» — с полной датой, UI-30-013). Данные — только через порты каталога со значениями по
 // умолчанию (оболочка строится в тестах без привязок корзины, уведомлений и синхронизации).
@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:optomstroy/app/router/app_router.dart' show homeLocationFor;
 import 'package:optomstroy/app/router/shells/app_mode.dart';
+import 'package:optomstroy/core/hardware/hardware_providers.dart' show cameraScannerSupportedProvider;
 import 'package:optomstroy/design_system/layout/shell_scope.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/features/catalog/presentation/catalog_paths.dart';
@@ -78,7 +79,8 @@ class _StaffShellHeaderState extends ConsumerState<StaffShellHeader> {
     );
   }
 
-  void _onScan() => handleCatalogScanButton(context, widget.focusNode);
+  void _onScan() =>
+      handleCatalogScanButton(context, widget.focusNode, cameraSupported: ref.read(cameraScannerSupportedProvider));
 
   void _openNotifications() => openCatalogNotifications(context, ref, widget.windowClass);
 

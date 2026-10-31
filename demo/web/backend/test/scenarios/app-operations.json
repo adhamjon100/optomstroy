@@ -1,0 +1,716 @@
+{
+ "$comment": "Операции, которые вызывает pos-app (WP-T1): карта api-surface (D:/optomstroy/.tmp/web_demo/maps/api-surface.json, 2026-10-29) ∩ contracts/openapi/pos-api.v1.yaml (openapi_ops.txt). viaDio=false — мимо Dio: GET /health (DemoHealthProbe → мост) и фото /images/{sha}/{size}.webp (статика сайта). Операций через Dio — 116 из 141.",
+ "generatedAt": "2026-10-30",
+ "total": 118,
+ "viaDio": 116,
+ "operations": [
+  {
+   "method": "GET",
+   "path": "/admin/audit-logs",
+   "operationId": "admin_audit_logs_list",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/admin/discount-limits",
+   "operationId": "admin_discount_limits_get",
+   "viaDio": true
+  },
+  {
+   "method": "PUT",
+   "path": "/admin/discount-limits",
+   "operationId": "admin_discount_limits_update",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/admin/invitations",
+   "operationId": "admin_invitations_list",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/admin/invitations",
+   "operationId": "admin_invitations_create",
+   "viaDio": true
+  },
+  {
+   "method": "DELETE",
+   "path": "/admin/invitations/{id}",
+   "operationId": "admin_invitations_revoke",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/admin/reports/qr-reconciliation",
+   "operationId": "admin_reports_qr_reconciliation_get",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/admin/reports/receivables",
+   "operationId": "admin_reports_receivables_get",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/admin/reports/sales-summary",
+   "operationId": "admin_reports_sales_summary_get",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/admin/settings",
+   "operationId": "admin_settings_get",
+   "viaDio": true
+  },
+  {
+   "method": "PUT",
+   "path": "/admin/settings",
+   "operationId": "admin_settings_update",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/admin/users",
+   "operationId": "admin_users_list",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/admin/users",
+   "operationId": "admin_users_create",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/admin/users/{id}",
+   "operationId": "admin_users_get",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/admin/users/{id}/block",
+   "operationId": "admin_users_block",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/admin/users/{id}/emergency-login-code",
+   "operationId": "admin_users_emergency_login_code_issue",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/admin/users/{id}/logout-all",
+   "operationId": "admin_users_logout_all",
+   "viaDio": true
+  },
+  {
+   "method": "DELETE",
+   "path": "/admin/users/{id}/pin",
+   "operationId": "admin_users_pin_reset",
+   "viaDio": true
+  },
+  {
+   "method": "PUT",
+   "path": "/admin/users/{id}/roles",
+   "operationId": "admin_users_roles_set",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/auth/logout",
+   "operationId": "auth_logout",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/auth/logout-all",
+   "operationId": "auth_logout_all",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/auth/otp/challenges/{challengeId}",
+   "operationId": "auth_otp_challenge_get",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/auth/otp/request",
+   "operationId": "auth_otp_request",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/auth/otp/verify",
+   "operationId": "auth_otp_verify",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/auth/refresh",
+   "operationId": "auth_refresh",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/auth/sessions",
+   "operationId": "auth_sessions_list",
+   "viaDio": true
+  },
+  {
+   "method": "PATCH",
+   "path": "/auth/sessions/{sessionId}",
+   "operationId": "auth_session_rename",
+   "viaDio": true
+  },
+  {
+   "method": "DELETE",
+   "path": "/auth/sessions/{sessionId}",
+   "operationId": "auth_session_revoke",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/auth/step-up",
+   "operationId": "auth_step_up",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/auth/unlock",
+   "operationId": "auth_unlock",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/cart",
+   "operationId": "cart_get",
+   "viaDio": true
+  },
+  {
+   "method": "PATCH",
+   "path": "/cart",
+   "operationId": "cart_update",
+   "viaDio": true
+  },
+  {
+   "method": "DELETE",
+   "path": "/cart",
+   "operationId": "cart_clear",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/cart/checkout-preview",
+   "operationId": "cart_checkout_preview",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/cart/customer",
+   "operationId": "cart_customer_set",
+   "viaDio": true
+  },
+  {
+   "method": "DELETE",
+   "path": "/cart/customer",
+   "operationId": "cart_customer_unset",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/cart/discount",
+   "operationId": "cart_discount_apply",
+   "viaDio": true
+  },
+  {
+   "method": "PUT",
+   "path": "/cart/items/{variantId}",
+   "operationId": "cart_items_put",
+   "viaDio": true
+  },
+  {
+   "method": "DELETE",
+   "path": "/cart/items/{variantId}",
+   "operationId": "cart_items_delete",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/cart/park",
+   "operationId": "cart_park",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/cart/parked",
+   "operationId": "cart_parked_list",
+   "viaDio": true
+  },
+  {
+   "method": "DELETE",
+   "path": "/cart/parked/{id}",
+   "operationId": "cart_parked_delete",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/cart/parked/{id}/resume",
+   "operationId": "cart_parked_resume",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/catalog/categories",
+   "operationId": "catalog_categories_list",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/catalog/products",
+   "operationId": "catalog_products_list",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/catalog/products/recent",
+   "operationId": "catalog_products_recent_list",
+   "viaDio": true
+  },
+  {
+   "method": "DELETE",
+   "path": "/catalog/products/recent",
+   "operationId": "catalog_products_recent_clear",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/catalog/products/{id}",
+   "operationId": "catalog_products_get",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/catalog/products/{id}/variants",
+   "operationId": "catalog_products_variants_list",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/catalog/sync/{entity}",
+   "operationId": "catalog_sync_get",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/catalog/warehouses",
+   "operationId": "catalog_warehouses_list",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/customers",
+   "operationId": "customers_list",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/customers",
+   "operationId": "customers_create",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/customers/{id}",
+   "operationId": "customers_get",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/customers/{id}/discounts",
+   "operationId": "customers_discounts_get",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/customers/{id}/links/{linkId}/confirm",
+   "operationId": "customers_links_confirm",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/customers/{id}/links/{linkId}/reject",
+   "operationId": "customers_links_reject",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/customers/{id}/orders",
+   "operationId": "customers_orders_list",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/customers/{id}/receivables",
+   "operationId": "customers_receivables_get",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/customers/{id}/receivables/refresh",
+   "operationId": "customers_receivables_refresh",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/discounts/rules",
+   "operationId": "discounts_rules_get",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/favorites/customers",
+   "operationId": "favorites_customers_list",
+   "viaDio": true
+  },
+  {
+   "method": "PUT",
+   "path": "/favorites/customers/{id}",
+   "operationId": "favorites_customers_put",
+   "viaDio": true
+  },
+  {
+   "method": "DELETE",
+   "path": "/favorites/customers/{id}",
+   "operationId": "favorites_customers_delete",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/favorites/products",
+   "operationId": "favorites_products_list",
+   "viaDio": true
+  },
+  {
+   "method": "PUT",
+   "path": "/favorites/products/{id}",
+   "operationId": "favorites_products_put",
+   "viaDio": true
+  },
+  {
+   "method": "DELETE",
+   "path": "/favorites/products/{id}",
+   "operationId": "favorites_products_delete",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/health",
+   "operationId": "health_liveness_get",
+   "viaDio": false
+  },
+  {
+   "method": "GET",
+   "path": "/images/{sha}/{size}",
+   "operationId": "catalog_images_get",
+   "viaDio": false
+  },
+  {
+   "method": "GET",
+   "path": "/me",
+   "operationId": "me_get",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/me/biometrics",
+   "operationId": "me_biometrics_toggle",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/me/consents",
+   "operationId": "me_consents_update",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/me/phone/change/confirm",
+   "operationId": "me_phone_change_confirm",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/me/phone/change/request",
+   "operationId": "me_phone_change_request",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/me/pin",
+   "operationId": "me_pin_set",
+   "viaDio": true
+  },
+  {
+   "method": "PATCH",
+   "path": "/me/profile",
+   "operationId": "me_profile_update",
+   "viaDio": true
+  },
+  {
+   "method": "PUT",
+   "path": "/me/settings",
+   "operationId": "me_settings_replace",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/notifications",
+   "operationId": "notifications_list",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/notifications/read-all",
+   "operationId": "notifications_read_all",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/notifications/{id}/read",
+   "operationId": "notifications_read",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/orders",
+   "operationId": "orders_list",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/orders",
+   "operationId": "orders_create",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/orders/{id}",
+   "operationId": "orders_get",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/orders/{id}/cancel",
+   "operationId": "orders_cancel",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/orders/{id}/documents/invoice.pdf",
+   "operationId": "orders_document_invoice",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/orders/{id}/documents/receipt.pdf",
+   "operationId": "orders_document_receipt",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/orders/{id}/onec-link",
+   "operationId": "orders_onec_link",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/orders/{id}/payments",
+   "operationId": "orders_payments_create",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/payments/{id}",
+   "operationId": "payments_get",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/payments/{id}/confirm-manual",
+   "operationId": "payments_confirm_manual",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/payments/{id}/void",
+   "operationId": "payments_void",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/pos/dashboard",
+   "operationId": "pos_dashboard_get",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/receivables/overdue",
+   "operationId": "receivables_overdue_list",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/registration/complete",
+   "operationId": "registration_complete",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/registration/customer-match",
+   "operationId": "registration_customer_match_get",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/registration/customer-match/confirm",
+   "operationId": "registration_customer_match_confirm",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/registration/customer-match/reject",
+   "operationId": "registration_customer_match_reject",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/returns",
+   "operationId": "returns_list",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/returns",
+   "operationId": "returns_create",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/returns/{id}",
+   "operationId": "returns_get",
+   "viaDio": true
+  },
+  {
+   "method": "PATCH",
+   "path": "/returns/{id}",
+   "operationId": "returns_update",
+   "viaDio": true
+  },
+  {
+   "method": "DELETE",
+   "path": "/returns/{id}",
+   "operationId": "returns_delete",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/returns/{id}/accept",
+   "operationId": "returns_accept",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/returns/{id}/reject",
+   "operationId": "returns_reject",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/returns/{id}/submit",
+   "operationId": "returns_submit",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/search/barcode/{value}",
+   "operationId": "search_barcode_get",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/search/customers",
+   "operationId": "search_customers_list",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/search/products",
+   "operationId": "search_products_list",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/settings/public",
+   "operationId": "settings_public_get",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/sync/outbox",
+   "operationId": "sync_outbox_list",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/sync/outbox/{id}/retry",
+   "operationId": "sync_outbox_retry",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/sync/runs",
+   "operationId": "sync_runs_list",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/sync/runs",
+   "operationId": "sync_runs_create",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/sync/runs/{id}",
+   "operationId": "sync_runs_get",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/sync/runs/{id}/errors",
+   "operationId": "sync_runs_errors_list",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/sync/status",
+   "operationId": "sync_status_get",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/transactions",
+   "operationId": "transactions_list",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/transactions/{id}",
+   "operationId": "transactions_get",
+   "viaDio": true
+  }
+ ]
+}

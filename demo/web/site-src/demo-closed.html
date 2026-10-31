@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru" translate="no">
+<head>
+  <!--
+    Статическая страница веб-демо «Оптомстрой POS» (WP-S1): сюда уходит вкладка, потерявшая замок одной вкладки
+    (location.replace из demo-boot.js) — Flutter и сервер демо в ней больше не работают. ?reason=moved | stolen |
+    generation. Кнопка возвращает демо в эту вкладку (?takeover=1 — та вкладка уйдёт сюда же).
+  -->
+  <base href="/">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="google" content="notranslate">
+  <meta name="theme-color" content="#D9380F">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <title>Оптомстрой POS — демо открыто в другой вкладке</title>
+  <link rel="stylesheet" href="demo-tokens.css">
+  <link rel="stylesheet" href="demo-screen.css">
+  <script defer src="demo-closed.js"></script>
+</head>
+<body>
+  <div class="pd-screen" data-view="closed">
+    <div class="pd-card">
+      <img class="pd-logo" src="icons/Icon-192.png" alt="" width="72" height="72">
+      <h1 class="pd-title" id="pd-closed-title">Демо открыто в другой вкладке</h1>
+      <p class="pd-p" id="pd-closed-text">Работа с демо перенесена в другую вкладку этого браузера. Демо работает только в одной вкладке, чтобы данные не перепутались. Эту вкладку можно закрыть.</p>
+      <div class="pd-actions">
+        <a class="pd-btn pd-btn-primary" id="pd-closed-back" href="./?takeover=1">Вернуть демо в эту вкладку</a>
+      </div>
+      <p class="pd-foot">Та вкладка закроет демо и покажет такое же сообщение. Всё сделанное в демо сохраняется в этом браузере.</p>
+      <p class="pd-foot"><a href="THIRD_PARTY_NOTICES.txt" target="_blank" rel="noopener" id="pd-closed-licenses">Лицензии сторонних компонентов</a> · Код «Оптомстрой POS» — только для просмотра, все права защищены.</p>
+    </div>
+  </div>
+</body>
+</html>

@@ -30,7 +30,7 @@ import { ImagesGcService } from '../../sync/images/images-gc.service.js';
 import { createImageBytesSource, createImageListSource } from '../../sync/images/images.module.js';
 import { CountCheckService } from '../../sync/reconcile/count-check.service.js';
 import type { SchedulerConfig } from '../../sync/scheduler/scheduler.config.js';
-import { ENTITY_QUEUES, IMAGES_GC_QUEUE } from '../../sync/scheduler/sync-queues.js';
+import { ENTITY_QUEUES, EXTENSION_PLAN_ENTITIES, IMAGES_GC_QUEUE } from '../../sync/scheduler/sync-queues.js';
 import {
   type RunFinishedEvent,
   SyncRunRegistry,
@@ -162,6 +162,10 @@ export function createSyncWorkerWiring(o: SyncWorkerWiringOptions): SyncWorkerWi
           catalogChanges,
           authPause,
           apiCompat,
+          // POSAPI-T1-01 (05 §7.2, §7.4 порог 1): в режиме расширения справочники и документы приходят только через
+          // план обмена — успешный цикл, в том числе пустой, подтверждает их свежесть (иначе «Есть задержки» через
+          // час после последнего изменения в 1С). В прочих режимах у этих сущностей свои задания — не подтверждаем.
+          freshnessEntities: o.config.ONEC_MODE === 'extension' ? EXTENSION_PLAN_ENTITIES : [],
         })
     : undefined;
   const changes = changesFor?.(tracker);

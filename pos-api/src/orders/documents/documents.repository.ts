@@ -83,13 +83,27 @@ export class DocumentsRepository {
     };
   }
 
+  /**
+   * Строки документа. Колонка «Ед.» (10 PRINT-002/005: «кол-во, ед.») — наименование единицы из справочника `units`
+   * («шт», «м»), а не код ОКЕИ снимка (`796` печатался рядом с количеством: «1 796 × …»); нет единицы в справочнике —
+   * код снимка. Строка в упаковках (07 DATA-137, 10 INV-002: `quantity` — в упаковках, `unit_price` — за упаковку,
+   * `unit_code_snapshot` — базовая единица): единица — упаковка (`packaging_name_snapshot`, «кор (12 шт)»), иначе
+   * «2 кг × 450,00» за 2 мешка по 50 кг читалось бы как 2 кг по 450 за кг (ревью F2).
+   */
   async items(orderId: string): Promise<OrderItemDocRow[]> {
     const r = await this.db.execute<Row>(sql`
       SELECT i.line_no, i.product_name_snapshot, i.variant_name_snapshot, i.packaging_name_snapshot, i.sku_snapshot,
-             i.quantity::text AS quantity, i.unit_code_snapshot, i.unit_price::text AS unit_price,
+             i.quantity::text AS quantity,
+             CASE WHEN i.packaging_id IS NOT NULL OR NULLIF(i.packaging_name_snapshot, '') IS NOT NULL
+                  THEN COALESCE(NULLIF(i.packaging_name_snapshot, ''), NULLIF(k.name, ''),
+                                NULLIF(u.name, ''), i.unit_code_snapshot)
+                  ELSE COALESCE(NULLIF(u.name, ''), i.unit_code_snapshot) END AS unit_label,
+             i.unit_price::text AS unit_price,
              i.line_subtotal::text AS line_subtotal, i.discount_amount::text AS discount_amount,
              i.line_total::text AS line_total
         FROM order_items i
+        LEFT JOIN units u ON u.code = i.unit_code_snapshot
+        LEFT JOIN packagings k ON k.id = i.packaging_id
        WHERE i.order_id = ${orderId}::uuid
        ORDER BY i.line_no`);
     return r.rows.map((i) => ({
@@ -99,7 +113,7 @@ export class DocumentsRepository {
       packagingName: text(i.packaging_name_snapshot),
       sku: text(i.sku_snapshot),
       quantity: String(i.quantity),
-      unit: String(i.unit_code_snapshot),
+      unit: String(i.unit_label),
       unitPrice: String(i.unit_price),
       lineSubtotal: String(i.line_subtotal),
       discountAmount: String(i.discount_amount),

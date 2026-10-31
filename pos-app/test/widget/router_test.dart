@@ -7,6 +7,7 @@ import 'package:optomstroy/app/router/shells/app_mode.dart';
 import 'package:optomstroy/app/router/shells/app_shell.dart';
 import 'package:optomstroy/app/router/shells/shell_tab.dart';
 import 'package:optomstroy/core/enums.dart';
+import 'package:optomstroy/core/session/session_state.dart';
 import 'package:optomstroy/core/session/session_status.dart';
 
 /// Маршруты карты экранов ядра R0 §9, зарегистрированные в R1-сборке
@@ -161,6 +162,66 @@ void main() {
       expect(redirect(SessionStatus.unauthenticated, '/orders/42'), '/auth/phone?returnTo=%2Forders%2F42');
       expect(redirect(SessionStatus.unauthenticated, '/register/security'), isNull);
       expect(redirect(SessionStatus.authenticated, '/orders/42'), isNull);
+    });
+
+    // G-5 (navigation.md §4.1): холодный старт сразу на внутреннем адресе (deep link; веб-демо — F5 на `#/cashier`,
+    // uiA-01/B-01) ведёт на SCR-08 `cold` с возвратом, а не на рабочий экран под невидимой блокировкой.
+    test('G-5: сессия заблокирована холодным стартом — SCR-08 cold с from=<адрес>', () {
+      String? cold(String location) => authRedirect(
+        status: SessionStatus.authenticated,
+        uri: Uri.parse(location),
+        homeLocation: '/catalog',
+        lock: SessionLockReason.coldStart,
+      );
+      expect(cold('/cashier'), '/auth/unlock?mode=cold&from=%2Fcashier');
+      expect(cold('/catalog/search?q=G9259'), '/auth/unlock?mode=cold&from=%2Fcatalog%2Fsearch%3Fq%3DG9259');
+      expect(Uri.parse(cold('/orders/42')!).queryParameters, <String, String>{'mode': 'cold', 'from': '/orders/42'});
+      // SCR-08 сам, Splash и публичные экраны («Войти по номеру телефона» с SCR-08) не перенаправляются.
+      expect(cold('/auth/unlock?mode=cold'), isNull);
+      expect(cold('/splash'), isNull);
+      expect(cold('/auth/phone'), isNull);
+      // Idle/ручная блокировка — overlay поверх экрана (§4.3), redirect путь не меняет.
+      for (final SessionLockReason reason in <SessionLockReason>[
+        SessionLockReason.idle,
+        SessionLockReason.manual,
+        SessionLockReason.background,
+        SessionLockReason.unlockRequired,
+      ]) {
+        expect(
+          authRedirect(
+            status: SessionStatus.authenticated,
+            uri: Uri.parse('/cashier'),
+            homeLocation: '/catalog',
+            lock: reason,
+          ),
+          isNull,
+          reason: reason.name,
+        );
+      }
+    });
+
+    test('G-5 раньше roleGuard: под блокировкой холодного старта нет снекбара «Раздел недоступен»', () {
+      // До разблокировки роль неизвестна (режим по умолчанию — продавец), `/cashier` продавцу недоступен.
+      expect(
+        appRedirect(
+          status: SessionStatus.authenticated,
+          uri: Uri.parse('/cashier'),
+          mode: AppMode.seller,
+          customerSelfService: true,
+          lock: SessionLockReason.coldStart,
+        ),
+        '/auth/unlock?mode=cold&from=%2Fcashier',
+      );
+      expect(
+        appRedirectNotice(
+          status: SessionStatus.authenticated,
+          uri: Uri.parse('/cashier'),
+          mode: AppMode.seller,
+          customerSelfService: true,
+          lock: SessionLockReason.coldStart,
+        ),
+        isNull,
+      );
     });
   });
 

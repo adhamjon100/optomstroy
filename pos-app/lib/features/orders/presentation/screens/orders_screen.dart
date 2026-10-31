@@ -30,6 +30,7 @@ import 'package:optomstroy/design_system/components/search_bar.dart' as ds;
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/sort_menu.dart';
 import 'package:optomstroy/design_system/components/status_count_chips.dart';
+import 'package:optomstroy/design_system/layout/route_activity.dart';
 import 'package:optomstroy/design_system/layout/window_class.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -91,6 +92,12 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
   /// Поиск отправлен (Enter/скан): при единственном совпадении — сразу SCR-24 (AC-UI-25-004).
   String? _openOnSingle;
 
+  /// Экран был виден при последней проверке ([didChangeDependencies]); `null` — ещё не проверялся.
+  bool? _onScreen;
+
+  /// Возврат из SCR-24 через [_open] уже обновил список — обновление по возврату на экран пропускается один раз.
+  bool _returnRefreshed = false;
+
   DateTime get _now => ref.read(clockProvider).nowUtc();
 
   @override
@@ -113,6 +120,40 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     customerId: widget.customerId,
     mine: widget.mine,
   );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 02 SCR-25.6: при возврате на экран — тихое обновление первой страницы с сохранением прокрутки. Экран живёт в
+    // ветке оболочки и под SCR-24/SCR-22 (дочерние маршруты `/orders/…`), поэтому «Заказы» из меню или вкладки после
+    // оплаты показывали снимок, загруженный до неё (uiA-03). Виден — ветка на экране и не закрыт непрозрачным маршрутом
+    // (`TickerMode`) и над страницей нет другой страницы навигатора. Меню печати строки, меню периода и лист фильтров
+    // (маршруты без страницы этого навигатора, `useRootNavigator: false`) экран не закрывают: их закрытие — не
+    // возврат, лишнего `GET /orders` нет (ревью RP-01).
+    final bool onScreen = TickerMode.of(context) && _noPageAbove(context);
+    final bool returned = _onScreen == false && onScreen;
+    if (!onScreen) _returnRefreshed = false;
+    _onScreen = onScreen;
+    if (returned) WidgetsBinding.instance.addPostFrameCallback((_) => _refreshOnReturn());
+  }
+
+  /// Над маршрутом экрана нет страницы навигатора (go_router: SCR-24, SCR-22, модальный SCR-21): [dsRouteIsCurrent];
+  /// всплывающие маршруты без страницы (меню, листы, диалоги) не в счёт. Маршрут без страницы (тестовый
+  /// `MaterialApp.home`) — только по `TickerMode`: непрозрачный маршрут поверх снимает его с экрана.
+  static bool _noPageAbove(BuildContext context) =>
+      ModalRoute.of(context)?.settings is! Page<Object?> || dsRouteIsCurrent(context);
+
+  void _refreshOnReturn() {
+    if (!mounted || _onScreen != true) return;
+    if (_returnRefreshed) {
+      // Возврат из SCR-24 через [_open] уже обновил список — второй запрос не нужен.
+      _returnRefreshed = false;
+      return;
+    }
+    final OnlineStatus online = ref.read(ordersOnlineStatusProvider);
+    if (online == OnlineStatus.offline || online == OnlineStatus.serverDown) return;
+    unawaited(_list.refresh());
+  }
 
   @override
   void didUpdateWidget(covariant OrdersScreen oldWidget) {
@@ -196,7 +237,10 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     } finally {
       _navigating = false;
       // Возврат из SCR-24 — тихое обновление первой страницы с сохранением прокрутки.
-      if (mounted) unawaited(_list.refresh());
+      if (mounted) {
+        _returnRefreshed = true;
+        unawaited(_list.refresh());
+      }
     }
   }
 

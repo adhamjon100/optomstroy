@@ -91,6 +91,13 @@ void main() {
     },
   );
 
+  test('браузер (веб-демо): подмены нет даже с APP_DATA_DIR — каталогов ОС и dart:io Directory там нет', () {
+    final AppConfig dev = AppConfig.fromMap(const {'APP_DATA_DIR': 'D:/optomstroy/.tmp/appdata'});
+    expect(dev.appDataDir, isNotNull);
+    expect(AppDataDirectory.apply(dev, isWeb: true), isFalse);
+    expect(PathProviderPlatform.instance, isA<_OsPaths>());
+  });
+
   test('без APP_DATA_DIR — подмены нет', () {
     expect(AppDataDirectory.apply(AppConfig.fromMap(const {})), isFalse);
     expect(PathProviderPlatform.instance, isA<_OsPaths>());

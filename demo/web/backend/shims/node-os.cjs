@@ -1,0 +1,27 @@
+'use strict';
+// Шим `os`.
+module.exports = {
+  EOL: '\n',
+  hostname: () => 'browser-demo',
+  platform: () => 'linux',
+  type: () => 'Browser',
+  release: () => '0',
+  version: () => 'browser',
+  machine: () => 'wasm32',
+  arch: () => 'wasm32',
+  cpus: () => [{ model: 'browser', speed: 0, times: { user: 0, nice: 0, sys: 0, idle: 0, irq: 0 } }],
+  availableParallelism: () => 1,
+  totalmem: () => 1024 * 1024 * 1024,
+  freemem: () => 512 * 1024 * 1024,
+  loadavg: () => [0, 0, 0],
+  uptime: () => Math.floor((typeof performance !== 'undefined' ? performance.now() : 0) / 1000),
+  tmpdir: () => '/tmp',
+  homedir: () => '/vfs',
+  endianness: () => 'LE',
+  networkInterfaces: () => ({}),
+  userInfo: () => ({ uid: 0, gid: 0, username: 'demo', homedir: '/vfs', shell: null }),
+  getPriority: () => 0,
+  setPriority: () => {},
+  constants: { signals: {}, errno: {}, priority: {} },
+  devNull: '/dev/null',
+};

@@ -604,6 +604,28 @@ void main() {
     expect(find.text(_RejectingCartPort.text), findsOneWidget);
     expect(find.textContaining('Добавлено'), findsNothing);
   });
+
+  // 02 UI-10-040 / UI-20-019, AC-UI-20-001/002: на compact корзина открывается из `CartFab` над нижней навигацией — у
+  // всех ролей с корзиной, в том числе у кассира, у которого вкладки «Корзина» нет (uiA-04); у руководителя корзины нет.
+  testWidgets('compact: CartFab каталога у продавца, кассира и покупателя; у руководителя — нет', (tester) async {
+    const ValueKey<String> fab = ValueKey<String>('test-cart-fab');
+    for (final RoleCode role in <RoleCode>[RoleCode.seller, RoleCode.cashier, RoleCode.customer, RoleCode.owner]) {
+      await tester.pumpWidget(const SizedBox());
+      await _pump(
+        tester,
+        CatalogHarness(
+          role: role,
+          extra: <Override>[
+            catalogCartFabProvider.overrideWithValue(
+              (BuildContext context) => const SizedBox(key: fab, width: 358, height: 56),
+            ),
+          ],
+        ),
+        size: kCompact,
+      );
+      expect(find.byKey(fab), role == RoleCode.owner ? findsNothing : findsOneWidget, reason: role.value);
+    }
+  });
 }
 
 /// Кнопка корзины шапки (порт `catalogCartButtonProvider`).

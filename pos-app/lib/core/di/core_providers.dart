@@ -94,8 +94,10 @@ final sessionEventsProvider = Provider<StreamController<SessionEvent>>((ref) {
   return controller;
 });
 
-/// Транспорт Dio: `null` — по умолчанию платформы. Переопределяется только тестами (integration_test: потеря ответа
-/// `POST /orders` для проверки неизвестного результата, ядро §22.6); приложение его не задаёт.
+/// Транспорт Dio: `null` — по умолчанию платформы. Переопределяется тестами (integration_test: потеря ответа
+/// `POST /orders` для проверки неизвестного результата, ядро §22.6) и веб-демо (`app/demo/demo_overrides.dart`: мост
+/// к серверу в Web Worker страницы, 15 ADR-113); приложение (`lib/main.dart`) его не задаёт. Адаптер получают и
+/// основной Dio, и Dio для `POST /auth/refresh` (`DioClient`).
 final httpClientAdapterProvider = Provider<HttpClientAdapter?>((ref) => null);
 
 final dioProvider = Provider<Dio>((ref) {

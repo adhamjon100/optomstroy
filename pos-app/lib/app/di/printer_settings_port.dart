@@ -8,10 +8,13 @@
 // * Тестовая печать: «Чек 80 мм» — образец ESC/POS «ТЕСТОВАЯ ПЕЧАТЬ · не является фискальным документом» с датой,
 //   именем устройства и шкалой ширины 48 символов по TCP (порт по умолчанию 9100, таймаут 10 с); A4 — системный диалог
 //   печати с PDF-образцом, сформированным локально. Ошибка — причина для `settings_print_error`, экран не блокируется.
+// * В браузере (веб-демо, ADR-113) сырого TCP нет: «Чек 80 мм» отвечает причиной «Недоступно на этом устройстве», без
+//   обращения к dart:io (`Socket`, `Platform` там бросают UnsupportedError); A4 — системный диалог печати браузера.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:optomstroy/core/database/daos/settings_dao.dart';
 import 'package:optomstroy/core/error/result.dart';
 import 'package:optomstroy/features/orders/domain/entities/order.dart' show OrderDocumentFile;
@@ -31,7 +34,12 @@ const int kEscPosDefaultPort = 9100;
 /// Таймаут соединения и отправки (02 UI-42-014).
 const Duration kEscPosTimeout = Duration(seconds: 10);
 
-/// TCP-отправка ESC/POS (02 UI-42-014: «нет связи / таймаут 10 с»).
+/// ESC/POS по TCP доступна в сборке (в браузере сырого TCP нет).
+bool escPosTcpSupported({bool isWeb = kIsWeb}) => !isWeb;
+
+/// TCP-отправка ESC/POS (02 UI-42-014: «нет связи / таймаут 10 с»). В браузере не вызывается: там «Чек 80 мм» отвечает
+/// причиной [PrinterTestTexts.unsupported] раньше (`escPosSupported` в [AppPrinterSettingsPort]); прочие ошибки
+/// платформы пробрасываются, как до веб-демо.
 Future<String?> sendEscPosTcp(String host, int port, List<int> bytes, {Duration timeout = kEscPosTimeout}) async {
   Socket? socket;
   try {
@@ -45,6 +53,16 @@ Future<String?> sendEscPosTcp(String host, int port, List<int> bytes, {Duration 
     return '$host:$port — ${timeout.inSeconds} s';
   } finally {
     socket?.destroy();
+  }
+}
+
+/// Имя устройства на тестовой странице (имя компьютера; иначе — ОС). В браузере `Platform` из dart:io недоступен.
+String printerDeviceName({bool isWeb = kIsWeb}) {
+  if (isWeb) return 'Браузер';
+  try {
+    return Platform.localHostname;
+  } on Object {
+    return Platform.operatingSystem;
   }
 }
 
@@ -101,7 +119,12 @@ List<int> escPosTestPage({required String title, required String stamp, required
 
 /// Тексты образца и причин (локализует построитель секции).
 final class PrinterTestTexts {
-  const PrinterTestTexts({required this.title, required this.noAddress, required this.notSent});
+  const PrinterTestTexts({
+    required this.title,
+    required this.noAddress,
+    required this.notSent,
+    required this.unsupported,
+  });
 
   /// `settings_print_test_page_title`.
   final String title;
@@ -111,6 +134,9 @@ final class PrinterTestTexts {
 
   /// Системная печать не выполнена (диалог закрыт).
   final String notSent;
+
+  /// Формат недоступен на этом устройстве — ESC/POS в браузере (`reg_bio_unsupported` «Недоступно на этом устройстве»).
+  final String unsupported;
 }
 
 /// [PrinterSettingsPort] корня.
@@ -124,6 +150,7 @@ final class AppPrinterSettingsPort implements PrinterSettingsPort {
     required String Function() stamp,
     required String device,
     required int Function() nowMs,
+    bool? escPosSupported,
   }) : _settings = settings,
        _dao = dao,
        _send = send,
@@ -131,7 +158,8 @@ final class AppPrinterSettingsPort implements PrinterSettingsPort {
        _a4Sample = a4Sample,
        _stamp = stamp,
        _device = device,
-       _nowMs = nowMs;
+       _nowMs = nowMs,
+       _escPosSupported = escPosSupported ?? escPosTcpSupported();
 
   static const String addressKey = 'printer.address';
   static const String portKey = 'printer.port';
@@ -145,8 +173,11 @@ final class AppPrinterSettingsPort implements PrinterSettingsPort {
   final String _device;
   final int Function() _nowMs;
 
+  /// Сетевой ESC/POS доступен ([escPosTcpSupported]); иначе «Чек 80 мм» — причина [PrinterTestTexts.unsupported].
+  final bool _escPosSupported;
+
   /// Тексты текущей локали (подставляет построитель секции).
-  PrinterTestTexts texts = const PrinterTestTexts(title: '', noAddress: '', notSent: '');
+  PrinterTestTexts texts = const PrinterTestTexts(title: '', noAddress: '', notSent: '', unsupported: '');
 
   /// Последние значения сервера (запрос `PUT /me/settings` — только при их изменении).
   PrinterFormat? _serverFormat;
@@ -232,6 +263,7 @@ final class AppPrinterSettingsPort implements PrinterSettingsPort {
         return e.runtimeType.toString();
       }
     }
+    if (!_escPosSupported) return texts.unsupported;
     final String host = (prefs.address ?? '').trim();
     if (host.isEmpty) return texts.noAddress;
     return _send(

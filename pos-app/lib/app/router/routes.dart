@@ -32,7 +32,8 @@ import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/features/admin/presentation/audit/audit_screen.dart';
 import 'package:optomstroy/features/admin/presentation/settings/admin_settings_screen.dart';
 import 'package:optomstroy/features/admin/presentation/users/admin_users_screen.dart';
-import 'package:optomstroy/features/auth/auth_providers.dart' show AuthSessionStatus, authSessionProvider;
+import 'package:optomstroy/features/auth/auth_providers.dart'
+    show AuthSessionState, AuthSessionStatus, authSessionProvider;
 import 'package:optomstroy/features/auth/presentation/screens/no_session_screen.dart';
 import 'package:optomstroy/features/auth/presentation/screens/otp_screen.dart';
 import 'package:optomstroy/features/auth/presentation/screens/unlock_screen.dart';
@@ -180,6 +181,8 @@ class _RegisterFormEntry extends ConsumerWidget {
 /// (ядро §24.2, RM-D-017); иначе — шаг «Защита входа» регистрации клиента.
 /// Режим фиксируется при открытии экрана: после установки PIN навигатор переводит профиль в `signedIn`,
 /// и экран не должен перестраиваться в режим клиента до ухода с маршрута.
+/// Подзаголовок «Вы вошли по приглашению администратора» — только при `roleSource: invitation` (02 SCR-02.6);
+/// сотрудник без PIN по другой причине (сброс PIN, Q-323 — тот же экран) его не видит.
 class _RegisterSecurityEntry extends ConsumerStatefulWidget {
   const _RegisterSecurityEntry();
 
@@ -188,12 +191,14 @@ class _RegisterSecurityEntry extends ConsumerStatefulWidget {
 }
 
 class _RegisterSecurityEntryState extends ConsumerState<_RegisterSecurityEntry> {
-  late final RegistrationAudience _audience = ref.read(authSessionProvider).status == AuthSessionStatus.pinSetupRequired
+  late final AuthSessionState _session = ref.read(authSessionProvider);
+  late final RegistrationAudience _audience = _session.status == AuthSessionStatus.pinSetupRequired
       ? RegistrationAudience.staffFirstLogin
       : RegistrationAudience.customer;
 
   @override
-  Widget build(BuildContext context) => RegistrationSecurityScreen(audience: _audience);
+  Widget build(BuildContext context) =>
+      RegistrationSecurityScreen(audience: _audience, staffViaInvitation: _session.viaInvitation);
 }
 
 /// SCR-07 Ожидает активации.

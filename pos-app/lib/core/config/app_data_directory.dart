@@ -9,8 +9,11 @@
 //
 // Безопасность: путь — только константа сборки (`String.fromEnvironment`), не пользовательский ввод; в prod
 // `AppConfig.appDataDir` всегда `null` и подмена не выполняется (test/core/config/app_data_directory_test.dart).
+// В браузере (веб-демо, ADR-113) каталогов ОС нет (path_provider без web-реализации, dart:io `Directory` бросает
+// UnsupportedError до `runApp`): подмена не выполняется никогда.
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:optomstroy/core/config/environment.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -19,7 +22,9 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 abstract final class AppDataDirectory {
   /// Перенаправить каталоги приложения, если [config] задаёт `APP_DATA_DIR` (не prod). Повторный вызов с тем же
   /// каталогом (перезапуск приложения в integration_test) ничего не меняет. `true` — подмена действует.
-  static bool apply(AppConfig config) {
+  /// [isWeb] — сборка для браузера (тесты подставляют `true`): подмены нет.
+  static bool apply(AppConfig config, {bool isWeb = kIsWeb}) {
+    if (isWeb) return false;
     final String? root = config.isProd ? null : config.appDataDir;
     if (root == null) return false;
     final PathProviderPlatform current = PathProviderPlatform.instance;

@@ -38,6 +38,17 @@ export interface OnecChangesOptions {
    * которые в режиме расширения приходят только через `onec.changes` (без срезов `stock`/`prices`).
    */
   readonly planEntities?: readonly SyncEntity[];
+  /**
+   * Сущности, инкремент которых в этом режиме идёт **только** через план обмена (режим расширения — все, кроме
+   * опрашиваемых своими заданиями: `EXTENSION_PLAN_ENTITIES`). Успешный цикл — сообщение прочитано полностью и
+   * применено, **в том числе пустое** — подтверждает актуальность их реплики: `sync_state.last_success_at` = момент
+   * цикла (пустое — в транзакции цикла, применённое — после успешного ack) и `consecutive_errors = 0` (05 §7.2: `sync_state.last_success_at`
+   * в конце цикла; §7.4 порог 1 — возраст от `last_success_at`; SYNC-026/SYNC-027 — время последнего успешного
+   * обмена; дефект POSAPI-T1-01). Затронутым сообщением сущностям это делают их прогоны `sync_runs`; прогоны для
+   * незатронутых не создаются. Без строки `sync_state`, ни разу не загруженные (`last_success_at IS NULL`) и на паузе
+   * — свежими не становятся. Сбойный цикл и `stale` свежесть не сдвигают. По умолчанию — нет (CLI, тесты конвейера).
+   */
+  readonly freshnessEntities?: readonly SyncEntity[];
   readonly now?: () => Date;
   /** Публикатор `catalog.prices-changed|stock-changed` в транзакции применения (05 SYNC-070, ревью F-trace-3). */
   readonly catalogChanges?: CatalogChangePublisher;
@@ -66,9 +77,12 @@ const INVALID_RESPONSE = 'INVALID_RESPONSE';
 export type ChangesPullStatus =
   /** Сообщение применено и подтверждено, `sync_node_state` сдвинут. */
   | 'applied'
-  /** Регистраций нет — сообщение пустое, ack не отправлялся. */
+  /** Регистраций нет — сообщение пустое, ack не отправлялся; свежесть сущностей плана подтверждена (`freshnessEntities`). */
   | 'empty'
-  /** Применено (COMMIT), но ack не прошёл — следующий цикл повторит сообщение (идемпотентно, SYNC-031). */
+  /**
+   * Применено (COMMIT), но ack не прошёл — следующий цикл повторит сообщение (идемпотентно, SYNC-031); свежесть
+   * незатронутых сущностей плана не подтверждается (ревью F6).
+   */
   | 'applied_not_acked'
   /** Номер сообщения не больше применённого — данные не применялись (SYNC-032), отправлен только ack. */
   | 'stale'
@@ -98,6 +112,8 @@ export interface ChangesPullResult {
   readonly pausedUntil?: string;
   /** Причина паузы обмена (`paused_api`, = `sync_state.paused_reason`). */
   readonly pausedReason?: string;
+  /** Незатронутые сообщением сущности плана, свежесть которых подтвердил успешный цикл (`freshnessEntities`). */
+  readonly freshConfirmed?: readonly SyncEntity[];
 }
 
 /** Ключ advisory-lock цикла `onec.changes` (singleton на узел). */
@@ -109,6 +125,8 @@ const LOCK_KEY = 'onec.changes:pos';
  * транзакции → COMMIT → `POST /changes/ack {N+1}` → `sync_node_state.last_message_number = N+1`.
  * Любая ошибка страницы/применения → ROLLBACK, ack не отправляется; следующий цикл получит то же сообщение заново.
  * Прогоны `sync_runs` — по каждой затронутой сущности (`mode=incremental`, `cursor_to` = номер сообщения).
+ * Успешный цикл подтверждает свежесть незатронутых сущностей плана (`freshnessEntities`, POSAPI-T1-01): пустой —
+ * в своей транзакции, применённый — после успешного ack.
  */
 export class OnecChangesService {
   private readonly handlersByType = new Map<string, ChangeItemHandler>();
@@ -219,6 +237,8 @@ export class OnecChangesService {
     let items = 0;
     let errorCount: number;
     let foreign: { unhandled: number; deferred: number };
+    let fresh: SyncEntity[] = [];
+    let cycleAt: string | undefined;
     let committed = false;
     try {
       await client.query('BEGIN');
@@ -263,8 +283,17 @@ export class OnecChangesService {
         cursor = page.cursor ?? undefined;
       }
       if (items === 0) {
-        await client.query('ROLLBACK');
-        return { ...EMPTY_RESULT, status: 'empty', ...(messageNumber !== undefined ? { messageNumber } : {}), pages };
+        // Пустое сообщение — успешный обмен: изменений в 1С нет, реплики плана актуальны (POSAPI-T1-01).
+        fresh = await this.confirmFreshness(client, runIds);
+        await client.query('COMMIT');
+        committed = true;
+        return {
+          ...EMPTY_RESULT,
+          status: 'empty',
+          ...(messageNumber !== undefined ? { messageNumber } : {}),
+          pages,
+          ...(fresh.length > 0 ? { freshConfirmed: fresh } : {}),
+        };
       }
       await this.applier.flushDeferred(scope, state);
       // Цены: перечитка среза по затронутым видам цен в той же транзакции (05 §6.2, SYNC-015).
@@ -277,6 +306,10 @@ export class OnecChangesService {
       await flushErrors(scope);
       // Корзины: изменения цен/остатков — задачами в той же транзакции (05 SYNC-070, 06 §7.5; ревью F-trace-3).
       await publishCatalogChanges(this.options.catalogChanges, client, scope.catalogChanges);
+      // Незатронутые сущности плана: момент цикла (начало транзакции) — свежесть подтверждается только после ack
+      // (ниже): без ack сообщение будет выдано повторно, и непрерывные `applied_not_acked` не должны выглядеть
+      // как «всё актуально» (ревью F6).
+      cycleAt = (await client.query<{ at: string }>(`SELECT now()::text AS at`)).rows[0]?.at;
       await client.query('COMMIT');
       committed = true;
     } catch (e) {
@@ -301,6 +334,7 @@ export class OnecChangesService {
     );
     // Ack — ещё под сессионным lock: следующий цикл начнётся только после того, как узел сдвинут.
     const acked = await this.ack(messageNumber, since, opts.requestId);
+    if (acked && cycleAt !== undefined) fresh = await this.confirmFreshnessAfterAck(client, runIds, cycleAt);
     const result: ChangesPullResult = {
       status: acked ? 'applied' : 'applied_not_acked',
       messageNumber: messageNumber,
@@ -311,6 +345,7 @@ export class OnecChangesService {
       errors: errorCount,
       unhandled: foreign.unhandled,
       deferred: foreign.deferred,
+      ...(fresh.length > 0 ? { freshConfirmed: fresh } : {}),
     };
     this.log.info(
       {
@@ -322,6 +357,7 @@ export class OnecChangesService {
         deferred: foreign.deferred,
         acked,
         entities: [...runIds.keys()],
+        freshConfirmed: fresh.length,
       },
       'onec.changes.applied',
     );
@@ -362,6 +398,60 @@ export class OnecChangesService {
     }
     const message = e instanceof Error ? e.message : String(e);
     await this.finishRuns(runIds, counts, 'failed', messageNumber, message, nodeErrorCode(e));
+  }
+
+  /**
+   * Свежесть сущностей плана обмена после успешного цикла (`freshnessEntities`; 05 §7.2, §7.4 порог 1, SYNC-026;
+   * POSAPI-T1-01). Пустое сообщение — на соединении цикла **внутри** его транзакции (откат — свежесть не сдвинута),
+   * до COMMIT; применённое — после успешного ack (`confirmFreshnessAfterAck`). Момент — `at` (начало транзакции
+   * цикла, то есть до первого `/changes`: данные актуальны не позже него); без `at` — `now()` текущей транзакции.
+   * `last_success_at` не уходит назад (`GREATEST`): прогон той же сущности, завершившийся во время цикла, мог
+   * поставить более позднее время (ревью F5). Сущности, затронутые сообщением, пропускаются — их `sync_state` ведёт
+   * прогон (`last_success_run_id` и т. д.); с идущим прогоном (`queued`/`running`: full, reconcile, ручной) —
+   * тоже: состояние ведёт он (ревью F5). `last_success_at` сдвигается только у уже загруженных (не NULL): пустой
+   * план обмена не доказывает, что справочник вообще загружен (первичная загрузка — §7.1). `consecutive_errors` — 0:
+   * цикл обмена, сбои которого учитываются по этим сущностям (`recordFailure`), прошёл успешно (05 §7.6.1
+   * уточнение 2). Пауза — не трогается. `sync_runs` не пишутся: прогон — только по затронутой сущности (SYNC-011).
+   * Возвращает сущности со сдвинутой свежестью.
+   */
+  private async confirmFreshness(
+    client: pg.PoolClient,
+    touched: ReadonlyMap<SyncEntity, string>,
+    at?: string,
+  ): Promise<SyncEntity[]> {
+    const entities = (this.options.freshnessEntities ?? []).filter((e) => !touched.has(e));
+    if (entities.length === 0) return [];
+    const r = await client.query<{ entity: SyncEntity; fresh: boolean }>(
+      `UPDATE sync_state s
+          SET last_success_at = CASE WHEN s.last_success_at IS NULL THEN NULL
+                                     ELSE GREATEST(s.last_success_at, COALESCE($2::timestamptz, now())) END,
+              consecutive_errors = 0
+        WHERE s.entity::text = ANY($1::text[]) AND NOT s.paused
+          AND (s.last_success_at IS NOT NULL OR s.consecutive_errors > 0)
+          AND NOT EXISTS (SELECT 1 FROM sync_runs a WHERE a.entity = s.entity AND a.status IN ('queued','running'))
+        RETURNING s.entity::text AS entity, s.last_success_at IS NOT NULL AS fresh`,
+      [entities, at ?? null],
+    );
+    return r.rows.filter((x) => x.fresh).map((x) => x.entity);
+  }
+
+  /**
+   * Применённое сообщение: свежесть незатронутых сущностей — только после успешного ack (ревью F6). Без ack 1С
+   * выдаст то же сообщение снова; если ack не проходит цикл за циклом (`applied_not_acked`), эти сущности
+   * устаревают по порогу 1 и `overall` становится `degraded`, а не остаётся `ok`. Отдельный оператор вне транзакции
+   * применения (она уже зафиксирована); его сбой не делает цикл сбойным — данные применены и подтверждены в 1С.
+   */
+  private async confirmFreshnessAfterAck(
+    client: pg.PoolClient,
+    touched: ReadonlyMap<SyncEntity, string>,
+    at: string,
+  ): Promise<SyncEntity[]> {
+    try {
+      return await this.confirmFreshness(client, touched, at);
+    } catch (e) {
+      this.log.warn({ err: e }, 'onec.changes.freshness_failed: свежесть незатронутых сущностей не подтверждена');
+      return [];
+    }
   }
 
   /** `sync_node_state.last_message_number` узла `pos` (строка создаётся seed-ом 0001; при отсутствии — 0). */

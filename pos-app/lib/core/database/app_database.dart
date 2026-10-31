@@ -13,6 +13,7 @@
 // `app_meta.schema_version`.
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:logging/logging.dart';
 import 'package:optomstroy/core/database/daos/app_meta_dao.dart';
 import 'package:optomstroy/core/database/daos/catalog_dao.dart';
 import 'package:optomstroy/core/database/daos/favorites_dao.dart';
@@ -124,21 +125,59 @@ class AppDatabase extends _$AppDatabase {
 
   /// Имя файла БД пользователя.
   static String fileNameFor(String userId) {
-    if (!_uuid.hasMatch(userId)) throw ArgumentError.value(userId, 'userId', 'ожидается UUID');
+    if (!isUserId(userId)) throw ArgumentError.value(userId, 'userId', 'ожидается UUID');
     return 'pos_${userId.toLowerCase()}.db';
   }
 
+  /// Идентификатор пользователя годится для имени файла БД ([fileNameFor]) — UUID.
+  static bool isUserId(String userId) => _uuid.hasMatch(userId);
+
   /// Исполнитель для файла пользователя в `getApplicationSupportDirectory()`
-  /// (фоновый изолят drift_flutter, D-04).
-  static QueryExecutor openUserDatabase(String userId) {
+  /// (фоновый изолят drift_flutter, D-04). В браузере (веб-демо, ADR-113) — [webOptions]: без них `driftDatabase`
+  /// бросает `ArgumentError`, и БД пользователя не открывалась бы. [open] — подмена в тестах.
+  static QueryExecutor openUserDatabase(String userId, {DriftDatabaseOpener open = driftDatabase}) {
     final fileName = fileNameFor(userId);
-    return driftDatabase(
+    return open(
       name: fileName,
       native: DriftNativeOptions(
         databasePath: () async => p.join((await getApplicationSupportDirectory()).path, fileName),
       ),
+      web: webOptions(),
     );
   }
+
+  /// Файл модуля SQLite WebAssembly рядом с `index.html` сайта (на native не используется).
+  static const String webSqlite3Wasm = 'sqlite3.wasm';
+
+  /// Скомпилированный воркер drift рядом с `index.html` сайта (на native не используется).
+  static const String webDriftWorker = 'drift_worker.js';
+
+  /// Опции drift для сборки в браузере: адреса относительно `<base href>` сайта; drift сам выбирает хранилище
+  /// (OPFS или IndexedDB) по возможностям браузера — выбор пишется в журнал. На native опции игнорируются.
+  static DriftWebOptions webOptions() => DriftWebOptions(
+    sqlite3Wasm: Uri.parse(webSqlite3Wasm),
+    driftWorker: Uri.parse(webDriftWorker),
+    onResult: logWebResult,
+  );
+
+  /// Журнал выбора реализации drift в браузере (вместо `print` drift_flutter по умолчанию). Хранилище без
+  /// гарантии сохранности (`unsafeIndexedDb`, `inMemory` — данные пропадут после перезагрузки) — предупреждение.
+  static void logWebResult(WasmDatabaseResult result) {
+    final WasmStorageImplementation chosen = result.chosenImplementation;
+    final String missing = result.missingFeatures.map((MissingBrowserFeature f) => f.name).join(', ');
+    final String text = 'drift web: ${chosen.name}${missing.isEmpty ? '' : ' (нет: $missing)'}';
+    if (chosen == WasmStorageImplementation.unsafeIndexedDb || chosen == WasmStorageImplementation.inMemory) {
+      _log.warning(text);
+    } else {
+      _log.info(text);
+    }
+  }
 }
+
+/// Сигнатура `driftDatabase` (drift_flutter) — подмена в тестах [AppDatabase.openUserDatabase].
+typedef DriftDatabaseOpener =
+    QueryExecutor Function({required String name, DriftWebOptions? web, DriftNativeOptions? native});
+
+final Logger _log = Logger('database');
 
 final RegExp _uuid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');

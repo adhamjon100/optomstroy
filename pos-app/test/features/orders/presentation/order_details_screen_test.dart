@@ -1,6 +1,8 @@
 // SCR-24 «Заказ: детали и статус» (агент F-fe-orders; 02 SCR-24.13 AC-UI-24-001…017; 13 RM-F-004 (клиентская часть),
 // RM-F-006, RM-F-015): права действий по ролям, отмена / запрос отмены (одна операция, ключ идемпотентности),
 // документы (доступность по статусу), ручная привязка к документу 1С (step-up), режим клиента, «Обновить» из 1С.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:optomstroy/core/connectivity/connectivity_watcher.dart';
@@ -13,6 +15,7 @@ import 'package:optomstroy/features/orders/domain/entities/order.dart';
 import 'package:optomstroy/features/orders/domain/entities/payment.dart';
 import 'package:optomstroy/features/orders/presentation/orders_format.dart';
 import 'package:optomstroy/features/orders/presentation/providers/orders_ports.dart';
+import 'package:optomstroy/features/orders/presentation/providers/printing_document_printer.dart';
 import 'package:optomstroy/features/orders/presentation/screens/order_details_screen.dart';
 
 import '../../../support/f_fakes.dart';
@@ -512,5 +515,73 @@ void main() {
     await _open(t, details(order(status: OrderStatus.submitFailed)), role: RoleCode.owner);
     expect(find.byKey(const ValueKey<String>('banner-rejected')), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('order-open-restored-cart')), findsNothing);
+  });
+
+  // 02 SCR-24 «Загрузка»: при возврате на экран (из SCR-38/39/22) — повторная загрузка. SCR-22 — дочерний маршрут
+  // SCR-24 (`/orders/{id}/created`): экран строится под ним при создании заказа и становится верхним без пересоздания
+  // (uiA-02 — после «Оплата получена» показывался снимок до номера 1С и оплаты).
+  testWidgets('возврат на экран из маршрута поверх (SCR-22) — повторная загрузка заказа', (WidgetTester t) async {
+    int gets = 0;
+    OrderDetails current = details(order(status: OrderStatus.submitting, onecNumber: null));
+    final FakeOrdersRepository repo = FakeOrdersRepository()
+      ..onGet = (String id, bool refresh) async {
+        gets++;
+        return Success<OrderDetails>(current);
+      };
+    await OrdersHarness(orders: repo, role: RoleCode.seller).pump(t, const OrderDetailsScreen(orderId: 'o1'));
+    expect(gets, 1);
+    expect(find.textContaining('ОС00-004605'), findsNothing);
+
+    final NavigatorState nav = t.state<NavigatorState>(find.byType(Navigator).first);
+    unawaited(nav.push<void>(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('SCR-22')))));
+    await t.pumpAndSettle();
+    expect(gets, 1, reason: 'под другим маршрутом заказ не перечитывается');
+
+    current = details(order(onecNumber: 'ОС00-004605', isPaid: true, paidTyiyn: 1600750));
+    nav.pop();
+    await t.pumpAndSettle();
+    expect(gets, 2);
+    expect(find.textContaining('ОС00-004605'), findsWidgets);
+  });
+
+  // Ревью RP-01: диалог, меню или лист поверх SCR-24 (маршрут без страницы) экран не закрывает — их закрытие не
+  // «возврат на экран», заказ не перечитывается.
+  testWidgets('диалог поверх SCR-24 закрыт — заказ не перечитывается', (WidgetTester t) async {
+    int gets = 0;
+    final FakeOrdersRepository repo = FakeOrdersRepository()
+      ..onGet = (String id, bool refresh) async {
+        gets++;
+        return Success<OrderDetails>(details(order()));
+      };
+    await OrdersHarness(orders: repo, role: RoleCode.seller).pump(t, const OrderDetailsScreen(orderId: 'o1'));
+    expect(gets, 1);
+    unawaited(
+      showDialog<void>(
+        context: t.element(find.byType(OrderDetailsScreen)),
+        builder: (_) => const AlertDialog(content: Text('Диалог поверх')),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(find.text('Диалог поверх'), findsOneWidget);
+    Navigator.of(t.element(find.text('Диалог поверх'))).pop();
+    await t.pumpAndSettle();
+    expect(find.text('Диалог поверх'), findsNothing);
+    expect(gets, 1);
+  });
+
+  // 03 §9.68 `DocumentPreview`: шапка с названием и «Закрыть» (uiA-13 — у панели `PdfPreview` своей кнопки нет).
+  testWidgets('предпросмотр PDF: шапка с названием документа и кнопкой «Закрыть»', (WidgetTester t) async {
+    int closed = 0;
+    await OrdersHarness(orders: FakeOrdersRepository()).pump(
+      t,
+      Scaffold(
+        body: DocumentPreviewHeader(title: 'receipt-POS-2026-000123.pdf', onClose: () => closed++),
+      ),
+    );
+    expect(find.text('receipt-POS-2026-000123.pdf'), findsOneWidget);
+    expect(find.byTooltip('Закрыть'), findsOneWidget);
+    await t.tap(find.byKey(DocumentPreviewHeader.closeKey));
+    await t.pump();
+    expect(closed, 1);
   });
 }

@@ -425,7 +425,7 @@ class AuthFlowNotifier extends Notifier<AuthFlowState> {
     switch (outcome) {
       case VerifyAuthenticated():
         if (outcome.mustSetPin) {
-          session.pinSetupRequired(outcome.profile);
+          session.pinSetupRequired(outcome.profile, viaInvitation: outcome.viaInvitation);
         } else {
           session.signedIn(outcome.profile);
         }

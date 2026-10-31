@@ -54,8 +54,8 @@ RouteFeatures routeFeaturesFrom(PublicFeatureFlags flags) => RouteFeatures(
   debtPaymentsFromPos: flags.debtPaymentsFromPos,
 );
 
-/// Глобальный redirect: authGuard (сессия), затем roleGuard (режим и роль, флаг самообслуживания клиента, флаги
-/// функций этапа G).
+/// Глобальный redirect: authGuard (сессия; G-5 — блокировка холодного старта [lock]), затем roleGuard (режим и роль,
+/// флаг самообслуживания клиента, флаги функций этапа G).
 String? appRedirect({
   required SessionStatus status,
   required Uri uri,
@@ -63,10 +63,11 @@ String? appRedirect({
   required bool customerSelfService,
   RoleCode? role,
   SessionEndReason? endReason,
+  SessionLockReason? lock,
   RouteFeatures features = RouteFeatures.defaults,
 }) {
   final home = homeLocationFor(mode);
-  final auth = authRedirect(status: status, uri: uri, homeLocation: home, endReason: endReason);
+  final auth = authRedirect(status: status, uri: uri, homeLocation: home, endReason: endReason, lock: lock);
   if (auth != null || status != SessionStatus.authenticated || isPublicPath(uri.path)) return auth;
   return roleRedirect(
     mode: mode,
@@ -86,11 +87,12 @@ RoleGuardNotice? appRedirectNotice({
   required AppMode mode,
   required bool customerSelfService,
   RoleCode? role,
+  SessionLockReason? lock,
   RouteFeatures features = RouteFeatures.defaults,
 }) {
   final home = homeLocationFor(mode);
   if (status != SessionStatus.authenticated || isPublicPath(uri.path)) return null;
-  if (authRedirect(status: status, uri: uri, homeLocation: home) != null) return null;
+  if (authRedirect(status: status, uri: uri, homeLocation: home, lock: lock) != null) return null;
   return roleRedirectNotice(
     mode: mode,
     uri: uri,
@@ -137,6 +139,7 @@ typedef GuardInputs = ({
   bool customerSelfService,
   RoleCode? role,
   SessionEndReason? endReason,
+  SessionLockReason? lock,
   bool cameraSupported,
 });
 
@@ -155,6 +158,7 @@ String? guardRedirect(
     customerSelfService: g.customerSelfService,
     role: g.role,
     endReason: g.endReason,
+    lock: g.lock,
     features: features,
   );
   if (target == null) return null;
@@ -164,6 +168,7 @@ String? guardRedirect(
     mode: g.mode,
     customerSelfService: g.customerSelfService,
     role: g.role,
+    lock: g.lock,
     features: features,
   );
   if (notice != null) _showGuardSnackbar(context, (l10n) => roleGuardNoticeText(l10n, notice));
@@ -191,6 +196,8 @@ GoRouter appRouter(Ref ref) {
   final refresh = ValueNotifier<int>(0);
   ref
     ..listen(sessionStatusProvider, (_, _) => refresh.value++)
+    // G-5: снятие/появление блокировки холодного старта пересчитывает redirect (SCR-08 `cold` ↔ рабочий маршрут).
+    ..listen(sessionLockProvider.select((l) => l == SessionLockReason.coldStart), (_, _) => refresh.value++)
     ..listen(appModeProvider, (_, _) => refresh.value++)
     ..listen(authSessionProvider.select((s) => s.profile.primaryRole), (_, _) => refresh.value++)
     ..listen(customerSelfServiceEnabledProvider, (_, _) => refresh.value++)
@@ -202,6 +209,7 @@ GoRouter appRouter(Ref ref) {
     customerSelfService: ref.read(customerSelfServiceEnabledProvider),
     role: ref.read(authSessionProvider).profile.primaryRole,
     endReason: ref.read(sessionEndReasonProvider),
+    lock: ref.read(sessionLockProvider),
     cameraSupported: ref.read(cameraScannerSupportedProvider),
   );
 

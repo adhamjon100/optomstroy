@@ -1,9 +1,12 @@
 // SCR-25 «Список заказов» (агент F-fe-orders; 02 SCR-25.13 AC-UI-25-001…012; 13 RM-F-006, RM-F-013 п. 5 — чипы
 // `statusCounts`; RM-F-015 — «Мои заказы» клиента): фильтры и чипы со счётчиками, права «Мои / Все», «Оплачено»,
 // курсорная подгрузка, пустые состояния, период в границах суток Бишкека.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/error/failure.dart';
 import 'package:optomstroy/core/error/result.dart';
@@ -313,4 +316,126 @@ void main() {
     expect(_queries(repo), hasLength(2));
     expect(_queries(repo).last.cursor, isNull);
   });
+
+  // 02 SCR-25.6: при возврате на экран — тихое обновление первой страницы. Экран живёт в ветке оболочки и под SCR-24 /
+  // SCR-22 (дочерние маршруты `/orders/…`); «Заказы» из меню после оплаты показывали снимок до неё (uiA-03).
+  testWidgets('возврат на экран из маршрута поверх — тихое обновление первой страницы', (WidgetTester t) async {
+    await OrdersHarness(orders: repo).pump(t, const OrdersScreen());
+    expect(_queries(repo), hasLength(1));
+    final NavigatorState nav = t.state<NavigatorState>(find.byType(Navigator).first);
+    unawaited(nav.push<void>(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('SCR-24')))));
+    await t.pumpAndSettle();
+    expect(_queries(repo), hasLength(1), reason: 'под другим маршрутом список не перечитывается');
+    nav.pop();
+    await t.pumpAndSettle();
+    expect(_queries(repo), hasLength(2));
+    expect(_queries(repo).last.cursor, isNull);
+    expect(find.byKey(const ValueKey<String>('order-row-o1')), findsOneWidget);
+  });
+
+  // Ревью RP-01: меню печати строки, меню периода и лист фильтров — маршруты без страницы поверх SCR-25 в том же
+  // навигаторе (`useRootNavigator: false`); их закрытие — не «возврат на экран» (02 SCR-25.6), лишнего GET /orders нет.
+  testWidgets('expanded: меню печати строки (с печатью) и меню периода закрыты — список не перечитывается', (
+    WidgetTester t,
+  ) async {
+    repo.onDocument = (String id, OrderDocumentKind kind, PrintPaper paper, bool copy) async =>
+        const Success<OrderDocumentFile>(OrderDocumentFile(bytes: <int>[1, 2, 3], fileName: 'invoice-POS.pdf'));
+    final OrdersHarness h = OrdersHarness(orders: repo);
+    await h.pump(t, const OrdersScreen());
+    expect(_queries(repo), hasLength(1));
+    await t.tap(find.byKey(const ValueKey<String>('order-print-o1')));
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const ValueKey<String>('row-print-invoice')));
+    await t.pumpAndSettle();
+    expect(h.printer.calls, <String>['print:invoice-POS.pdf']);
+    expect(_queries(repo), hasLength(1), reason: 'закрытие меню печати — не возврат на экран');
+    await t.tap(find.byKey(const ValueKey<String>('orders-period')));
+    await t.pumpAndSettle();
+    expect(find.text('Сегодня'), findsWidgets);
+    await t.tapAt(const Offset(4, 4));
+    await t.pumpAndSettle();
+    expect(_queries(repo), hasLength(1), reason: 'закрытие меню периода без выбора — не возврат на экран');
+  });
+
+  testWidgets('compact: лист фильтров открыт и закрыт без изменений — список не перечитывается', (
+    WidgetTester t,
+  ) async {
+    await OrdersHarness(orders: repo).pump(t, const OrdersScreen(), size: kWindows['compact']!);
+    expect(_queries(repo), hasLength(1));
+    await t.tap(find.byKey(const ValueKey<String>('orders-filters')));
+    await t.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('filter-method-cash')), findsOneWidget);
+    await t.tapAt(const Offset(4, 4));
+    await t.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('filter-method-cash')), findsNothing);
+    expect(_queries(repo), hasLength(1));
+  });
+
+  // Как в приложении (go_router): SCR-25 — страница навигатора. Меню поверх — не уход; страница поверх (непрозрачная
+  // SCR-24 и прозрачная, как модальный SCR-21 на medium+) — уход, её закрытие — возврат с обновлением.
+  testWidgets('страница навигатора: меню поверх — не уход; страница поверх (и прозрачная) — возврат с обновлением', (
+    WidgetTester t,
+  ) async {
+    final GlobalKey<_PagedHostState> host = GlobalKey<_PagedHostState>();
+    await OrdersHarness(orders: repo).pump(t, _PagedHost(key: host, child: const OrdersScreen()));
+    expect(_queries(repo), hasLength(1));
+    await t.tap(find.byKey(const ValueKey<String>('orders-period')));
+    await t.pumpAndSettle();
+    await t.tapAt(const Offset(4, 4));
+    await t.pumpAndSettle();
+    expect(_queries(repo), hasLength(1), reason: 'меню без страницы — не уход с экрана');
+
+    host.currentState!.push(
+      const MaterialPage<void>(
+        key: ValueKey<String>('scr-24'),
+        child: Scaffold(body: Text('SCR-24')),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(_queries(repo), hasLength(1));
+    host.currentState!.pop();
+    await t.pumpAndSettle();
+    expect(_queries(repo), hasLength(2));
+
+    host.currentState!.push(
+      CustomTransitionPage<void>(
+        key: const ValueKey<String>('scr-21'),
+        opaque: false,
+        transitionsBuilder: (_, _, _, Widget child) => child,
+        child: const Center(child: Text('SCR-21')),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(_queries(repo), hasLength(2), reason: 'под прозрачной страницей список не перечитывается');
+    host.currentState!.pop();
+    await t.pumpAndSettle();
+    expect(_queries(repo), hasLength(3));
+  });
+}
+
+/// Навигатор со страницами (как ветка оболочки go_router): SCR-25 — нижняя страница, сверху — [push]/[pop].
+class _PagedHost extends StatefulWidget {
+  const _PagedHost({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  State<_PagedHost> createState() => _PagedHostState();
+}
+
+class _PagedHostState extends State<_PagedHost> {
+  final List<Page<void>> _above = <Page<void>>[];
+
+  void push(Page<void> page) => setState(() => _above.add(page));
+
+  void pop() => setState(_above.removeLast);
+
+  @override
+  Widget build(BuildContext context) => Navigator(
+    pages: <Page<void>>[
+      MaterialPage<void>(key: const ValueKey<String>('scr-25'), child: widget.child),
+      ..._above,
+    ],
+    onDidRemovePage: (Page<Object?> page) {},
+  );
 }

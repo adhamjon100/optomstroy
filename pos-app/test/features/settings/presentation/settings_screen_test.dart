@@ -169,6 +169,27 @@ void main() {
       expect(find.byKey(ScannerServerSettingsKeys.modeHid), findsOneWidget);
       expect(find.byKey(ScannerServerSettingsKeys.modeCamera), findsNothing);
     });
+
+    testWidgets('браузер (веб-демо): режим «Камера» скрыт и на Android — камеры-сканера там нет', (
+      WidgetTester tester,
+    ) async {
+      await pumpSettings(
+        tester,
+        const Scaffold(body: ScannerServerSettings(platform: TargetPlatform.android, isWeb: true)),
+        overrides(),
+      );
+      expect(find.byKey(ScannerServerSettingsKeys.modeHid), findsOneWidget);
+      expect(find.byKey(ScannerServerSettingsKeys.modeCamera), findsNothing);
+    });
+
+    testWidgets('Android вне браузера: режим «Камера» есть', (WidgetTester tester) async {
+      await pumpSettings(
+        tester,
+        const Scaffold(body: ScannerServerSettings(platform: TargetPlatform.android, isWeb: false)),
+        overrides(),
+      );
+      expect(find.byKey(ScannerServerSettingsKeys.modeCamera), findsOneWidget);
+    });
   });
 
   group('Устройства и сессии (UI-42-013, 015…017)', () {

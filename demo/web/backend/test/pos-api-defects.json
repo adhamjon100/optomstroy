@@ -1,0 +1,25 @@
+{
+  "$comment": "Дефекты pos-api, найденные тестами веб-демо (WP-T1, fix round 1), которые воспроизводятся и на бандле, и на эталоне (тот же pos-api в Node без браузерных шимов), то есть это не артефакт шимов. В демо они не скрываются: исходники pos-api не меняются, подмены сборкой не делаются. Выводятся в demo/web/.build/contract-report.md (test/lib/report.mjs). Решение — владельцу pos-api (BE) и владельцу 05.",
+  "version": 1,
+  "items": [
+    {
+      "id": "POSAPI-T1-01",
+      "title": "GET /sync/status: overall=degraded через час после последнего изменения каждой сущности плана обмена (ONEC_MODE=extension)",
+      "symptom": "Сущности плана обмена (categories, products, variants, attributes, units, barcodes, warehouses, sales_history, discounts, return_docs) становятся isStale через 60 мин после своего последнего изменения в «1С», даже если цикл onec.changes (по умолчанию каждые 5 мин, ONEC_CHANGES_DEFAULT_MINUTES) успешно опрашивает «1С» и изменений нет. overall — degraded. На сервере то же: ночью и в выходные без правок справочников в «1С» статус синхронизации всегда «degraded».",
+      "evidence": "probe .tmp/web_demo/fix1/probe-staleness.mjs (тёплый старт со сдвигом часов): бандл и эталон одинаково — +0,75 ч ok; +1,5 ч degraded, 10 сущностей «возраст 91 мин, порог 60 мин»; эталон +72 ч degraded. critic C4.3b и C4.10b (+3 и +10 дней) падают по той же причине. Fix round 2 (бандл 9a1be25b…, тот же HEAD fba53db): повтор probe .tmp/web_demo/fix2/probe-staleness.mjs — то же на бандле и эталоне (+0,75 ч ok за 2,3 с; +1,5 ч degraded, 10 сущностей «возраст 91 мин, порог 60 мин»; эталон +72 ч degraded); в run-all это единственные провалы (summary.json: knownPosApiDefect, demoFailures 0).",
+      "cause": "OnecChangesService.pullLocked при пустом пакете (items === 0) делает ROLLBACK и возвращает status 'empty' без прогонов — sync_state.last_success_at сущностей плана не сдвигается. Строки sync_state этих сущностей появляются при первой загрузке или первом изменении со значениями по умолчанию реестра прогонов (schedule_cron = SYNC_MASTER_CRON, max_age_warning_sec = 3600), а SyncStatusService.isStale = schedule_cron && ageSec > max_age_warning_sec.",
+      "files": [
+        "pos-api/src/sync/apply/onec-changes.service.ts (pullLocked: items === 0 → 'empty')",
+        "pos-api/src/sync/api/sync-status.service.ts (isStale)",
+        "pos-api/src/jobs/sync/sync-worker.wiring.ts (stateDefaults: maxAgeWarningSec 3600)",
+        "pos-api/src/jobs/worker-runtime.ts (stateDefaults реестра)"
+      ],
+      "fix_direction": "Владельцу pos-api/05: свежесть сущностей плана обмена — от последнего успешного цикла onec.changes узла (в том числе пустого), а не от последнего изменения сущности; либо успешный пустой цикл сдвигает last_success_at всех сущностей плана. В демо не меняется (эталон показывает то же).",
+      "tests": [],
+      "tests_history": ["critic C4.3b", "critic C4.10b"],
+      "tests_note": "После исправления run-all.mjs не считает провал C4.3b/C4.10b известным дефектом (сопоставление идёт по полю tests): такой провал — провал демо (код 1). Ожидается, что обе проверки проходят.",
+      "status": "исправлен",
+      "fix": "2026-10-30 (fix:posapi): успешный цикл onec.changes, в том числе пустой, в своей транзакции ставит sync_state.last_success_at = now() и consecutive_errors = 0 незатронутым сущностям плана обмена режима extension (EXTENSION_PLAN_ENTITIES; только уже загруженным и не на паузе; новых sync_runs нет), сбойный цикл свежесть не сдвигает — pos-api/src/sync/apply/onec-changes.service.ts (freshnessEntities, confirmFreshness), src/jobs/sync/sync-worker.wiring.ts, src/sync/scheduler/sync-queues.ts; тест pos-api/test/sync-apply/onec-changes-freshness.spec.ts; эталон из scratch-сборки (.tmp/web_demo/fixposapi): +1,5 ч, +72 ч, +240 ч — overall=ok за 4,3 с. 2026-10-30 (review:fix): применённое сообщение подтверждает свежесть незатронутых сущностей только после успешного ack (applied_not_acked и stale — нет), last_success_at не уходит назад (GREATEST), сущности с прогоном queued/running пропускаются; в режиме extension планировщик ставит сущностям плана schedule_cron/max_age_warning_sec от расписания onec.changes (2 его периода). Бандл пересобран (buildId 232b127e2352d11c, posApiDiffSha256 c8f39385…)."
+    }
+  ]
+}

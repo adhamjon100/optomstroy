@@ -1,12 +1,15 @@
 {
-    "name": "optomstroy",
-    "short_name": "optomstroy",
+    "name": "Оптомстрой POS (демо)",
+    "short_name": "Оптомстрой",
+    "description": "Оптомстрой POS — демо-версия на тестовых данных",
+    "lang": "ru",
+    "dir": "ltr",
     "start_url": ".",
+    "scope": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "orientation": "any",
+    "background_color": "#F1F6FC",
+    "theme_color": "#D9380F",
     "prefer_related_applications": false,
     "icons": [
         {

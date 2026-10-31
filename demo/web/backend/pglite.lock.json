@@ -1,0 +1,119 @@
+{
+  "$comment": "PGlite для браузерного бэкенда веб-демо: версия и sha256 копируемых файлов (demo/web/backend/lib/pglite.mjs). Источник по умолчанию — копия в глобальном netlify-cli (PGLITE_DIR). Обновлять: node demo/web/backend/build-backend.mjs --update-lock.",
+  "package": "@electric-sql/pglite",
+  "version": "0.3.16",
+  "license": "Apache-2.0",
+  "licenseNote": "Apache-2.0 или PostgreSQL License на выбор (README PGlite); изменения исходников Postgres — PostgreSQL License",
+  "files": {
+    "LICENSE": {
+      "bytes": 10173,
+      "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+    },
+    "dist/chunk-3WWIVTCY.js": {
+      "bytes": 20270,
+      "sha256": "144a34c1e07ac2ed140606b6251cba8c1526d050d1c951c91bb38909e30d17b2"
+    },
+    "dist/chunk-F2DQ4FIK.js": {
+      "bytes": 4209,
+      "sha256": "659d29def262133c5ae937b73d3ba8fbd9a0c8749634a03d416662a3df223deb"
+    },
+    "dist/chunk-F4GETNPB.js": {
+      "bytes": 998,
+      "sha256": "5ab11fd9fd74b259484f42a7855cd9569a5fe6ee1cf3c032238ac43a59511d97"
+    },
+    "dist/chunk-QY3QWFKW.js": {
+      "bytes": 1335,
+      "sha256": "bff6d3144dd6ea2689b00d9d0eea1ea2267b9cc14505fb9107b6194c1832bdea"
+    },
+    "dist/chunk-VBDAOXYI.js": {
+      "bytes": 14926,
+      "sha256": "484585558e9a3f852712b744f7c2c7601e339c7431b8e4f862c91ed59003e640"
+    },
+    "dist/contrib/pg_trgm.js": {
+      "bytes": 207,
+      "sha256": "fc5618e3a8633954902dedd9b4fe73c1aafe54c4b3745719ecc7873f35405384"
+    },
+    "dist/contrib/pgcrypto.js": {
+      "bytes": 211,
+      "sha256": "3fb9b5f4c7eb15e29b3af759ffaa4e91c0c1a1d9707893cfb70a9255e0157a3b"
+    },
+    "dist/contrib/unaccent.js": {
+      "bytes": 211,
+      "sha256": "525521d993dadca106c99e731e07c3baa10cce0cf7c73d834b0f65032c449111"
+    },
+    "dist/fs/opfs-ahp.js": {
+      "bytes": 10083,
+      "sha256": "4a475a25a3c89f1e8ba041f1cda2c8593808685e4829564a04efd9c7798bfd76"
+    },
+    "dist/index.js": {
+      "bytes": 389891,
+      "sha256": "a68b156366361ff971db4776f8ef3bb1904ca91b4f2a0c1a378fec319ad9208c"
+    },
+    "dist/pg_trgm.tar.gz": {
+      "bytes": 15422,
+      "sha256": "33148433cddac8c02527aaeb43b746bc1eda23ac1a3bf74ce68401fb135df1e0"
+    },
+    "dist/pgcrypto.tar.gz": {
+      "bytes": 1147917,
+      "sha256": "46637e516b595f29d5b0284a7000055e1547cd47f25a33fc34c4b3defe665bc1"
+    },
+    "dist/pglite.data": {
+      "bytes": 4939170,
+      "sha256": "b73704a186adbdf29c4ce9acae7bd9379b5a17efbe94e96f66ccb20b5e8b0bc9"
+    },
+    "dist/pglite.wasm": {
+      "bytes": 8867505,
+      "sha256": "3c5934b6931b36c3581a2e1cf1ac091e23d5fbdc5cf57e4011e4a19dda64bfa8"
+    },
+    "dist/unaccent.tar.gz": {
+      "bytes": 9545,
+      "sha256": "0608a192e27e54ad31cd30aaa9e5577d817e76c1b1be4a4cead8d24203316a68"
+    }
+  },
+  "notCopied": {
+    "dist/fs/nodefs.js": "динамический import только для Node (не нужен в браузере)"
+  },
+  "shippedComment": "shipped — sha256 опубликованных копий .js без завершающей строки //# sourceMappingURL (review fixes); files — sha256 оригиналов пакета",
+  "shipped": {
+    "dist/chunk-3WWIVTCY.js": {
+      "bytes": 20228,
+      "sha256": "593f359307af1a86266f7dc76f177d2ef9b7312aaf65a69303e6ff65d43f53f3"
+    },
+    "dist/chunk-F2DQ4FIK.js": {
+      "bytes": 4167,
+      "sha256": "318082de1835a5dd378b83737f6f1e684c61e7862b2de98344b685ceb58ea5b0"
+    },
+    "dist/chunk-F4GETNPB.js": {
+      "bytes": 956,
+      "sha256": "ac6c21b027d5b3b6ed71fc21f957941bc1b02a56bdba179ee142bcf9eea0e3aa"
+    },
+    "dist/chunk-QY3QWFKW.js": {
+      "bytes": 1293,
+      "sha256": "779ba283966fa22c3e91cbb56393783af2cf17d87f7742748633de66c499f968"
+    },
+    "dist/chunk-VBDAOXYI.js": {
+      "bytes": 14884,
+      "sha256": "5fa98abb2b2f35105791e6e510b2721012a47514c909235e1f425cd90705803a"
+    },
+    "dist/contrib/pg_trgm.js": {
+      "bytes": 172,
+      "sha256": "bb01bb03468ba55cc0b50b95275293fe99020fe6d308546a8b01087a8c643c20"
+    },
+    "dist/contrib/pgcrypto.js": {
+      "bytes": 175,
+      "sha256": "05298d923d2210c68f34b750f2159fc7a5297298546c82cfb58cba8c4c482df9"
+    },
+    "dist/contrib/unaccent.js": {
+      "bytes": 175,
+      "sha256": "4390ade402213aaace24d7b8b7a3316714f3d72d3268ee0c99dfa4c9916104a0"
+    },
+    "dist/fs/opfs-ahp.js": {
+      "bytes": 10047,
+      "sha256": "649c7a85dd46a175e0715214b61af61e169ddca54658b42dd65806579ebccee9"
+    },
+    "dist/index.js": {
+      "bytes": 389858,
+      "sha256": "3958bd97e221377e7f8fffacd0650cc58090ab56d6e9c4e65b6c8469d6430f54"
+    }
+  }
+}

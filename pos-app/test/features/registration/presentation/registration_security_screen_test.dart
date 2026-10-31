@@ -13,6 +13,9 @@ import 'package:optomstroy/features/registration/presentation/widgets/step_up_pi
 
 import '../support/registration_fakes.dart';
 
+const String _invitedSubtitle =
+    'Вы вошли по приглашению администратора. PIN нужен для разблокировки и подтверждения операций';
+
 bool _enabled(WidgetTester tester) =>
     tester.widget<AppButton>(find.byKey(RegistrationSecurityScreen.completeKey)).onPressed != null;
 
@@ -77,6 +80,32 @@ void main() {
       await _pin(tester, '483921');
       expect(find.text('PIN-коды не совпадают'), findsOneWidget);
       expect(find.text('Придумайте PIN-код'), findsOneWidget, reason: 'очистка обоих, фокус в первое поле');
+      await _finish(tester);
+    });
+
+    testWidgets('по приглашению (roleSource=invitation): подзаголовок «Вы вошли по приглашению…» (02 SCR-02.6)', (
+      tester,
+    ) async {
+      final h = RegistrationHarness(withTicket: false);
+      await h.pump(
+        tester,
+        const RegistrationSecurityScreen(audience: RegistrationAudience.staffFirstLogin, staffViaInvitation: true),
+      );
+      expect(find.text(_invitedSubtitle), findsOneWidget);
+      expect(find.textContaining('Оператор (владелец записей)'), findsOneWidget, reason: 'текст Шаблона 1 (11 §10.3)');
+      expect(find.textContaining('Шаблон'), findsNothing, reason: 'не служебная отсылка «Шаблон 1 (11 §10.3)»');
+      await _finish(tester);
+    });
+
+    testWidgets('без приглашения (PIN не задан, например после сброса): подзаголовка о приглашении нет (Q-323)', (
+      tester,
+    ) async {
+      final h = RegistrationHarness(withTicket: false);
+      await h.pump(tester, const RegistrationSecurityScreen(audience: RegistrationAudience.staffFirstLogin));
+      expect(find.text('Задайте PIN-код для работы'), findsOneWidget);
+      expect(find.text(_invitedSubtitle), findsNothing);
+      expect(find.textContaining('приглашению'), findsNothing);
+      expect(find.byKey(RegistrationSecurityScreen.pdAckKey), findsOneWidget, reason: 'информирование ПДн остаётся');
       await _finish(tester);
     });
   });

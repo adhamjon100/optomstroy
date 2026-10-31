@@ -1,38 +1,67 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru" translate="no">
 <head>
   <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
+    Страница веб-сборки «Оптомстрой POS» (Web вне R1 — ADR-039; только веб-демо на тестовых данных, ADR-113).
+    Адрес в <base href> подставляет `flutter build web --base-href` (сайт демо — корень «/»).
+    Веб-демо собирает свою страницу из demo/web/site-src/index.html; эта — страница сборки по умолчанию.
+    Запуск движка и скрытие экрана загрузки #loading по первому кадру — web/flutter_bootstrap.js.
   -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Оптомстрой POS — демо-версия на тестовых данных">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="google" content="notranslate">
+  <meta name="theme-color" content="#D9380F">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="optomstroy">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Оптомстрой">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>optomstroy</title>
+  <title>Оптомстрой POS (демо)</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* Цвета — contracts/design-tokens/tokens.json: background, primary, textPrimary, surfaceVariant. */
+    html, body { margin: 0; height: 100%; background: #F1F6FC; }
+    #loading {
+      position: fixed; inset: 0; z-index: 10;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+      background: #F1F6FC; color: #0E1456;
+      font: 500 16px/1.4 Inter, "Segoe UI", Roboto, Arial, sans-serif;
+      transition: opacity 200ms ease-out;
+    }
+    #loading.is-done { opacity: 0; pointer-events: none; }
+    #loading img { width: 96px; height: 96px; }
+    #loading .spinner {
+      width: 32px; height: 32px; border-radius: 50%;
+      border: 4px solid #EAF1FB; border-top-color: #D9380F;
+      animation: pos-spin 0.9s linear infinite;
+    }
+    #loading .error { max-width: 420px; padding: 0 16px; text-align: center; color: #0E1456; }
+    @keyframes pos-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { #loading .spinner { animation: none; } }
+  </style>
 </head>
 <body>
+  <div id="loading" role="status" aria-live="polite">
+    <img src="icons/Icon-192.png" alt="">
+    <div class="spinner" aria-hidden="true"></div>
+    <div class="text">Оптомстрой POS · загрузка…</div>
+  </div>
+  <noscript>
+    <p style="font: 16px/1.4 sans-serif; color: #0E1456; text-align: center; padding: 24px;">
+      Для работы «Оптомстрой POS» включите JavaScript в браузере.
+    </p>
+  </noscript>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

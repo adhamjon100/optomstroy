@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -41,17 +42,40 @@ void _applyAppDataDirectory() {
 }
 
 /// Переопределения ядра, которым нужен асинхронный старт.
+Future<List<Override>> _coreOverrides() => coreOverrides(() => ClientMeta.load(FlutterSecureStorageAdapter()));
+
+/// Метаданные клиента [load] → `clientMetaProvider`.
 ///
 /// Ошибка secure storage или package_info не роняет запуск: без `clientMetaProvider`
 /// приложение доходит до Splash/«нет сессии», а запросы API с метаданными появятся на этапе D.
-Future<List<Override>> _coreOverrides() async {
-  try {
-    final meta = await ClientMeta.load(FlutterSecureStorageAdapter());
-    return <Override>[clientMetaProvider.overrideWithValue(meta)];
-  } on PlatformException catch (e) {
-    _log.warning('ClientMeta.load: ${e.code}');
-  } on MissingPluginException catch (e) {
-    _log.warning('ClientMeta.load: плагин недоступен (${e.runtimeType})');
+/// Только в браузере ([isWeb], веб-демо ADR-113) ещё два случая — запись в журнал, без белого экрана до `runApp`:
+/// - вне secure context (http:// не на localhost) flutter_secure_storage_web бросает `UnsupportedError`;
+/// - package_info_plus читает `version.json` по сети (package:http): сетевая ошибка (`http.ClientException`, любое
+///   [Exception]) повторяется один раз.
+/// В Windows и Android это не так: `UnsupportedError`, в том числе `UnimplementedError` незарегистрированного плагина
+/// (он — подтип `UnsupportedError`), и прочие исключения пробрасываются, чтобы причина была видна, а не всплыла
+/// позже у потребителей `clientMetaProvider`. `UnimplementedError` пробрасывается и в браузере.
+@visibleForTesting
+Future<List<Override>> coreOverrides(Future<ClientMeta> Function() load, {bool isWeb = kIsWeb}) async {
+  for (var attempt = 1; ; attempt++) {
+    try {
+      final meta = await load();
+      return <Override>[clientMetaProvider.overrideWithValue(meta)];
+    } on PlatformException catch (e) {
+      _log.warning('ClientMeta.load: ${e.code}');
+    } on MissingPluginException catch (e) {
+      _log.warning('ClientMeta.load: плагин недоступен (${e.runtimeType})');
+    } on UnsupportedError catch (e) {
+      if (!isWeb || e is UnimplementedError) rethrow;
+      _log.warning('ClientMeta.load: не поддерживается в браузере (${e.message})');
+    } on Exception catch (e) {
+      if (!isWeb) rethrow;
+      if (attempt < 2) {
+        _log.info('ClientMeta.load: повтор после ошибки (${e.runtimeType})');
+        continue;
+      }
+      _log.warning('ClientMeta.load: ${e.runtimeType} ($e)');
+    }
+    return const <Override>[];
   }
-  return const <Override>[];
 }

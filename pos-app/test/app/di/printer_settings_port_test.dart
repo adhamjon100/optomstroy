@@ -1,7 +1,8 @@
 // Секция «Принтер» SCR-42 в корне (02 UI-42-014, UI-42-020…022, AC-UI-42-010; PRINT-006/009/010; ревью G-trace-4):
 // формат и автопечать — `/me/settings` (запрос только при их изменении), адрес и порт ESC/POS — устройство, тестовая
 // печать 80 мм — образец ESC/POS «ТЕСТОВАЯ ПЕЧАТЬ · не является фискальным документом» (CP866, шкала 48 символов)
-// по TCP; ошибка соединения — причина, без блокировки; A4 — системная печать PDF-образца.
+// по TCP; ошибка соединения — причина, без блокировки; A4 — системная печать PDF-образца. В браузере (веб-демо)
+// сырого TCP нет: «Чек 80 мм» — причина «Недоступно на этом устройстве», имя устройства — «Браузер».
 import 'dart:async';
 import 'dart:io';
 
@@ -58,7 +59,7 @@ void main() {
   late List<OrderDocumentFile> printed;
   String? sendResult;
 
-  AppPrinterSettingsPort port({bool system = true}) {
+  AppPrinterSettingsPort port({bool system = true, bool? escPos}) {
     final AppPrinterSettingsPort p = AppPrinterSettingsPort(
       settings: repo,
       dao: null,
@@ -76,8 +77,14 @@ void main() {
       stamp: () => '22.10.2026 10:30',
       device: 'POS-01',
       nowMs: () => 0,
+      escPosSupported: escPos,
     );
-    p.texts = const PrinterTestTexts(title: _title, noAddress: 'нет адреса', notSent: 'Отмена');
+    p.texts = const PrinterTestTexts(
+      title: _title,
+      noAddress: 'нет адреса',
+      notSent: 'Отмена',
+      unsupported: 'Недоступно на этом устройстве',
+    );
     return p;
   }
 
@@ -165,4 +172,44 @@ void main() {
     final String? reason = await sendEscPosTcp('127.0.0.1', free, bytes, timeout: const Duration(seconds: 2));
     expect(reason, startsWith('127.0.0.1:$free — '));
   });
+
+  test('браузер: «Чек 80 мм» — причина «недоступно» без отправки; A4 — системная печать как обычно', () async {
+    final AppPrinterSettingsPort p = port(escPos: false);
+    expect(
+      await p.testPrint(const PrinterPrefs(format: PrinterFormat.receipt80, address: '192.168.1.50')),
+      'Недоступно на этом устройстве',
+    );
+    expect(await p.testPrint(const PrinterPrefs(format: PrinterFormat.receipt80)), 'Недоступно на этом устройстве');
+    expect(sent, isEmpty);
+    expect(await p.testPrint(const PrinterPrefs(format: PrinterFormat.a4)), isNull);
+    expect(printed, hasLength(1));
+  });
+
+  test(
+    'escPosTcpSupported и printerDeviceName: в браузере — нет TCP и «Браузер»; на native — TCP и имя компьютера',
+    () {
+      expect(escPosTcpSupported(isWeb: true), isFalse);
+      expect(escPosTcpSupported(isWeb: false), isTrue);
+      expect(escPosTcpSupported(), isTrue, reason: 'unit-тесты — VM');
+      expect(printerDeviceName(isWeb: true), 'Браузер');
+      expect(printerDeviceName(isWeb: false), Platform.localHostname);
+      expect(printerDeviceName(), Platform.localHostname);
+    },
+  );
+
+  test(
+    'sendEscPosTcp: UnsupportedError платформы не превращается в причину — пробрасывается, как до веб-демо',
+    () async {
+      // В браузере sendEscPosTcp не вызывается (escPosSupported: false); на Windows и Android такая ошибка — дефект
+      // сборки, его не прячем (ревью R-01).
+      await expectLater(
+        IOOverrides.runZoned(
+          () => sendEscPosTcp('192.168.1.50', 9100, const <int>[0x1B, 0x40]),
+          socketConnect: (Object? host, int port, {Object? sourceAddress, int sourcePort = 0, Duration? timeout}) =>
+              throw UnsupportedError('Socket'),
+        ),
+        throwsA(isA<UnsupportedError>()),
+      );
+    },
+  );
 }

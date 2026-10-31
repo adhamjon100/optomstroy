@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, immutable, mapEquals;
 import 'package:flutter/widgets.dart';
@@ -498,11 +497,17 @@ RoleCode? catalogViewerRole(Ref ref) {
 AppDatabase? userDatabase(Ref ref) {
   final String? userId = ref.watch(sessionUserIdProvider);
   if (userId == null) return null;
+  if (!AppDatabase.isUserId(userId)) {
+    _log.warning('userDatabase: идентификатор пользователя не UUID — локальная БД не открыта');
+    return null;
+  }
   final AppDatabase db;
   try {
     db = AppDatabase.forUser(userId);
-  } on ArgumentError {
-    _log.warning('userDatabase: идентификатор пользователя не UUID — локальная БД не открыта');
+  } on ArgumentError catch (e, st) {
+    // Не «не UUID» (проверено выше): ошибка конфигурации drift (например, сборка в браузере без web-опций) —
+    // без БД не работают кэш каталога, черновик корзины и outbox, поэтому — громко, а не молча.
+    _log.severe('userDatabase: локальная БД не открыта — ${e.message}', e, st);
     return null;
   }
   // Закрытие — после текущего такта: подписки потоков drift (корзина, уведомления) успевают отписаться при
@@ -523,7 +528,7 @@ settings.SettingsSectionBuilder appPrinterSectionBuilder(Ref ref) {
     systemPrint: printer?.print,
     a4Sample: buildA4TestPage,
     stamp: () => DsBishkekTime.dateTime(clock.nowUtc()),
-    device: _deviceName(),
+    device: printerDeviceName(),
     nowMs: clock.nowMillis,
   );
   return (BuildContext context) {
@@ -532,15 +537,9 @@ settings.SettingsSectionBuilder appPrinterSectionBuilder(Ref ref) {
       title: l10n.settings_print_test_page_title,
       noAddress: l10n.settings_printer_address_error,
       notSent: l10n.ds_button_cancel,
+      // 02 §7: ключ общий для SCR-04 и SCR-42 (браузер веб-демо, ADR-113).
+      unsupported: l10n.reg_bio_unsupported,
     );
     return PrinterSettingsSection(port: port);
   };
-}
-
-String _deviceName() {
-  try {
-    return Platform.localHostname;
-  } on Object {
-    return Platform.operatingSystem;
-  }
 }

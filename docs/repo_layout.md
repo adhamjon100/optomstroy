@@ -23,7 +23,7 @@ IDE-кеш `.idea/` (игнорируется git) перенесён в `pos-ap
 |---|---|---|
 | `lib/`, `test/` | `pos-app/lib/`, `pos-app/test/` | содержимое шаблона заменяется каркасом RM-C-002 (R3 §14.1) |
 | `android/`, `ios/`, `windows/` | `pos-app/android/`, `pos-app/ios/`, `pos-app/windows/` | платформы R1: Android, Windows; iOS — архитектурно (ADR-039) |
-| `linux/`, `macos/`, `web/` | `pos-app/linux/`, `pos-app/macos/`, `pos-app/web/` | переносятся как есть; вне целевых платформ R1 (ADR-039). Удалить их или оставить, решает `FE` в RM-C-002 |
+| `linux/`, `macos/`, `web/` | `pos-app/linux/`, `pos-app/macos/`, `pos-app/web/` | переносятся как есть; вне целевых платформ R1 (ADR-039). Удалить их или оставить, решает `FE` в RM-C-002. `pos-app/web/` оставлен: его использует веб-демо для показа (ADR-113, 2026-10-29); Web по-прежнему вне R1 |
 | `pubspec.yaml`, `pubspec.lock`, `analysis_options.yaml` | `pos-app/` | `pubspec.yaml` — по R3 §15 (RM-C-002) |
 | `optomstroy.iml` | `pos-app/` или удаляется | файл IDE; решение `FE` в RM-C-002 |
 | `README.md` | `README.md` (переписывается) | команды запуска — выход RM-C-001 |
@@ -56,9 +56,15 @@ IDE-кеш `.idea/` (игнорируется git) перенесён в `pos-ap
 │   ├── openapi/                    # RM-B-003 — pos-api.v1.yaml, CHANGELOG.md (BE)
 │   ├── rbac/                       # RM-B-008 — permissions.yaml (SEC)
 │   └── test-vectors/               # RM-C-004/005 (MNY-004) — money.v1.json: общие векторы MV-01…MV-30 для pos-api и pos-app (BE + FE)
-├── demo/                           # ADR-109 — демо-пакет на тестовых данных: build-demo.ps1, start-demo.ps1/.cmd, demo-common.ps1, README.md (app/, data/, logs/ — вне git)
+├── demo/                           # ADR-109 — демо-пакет на тестовых данных (app/, data/, logs/, .tmp/, demo_env.json — вне git); ADR-113 — веб-демо в web/
+│   ├── README.md                   # ADR-109 — инструкция демо для заказчика; раздел «Веб-демо» (ADR-113)
+│   ├── build-demo.ps1              # ADR-109 — сборка pos-api/dist и приложения Windows
+│   ├── demo-common.ps1             # ADR-109 — общие функции скриптов демо
+│   ├── start-demo.cmd              # ADR-109 — запуск демо двойным щелчком
+│   ├── start-demo.ps1              # ADR-109 — запуск стека и приложения, режим -Smoke
+│   └── web/                        # ADR-113 — веб-демо на Netlify: backend/, site-src/; tools/, build-web-demo.ps1, netlify.toml, README.md — создают WP-N1/WP-T2 (site/, .build/, .smoke/ — вне git; §3.4)
 ├── docs/                           # документация (ARCH; владельцы подкаталогов — 13 §5.2)
-│   ├── customer/                   # документы для заказчика: Voprosy_zakazchiku.md/.docx — сводные вопросы заказчику (ARCH; 2026-10-28)
+│   ├── customer/                   # документы для заказчика: Voprosy_zakazchiku.md/.docx — сводные вопросы заказчику (ARCH; 2026-10-28); WEB_DEMO_INSTRUCTION.md — инструкция к веб-демо (ADR-113)
 │   ├── discovery/                  # этап A — аудит сервера, сведения 1С, SMSPro, устройства
 │   ├── erd/                        # RM-B-005, RM-C-006 — ER-диаграммы, schema_v1.sql
 │   ├── integration/                # RM-B-014 и др. — журнал версий расширения 1С, подключения
@@ -112,7 +118,7 @@ IDE-кеш `.idea/` (игнорируется git) перенесён в `pos-ap
 │   ├── analysis_options.yaml       # RM-C-002
 │   ├── android/                    # FE + SEC (нативная биометрия, разрешения)
 │   ├── assets/                     # DS — fonts/ (Inter), rive/, логотип
-│   ├── env/                        # RM-C-009 — профили --dart-define-from-file: dev.json, staging.json (= APP_ENV)
+│   ├── env/                        # RM-C-009 — профили --dart-define-from-file: dev.json, staging.json (= APP_ENV); web_demo.json — веб-демо (ADR-113)
 │   ├── integration_test/           # QA
 │   ├── ios/
 │   ├── l10n.yaml                   # RM-C-002
@@ -122,8 +128,8 @@ IDE-кеш `.idea/` (игнорируется git) перенесён в `pos-ap
 │   ├── packages/                   # RM-C-004 — pos_api_client (генерируется из OpenAPI)
 │   ├── pubspec.yaml                # RM-C-002
 │   ├── test/                       # unit/, widget/, golden/, design_system/
-│   ├── tool/                       # RM-C-009 — run_*.sh | run_*.ps1
-│   ├── web/                        # RM-C-001 — то же
+│   ├── tool/                       # RM-C-009 — run_*.sh | run_*.ps1; export_brand_logo.py; web/ — иконки веб-сборки (flutter_launcher_icons.yaml, pad_maskable.py; ADR-113)
+│   ├── web/                        # RM-C-001 — шаблон web: index.html, flutter_bootstrap.js (загрузчик и экран загрузки), manifest.json, иконки; используется только веб-демо для показа (ADR-113), не платформа R1 (ADR-039)
 │   └── windows/
 ├── resursi/                        # материалы заказчика — не изменяются
 ├── scripts/                        # проверочные и генерирующие скрипты контрактов и CI (ARCH)
@@ -204,6 +210,64 @@ pos-api/src/
 | `validate_samples.py` | RM-A-005 (пишется в C) |
 | `new_feature.sh` | 13 §5.4 п. 2 |
 | `check_no_double_money.sh` | 13 §6.1 п. 7 (12 C-08, T-MNY-030); CI — job app-analyze-test, Makefile check-contracts |
+
+### 3.4. Веб-демо: `demo/web/` и `pos-app/lib/app/demo/` (ADR-113)
+
+Веб-демо — только показ продукта заказчику (15 ADR-113), не платформа R1 (ADR-039). Каталоги и файлы создают пакеты веб-демо; помеченные «создаёт WP-…» ещё не существуют — пока их нет, это не ошибка.
+
+```
+demo/web/
+├── README.md                 # создаёт WP-N1 — для программиста: сборка, проверка, выкладка
+├── build-web-demo.ps1        # создаёт WP-N1 — сборка сайта: backend.js, flutter build web (-t lib/app/demo/main_web_demo.dart), site/
+├── netlify.toml              # создаёт WP-N1 — заголовки (noindex, wasm, кэш) и перенаправления (/api/* → 404 problem+json)
+├── backend/                  # сервер в Web Worker
+│   ├── README.md             # дерево, точки расширения, внутренние спецификаторы
+│   ├── build-backend.mjs     # tsc → esbuild → backend.js, проверки, отчёт
+│   ├── backend-entry.mjs     # вход воркера: PGlite, миграции, сид, PosFakeOnec, createApp, протокол страницы
+│   ├── alias-map.mjs         # подмены пакетов и модулей dist
+│   ├── pii-map.json          # замены ФИО и телефонов и список forbidden (ADR-113 п. 11 (б))
+│   ├── pglite.lock.json      # sha256 копируемых файлов PGlite
+│   ├── alias/                # подмены модулей (pg-shim, pg-boss, argon2, jwt-keys, шлюз 1С, ожидание оплаты, pino…)
+│   ├── lib/                  # alias-plugin, checks, paths, pglite
+│   ├── notices/              # THIRD_PARTY_NOTICES: build-notices.mjs, texts/
+│   ├── pii/                  # pii-transform.mjs
+│   ├── shims/                # встроенные модули Node (node-*.cjs), net-guard.mjs, inject.mjs, shim-map.mjs
+│   ├── test/                 # node --test: шим crypto, сетевой запрет; harness/, support/
+│   └── vfs/                  # build-vfs.mjs — встроенная fs воркера
+├── site-src/                 # страница сайта
+│   ├── index.html            # страница вместо web/index.html Flutter; экран загрузки #loading
+│   ├── demo-boot.js          # порядок запуска, экран загрузки и ошибок, выход при потере замка
+│   ├── demo-env.js           # проверка среды, хранилище страницы
+│   ├── demo-lock.js          # одна вкладка: Web Locks, передача, поколение
+│   ├── demo-reset.js         # сброс и эпоха
+│   ├── demo-bridge.js        # window.__posDemo — мост к воркеру (протокол 1)
+│   ├── demo-panel.js, demo-panel.css   # панель «ДЕМО»
+│   ├── demo-screen.css       # экран загрузки, уведомления, demo-closed
+│   ├── demo-tokens.css, demo-data.js   # генерирует build-site.mjs, вручную не правятся
+│   ├── demo-closed.html, demo-closed.js # статическая страница вкладки без замка
+│   ├── api-unavailable.json  # 404 problem+json для /api/*
+│   ├── robots.txt            # Disallow: /
+│   ├── build-site.mjs        # генерация, проверка (--check) и копирование (--out) страницы
+│   └── dev/                  # не публикуется: serve.mjs, mock-backend.js, fake-flutter-loader.js, holder.*, cdp-test.mjs, cdp-real-backend.mjs
+├── tools/                    # создают WP-N1/WP-T2 — serve-site.mjs, check-site.mjs, smoke.mjs
+├── site/                     # вне git — собранный сайт, его выкладывают в Netlify
+├── .build/                   # вне git — pos-api-dist, вывод Flutter, drift_worker.js, sqlite3.wasm, отчёты
+└── .smoke/                   # вне git — снимки и сводка headless-проверки
+
+pos-app/lib/app/demo/          # точка входа веб-демо; импортируется только из app/demo/ (DM-01, 06 §6.10)
+├── main_web_demo.dart        # main(): синхронные проверки DEMO_BACKEND, ENV и моста → bootstrap(overrides: demoOverrides)
+├── demo_overrides.dart       # только httpClientAdapterProvider, backendHealthProbeProvider, appConfigProvider
+├── demo_bridge.dart          # интерфейс моста, reportDemoStartError; реализация выбирается условным импортом
+├── demo_bridge_web.dart      # dart:js_interop → globalThis.__posDemo, __posShowStartError
+├── demo_bridge_stub.dart     # «моста нет» для VM, Windows и тестов (UnavailableDemoBridge)
+├── demo_bridge_adapter.dart  # HttpClientAdapter: защита хоста, отмена, «Нет сети», таймауты
+└── demo_health_probe.dart    # /health через мост
+
+pos-app/web/                   # шаблон страницы сборки по умолчанию; flutter_bootstrap.js — общий со страницей демо
+pos-app/tool/web/              # flutter_launcher_icons.yaml (иконки web), pad_maskable.py (maskable-иконки)
+```
+
+Рядом: профиль сборки `pos-app/env/web_demo.json` (`pos-app/env/README.md`), тесты `pos-app/test/app/demo/` (12 T-DEMO-001, T-DEMO-012; фейковый мост — `fake_demo_bridge.dart`).
 
 ---
 

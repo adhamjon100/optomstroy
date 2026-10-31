@@ -96,15 +96,19 @@ enum AuthSessionStatus {
 
 /// Снимок сессии.
 final class AuthSessionState {
-  const AuthSessionState(this.status, [this.profile = SessionProfile.unknown]);
+  const AuthSessionState(this.status, [this.profile = SessionProfile.unknown, this.viaInvitation = false]);
 
   static const AuthSessionState signedOut = AuthSessionState(AuthSessionStatus.signedOut);
 
   final AuthSessionStatus status;
   final SessionProfile profile;
 
+  /// Вход по действующему приглашению администратора (`roleSource: invitation`, 02 SCR-02.6). Без него
+  /// `pinSetupRequired` — сотрудник без PIN по другой причине (например, после сброса PIN администратором).
+  final bool viaInvitation;
+
   @override
-  String toString() => 'AuthSessionState(${status.name}, $profile)';
+  String toString() => 'AuthSessionState(${status.name}, $profile${viaInvitation ? ', invitation' : ''})';
 }
 
 /// Последний известный исход входа/разблокировки. Читает core/session (RM-D-009) и роутер,
@@ -117,8 +121,8 @@ final class AuthSessionNotifier extends Notifier<AuthSessionState> {
 
   void signedIn(SessionProfile profile) => state = AuthSessionState(AuthSessionStatus.signedIn, profile);
 
-  void pinSetupRequired(SessionProfile profile) =>
-      state = AuthSessionState(AuthSessionStatus.pinSetupRequired, profile);
+  void pinSetupRequired(SessionProfile profile, {bool viaInvitation = false}) =>
+      state = AuthSessionState(AuthSessionStatus.pinSetupRequired, profile, viaInvitation);
 
   void pendingActivation(SessionProfile profile) =>
       state = AuthSessionState(AuthSessionStatus.pendingActivation, profile);

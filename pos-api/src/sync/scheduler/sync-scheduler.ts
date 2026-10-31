@@ -33,6 +33,11 @@ export interface DesiredSchedule {
   readonly singletonKey: string;
   readonly source: ResolvedSchedule['source'] | 'fixed';
   readonly entity?: SyncEntity;
+  /**
+   * Задание `onec.changes` (режим расширения): сущности плана обмена, инкремент и свежесть которых даёт этот цикл
+   * (POSAPI-T1-01) — их `sync_state.schedule_cron`/`max_age_warning_sec` берутся из его расписания (ревью F4).
+   */
+  readonly planEntities?: readonly SyncEntity[];
 }
 
 /**
@@ -100,6 +105,7 @@ export class SyncScheduler {
         data: { node: ONEC_EXCHANGE_NODE },
         singletonKey: ONEC_EXCHANGE_NODE,
         source: r.source,
+        planEntities: plan,
       });
     }
     const fixed = (queue: string, expression: string, data: object = {}): DesiredSchedule => ({
@@ -170,6 +176,7 @@ export class SyncScheduler {
         this.applied.set(id, d.expression);
       }
       if (d.entity) await this.syncState(d.entity, d.expression);
+      if (d.planEntities) await this.planState(d.planEntities, d.expression);
     }
   }
 
@@ -182,6 +189,22 @@ export class SyncScheduler {
         WHERE sync_state.schedule_cron IS DISTINCT FROM EXCLUDED.schedule_cron
            OR sync_state.max_age_warning_sec IS DISTINCT FROM EXCLUDED.max_age_warning_sec`,
       [entity, expression, this.maxAgeWarningSec(expression)],
+    );
+  }
+
+  /**
+   * Сущности плана обмена (режим расширения): их «расписание» — цикл `onec.changes` (05 SYNC-011), порог 1 — два
+   * его периода (05 §7.4: «> 2× интервала сущности»). Без этого у них оставались `SYNC_MASTER_CRON` и 3600 с из
+   * умолчаний реестра прогонов, и при `sync_interval.*` ≥ 60 мин (период цикла ≥ порога) `overall` перед каждым
+   * циклом становился `degraded` (ревью F4). Только существующие строки: строку создаёт первый прогон или загрузка —
+   * сущность без строки в «устаревание» не входит (как и раньше).
+   */
+  private async planState(entities: readonly SyncEntity[], expression: string): Promise<void> {
+    await this.db.query(
+      `UPDATE sync_state SET schedule_cron = $2, max_age_warning_sec = $3, updated_at = now()
+        WHERE entity::text = ANY($1::text[])
+          AND (schedule_cron IS DISTINCT FROM $2 OR max_age_warning_sec IS DISTINCT FROM $3)`,
+      [entities, expression, this.maxAgeWarningSec(expression)],
     );
   }
 

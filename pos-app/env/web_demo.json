@@ -1,0 +1,7 @@
+{
+  "API_BASE_URL": "https://demo.invalid/api/v1",
+  "ENV": "dev",
+  "LOG_LEVEL": "info",
+  "FEATURE_FLAGS": "",
+  "DEMO_BACKEND": "browser"
+}

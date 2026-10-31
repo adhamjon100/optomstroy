@@ -1,0 +1,131 @@
+/*
+ * Оптомстрой POS · веб-демо · экран загрузки, плашки (среда, вкладка, эпоха, ошибка), страница demo-closed.html.
+ * Цвета и размеры — переменные --pd-* из demo-tokens.css (contracts/design-tokens/tokens.json, генерирует
+ * build-site.mjs). Шрифт Inter — тот же файл, что в ассетах приложения Flutter.
+ */
+@font-face { font-family: 'Inter'; font-weight: 400; font-display: swap; src: local('Inter'), local('Inter Regular'), url('assets/assets/fonts/Inter/Inter-Regular.ttf') format('truetype'); }
+@font-face { font-family: 'Inter'; font-weight: 500; font-display: swap; src: local('Inter Medium'), url('assets/assets/fonts/Inter/Inter-Medium.ttf') format('truetype'); }
+@font-face { font-family: 'Inter'; font-weight: 600; font-display: swap; src: local('Inter SemiBold'), url('assets/assets/fonts/Inter/Inter-SemiBold.ttf') format('truetype'); }
+@font-face { font-family: 'Inter'; font-weight: 700; font-display: swap; src: local('Inter Bold'), url('assets/assets/fonts/Inter/Inter-Bold.ttf') format('truetype'); }
+
+html, body { margin: 0; height: 100%; background: var(--pd-color-background); }
+body { -webkit-text-size-adjust: 100%; }
+
+.pd-screen {
+  position: fixed; inset: 0; z-index: 2147482000;
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--pd-space-4); box-sizing: border-box; overflow: auto;
+  background: var(--pd-color-background); color: var(--pd-color-text-primary);
+  font-family: var(--pd-font-family); font-size: var(--pd-text-body-size); line-height: var(--pd-text-body-line);
+  transition: opacity var(--pd-motion-base) ease-out;
+}
+.pd-screen.is-done { opacity: 0; pointer-events: none; }
+.pd-screen *, .pd-screen *::before, .pd-screen *::after { box-sizing: border-box; }
+.pd-overlay { background: rgba(var(--pd-color-overlay-rgb), 0.72); z-index: 2147483500; }
+
+.pd-card {
+  width: 100%; max-width: 520px; margin: auto;
+  display: flex; flex-direction: column; align-items: center; gap: var(--pd-space-3);
+  padding: var(--pd-space-7) var(--pd-space-6);
+  background: var(--pd-color-surface); border: 1px solid var(--pd-color-border);
+  border-radius: var(--pd-radius-lg); box-shadow: var(--pd-shadow-3);
+  text-align: center;
+}
+.pd-logo { width: 72px; height: 72px; border-radius: var(--pd-radius-md); }
+.pd-title {
+  margin: 0; font-size: var(--pd-text-h3-size); line-height: var(--pd-text-h3-line); font-weight: var(--pd-text-h3-weight);
+  color: var(--pd-color-text-primary);
+}
+.pd-stage { margin: 0; min-height: var(--pd-text-body-line); color: var(--pd-color-text-secondary); }
+.pd-p { margin: 0; text-align: left; width: 100%; }
+.pd-foot { margin: var(--pd-space-2) 0 0; font-size: var(--pd-text-caption-size); line-height: var(--pd-text-caption-line); color: var(--pd-color-text-secondary); }
+
+.spinner {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 4px solid var(--pd-color-skeleton-base); border-top-color: var(--pd-color-primary);
+  animation: pd-spin 0.9s linear infinite;
+}
+@keyframes pd-spin { to { transform: rotate(360deg); } }
+
+.pd-progress { width: 100%; height: 6px; border-radius: var(--pd-radius-full); background: var(--pd-color-surface-variant); overflow: hidden; }
+.pd-progress-bar { width: 0; height: 100%; background: var(--pd-color-primary); transition: width var(--pd-motion-slow) ease-out; }
+
+.pd-steps { list-style: none; margin: 0; padding: 0; width: 100%; display: flex; flex-wrap: wrap; justify-content: center; gap: var(--pd-space-2) var(--pd-space-4);
+  font-size: var(--pd-text-caption-size); line-height: var(--pd-text-caption-line); color: var(--pd-color-text-tertiary); }
+.pd-steps li::before { content: '○'; margin-right: 4px; }
+.pd-steps li[data-state="active"] { color: var(--pd-color-text-primary); }
+.pd-steps li[data-state="active"]::before { content: '●'; color: var(--pd-color-primary); }
+.pd-steps li[data-state="done"]::before { content: '✓'; color: var(--pd-color-success); }
+.pd-steps li[data-state="error"]::before { content: '✕'; color: var(--pd-color-error); }
+
+/* Текст ошибки запуска движка пишет web/flutter_bootstrap.js. */
+.pd-screen .error { width: 100%; color: var(--pd-color-error); text-align: left; }
+.pd-screen .error:empty { display: none; }
+.pd-body { width: 100%; display: flex; flex-direction: column; gap: var(--pd-space-3); text-align: left; }
+.pd-body:empty, .pd-actions:empty { display: none; }
+.pd-issues { margin: 0; padding-left: var(--pd-space-5); display: flex; flex-direction: column; gap: var(--pd-space-2); color: var(--pd-color-text-secondary); }
+.pd-pre {
+  margin: 0; max-height: 180px; overflow: auto; padding: var(--pd-space-3);
+  background: var(--pd-color-error-container); color: var(--pd-color-text-primary); border-radius: var(--pd-radius-sm);
+  font: 12px/16px ui-monospace, Consolas, 'Courier New', monospace; white-space: pre-wrap; word-break: break-word; text-align: left;
+}
+.pd-actions { width: 100%; display: flex; flex-wrap: wrap; justify-content: center; gap: var(--pd-space-3); }
+
+/* Плашки: без спиннера и шагов. */
+.pd-screen[data-view="env"] .spinner, .pd-screen[data-view="lock"] .spinner, .pd-screen[data-view="epoch"] .spinner,
+.pd-screen[data-view="fatal"] .spinner, .pd-screen[data-view="reset-failed"] .spinner,
+.pd-screen[data-view="env"] .pd-progress, .pd-screen[data-view="lock"] .pd-progress, .pd-screen[data-view="epoch"] .pd-progress,
+.pd-screen[data-view="reset-failed"] .pd-progress,
+.pd-screen[data-view="env"] .pd-steps, .pd-screen[data-view="lock"] .pd-steps, .pd-screen[data-view="epoch"] .pd-steps,
+.pd-screen[data-view="reset-failed"] .pd-steps, .pd-screen[data-view="reset"] .pd-steps,
+.pd-screen[data-view="env"] .pd-stage, .pd-screen[data-view="lock"] .pd-stage, .pd-screen[data-view="epoch"] .pd-stage { display: none; }
+.pd-screen[data-view="fatal"] .pd-progress-bar { background: var(--pd-color-error); }
+
+/* Кнопки — общие для экрана, страницы demo-closed.html и панели. */
+.pd-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--pd-space-2);
+  min-height: 40px; padding: 0 var(--pd-space-4); border-radius: var(--pd-radius-md);
+  border: 1px solid var(--pd-color-border-strong); background: var(--pd-color-surface); color: var(--pd-color-text-primary);
+  font: inherit; font-size: var(--pd-text-body-size); font-weight: 500; line-height: var(--pd-text-body-line);
+  text-decoration: none; cursor: pointer; user-select: none;
+}
+.pd-btn:hover { background: var(--pd-color-surface-hover); }
+.pd-btn:active { background: var(--pd-color-surface-pressed); }
+.pd-btn:focus-visible, .pd-screen a:focus-visible { outline: 2px solid var(--pd-color-focus); outline-offset: 2px; }
+.pd-btn:disabled { cursor: default; background: var(--pd-color-disabled-bg); color: var(--pd-color-disabled-text); border-color: var(--pd-color-disabled-bg); }
+.pd-btn-primary { background: var(--pd-color-primary); border-color: var(--pd-color-primary); color: var(--pd-color-on-primary); }
+.pd-btn-primary:hover { background: var(--pd-color-primary-hover); }
+.pd-btn-primary:active { background: var(--pd-color-primary-pressed); }
+.pd-btn-danger { background: var(--pd-color-error); border-color: var(--pd-color-error); color: var(--pd-color-on-error); }
+.pd-btn-danger:hover { filter: brightness(0.92); background: var(--pd-color-error); }
+
+.pd-toast {
+  position: fixed; left: 50%; top: var(--pd-space-4); transform: translateX(-50%); z-index: 2147483600;
+  max-width: calc(100vw - 32px); padding: var(--pd-space-3) var(--pd-space-4); border-radius: var(--pd-radius-md);
+  background: var(--pd-color-inverse-surface); color: var(--pd-color-on-inverse-surface); box-shadow: var(--pd-shadow-2);
+  font-family: var(--pd-font-family); font-size: var(--pd-text-body-size); line-height: var(--pd-text-body-line);
+}
+
+/* review fixes: постоянная плашка «Данные демо не сохраняются» (сообщение воркера storage {ok:false}). */
+.pd-storage-banner {
+  /* под шапкой приложения (68 lp): не закрывает ни шапку, ни нижнюю навигацию (80 lp) */
+  position: fixed; left: 50%; top: 76px; transform: translateX(-50%); z-index: 2147483601;
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--pd-space-2) var(--pd-space-3);
+  width: min(760px, calc(100vw - 32px)); box-sizing: border-box; padding: var(--pd-space-3) var(--pd-space-4);
+  border-radius: var(--pd-radius-md); border: 1px solid var(--pd-color-error);
+  background: var(--pd-color-error-container); color: var(--pd-color-error); box-shadow: var(--pd-shadow-2);
+  font-family: var(--pd-font-family); font-size: var(--pd-text-body-size); line-height: var(--pd-text-body-line);
+}
+.pd-storage-banner[hidden] { display: none; }
+.pd-storage-text { flex: 1 1 360px; color: inherit; }
+.pd-storage-actions { display: flex; flex-wrap: wrap; gap: var(--pd-space-2); }
+.pd-btn-small { padding: 4px 12px; min-height: 32px; font-size: inherit; }
+
+@media (max-width: 420px) {
+  .pd-card { padding: var(--pd-space-6) var(--pd-space-4); }
+  .pd-actions .pd-btn { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+  .pd-screen, .pd-progress-bar { transition: none; }
+}

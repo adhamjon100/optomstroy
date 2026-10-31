@@ -1,0 +1,19 @@
+# Иконки веб-сборки (веб-демо «Оптомстрой POS (демо)»): favicon.png, icons/Icon-*.png и цвета web/manifest.json.
+# Отдельный файл, а не раздел pubspec.yaml: генерируется только web/ — android, ios, windows и macos не трогаются.
+# Знак — assets/brand/logo_orange.png (03 §2.4); цвета — contracts/design-tokens/tokens.json (background, primary).
+# Запуск из pos-app (офлайн, пакет уже в dev_dependencies):
+#   dart run flutter_launcher_icons -f tool/web/flutter_launcher_icons.yaml
+# Генератор кладёт знак в maskable-иконки без полей; безопасная зона (знак ~70 % на белом) — tool/web/pad_maskable.py.
+flutter_launcher_icons:
+  image_path: "assets/brand/logo_orange.png"
+  android: false
+  ios: false
+  web:
+    generate: true
+    image_path: "assets/brand/logo_orange.png"
+    background_color: "#F1F6FC"
+    theme_color: "#D9380F"
+  windows:
+    generate: false
+  macos:
+    generate: false

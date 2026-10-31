@@ -1,0 +1,72 @@
+{
+  "$comment": "Белый список подсадок pg-shim (WP-B2, plan §3.4 правило 4). Ключ — fingerprint() из alias/pg-shim.mjs: «глагол таблица» верхнего уровня (FROM вне скобок). modes — разрешённые причины подсадки: scope (оператор в асинхронной области «сырой» транзакции держателя), unit (транзакция активной единицы работы, асинхронная связь потеряна — у транзакций drizzle так всегда; подсадка сразу), idle (страховка: держатель не активной единицы простаивает idleForeignMs). Подсадка вне списка: WARN в журнале, в строгом режиме тестов — ERROR и падение прогона. Каждая запись подтверждена прогоном worker-harness.mjs (shimStats.piggyDetails: SQL, единица работы, стек BEGIN держателя); новую запись добавлять только с where/why по коду .build/pos-api-dist.",
+  "version": 1,
+  "entries": [
+    {
+      "key": "select app_settings",
+      "modes": ["scope", "unit", "idle"],
+      "where": "common/settings/settings-reader.js load() — внутри транзакции POST /api/v1/orders (drizzle)",
+      "why": "Кэш настроек: get() возвращает общий промис load().finally(), асинхронная связь с транзакцией теряется; транзакция ждёт get(). Только чтение. idle — тот же кэш, разогретый таймером или продолжением."
+    },
+    {
+      "key": "insert sync_runs",
+      "modes": ["scope", "unit"],
+      "where": "sync/scheduler/sync-run.registry.js insertWithStaleRecovery() ← acquire() ← run-tracker start() ← onec-changes.service.js pullLocked() scope.runIdFor() — задача sync.manual",
+      "why": "Внутри сырой транзакции pullLocked (BEGIN … COMMIT на клиенте) прогон регистрируется через пул this.db; acquire() делает `return this.insertWithStaleRecovery(…)` без await — цепочка V8 обрывается, транзакция ждёт вставку."
+    },
+    {
+      "key": "select sync_runs",
+      "modes": ["scope", "unit"],
+      "where": "sync/scheduler/sync-run.registry.js active() ← insertWithStaleRecovery() (нарушение singleton: прогон сущности уже идёт → SyncAlreadyRunningError) ← acquire() ← run-tracker start() ← onec-changes.service.js pullLocked()",
+      "why": "Тот же путь, что «insert sync_runs»: при наложении прогонов одной сущности (догоняние после старта + цикл плана обмена) реестр читает id активного прогона через пул внутри сырой транзакции pullLocked. Только чтение; найдено WP-B4 регрессом worker-harness (1 из 3 прогонов, зависит от времени)."
+    },
+    {
+      "key": "update sync_runs",
+      "modes": ["scope", "unit"],
+      "where": "sync/apply/run-tracker.js start() (cursor_from, onec_endpoint) ← onec-changes.service.js pullLocked() — задача sync.manual",
+      "why": "Курсор прогона пишется через пул внутри сырой транзакции pullLocked; асинхронная связь сохранена (scope)."
+    },
+    {
+      "key": "update sync_node_state",
+      "modes": ["scope", "unit"],
+      "where": "sync/apply/onec-changes.service.js markNodeReachable() ← pullLocked()",
+      "why": "Признак «1С доступна» пишется через пул внутри сырой транзакции pullLocked; асинхронная связь сохранена (scope)."
+    },
+    {
+      "key": "select orders",
+      "modes": ["scope", "unit"],
+      "where": "orders/documents/documents.repository.js orderState() (this.db.execute) ← views.present(tx) в транзакции POST /api/v1/orders",
+      "why": "plan §3.4: order-create.service.ts:688 → views.present(tx) → documents.repository (this.db). Чтение доступности документов заказа через пул внутри транзакции оформления."
+    },
+    {
+      "key": "select payments",
+      "modes": ["scope", "unit"],
+      "where": "orders/documents/documents.repository.js (SELECT 1 FROM payments … status = 'received') ← views.present(tx) в транзакции POST /api/v1/orders",
+      "why": "Тот же путь представления заказа: проверка полученной оплаты через пул внутри транзакции оформления."
+    },
+    {
+      "key": "select users",
+      "modes": ["scope", "unit"],
+      "where": "payments/infra/payments-lookups.js userRefs() — в транзакции POST /api/v1/orders/{id}/payments",
+      "why": "Представление платежа читает имена пользователей через пул (this.db) внутри транзакции приёма оплаты."
+    },
+    {
+      "key": "select transactions",
+      "modes": ["scope", "unit"],
+      "where": "payments/infra/payments-lookups.js transactionIds() — в транзакции POST /api/v1/orders/{id}/payments",
+      "why": "Представление платежа читает последние транзакции платежа через пул внутри транзакции приёма оплаты."
+    },
+    {
+      "key": "insert pgboss.job",
+      "modes": ["scope"],
+      "where": "boss.send() без { db: tx } из колбэка сырой транзакции",
+      "why": "plan §3.4 правило 3: вставка задачи pg-boss внутри транзакции текущей единицы. В прогонах WP-B2 не встречалась (публикации в транзакциях идут с { db: tx } — клиентом транзакции); оставлена для области."
+    },
+    {
+      "key": "begin",
+      "modes": ["scope"],
+      "where": "pool.connect() + BEGIN в функции, вызванной из сырой транзакции держателя; db.transaction() drizzle из колбэка транзакции drizzle держателя (рамка __posDtx_<id>, pg-shim attachDrizzleScope): auth/common/http-rate-limits.js durable() → common/rate-limit/rate-limit.service.js consume() ← auth/sessions/refresh.service.js rotateInTx() — POST /api/v1/auth/unlock (RL-PIN)",
+      "why": "Вложенная транзакция той же области становится SAVEPOINT pgshim_tx_N (в PostgreSQL — второе соединение; здесь держатель ждёт её BEGIN, иначе взаимоблокировка). RL-PIN: счётчик «в собственной транзакции» внутри транзакции ротации; до fix round 1 ждал nestedBeginIdleMs (1 с) и подсаживался по unit вне списка (WP-T1 дефект 2). BEGIN по правилу unit (долгий простой, связь не установлена) — вне списка и роняет тесты; BEGIN чужой единицы не подсаживается никогда."
+    }
+  ]
+}

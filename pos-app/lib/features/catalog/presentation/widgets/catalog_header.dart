@@ -10,7 +10,6 @@
 // Тот же класс рисует шапку оболочки на прочих экранах сотрудника (`StaffShellHeader`, app/router/shells).
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart' hide SearchBar;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -57,10 +56,11 @@ void openCatalogNotifications(BuildContext context, WidgetRef ref, WindowClass w
   }
 }
 
-/// Кнопка сканера в поле поиска шапки (UI-10-044): Android/iOS — SCR-17 (`push`); Windows — камеры нет (D-42):
-/// подсказка HID-сканера и фокус в поле [searchFocus]. Одно правило для шапки каталога и шапки оболочки.
-void handleCatalogScanButton(BuildContext context, FocusNode searchFocus) {
-  if (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) {
+/// Кнопка сканера в поле поиска шапки (UI-10-044): камера есть ([cameraSupported] — `cameraScannerSupportedProvider`:
+/// Android/iOS) — SCR-17 (`push`); камеры нет (Windows, D-42; браузер) — подсказка HID-сканера и фокус в поле
+/// [searchFocus]. Одно правило для шапки каталога и шапки оболочки.
+void handleCatalogScanButton(BuildContext context, FocusNode searchFocus, {required bool cameraSupported}) {
+  if (cameraSupported) {
     unawaited(GoRouter.maybeOf(context)?.push<Object?>(CatalogPaths.scan()));
     return;
   }

@@ -3,11 +3,15 @@
 // Реализации подключает композиционный корень `app/di/overrides.dart` списком `catalogBindings`
 // (data/catalog_bindings.dart, L-8). Без него провайдеры бросают `UnimplementedError`.
 // В widget-тестах — `ProviderScope(overrides: [catalogRepositoryProvider.overrideWithValue(fake), …])`.
+// presentation не импортирует core/hardware (FL-02): признак камеры-сканера для кнопки скана шапки реэкспортируется
+// отсюда (`cameraScannerSupportedProvider`: Android/iOS вне браузера; Windows и web — без камеры, D-42).
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/features/catalog/domain/repositories/catalog_json_decoder.dart';
 import 'package:optomstroy/features/catalog/domain/repositories/catalog_repository.dart';
 import 'package:optomstroy/features/catalog/domain/repositories/catalog_user_settings_store.dart';
+
+export 'package:optomstroy/core/hardware/hardware_providers.dart' show cameraScannerSupportedProvider;
 
 Never _unbound(String name) => throw UnimplementedError('$name: подключите catalogBindings в app/di/overrides.dart');
 

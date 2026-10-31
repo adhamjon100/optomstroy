@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Money } from '../../src/common/money/money.js';
 import { DOCUMENTS_PORT } from '../../src/common/ports/index.js';
-import { formatMoney } from '../../src/orders/documents/document-model.js';
+import { formatMoney, formatQuantity } from '../../src/orders/documents/document-model.js';
 import { DocumentsModule } from '../../src/orders/documents/documents.module.js';
 import { type PosActor, PosTestApp } from '../support/pos-fixture.js';
 import { parsePdf } from './support/pdf-text.js';
@@ -240,6 +240,93 @@ describe('нефискальный товарный чек (receipt.pdf) — PRI
     expect(norm(tp.text)).toContain('Нефискальный документ. Не является фискальным документом');
     expect(squash(tp.text)).toContain(squash(`Получено${formatMoney(received)}`));
     expect(squash(tp.text)).toContain(squash(`Сдача${formatMoney(changeStr)}`));
+  });
+
+  // 10 PRINT-002/005 «кол-во, ед.»: единица — наименование из справочника `units`, а не код ОКЕИ снимка
+  // (веб-демо uiA-05: «1 796 × 43 348,00» — количество 1 и код 796 читались как 1796 единиц).
+  it('строки чека и счёта: «кол-во ед. × цена» с наименованием единицы, не с кодом', async () => {
+    const o = await t.seedOrder({ createdBy: a.cashier, method: 'cash', status: 'awaiting_payment' });
+    await receive(o.orderId, o.paymentId, a.cashier, o.total);
+    const [line] = await t.q<{ quantity: string; code: string; name: string; unit_price: string }>(
+      `SELECT i.quantity::text AS quantity, i.unit_code_snapshot AS code, u.name, i.unit_price::text AS unit_price
+         FROM order_items i JOIN units u ON u.code = i.unit_code_snapshot
+        WHERE i.order_id = $1::uuid ORDER BY i.line_no LIMIT 1`,
+      [o.orderId],
+    );
+    expect(line.name).not.toBe(line.code);
+    const qty = formatQuantity(line.quantity);
+    const thermal = await binary(
+      t.req('get', `/orders/${o.orderId}/documents/receipt.pdf?format=thermal80`, a.cashier),
+    );
+    expect(thermal.status).toBe(200);
+    const text = squash(parsePdf(pdfBuffer(thermal)).text);
+    expect(text).toContain(squash(`${qty} ${line.name} × ${formatMoney(line.unit_price)}`));
+    expect(text).not.toContain(squash(`${qty} ${line.code} ×`));
+  });
+
+  // 10 INV-002, 07 DATA-137: в строке с упаковкой `quantity` — в упаковках, `unit_price` — за упаковку, а снимок
+  // единицы — базовая единица товара. «Ед.» в документе — упаковка, иначе «2 кг × 450,00» за 2 мешка (ревью F2).
+  // Упаковка с единицей = базовой (худший случай данных 1С) — всё равно печатается упаковка. Тестовые данные.
+  it('строка в упаковках: «Ед.» — упаковка, не базовая единица (чек и счёт, 80 мм и A4)', async () => {
+    const o = await t.seedOrder({ createdBy: a.cashier, method: 'cash', status: 'awaiting_payment' });
+    await receive(o.orderId, o.paymentId, a.cashier, o.total);
+    const [line] = await t.q<{
+      id: string;
+      product_id: string;
+      quantity: string;
+      unit_price: string;
+      base_name: string;
+      unit_id: string;
+    }>(
+      `SELECT i.id::text AS id, i.product_id::text AS product_id, i.quantity::text AS quantity,
+              i.unit_price::text AS unit_price, u.name AS base_name, u.id::text AS unit_id
+         FROM order_items i JOIN units u ON u.code = i.unit_code_snapshot
+        WHERE i.order_id = $1::uuid ORDER BY i.line_no LIMIT 1`,
+      [o.orderId],
+    );
+    const packName = `Упаковка тест (47 ${line.base_name})`;
+    const [pk] = await t.q<{ id: string }>(
+      `INSERT INTO packagings (synced_at, source_hash, product_id, unit_id, name, factor)
+       VALUES (now(), 'test', $1::uuid, $2::uuid, $3, 47) RETURNING id::text AS id`,
+      [line.product_id, line.unit_id, packName],
+    );
+    // Строки заказа неизменяемы после отправки (trg_order_items_freeze) — правка сида в обход, как миграция.
+    const c = await t.pool.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`SELECT set_config('app.system', 'migration', true)`);
+      await c.query(
+        `UPDATE order_items SET packaging_id = $2::uuid, packaging_name_snapshot = $3, packaging_factor_snapshot = 47,
+                base_quantity = quantity * 47
+          WHERE id = $1::uuid`,
+        [line.id, pk.id, packName],
+      );
+      await c.query('COMMIT');
+    } catch (e) {
+      await c.query('ROLLBACK');
+      throw e;
+    } finally {
+      c.release();
+    }
+    const qty = formatQuantity(line.quantity);
+    const price = formatMoney(line.unit_price);
+    const docs = [
+      ['receipt', 'thermal80', a.cashier],
+      ['receipt', 'a4', a.cashier],
+      ['invoice', 'thermal80', a.cashier],
+      ['invoice', 'a4', a.cashier],
+    ] as const;
+    for (const [kind, format, actor] of docs) {
+      const res = await binary(t.req('get', `/orders/${o.orderId}/documents/${kind}.pdf?format=${format}`, actor));
+      expect(res.status, `${kind} ${format}`).toBe(200);
+      const text = squash(parsePdf(pdfBuffer(res)).text);
+      // 80 мм: «кол-во ед. × цена» в одной ячейке; A4: колонки «Кол-во», «Ед.», «Цена» подряд.
+      const want = format === 'thermal80' ? `${qty} ${packName} × ${price}` : `${qty} ${packName} ${price}`;
+      const wrong =
+        format === 'thermal80' ? `${qty} ${line.base_name} × ${price}` : `${qty} ${line.base_name} ${price}`;
+      expect(text, `${kind} ${format}`).toContain(squash(want));
+      expect(text, `${kind} ${format}`).not.toContain(squash(wrong));
+    }
   });
 
   it('DocumentsPort.render (для orders) — PDF; customer — счёт без чека в availability', async () => {

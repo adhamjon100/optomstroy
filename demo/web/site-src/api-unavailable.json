@@ -1,0 +1,9 @@
+{
+  "type": "https://demo.invalid/problems/not-found",
+  "title": "Демо без сервера",
+  "status": 404,
+  "detail": "В веб-демо сервер работает внутри браузера; адреса /api/ на сайте не обслуживаются.",
+  "instance": "urn:request:demo",
+  "code": "NOT_FOUND",
+  "requestId": "demo"
+}

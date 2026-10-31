@@ -1,0 +1,15 @@
+# Веб-демо «Оптомстрой POS» на Netlify (сайт optomstroy-demo-4fhvb, решение владельца (в) от 2026-10-29).
+# Только статика: сервер pos-api работает в браузере заказчика (module Web Worker backend/backend.js на PGlite),
+# у Netlify нет ни функций, ни сборки — сайт собирается локально:
+#   powershell -ExecutionPolicy Bypass -File demo/web/build-web-demo.ps1      (или шаги из demo/web/README.md)
+# Выкладка — действие пользователя (plan §6, WP-D1), из каталога demo/web:
+#   netlify deploy --no-build --dir site            (превью)
+#   netlify deploy --no-build --dir site --prod     (основной адрес)
+#
+# Заголовки (noindex, Content-Security-Policy, типы .wasm/.data/.gz, кэш) и перенаправления (/api/* → 404,
+# /images/:sha/:size → .webp) — в site/_headers и site/_redirects: их генерирует tools/assemble-site.mjs из
+# tools/site-headers.mjs, и их одинаково читают Netlify Drop и `netlify deploy`. Здесь они НЕ дублируются:
+# совпавшие правила Netlify объединяет, и значения заголовков сложились бы.
+[build]
+  publish = "site"
+  command = ""

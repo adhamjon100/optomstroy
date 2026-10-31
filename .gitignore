@@ -33,6 +33,8 @@ __pycache__/
 *.swp
 .DS_Store
 Thumbs.db
+# Файлы-замки Microsoft Office (~$имя.docx): в них имя учётной записи того, кто открыл документ
+~$*
 .atom/
 .build/
 .buildlog/
@@ -99,3 +101,9 @@ npm-debug.log*
 /demo/logs/
 /demo/.tmp/
 /demo/demo_env.json
+
+# Веб-демо на Netlify (ADR-113): собранный сайт, промежуточная сборка, снимки headless-проверки (demo/web/build-web-demo.ps1)
+/demo/web/site/
+/demo/web/.build/
+/demo/web/.smoke/
+.netlify/

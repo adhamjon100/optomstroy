@@ -29,6 +29,7 @@ import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/offline_banner.dart';
 import 'package:optomstroy/design_system/components/order_status_chip.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
+import 'package:optomstroy/design_system/layout/route_activity.dart';
 import 'package:optomstroy/design_system/layout/window_class.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
@@ -68,6 +69,12 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   bool _actionBusy = false;
   ({int n, int count})? _repeatProgress;
 
+  /// Экран был виден при последней проверке ([didChangeDependencies]); `null` — ещё не проверялся.
+  bool? _onScreen;
+
+  /// Возврат через [_pushAndReload] уже перечитал заказ — обновление по возврату на экран пропускается один раз.
+  bool _returnRefreshed = false;
+
   OrderDetailsController get _ctrl => ref.read(orderDetailsProvider(widget.orderId).notifier);
 
   @override
@@ -75,6 +82,33 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
     super.initState();
     _timer = Timer.periodic(OrderDetailsScreen.autoRefreshPeriod, (_) => _autoRefresh());
     _lifecycle = AppLifecycleListener(onResume: _autoRefresh);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 02 SCR-24 «Загрузка»: при возврате на экран (из SCR-38/39/22) — повторная загрузка. SCR-22
+    // `/orders/{id}/created` — дочерний маршрут SCR-24: экран строится под ним в момент создания заказа (до номера 1С
+    // и оплаты) и становится верхним без пересоздания — «Открыть заказ», автопереход после «Оплата получена» (uiA-02).
+    // Виден — ветка оболочки на экране и не закрыт непрозрачным маршрутом (`TickerMode`), над страницей нет другой
+    // страницы навигатора. Меню, листы и диалоги поверх (маршруты без страницы) экран не закрывают: их закрытие —
+    // не возврат (ревью RP-01, как SCR-25).
+    final ModalRoute<Object?>? route = ModalRoute.of(context);
+    final bool onScreen = TickerMode.of(context) && (route?.settings is! Page<Object?> || dsRouteIsCurrent(context));
+    final bool returned = _onScreen == false && onScreen;
+    if (!onScreen) _returnRefreshed = false;
+    _onScreen = onScreen;
+    if (returned) WidgetsBinding.instance.addPostFrameCallback((_) => _refreshOnReturn());
+  }
+
+  void _refreshOnReturn() {
+    if (!mounted || _onScreen != true) return;
+    if (_returnRefreshed) {
+      _returnRefreshed = false;
+      return;
+    }
+    if (_offline) return;
+    unawaited(_ctrl.refresh());
   }
 
   @override
@@ -122,7 +156,10 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
 
   Future<void> _pushAndReload(String location) async {
     await context.ordersPush(location);
-    if (mounted) unawaited(_ctrl.refresh());
+    if (mounted) {
+      _returnRefreshed = true;
+      unawaited(_ctrl.refresh());
+    }
   }
 
   Future<void> _cancel(Order order, OrderActionsView actions) async {

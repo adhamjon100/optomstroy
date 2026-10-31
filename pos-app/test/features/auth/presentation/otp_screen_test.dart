@@ -247,6 +247,25 @@ void main() {
     await _settleNav(tester);
     expect(h.location, AuthPaths.registerSecurity);
     expect(h.container.read(authSessionProvider).status, AuthSessionStatus.pinSetupRequired);
+    expect(h.container.read(authSessionProvider).viaInvitation, isTrue);
+  });
+
+  testWidgets('сотрудник без PIN не по приглашению (nextStep=set_pin без roleSource) → SCR-04, viaInvitation=false', (
+    WidgetTester tester,
+  ) async {
+    final AuthHarness h = AuthHarness();
+    h.repository.verifyResult = const Success<VerifyOutcome>(
+      VerifyAuthenticated(
+        profile: SessionProfile(kind: UserKind.staff, roles: <Never>[]),
+        nextStep: AuthNextStep.setPin,
+      ),
+    );
+    await _toOtp(tester, h);
+    await _enterCode(tester, '123456');
+    await _settleNav(tester);
+    expect(h.location, AuthPaths.registerSecurity);
+    expect(h.container.read(authSessionProvider).status, AuthSessionStatus.pinSetupRequired);
+    expect(h.container.read(authSessionProvider).viaInvitation, isFalse);
   });
 
   testWidgets('pending_activation → SCR-07', (WidgetTester tester) async {

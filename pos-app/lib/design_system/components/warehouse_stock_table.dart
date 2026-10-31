@@ -104,13 +104,16 @@ class WarehouseStockTable extends StatelessWidget {
   /// «Повторить».
   final VoidCallback? onRetry;
 
-  /// Строки в порядке показа: склад корзины, затем по «Доступно» убыв. (неизвестные — в конце).
+  /// Строки в порядке показа: склад корзины, затем по «Доступно» убыв. (неизвестные — в конце, после отрицательных).
+  /// Неизвестное — явной веткой, а не меткой-числом: `-1 << 40` в браузере (dart2js, 32-битный сдвиг) равно 0, и
+  /// неизвестный остаток вставал бы среди нулевых.
   static List<WarehouseStockRow> sorted(List<WarehouseStockRow> rows) =>
       <WarehouseStockRow>[...rows]..sort((WarehouseStockRow a, WarehouseStockRow b) {
         if (a.isCartWarehouse != b.isCartWarehouse) return a.isCartWarehouse ? -1 : 1;
-        final int av = a.availableMilli ?? -1 << 40;
-        final int bv = b.availableMilli ?? -1 << 40;
-        final int byQty = bv.compareTo(av);
+        final int? av = a.availableMilli;
+        final int? bv = b.availableMilli;
+        if ((av == null) != (bv == null)) return av == null ? 1 : -1;
+        final int byQty = av == null || bv == null ? 0 : bv.compareTo(av);
         return byQty != 0 ? byQty : a.name.compareTo(b.name);
       });
 

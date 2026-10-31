@@ -126,6 +126,28 @@ void main() {
       ),
     ];
 
+    test(
+      'сортировка: неизвестный остаток — в конце, после отрицательного (без метки-числа: в dart2js -1 << 40 = 0)',
+      () {
+        const List<WarehouseStockRow> mixed = <WarehouseStockRow>[
+          WarehouseStockRow(warehouseId: 'u2', name: 'Я неизвестно', available: '—'),
+          WarehouseStockRow(warehouseId: 'z', name: 'Ноль', available: '0', availableMilli: 0),
+          WarehouseStockRow(warehouseId: 'u1', name: 'А неизвестно', available: '—'),
+          WarehouseStockRow(warehouseId: 'n', name: 'Минус', available: '-2', availableMilli: -2000),
+          WarehouseStockRow(warehouseId: 'p', name: 'Плюс', available: '5', availableMilli: 5000),
+          WarehouseStockRow(warehouseId: 'c', name: 'Корзина', available: '—', isCartWarehouse: true),
+        ];
+        expect(WarehouseStockTable.sorted(mixed).map((WarehouseStockRow r) => r.warehouseId), <String>[
+          'c',
+          'p',
+          'z',
+          'n',
+          'u1',
+          'u2',
+        ]);
+      },
+    );
+
     testWidgets('seller: Склад · Доступно; склад корзины первым, затем по убыванию', (WidgetTester tester) async {
       await pumpDs(tester, const WarehouseStockTable(rows: rows, unit: 'шт', asOfTime: '09:41'));
       expect(find.text('Склад'), findsOneWidget);

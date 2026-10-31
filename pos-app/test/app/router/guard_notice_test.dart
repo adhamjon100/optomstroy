@@ -28,6 +28,7 @@ GuardInputs _inputs({
   customerSelfService: selfService,
   role: role,
   endReason: null,
+  lock: null,
   cameraSupported: camera,
 );
 

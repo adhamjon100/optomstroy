@@ -601,7 +601,8 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
     _input.changed(text);
   }
 
-  void _onScan() => handleCatalogScanButton(context, _searchFocus);
+  void _onScan() =>
+      handleCatalogScanButton(context, _searchFocus, cameraSupported: ref.read(cameraScannerSupportedProvider));
 
   void _useHistoryQuery(String q) {
     _searchText.text = q;
@@ -1181,6 +1182,10 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
 
     final Widget body;
     if (compact) {
+      // `CartFab` над нижней навигацией (02 UI-10-040 / UI-20-019, AC-UI-20-001/002) — у всех ролей с корзиной (у
+      // кассира вкладки «Корзина» нет — без панели корзина на compact недоступна, uiA-04); `owner` — без корзины.
+      // Строит корень (фича cart); пустая корзина — пустой виджет.
+      final WidgetBuilder? compactFab = role == RoleCode.owner ? null : ref.watch(catalogCartFabProvider);
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -1205,6 +1210,7 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
           ?searchNote,
           activeFilters,
           Expanded(child: listArea),
+          ?compactFab?.call(context),
         ],
       );
     } else {

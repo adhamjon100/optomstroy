@@ -31,9 +31,19 @@ import 'package:optomstroy/features/registration/presentation/widgets/success_ch
 import 'package:optomstroy/features/registration/registration_providers.dart';
 
 class RegistrationSecurityScreen extends ConsumerStatefulWidget {
-  const RegistrationSecurityScreen({super.key, this.audience = RegistrationAudience.customer});
+  const RegistrationSecurityScreen({
+    super.key,
+    this.audience = RegistrationAudience.customer,
+    this.staffViaInvitation = false,
+  });
 
   final RegistrationAudience audience;
+
+  /// Режим «первый вход сотрудника» открыт после входа по приглашению (`roleSource: invitation`, 02 SCR-02.6):
+  /// только тогда подзаголовок `reg_staff_first_subtitle` «Вы вошли по приглашению администратора…».
+  /// Сотрудник без PIN по другой причине (сброс PIN; Q-323 — тот же экран вместо SCR-08 UI-08-014, где
+  /// подзаголовка нет) видит экран без подзаголовка.
+  final bool staffViaInvitation;
 
   static const Key screenKey = ValueKey<String>('scr04');
   static const Key pinFieldKey = ValueKey<String>('scr04.pin');
@@ -197,6 +207,11 @@ class _RegistrationSecurityScreenState extends ConsumerState<RegistrationSecurit
           )
         : null;
 
+    final String? subtitle = s.phase == SecurityPhase.needPin
+        ? l10n.reg_bio_failed_set_pin
+        : !_staff
+        ? l10n.reg_security_subtitle
+        : (widget.staffViaInvitation ? l10n.reg_staff_first_subtitle : null);
     final pinBlock = _pinBlock(context, l10n, s);
     final bioBlock = s.phase == SecurityPhase.needPin ? null : _bioBlock(context, l10n, s);
 
@@ -259,13 +274,10 @@ class _RegistrationSecurityScreenState extends ConsumerState<RegistrationSecurit
               _staff ? l10n.reg_staff_first_title : l10n.reg_security_title,
               style: compact ? context.text.h2 : context.text.h1,
             ),
-            SizedBox(height: context.space.s2),
-            Text(
-              s.phase == SecurityPhase.needPin
-                  ? l10n.reg_bio_failed_set_pin
-                  : (_staff ? l10n.reg_staff_first_subtitle : l10n.reg_security_subtitle),
-              style: context.text.body.copyWith(color: context.colors.textSecondary),
-            ),
+            if (subtitle != null) ...<Widget>[
+              SizedBox(height: context.space.s2),
+              Text(subtitle, style: context.text.body.copyWith(color: context.colors.textSecondary)),
+            ],
             SizedBox(height: context.space.s6),
             if (compact || bioBlock == null) ...<Widget>[
               pinBlock,

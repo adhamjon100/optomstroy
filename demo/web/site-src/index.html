@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru" translate="no">
+<head>
+  <!--
+    Страница веб-демо «Оптомстрой POS» (ADR-113; WP-S1). Заменяет web/index.html сборки Flutter.
+    Порядок (plan §3.1): проверка среды → замок одной вкладки → сброс/эпоха → воркер backend/backend.js
+    и flutter_bootstrap.js (вставляет demo-boot.js). Экран #loading совместим с web/flutter_bootstrap.js
+    (__posHideLoading, .spinner, .error). Строки — только русские. Тестовые данные, не реальная система.
+    Код «Оптомстрой POS» (приложение и сервер) — только для просмотра, без лицензии; все права защищены
+    (ADR-113 п. 11 (а)). Лицензии сторонних компонентов — THIRD_PARTY_NOTICES.txt.
+  -->
+  <base href="/">
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Оптомстрой POS — демо-версия на тестовых данных">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="google" content="notranslate">
+  <meta name="theme-color" content="#D9380F">
+  <meta name="color-scheme" content="light">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Оптомстрой">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="manifest" href="manifest.json">
+  <title>Оптомстрой POS — демо</title>
+  <link rel="stylesheet" href="demo-tokens.css">
+  <link rel="stylesheet" href="demo-screen.css">
+  <link rel="stylesheet" href="demo-panel.css">
+  <script defer src="demo-data.js"></script>
+  <script defer src="demo-env.js"></script>
+  <script defer src="demo-lock.js"></script>
+  <script defer src="demo-reset.js"></script>
+  <script defer src="demo-bridge.js"></script>
+  <script defer src="demo-panel.js"></script>
+  <script defer src="demo-boot.js"></script>
+</head>
+<body>
+  <div id="loading" class="pd-screen" data-view="loading" role="status" aria-live="polite">
+    <div class="pd-card">
+      <img class="pd-logo" src="icons/Icon-192.png" alt="" width="72" height="72">
+      <h1 class="pd-title" id="pd-title">Оптомстрой POS · демо</h1>
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="text pd-stage" id="pd-stage">Загрузка…</p>
+      <div class="pd-progress" id="pd-progress" role="progressbar" aria-label="Загрузка демо" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="pd-progress-bar" id="pd-bar"></div>
+      </div>
+      <ol class="pd-steps" id="pd-steps">
+        <li data-step="check" data-state="active">Проверка браузера</li>
+        <li data-step="server" data-state="wait">Сервер демо в браузере</li>
+        <li data-step="app" data-state="wait">Приложение</li>
+      </ol>
+      <div class="error"></div>
+      <div class="pd-body" id="pd-body"></div>
+      <div class="pd-actions" id="pd-actions"></div>
+      <p class="pd-foot">Все данные тестовые. 1С, SMS и банк заменены имитаторами. Первая загрузка — до минуты.</p>
+    </div>
+  </div>
+  <noscript>
+    <div class="pd-screen" data-view="noscript">
+      <div class="pd-card">
+        <h1 class="pd-title">Оптомстрой POS · демо</h1>
+        <p class="pd-p">Для работы демо включите JavaScript в браузере. Рекомендуются Chrome или Edge на компьютере.</p>
+      </div>
+    </div>
+  </noscript>
+</body>
+</html>

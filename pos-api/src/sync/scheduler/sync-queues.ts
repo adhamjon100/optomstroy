@@ -1,5 +1,5 @@
 import { QUEUES, type QueueName } from '../../common/jobs/contracts/queues.js';
-import type { SyncEntity, SyncMode, SyncTrigger } from '../../common/enums.js';
+import { SYNC_ENTITY_VALUES, type SyncEntity, type SyncMode, type SyncTrigger } from '../../common/enums.js';
 import type { SchedulerConfig } from './scheduler.config.js';
 
 /**
@@ -76,6 +76,15 @@ export const EXTENSION_POLLED_ENTITIES: readonly SyncEntity[] = [
   'order_status',
   'images',
 ];
+
+/**
+ * Сущности плана обмена в режиме расширения: все, кроме `EXTENSION_POLLED_ENTITIES` (их инкремент — только цикл
+ * `onec.changes`, по которому планировщик ставит одно задание узла, 05 SYNC-011). Успешный цикл подтверждает их
+ * свежесть (`OnecChangesService` `freshnessEntities`, POSAPI-T1-01).
+ */
+export const EXTENSION_PLAN_ENTITIES: readonly SyncEntity[] = SYNC_ENTITY_VALUES.filter(
+  (e) => !EXTENSION_POLLED_ENTITIES.includes(e),
+);
 
 /** Сущности, которые планируются по расписанию инкрементом в данном режиме 1С. */
 export function scheduledEntities(mode: SchedulerConfig['onecMode'], all: readonly SyncEntity[]): SyncEntity[] {

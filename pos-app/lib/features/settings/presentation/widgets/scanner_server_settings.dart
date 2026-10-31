@@ -1,6 +1,7 @@
 // Серверные настройки сканера в секции «Сканер штрихкодов» SCR-42 (UI-42-011 режим HID/камера, UI-42-019
 // «Сразу добавлять в корзину»; 08 §3.14 `Settings.scanner.mode`, `scanAddsToCart`; ядро §19.4). Окончание скана
-// и тест сканера — секция фичи scan (`settingsScannerSectionProvider`). Камера на Windows скрыта (02 SCR-42.12).
+// и тест сканера — секция фичи scan (`settingsScannerSectionProvider`). Камера на Windows скрыта (02 SCR-42.12),
+// в браузере (веб-демо) — тоже: камеры-сканера там нет (`cameraScannerSupportedOn`, core/hardware).
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -26,10 +27,13 @@ abstract final class ScannerServerSettingsKeys {
 }
 
 class ScannerServerSettings extends ConsumerWidget {
-  const ScannerServerSettings({super.key, this.platform});
+  const ScannerServerSettings({super.key, this.platform, this.isWeb = kIsWeb});
 
   /// Платформа (тесты); по умолчанию — платформа сборки.
   final TargetPlatform? platform;
+
+  /// Сборка для браузера (тесты); по умолчанию — `kIsWeb`.
+  final bool isWeb;
 
   /// Умолчание «Сразу добавлять в корзину» (ядро §19.4): `cashier` — вкл., прочие — выкл. (Q-261).
   static bool defaultAddsToCart(RoleCode? role) => role == RoleCode.cashier;
@@ -41,7 +45,7 @@ class ScannerServerSettings extends ConsumerWidget {
     final LoginProtectionState? data = s.data;
     if (data == null) return const SizedBox.shrink();
     final SettingsViewer viewer = ref.watch(settingsViewerProvider);
-    final bool camera = (platform ?? defaultTargetPlatform) != TargetPlatform.windows;
+    final bool camera = !isWeb && (platform ?? defaultTargetPlatform) != TargetPlatform.windows;
     final String mode = data.scannerMode ?? 'hid';
     final SecurityController controller = ref.read(securityControllerProvider.notifier);
 
