@@ -15,7 +15,7 @@ export const APP_OPERATIONS = JSON.parse(readFileSync(`${HERE}/app-operations.js
 
 /** Причины, по которым операция приложения не вызывается на демо-бэкенде через мост (для отчёта). */
 export const NOT_VIA_BRIDGE = {
-  catalog_images_get: 'фото /images/{sha}/{size}.webp — статика сайта (Netlify), не бэкенд-воркер; файлы проверены WP-B4 (900 адресов /catalog/sync/images существуют)',
+  catalog_images_get: 'фото /images/{sha}/{size}.webp — статика сайта (Netlify), не бэкенд-воркер; файлы проверены WP-B4: адреса фото товаров и картинок категорий из ответов API существуют (b4-acceptance S2.6)',
 };
 
 export async function runApiSuite(be, { log = () => {}, label = 'be', only } = {}) {

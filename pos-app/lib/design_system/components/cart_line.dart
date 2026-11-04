@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/design_system/components/app_icon_button.dart';
 import 'package:optomstroy/design_system/components/app_progress.dart';
+import 'package:optomstroy/design_system/components/app_tooltip.dart';
+import 'package:optomstroy/design_system/components/ds_glyph.dart';
+import 'package:optomstroy/design_system/components/ds_hairline.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/components/price_text.dart';
 import 'package:optomstroy/design_system/components/product_image.dart';
@@ -29,9 +32,13 @@ enum CartLineTone {
 /// вызывающего) → сумма строки `bodyLg 16/700 textPrimary` (ширина ≥ 88; [preliminary] — «≈» `textSecondary`,
 /// [pending] — индикатор 16) → `AppIconButton close 20` «Удалить» (цель 44).
 ///
-/// [emphasized] — строка drawer корзины (прототип 2026-10-29, ADR-112): поля 20 по бокам и 12 по вертикали,
-/// разделитель [dividerColor] внутри полей, название `label 13/600`, сумма `body 700` одним кеглем во всех строках,
-/// крестик 16 `textSecondary`.
+/// [emphasized] — строка drawer корзины по прототипу без округления (ADR-114 п. 6; design-spec §13): поля 20 по бокам
+/// и 12 по вертикали, разделитель `rowDivider` #EEF2F8 внутри полей; бокс фото 54×48 (`contain`, без фото — пустой);
+/// через 12 — название 13/600 `catalogName` (строка 1,3), справа крестик «Удалить» 28×28 (радиус 8, глиф 14
+/// `catalogMeta` линией 2,4); через 8 — степпер ([quantity], группа 102×34) и сумма строки `lineSum` 15/800
+/// `textPrimary` без `tnum`. Высота строки с названием в одну строку — 95. Цели касания крестика и степпера — 44,
+/// за счёт полей строки, без изменения вида (A11Y-003; [stepperInset]). [variantLabel], [subtitle] «Арт. … · 10 450,00 сом / шт»
+/// (`textSecondary`; в прототипе их нет — паритет функций), [message] и [actions] — под названием и под степпером.
 ///
 /// Сумма строки — только ответ сервера (D-23): компонент её не вычисляет.
 class CartLine extends StatelessWidget {
@@ -42,6 +49,7 @@ class CartLine extends StatelessWidget {
     required this.quantity,
     required this.removeLabel,
     this.subtitle,
+    this.subtitleSemanticLabel,
     this.variantLabel,
     this.onVariantTap,
     this.variantActionLabel,
@@ -59,6 +67,7 @@ class CartLine extends StatelessWidget {
     this.dense = false,
     this.emphasized = false,
     this.semanticLabel,
+    this.stepperInset = 0,
   });
 
   /// Название товара.
@@ -76,6 +85,10 @@ class CartLine extends StatelessWidget {
 
   /// «Арт. F4252 · 2 350 сом/шт».
   final String? subtitle;
+
+  /// Подпись [subtitle] для экранного диктора — суммы в форме `PriceText.spoken` («Арт. F4252 · 2 350 сом / шт», без
+  /// «запятой» и нулевых тыйынов; ADR-114 п. 4, A11Y-020); `null` — читается видимый текст.
+  final String? subtitleSemanticLabel;
 
   /// Миниатюра (thumb); `null` — заглушка.
   final String? imageUrl;
@@ -125,8 +138,26 @@ class CartLine extends StatelessWidget {
   /// «Смеситель Frap F4252, 2 штуки, 4 700 сом».
   final String? semanticLabel;
 
-  /// Разделитель строк drawer: `border`, осветлённый на 40 % к `surface` (≈ #EEF2F8 прототипа; декоративный).
-  static Color dividerColor(DsColors c) => Color.lerp(c.border, c.surface, .4)!;
+  /// Строка drawer ([emphasized]): невидимое поле целей касания слева от видимой части [quantity] (степпер-группа —
+  /// `QuantityStepper.groupOuterInset`). Колонка названия и степпера начинается раньше на это поле, видимая обводка
+  /// степпера и название — в 12 от фото, как в прототипе.
+  final double stepperInset;
+
+  /// Бокс фото строки drawer (прототип: 54×48, `object-fit: contain`).
+  static const Size drawerPhoto = Size(54, 48);
+
+  /// Сторона видимого крестика «Удалить» строки drawer (прототип: 28×28, радиус 8).
+  static const double drawerRemoveSize = 28;
+
+  /// Цель касания крестика строки drawer (03 §7.4): 44 × 44, видимый крестик — в её правом верхнем углу со сдвигом 8
+  /// вниз, цель заходит в верхнее поле строки.
+  static const double drawerRemoveTarget = 44;
+
+  /// [subtitle] с подписью для диктора [subtitleSemanticLabel] (ревью R2C-04).
+  Widget _spoken(Widget text) {
+    final String? label = subtitleSemanticLabel;
+    return label == null ? text : Semantics(label: label, excludeSemantics: true, child: text);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -149,11 +180,13 @@ class CartLine extends StatelessWidget {
     final Money? total = lineTotal;
     // Сумма строки — одним кеглем во всех строках (`body 700` в drawer — прототип 15/800 по шкале 03 §7.1, иначе
     // `bodyLg 700`): поле не уже 88 для выравнивания столбца, уменьшается только если строке не хватает места.
-    final TextStyle totalStyle = context.text
-        .priceOf(emphasized ? context.text.body : context.text.bodyLg)
-        .copyWith(fontWeight: FontWeight.w700, color: preliminary || unavailable ? c.textSecondary : c.textPrimary);
+    final Color totalColor = preliminary || unavailable ? c.textSecondary : c.textPrimary;
+    // Drawer (прототип): `lineSum` 15/800 без `tnum` (ADR-114 п. 6); иначе — `bodyLg 700 tnum`.
+    final TextStyle totalStyle = emphasized
+        ? context.text.lineSum.copyWith(color: totalColor)
+        : context.text.priceOf(context.text.bodyLg).copyWith(fontWeight: FontWeight.w700, color: totalColor);
     final Widget sum = ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 88),
+      constraints: BoxConstraints(minWidth: emphasized ? 0 : 88),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.end,
@@ -174,6 +207,9 @@ class CartLine extends StatelessWidget {
         ],
       ),
     );
+    if (emphasized) {
+      return _drawerLine(context, c, sum: sum, icon: icon, messageColor: messageColor, unavailable: unavailable);
+    }
     final Widget info = DsInteractive(
       onTap: onOpen,
       enabled: onOpen != null,
@@ -194,9 +230,8 @@ class CartLine extends StatelessWidget {
                   title,
                   maxLines: dense ? 1 : 2,
                   overflow: TextOverflow.ellipsis,
-                  // Drawer (прототип): название 13/600 — `label 600`; иначе `body 500`.
-                  style: (emphasized ? context.text.label : context.text.body).copyWith(
-                    fontWeight: emphasized ? FontWeight.w600 : FontWeight.w500,
+                  style: context.text.body.copyWith(
+                    fontWeight: FontWeight.w500,
                     color: unavailable ? c.textSecondary : c.textPrimary,
                     decoration: st.hovered ? TextDecoration.underline : null,
                   ),
@@ -212,13 +247,15 @@ class CartLine extends StatelessWidget {
                   else
                     _VariantLink(label: variantLabel!, actionLabel: variantActionLabel, onTap: onVariantTap),
                 if (subtitle != null)
-                  Text(
-                    subtitle!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.text.caption.copyWith(
-                      color: c.textSecondary,
-                      fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+                  _spoken(
+                    Text(
+                      subtitle!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.text.caption.copyWith(
+                        color: c.textSecondary,
+                        fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+                      ),
                     ),
                   ),
               ],
@@ -227,9 +264,8 @@ class CartLine extends StatelessWidget {
         ],
       ),
     );
-    // Drawer (прототип): строки с полями 20 по бокам и 12 по вертикали, разделитель внутри полей.
     final Widget body = Padding(
-      padding: emphasized ? EdgeInsets.symmetric(vertical: context.space.s3) : EdgeInsets.all(context.space.s3),
+      padding: EdgeInsets.all(context.space.s3),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -241,8 +277,7 @@ class CartLine extends StatelessWidget {
               if (onRemove != null || removeLabel.isNotEmpty)
                 AppIconButton(
                   icon: Icons.close_rounded,
-                  // Drawer (прототип): крестик 14 в кнопке 28 — у нас цель 44 (small), глиф 16.
-                  iconSize: emphasized ? 16 : 20,
+                  iconSize: 20,
                   small: true,
                   semanticLabel: removeLabel,
                   onPressed: onRemove,
@@ -284,32 +319,212 @@ class CartLine extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         border: Border(
-          bottom: BorderSide(color: emphasized ? dividerColor(c) : c.border),
+          bottom: BorderSide(color: c.border),
           left: tone == CartLineTone.error ? BorderSide(color: c.error, width: 3) : BorderSide.none,
         ),
       ),
       foregroundDecoration: selected ? BoxDecoration(border: Border.all(color: c.focus, width: 2)) : null,
-      child: emphasized && tone == CartLineTone.error
-          ? Padding(
-              padding: EdgeInsetsDirectional.only(start: context.space.s2),
-              child: body,
-            )
-          : body,
+      child: body,
+    );
+    return Semantics(container: true, label: semanticLabel, child: line);
+  }
+
+  /// Строка drawer корзины по прототипу (см. [emphasized]). Цели касания 44 не меняют вида: степпер-группа занимает
+  /// 44 по высоте (видимая часть 34 — по центру), поэтому зазор над ней 3 и нижнее поле 7 вместо 8 и 12; колонка
+  /// названия и степпера начинается раньше на [stepperInset] (поле цели «−»), название — с тем же отступом; крестик
+  /// лежит поверх строки ([drawerRemoveTarget] в правом верхнем углу), название оставляет ему 28 + 8.
+  Widget _drawerLine(
+    BuildContext context,
+    DsColors c, {
+    required Widget sum,
+    required IconData icon,
+    required Color messageColor,
+    required bool unavailable,
+  }) {
+    final bool error = tone == CartLineTone.error;
+    final String? url = imageUrl;
+    // Прототип: без фото — пустой бокс 54×48.
+    final Widget photo = SizedBox.fromSize(
+      size: drawerPhoto,
+      child: url == null || url.isEmpty
+          ? null
+          : Opacity(
+              opacity: unavailable ? 0.5 : 1,
+              child: ProductImage(
+                url: url,
+                dimension: drawerPhoto.width,
+                height: drawerPhoto.height,
+                background: Colors.transparent,
+                borderRadius: BorderRadius.zero,
+                showPlaceholderLabel: false,
+              ),
+            ),
+    );
+    final Widget name = DsInteractive(
+      onTap: onOpen,
+      enabled: onOpen != null,
+      builder: (BuildContext context, DsInteractionState st) => Text(
+        title,
+        maxLines: dense ? 1 : 2,
+        overflow: TextOverflow.ellipsis,
+        // 13/600 #16206A, строка 1,3 (прототип).
+        style: context.text.label.copyWith(
+          fontWeight: FontWeight.w600,
+          height: 1.3,
+          color: unavailable ? c.textSecondary : c.catalogName,
+          decoration: st.hovered ? TextDecoration.underline : null,
+        ),
+      ),
+    );
+    final Widget nameBlock = Padding(
+      padding: EdgeInsetsDirectional.only(start: stepperInset, end: drawerRemoveSize + _drawerNameGap),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: drawerRemoveSize),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            name,
+            if (variantLabel != null)
+              if (onVariantTap == null && variantActionLabel == null)
+                Text(
+                  variantLabel!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.text.caption.copyWith(color: c.primaryText),
+                )
+              else
+                _VariantLink(label: variantLabel!, actionLabel: variantActionLabel, onTap: onVariantTap),
+            if (subtitle != null)
+              _spoken(
+                Text(
+                  subtitle!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  // Нет в прототипе (паритет функций): `textSecondary`, как подписи компакт-строк (RC-07).
+                  style: context.text.caption.copyWith(color: c.textSecondary),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+    final Widget column = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        nameBlock,
+        const SizedBox(height: _drawerStepperGap),
+        Row(
+          children: <Widget>[
+            quantity,
+            SizedBox(width: context.space.s2),
+            Expanded(
+              child: Align(alignment: AlignmentDirectional.centerEnd, child: sum),
+            ),
+          ],
+        ),
+        if (message != null) ...<Widget>[
+          SizedBox(height: context.space.s1),
+          Padding(
+            padding: EdgeInsetsDirectional.only(start: stepperInset),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(icon, size: 16, color: messageColor),
+                SizedBox(width: context.space.s1),
+                Expanded(
+                  child: Text(message!, style: context.text.caption.copyWith(color: messageColor)),
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (actions.isNotEmpty)
+          Padding(
+            padding: EdgeInsetsDirectional.only(start: stepperInset),
+            child: Wrap(spacing: context.space.s2, children: actions),
+          ),
+      ],
+    );
+    final Widget content = Padding(
+      // Прототип: `padding: 12px 0` — нижнее поле 12 минус невидимые 5 под степпером (цель 44, вид 34).
+      padding: EdgeInsetsDirectional.only(
+        start: error ? context.space.s2 : 0,
+        top: _drawerPadTop,
+        bottom: _drawerPadBottom,
+      ),
+      // Колонка начинается в 12 − [stepperInset] от фото (поле цели «−» заходит в зазор и на 3 lp под фото); фото
+      // рисуется и принимает касания поверх этого края.
+      child: Stack(
+        children: <Widget>[
+          Padding(
+            padding: EdgeInsetsDirectional.only(start: drawerPhoto.width + _drawerPhotoGap - stepperInset),
+            child: column,
+          ),
+          PositionedDirectional(
+            start: 0,
+            top: 0,
+            child: DsInteractive(
+              onTap: onOpen,
+              enabled: onOpen != null,
+              // Фото и название ведут в карточку товара; в обходе Tab — только название.
+              canRequestFocus: false,
+              builder: (BuildContext context, DsInteractionState st) => photo,
+            ),
+          ),
+        ],
+      ),
+    );
+    final bool canRemove = onRemove != null || removeLabel.isNotEmpty;
+    final Widget line = Container(
+      decoration: BoxDecoration(
+        color: tone == CartLineTone.warning ? c.warningContainer : c.surface,
+        border: Border(
+          bottom: DsHairline.side(context, c.rowDivider),
+          left: error ? BorderSide(color: c.error, width: 3) : BorderSide.none,
+        ),
+      ),
+      foregroundDecoration: selected ? BoxDecoration(border: Border.all(color: c.focus, width: 2)) : null,
+      child: Stack(
+        children: <Widget>[
+          content,
+          if (canRemove)
+            PositionedDirectional(
+              top: _drawerPadTop - (drawerRemoveTarget - drawerRemoveSize) / 2,
+              end: 0,
+              child: _DrawerRemoveButton(label: removeLabel, onPressed: onRemove),
+            ),
+        ],
+      ),
     );
     return Semantics(
       container: true,
       label: semanticLabel,
-      child: emphasized
-          ? ColoredBox(
-              color: c.surface,
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: context.space.s5),
-                child: line,
-              ),
-            )
-          : line,
+      child: ColoredBox(
+        color: c.surface,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: context.space.s5),
+          child: line,
+        ),
+      ),
     );
   }
+
+  /// Верхнее поле строки drawer (прототип: 12).
+  static const double _drawerPadTop = 12;
+
+  /// Нижнее поле строки drawer: 12 прототипа минус 5 невидимых под степпером (цель 44, видимая часть 34).
+  static const double _drawerPadBottom = 7;
+
+  /// Зазор фото и колонки (прототип: `gap: 12px`).
+  static const double _drawerPhotoGap = 12;
+
+  /// Зазор названия и крестика (прототип: `gap: 8px`).
+  static const double _drawerNameGap = 8;
+
+  /// Зазор над строкой степпера: 8 прототипа минус 5 невидимых над степпером.
+  static const double _drawerStepperGap = 3;
 }
 
 /// Подпись варианта как ссылка «Хром · 1/2" ›» (UI-20-007): цель нажатия ≥ 44 lp по высоте (A11Y-003),
@@ -352,5 +567,63 @@ class _VariantLink extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Крестик «Удалить» строки drawer корзины (прототип): видимый квадрат 28×28 с радиусом `sm` 8, прозрачный (наведение
+/// — `surfaceHover`, нажатие — `iconButtonPressed`), крест 14 `catalogMeta` линией 2,4; цель касания 44 × 44 — видимый
+/// квадрат в её правом верхнем углу со сдвигом 8 вниз (A11Y-003); фокус — кольцо `focus`, тултип — подпись.
+class _DrawerRemoveButton extends StatelessWidget {
+  const _DrawerRemoveButton({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final DsColors c = context.colors;
+    final BorderRadius radius = BorderRadius.all(context.radii.sm);
+    const double inset = (CartLine.drawerRemoveTarget - CartLine.drawerRemoveSize) / 2;
+    final Widget button = Semantics(
+      button: true,
+      enabled: onPressed != null,
+      label: label,
+      excludeSemantics: true,
+      onTap: onPressed,
+      child: DsInteractive(
+        key: const ValueKey<String>('cart-line-remove'),
+        enabled: onPressed != null,
+        onTap: onPressed,
+        builder: (BuildContext context, DsInteractionState s) => SizedBox.square(
+          dimension: CartLine.drawerRemoveTarget,
+          child: Align(
+            alignment: AlignmentDirectional.topEnd,
+            child: Padding(
+              padding: const EdgeInsetsDirectional.only(top: inset),
+              child: DsFocusRing(
+                visible: s.focused,
+                borderRadius: radius,
+                child: Container(
+                  width: CartLine.drawerRemoveSize,
+                  height: CartLine.drawerRemoveSize,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: s.pressed ? c.iconButtonPressed : (s.hovered ? c.surfaceHover : Colors.transparent),
+                    borderRadius: radius,
+                  ),
+                  child: DsGlyph(
+                    kind: DsGlyphKind.cross,
+                    size: 14,
+                    strokeWidth: 2.4,
+                    color: s.enabled ? c.catalogMeta : c.disabledText,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    return label.isEmpty ? button : AppTooltip(message: label, child: button);
   }
 }

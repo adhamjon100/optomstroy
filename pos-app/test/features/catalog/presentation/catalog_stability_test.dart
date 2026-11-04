@@ -7,6 +7,9 @@
 // в локальном кэше, число запросов списка на одну смену категории. 02 SCR-10.5 ANIM-024 / SCR-12.5: на expanded
 // анимируется только контент-колонка, SB и CP — нет; SCR-10.7 «Загрузка (тёплая)»: кэш ≤ 100 мс + тонкий прогресс.
 // Данные синтетические (фейки тестов каталога), не реальная интеграция.
+// ADR-114 (решение 4, 02 П.3 п. 11): голый `/catalog` сотрудника на medium+ открывает корневую категорию — сценарии,
+// которые начинаются со всего каталога, открывают его явно (`/catalog?all=1`); переход на стартовую категорию — тем же
+// экземпляром, одним запросом списка категории; крошки — только при глубине ≥ 3 (к родителю — «Все товары» ленты).
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide SearchBar;
@@ -256,7 +259,7 @@ void main() {
     setWindow(tester, kExpanded);
     final _CartMounts cart = _CartMounts();
     final CatalogHarness h = _harness(cart: cart);
-    final GoRouter router = _appRouter('/catalog');
+    final GoRouter router = _appRouter('/catalog?all=1');
     addTearDown(router.dispose);
     await _pumpApp(tester, h, router);
     expect(find.byKey(const ValueKey<String>('stub-SCR-10')), findsOneWidget);
@@ -298,6 +301,30 @@ void main() {
     expect(cart.mounts, cartMountsAtStart, reason: 'кнопка корзины в шапке не пересоздаётся');
     expect(cart.disposes, 0);
   }, variant: _windows);
+
+  testWidgets(
+    'expanded: /catalog → стартовая категория — без анимации страницы, один запрос списка (только категории)',
+    (tester) async {
+      setWindow(tester, kExpanded);
+      final _CartMounts cart = _CartMounts();
+      final CatalogHarness h = _harness(cart: cart);
+      final GoRouter router = _appRouter('/catalog');
+      addTearDown(router.dispose);
+      await _pumpApp(tester, h, router);
+      expect(_location(router), '/catalog/c/c-mix');
+      expect(find.byKey(const ValueKey<String>('stub-SCR-12')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('product-p1')), findsOneWidget);
+      expect(find.byType(CatalogWorkspace), findsOneWidget, reason: 'один экземпляр рабочего пространства');
+      expect(_transitionWidgets(), isFalse, reason: 'переход — без Zoom-анимации страницы');
+      expect(
+        h.catalog.productCalls.map((CatalogQuery q) => q.filter.categoryId),
+        <String?>['c-mix'],
+        reason: 'список всего каталога не запрашивается — только стартовая категория',
+      );
+      expect(cart.mounts, 1);
+    },
+    variant: _windows,
+  );
 
   testWidgets('expanded: при смене категории прежние карточки остаются, пока идёт загрузка (тонкая полоса)', (
     tester,
@@ -346,7 +373,8 @@ void main() {
     expect(identical(tester.state(find.byType(CatalogWorkspace)), ws), isTrue);
     expect(cart.mounts, mounts, reason: 'кнопка корзины в шапке не пересоздаётся');
 
-    // Подкатегория на expanded — `go` (замена), «Назад» к родителю — крошками (02 SCR-12.4).
+    // Подкатегория на expanded — `go` (замена), «Назад» к родителю — карточкой «Все товары» ленты (ADR-114; крошки — при
+    // глубине ≥ 3).
     router.go('/catalog/c/c-mix');
     await settle(tester);
     final int matches = router.routerDelegate.currentConfiguration.matches.length;
@@ -355,8 +383,8 @@ void main() {
     expect(_location(router), startsWith('/catalog/c/c-mix-kitchen'));
     expect(router.routerDelegate.currentConfiguration.matches.length, matches, reason: 'без новой записи истории');
     expect(identical(tester.state(find.byType(CatalogWorkspace)), ws), isTrue);
-    expect(find.byType(CatalogBreadcrumbs), findsOneWidget, reason: 'путь к родителю — крошки');
-    await tester.tap(find.descendant(of: find.byType(CatalogBreadcrumbs), matching: find.text('Смесители')));
+    expect(find.byType(CatalogBreadcrumbs), findsNothing, reason: 'глубина 2 — без крошек');
+    await tester.tap(find.byKey(const ValueKey<String>('chip-sub-all')));
     await settle(tester);
     expect(_location(router), startsWith('/catalog/c/c-mix'));
     expect(identical(tester.state(find.byType(CatalogWorkspace)), ws), isTrue);
@@ -428,7 +456,7 @@ void main() {
   ) async {
     setWindow(tester, kExpanded);
     final CatalogHarness h = _harness(cart: _CartMounts());
-    final GoRouter router = _appRouter('/catalog');
+    final GoRouter router = _appRouter('/catalog?all=1');
     addTearDown(router.dispose);
     await _pumpApp(tester, h, router);
     final State ws = tester.state(find.byType(CatalogWorkspace));
@@ -444,11 +472,12 @@ void main() {
     expect(identical(tester.state(find.byType(CatalogWorkspace)), ws), isTrue, reason: 'тот же экземпляр');
     expect(tester.widget<EditableText>(field).controller.text, 'см', reason: 'набранный текст не сбрасывается');
 
+    // Логотип → `/catalog` → стартовая категория (корень с наибольшим числом товаров), тот же экземпляр.
     await tester.tap(find.byType(CatalogLogo).first);
     await settle(tester);
-    expect(_location(router), '/catalog');
-    expect(find.byKey(const ValueKey<String>('stub-SCR-10')), findsOneWidget);
-    expect(tester.widget<EditableText>(field).controller.text, isEmpty, reason: 'строка поиска очищается на SCR-10');
+    expect(_location(router), '/catalog/c/c-mix');
+    expect(find.byKey(const ValueKey<String>('stub-SCR-12')), findsOneWidget);
+    expect(tester.widget<EditableText>(field).controller.text, isEmpty, reason: 'строка поиска очищается вне поиска');
     expect(identical(tester.state(find.byType(CatalogWorkspace)), ws), isTrue);
   }, variant: _windows);
 
@@ -457,10 +486,10 @@ void main() {
     (tester) async {
       setWindow(tester, kMedium);
       final CatalogHarness h = _harness(cart: _CartMounts());
-      final GoRouter router = _appRouter('/catalog');
+      final GoRouter router = _appRouter('/catalog?all=1');
       addTearDown(router.dispose);
       await _pumpApp(tester, h, router);
-      // medium (прототип 2026-10-29, ADR-112): корни — колонка плиток 132, как на expanded; полосы корней нет.
+      // medium (прототип, ADR-112, ADR-114): корни — колонка плиток, как на expanded; полосы корней нет.
       expect(find.byKey(const ValueKey<String>('chip-cat-c-mix')), findsNothing);
       final _Step toA = await _observe(
         tester,

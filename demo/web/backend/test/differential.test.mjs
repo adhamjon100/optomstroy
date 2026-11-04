@@ -26,7 +26,7 @@ const runs = {};
 async function runOn(label, start) {
   const t = Date.now();
   const errors = [];
-  const be = await start({ sku: 500, strict: true, initOpts: { seed: false }, boot: { netRecorder: true }, onLog: (lv, m) => lv === 'error' && errors.push(String(m).slice(0, 800)) });
+  const be = await start({ strict: true, initOpts: { seed: false }, boot: { netRecorder: true }, onLog: (lv, m) => lv === 'error' && errors.push(String(m).slice(0, 800)) });
   let ctx;
   let stats = null;
   try {

@@ -403,6 +403,9 @@ SyncPageRows syncItemsToRows(CatalogSyncEntity entity, List<Json> items, {requir
                 depth: c.depth ?? 0,
                 sortOrder: Value(c.sortOrder ?? 0),
                 iconKey: Value(c.iconKey),
+                // Картинка категории (ADR-114) — sha из адреса контракта `/images/{sha}/card`: холодный старт и
+                // офлайн показывают её, а не иконку (схема не меняется — столбец `image_sha` уже есть).
+                imageSha: Value(categoryImageShaFromUrl(c.imageUrl)),
                 productCount: Value(c.productCount ?? 0),
                 isVisible: Value(c.isVisible ?? true),
                 deletionMark: Value(c.deletionMark ?? false),
@@ -573,7 +576,9 @@ LocalProductsCompanion syncProductToRow(SyncProductDto p, int serverTimeMs) {
     isSellable: Value(p.isSellable ?? true),
     multiplicityMilli: Value(p.multiplicity == null ? null : Qty.fromString(p.multiplicity!).milli),
     minQtyMilli: Value(p.minQuantity == null ? null : Qty.fromString(p.minQuantity!).milli),
-    primaryImageSha: Value(p.imageIds.isEmpty ? null : p.imageIds.first),
+    // `imageIds` по контракту (08 §4.24) — uuid строк сущности `images`, а не sha256: основное фото выбирает DAO по
+    // `product_images_meta` (`is_primary`, `sort_order`). Иначе офлайн-список не находил размеры и показывал заглушку.
+    primaryImageSha: const Value(null),
     attributesJson: Value(p.attributes.isEmpty ? null : jsonEncode(p.attributes)),
     deletionMark: Value(p.deletionMark ?? false),
     serverUpdatedAt: _ms(p.updatedAt) ?? serverTimeMs,
@@ -877,9 +882,23 @@ CategoryTree categoryTreeFromRows(List<CategoryRow> rows, {DateTime? asOf}) => C
       productCount: c.productCount,
       sortOrder: c.sortOrder,
       iconKey: c.iconKey,
+      imageUrl: categoryImageUrlFromSha(c.imageSha),
       depth: c.depth,
     ),
 ], asOf: asOf);
+
+/// Адрес картинки категории контракта: `/images/{sha256}/card`.
+final RegExp _categoryImagePath = RegExp(r'^/images/([0-9a-f]{64})/card$');
+
+/// sha256 картинки категории из адреса контракта; другой формат или `null` — `null` (иконка по `iconKey`).
+String? categoryImageShaFromUrl(String? url) {
+  if (url == null) return null;
+  final String path = Uri.tryParse(url)?.path ?? url;
+  return _categoryImagePath.firstMatch(path)?.group(1);
+}
+
+/// Адрес картинки категории по sha256 кэша (тот же, что в сети); `null` — картинки нет.
+String? categoryImageUrlFromSha(String? sha) => sha == null ? null : '/images/$sha/card';
 
 /// Метка `sync_meta` → домен (`null` — сущность не из перечня кэша).
 LocalSyncState? localSyncStateFromRow(SyncMetaRow r) {

@@ -1,8 +1,9 @@
 // Кнопка-итог корзины в шапке medium+ (02 UI-10-041 редакции 1.16; 03 §9.70 `TopAppBarCartButton`; ADR-112, D5) на
 // данных `cartControllerProvider`: бейдж — число позиций, вторая строка — последний итог сервера («≈», пока изменения
 // не подтверждены; «N поз.», пока ответа сервера нет — D-23, MNY-001, без локального пересчёта), первая строка —
-// «Корзина · 6 шт» (единицы, как прежняя подпись `CartFab`; шапке не хватает места — строка свёрнута, итог одной
-// строкой; «5 поз. · 6 шт» — в тултипе, ADR-112 «паритет функций, раунд 2»), иконка предупреждения с тултипом «В корзине есть предупреждения» (и в `Semantics`) —
+// «Корзина», как в прототипе (ADR-114, ревью RV-10; до ADR-114 — «Корзина · 6 шт»): число позиций и единицы
+// («5 поз. · 6 шт», как прежняя подпись `CartFab`) — в тултипе и `Semantics` (паритет функций); шапке не хватает
+// места — строка свёрнута, итог одной строкой (ADR-112 «паритет функций, раунд 2»), иконка предупреждения с тултипом «В корзине есть предупреждения» (и в `Semantics`) —
 // изменились цены, не хватает остатка, позиция недоступна или конфликт версий; при неудачном сохранении (записи
 // `dead`, строка `failed`) — та же иконка с текстом «Корзина не сохранена» (повтор — в drawer, «Ошибка сохранения ·
 // Повторить»). Нажатие — drawer корзины 420 (`CartDrawer`); после закрытия фокус возвращается на кнопку (A11Y-011).
@@ -140,15 +141,16 @@ class _CartHeaderButtonViewState extends ConsumerState<CartHeaderButtonView> {
     ];
     final String warningText = warnings.join('\n');
     final String semantic = warnings.isEmpty ? base : '$base, ${warnings.join(', ')}';
-    // Строку «Корзина · 6 шт» шапка сворачивает по своей ширине (`TopAppBarFit`, 02 §3.1 п. 7, ADR-112): итог
-    // сервера виден всегда (02 UI-10-041), число позиций и единиц («5 поз. · 6 шт») — в тултипе и `Semantics`.
+    // Строку «Корзина» шапка сворачивает по своей ширине (`TopAppBarFit`, 02 §3.1 п. 7, ADR-112): итог сервера виден
+    // всегда (02 UI-10-041), число позиций и единиц («5 поз. · 6 шт») — в тултипе и `Semantics` при любой ступени.
     final String? counter = d.count == 0 || d.units.isEmpty
         ? null
         : l10n.cart_counter_units(l10n.cart_positions_short(d.count), d.units);
     return CartEventsListener(
       child: TopAppBarCartButton(
         key: CartHeaderButtonView.buttonKey,
-        label: d.count == 0 || d.units.isEmpty ? l10n.cart_title : l10n.cart_header_label_units(d.units),
+        // Прототип: всегда «Корзина» (ADR-114); единицы — в тултипе [counter] и в [semantic].
+        label: l10n.cart_title,
         count: d.count,
         totalText: totalText,
         warning: warnings.isNotEmpty,

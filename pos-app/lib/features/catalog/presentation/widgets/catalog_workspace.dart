@@ -2,14 +2,17 @@
 // по 02 ч. B: шапка (зона A), сайдбар (B), заголовок/инструменты/чипы (C), список (D); корзина (E) на medium и шире —
 // кнопка-итог в шапке и drawer 420 поверх экрана (порт `catalogCartButtonProvider`, ADR-112), на compact — `CartFab`;
 // адаптивность D-18: compact — шапка 56 + строка поиска + полоса чипов (нижняя навигация — оболочка); medium и
-// шире — одна раскладка по прототипу 2026-10-29 (ADR-112): шапка, баннер офлайна, колонка плиток корневых категорий
-// 132 (`CatalogSidebar.tiles`; у `customer` на expanded/large — прежний сайдбар-список 240/292, D6) · контент; колонка
-// сворачивается до 72 кнопкой внизу, выбор сохраняется в настройках пользователя (`sidebarCollapsed`). После
-// «+ Добавить» на medium и шире — тост «Добавлено: {name}» внизу справа (≈ 2 с; у `customer` — с действием «Открыть»:
-// кнопки корзины в его шапке нет), на compact — снекбар «Добавлено · Открыть». Повтор/«Назад»/перезапуск — 02 SCR-10.11,
-// SCR-11.11, SCR-12.11. Над списком (medium+) прокручиваются вместе с ним: заголовок h1, лента подкатегорий
-// `ScrollRibbon` 118×148, закреплённая строка управления («Новые», «Избранные», «Недавние», «Найдено: N» | вид,
-// сортировка, «Фильтры») и встроенная панель фильтров — блоки с постоянными ключами (без пересоздания при смене
+// шире — одна раскладка по прототипу (ADR-112, ADR-114): шапка, баннер офлайна, колонка плиток корневых категорий
+// 144 (`CatalogSidebar.tiles`, ширина по самому длинному слову; у `customer` на expanded/large — прежний
+// сайдбар-список 240/292, D6) · контент; колонка сворачивается до 72 значком «‹‹» в строке заголовка «Каталог», выбор
+// сохраняется в настройках пользователя (`sidebarCollapsed`). Каталог сотрудника на medium+ всегда открыт на
+// корневой категории (ADR-114 решение 4): голый `/catalog` заменяется `/catalog/c/{последний открытый корень или корень
+// с наибольшим числом товаров}`, «Все товары» — `/catalog?all=1` (заголовок «Каталог» колонки). После «+ Добавить» на
+// medium и шире — тост «Добавлено: {name}» внизу справа (1,8 с; у `customer` — с действием «Открыть»: кнопки корзины в
+// его шапке нет), на compact — снекбар «Добавлено · Открыть». Повтор/«Назад»/перезапуск — 02 SCR-10.11, SCR-11.11,
+// SCR-12.11. Над списком (medium+) прокручиваются вместе с ним: заголовок 30/800, лента подкатегорий `ScrollRibbon`
+// 118×148 (в режиме категории — всегда), закреплённая строка управления («Новые», «Избранные», «Недавние», «Найдено: N»
+// | вид, сортировка, «Фильтры») и встроенная панель фильтров — блоки с постоянными ключами (без пересоздания при смене
 // выборки; панель фильтров всегда в дереве, закрытая — нулевой высоты).
 import 'dart:async';
 
@@ -26,12 +29,15 @@ import 'package:optomstroy/design_system/components/app_progress.dart';
 import 'package:optomstroy/design_system/components/app_snackbar.dart';
 import 'package:optomstroy/design_system/components/category_tile.dart';
 import 'package:optomstroy/design_system/components/confirm_dialog.dart';
+import 'package:optomstroy/design_system/components/ds_glyph.dart';
 import 'package:optomstroy/design_system/components/empty_state.dart';
 import 'package:optomstroy/design_system/components/offline_banner.dart';
 import 'package:optomstroy/design_system/components/scroll_ribbon.dart';
 import 'package:optomstroy/design_system/components/view_mode_segmented.dart';
 import 'package:optomstroy/design_system/layout/content_region.dart';
+import 'package:optomstroy/design_system/layout/route_activity.dart';
 import 'package:optomstroy/design_system/layout/shell_scope.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -99,6 +105,9 @@ final class _PrefsMemo {
   CatalogSort? catalogSort;
   CatalogSort? searchSort;
   bool sidebarCollapsed = false;
+
+  /// Последняя открытая корневая категория (стартовая категория сотрудника на medium+, ADR-114 решение 4).
+  String? lastRoot;
   final Map<WindowClass, ProductViewMode> views = <WindowClass, ProductViewMode>{};
   CatalogListKey? lastShownKey;
   CatalogListState? lastShown;
@@ -117,6 +126,7 @@ class CatalogWorkspace extends ConsumerStatefulWidget {
     this.f,
     this.q,
     this.stackDepth,
+    this.all = false,
   });
 
   final CatalogScreenMode mode;
@@ -131,6 +141,10 @@ class CatalogWorkspace extends ConsumerStatefulWidget {
   /// (0 — запись `go`; 1 — SCR-11 поверх SCR-12 или подкатегория поверх категории на medium). `null` — экран на
   /// своей странице (compact): вложенность записи определяется по стеку роутера.
   final int? stackDepth;
+
+  /// SCR-10 `all=1` — весь каталог «Все товары» (заголовок «Каталог» колонки, корень крошек). Без него голый
+  /// `/catalog` сотрудника на medium+ открывает корневую категорию (ADR-114 решение 4).
+  final bool all;
 
   /// Постоянный ключ для всех режимов (root/category/search): смена адреса обновляет экземпляр, а не меняет его.
   static const Key stableKey = ValueKey<String>('catalog-workspace');
@@ -156,6 +170,16 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
 
   /// Колонка категорий свёрнута до 72 (medium+; настройка пользователя `sidebarCollapsed`, паритет функций ADR-112).
   bool _sidebarCollapsed = false;
+
+  /// Последняя открытая корневая категория пользователя (настройка `catalog_last_root`, ADR-114 решение 4).
+  String? _lastRoot;
+
+  /// Стартовая категория голого `/catalog` уже выбрана (или выбран откат к «Все товары»): повторно не выбирается,
+  /// пока адрес снова не станет голым `/catalog` (логотип, пункт меню «Каталог»).
+  bool _startResolved = false;
+
+  /// Переход на стартовую категорию назначен — до смены адреса список корня не запрашивается.
+  bool _startRedirecting = false;
 
   /// Встроенная панель фильтров (medium+) открыта; переживает смену категории.
   bool _filterPanelOpen = false;
@@ -204,6 +228,10 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
 
   bool get _isCategory => widget.mode == CatalogScreenMode.category;
 
+  /// Голый `/catalog` (без `all=1`, подборки и фильтров): у сотрудника на medium+ — переход на стартовую категорию.
+  static bool _bareRoot(CatalogWorkspace w) =>
+      w.mode == CatalogScreenMode.root && !w.all && w.preset == null && (w.f == null || w.f!.isEmpty);
+
   @override
   void initState() {
     super.initState();
@@ -215,6 +243,10 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
     _searchText = TextEditingController(text: _isSearch ? (widget.q ?? '') : '');
     _input = SearchInputController(onQuery: _onQuery)..reset(_activeQuery);
     _price = CatalogFilterPriceControllers(_filter);
+    // Ширины колонки, карточек ленты и ступень строки управления считаются в `build` по шрифту: шрифт загружен позже
+    // (веб) — перестроить экран с новыми ширинами (ревью R2C-14).
+    dsTextMeasureEpoch.addListener(_onFontsChanged);
+    HardwareKeyboard.instance.addHandler(_onSearchKey);
     final _PrefsMemo? memo = _prefsMemo[ref.read(catalogPrefsProvider)];
     if (memo != null) {
       _applyPrefs(memo);
@@ -237,6 +269,13 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
     super.didUpdateWidget(old);
     final bool modeChanged = widget.mode != old.mode;
     final bool scopeChanged = modeChanged || widget.categoryId != old.categoryId;
+    if (modeChanged || widget.all != old.all || widget.preset != old.preset) {
+      _startRedirecting = false;
+      if (_bareRoot(widget) && !_bareRoot(old)) {
+        // Снова голый `/catalog` (логотип, «Каталог» меню ☰) — снова стартовая категория.
+        _startResolved = false;
+      }
+    }
     if (_isSearch) {
       final String q = SearchInputPolicy.normalize(widget.q ?? '');
       if (modeChanged || q != _activeQuery) {
@@ -328,8 +367,41 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
     });
   }
 
+  void _onFontsChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  /// Ветка экрана видна (`TickerMode`, из `build`): F2 / Ctrl+F только у видимого каталога.
+  bool _tickerOn = true;
+
+  /// F2 / Ctrl+F (02 §3.8) — фокус в поле поиска, когда фокус клавиатуры не внутри экрана (`CallbackShortcuts` экрана
+  /// клавишу не получит): веб-демо после входа и разблокировки, фокус у узла сочетаний оболочки (ревью PAR-03). Над
+  /// экраном диалог или экран (кроме панели SCR-14), фокус во всплывающем окне или в поле ввода, экран за
+  /// блокировкой (`ExcludeFocus`) — не перехватывается.
+  bool _onSearchKey(KeyEvent e) {
+    if (e is! KeyDownEvent || !mounted || !_tickerOn) return false;
+    final HardwareKeyboard keyboard = HardwareKeyboard.instance;
+    if (!const SingleActivator(LogicalKeyboardKey.f2).accepts(e, keyboard) &&
+        !const SingleActivator(LogicalKeyboardKey.keyF, control: true).accepts(e, keyboard)) {
+      return false;
+    }
+    if (!_searchFocus.canRequestFocus || !dsRouteIsCurrent(context, allowPanels: true)) return false;
+    final BuildContext? focus = FocusManager.instance.primaryFocus?.context;
+    if (focus != null && focus.mounted) {
+      if (focus.findAncestorStateOfType<_CatalogWorkspaceState>() == this) return false;
+      if (ModalRoute.of(focus) is PopupRoute) return false;
+      if (focus.widget is EditableText || focus.findAncestorStateOfType<EditableTextState>() != null) return false;
+    }
+    _focusSearch();
+    return true;
+  }
+
   @override
   void dispose() {
+    dsTextMeasureEpoch.removeListener(_onFontsChanged);
+    HardwareKeyboard.instance.removeHandler(_onSearchKey);
     _panelDebounce?.cancel();
     _input.dispose();
     _searchText.dispose();
@@ -355,7 +427,8 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
     final _PrefsMemo memo = _PrefsMemo()
       ..catalogSort = await prefs.sort(search: false)
       ..searchSort = await prefs.sort(search: true)
-      ..sidebarCollapsed = await prefs.sidebarCollapsed() ?? false;
+      ..sidebarCollapsed = await prefs.sidebarCollapsed() ?? false
+      ..lastRoot = await prefs.lastRoot();
     for (final WindowClass wc in WindowClass.values) {
       final ProductViewMode? v = await prefs.viewMode(wc);
       if (v != null) {
@@ -378,6 +451,7 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
     _prefSortCatalog = catalogSort != null && catalogSort.forCatalog ? catalogSort : null;
     _prefSortSearch = searchSort != null && searchSort.forSearch ? searchSort : null;
     _sidebarCollapsed = memo.sidebarCollapsed;
+    _lastRoot = memo.lastRoot;
     _prefViews
       ..clear()
       ..addAll(memo.views);
@@ -424,9 +498,73 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
 
   bool get _isCustomer => ref.read(catalogViewerRoleProvider) == RoleCode.customer;
 
-  /// Корень каталога роли: `customer` — SCR-50 `/home` (у клиента нет SCR-10, G-7), staff — `/catalog`.
+  /// Корень каталога роли: `customer` — SCR-50 `/home` (у клиента нет SCR-10, G-7), staff — `/catalog` (на medium+
+  /// он открывает стартовую категорию, ADR-114 решение 4).
   String _rootLocation({String? view, String? sort}) =>
       _isCustomer ? CatalogPaths.home(view: view, sort: sort) : CatalogPaths.catalog(view: view, sort: sort);
+
+  /// Весь каталог «Все товары»: staff — `/catalog?all=1` (заголовок «Каталог» колонки, корень крошек), `customer` —
+  /// SCR-50.
+  String _allLocation({String? view, String? sort}) =>
+      _isCustomer ? CatalogPaths.home(view: view, sort: sort) : CatalogPaths.catalog(view: view, sort: sort, all: true);
+
+  /// Голый `/catalog` сотрудника на medium+: выбирает стартовую категорию ([catalogStartRoot]: последний открытый
+  /// пользователем корень, иначе корень с наибольшим числом товаров; ADR-114 решение 4) и назначает переход на неё без
+  /// записи в истории (`Router.neglect` — адрес заменяется, «Назад» браузера не возвращает на голый `/catalog`).
+  /// `true` — переход ещё не выполнен (список корня не запрашивается, заголовок и сетка — скелетон). Дерево не
+  /// загрузилось или пусто — откат к «Все товары» (`false`). compact, `customer`, экран вне семейства страницы
+  /// `/catalog` и вне роутера — без перехода.
+  bool _awaitingStart(CategoryTreeState tree, WindowClass wc, RoleCode? role) {
+    if (_startRedirecting && widget.mode == CatalogScreenMode.root) {
+      return true;
+    }
+    // Только экран семейства в странице `/catalog` (medium+, [CatalogWorkspace.stackDepth] задан): замена адреса
+    // обновляет этот же экземпляр (ADR-110). Экран на своей странице (compact; `CatalogScreen` вне семейства) не
+    // переходит — иначе поверх него открылась бы новая страница с анимацией.
+    if (_startResolved ||
+        !_bareRoot(widget) ||
+        widget.stackDepth == null ||
+        wc == WindowClass.compact ||
+        role == RoleCode.customer) {
+      return false;
+    }
+    final GoRouter? r = _router;
+    if (r == null) {
+      _startResolved = true;
+      return false;
+    }
+    if (!_prefsLoaded) {
+      return true;
+    }
+    final Category? start = catalogStartRoot(tree.tree?.roots ?? const <Category>[], lastRootId: _lastRoot);
+    if (start == null) {
+      if (tree.loading) {
+        return true;
+      }
+      _startResolved = true;
+      return false;
+    }
+    final String location = CatalogPaths.category(start.id, view: widget.view, sort: widget.sort);
+    _startResolved = true;
+    _startRedirecting = true;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      if (!mounted || widget.mode != CatalogScreenMode.root) {
+        return;
+      }
+      Router.neglect(context, () => r.go(location));
+    });
+    return true;
+  }
+
+  /// Запоминает корень пути открытой категории как последний (`catalog_last_root`, на пользователя).
+  void _rememberRoot(String rootId) {
+    if (!_prefsLoaded || rootId == _lastRoot) {
+      return;
+    }
+    _lastRoot = rootId;
+    _rememberPrefs((_PrefsMemo m) => m.lastRoot = rootId);
+    savePref(ref.read(catalogPrefsProvider).setLastRoot(rootId));
+  }
 
   // ---------------------------------------------------------------- навигация
 
@@ -490,7 +628,12 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
     final String? view = _urlView?.value ?? _prefViews[context.windowClass]?.value;
     final String? sort = _sort?.value;
     final String location = switch (widget.mode) {
-      CatalogScreenMode.root => CatalogPaths.catalog(preset: _recent ? 'recent' : null, view: view, sort: sort),
+      CatalogScreenMode.root => CatalogPaths.catalog(
+        preset: _recent ? 'recent' : null,
+        view: view,
+        sort: sort,
+        all: widget.all,
+      ),
       CatalogScreenMode.category => CatalogPaths.category(
         widget.categoryId!,
         view: view,
@@ -695,7 +838,7 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
     _applyFilter(_isCategory ? rebuildFilter(next, categoryId: widget.categoryId) : next);
   }
 
-  /// Свернуть / развернуть колонку категорий (кнопка внизу колонки): настройка пользователя сохраняется.
+  /// Свернуть / развернуть колонку категорий («‹‹» в строке заголовка «Каталог»): настройка пользователя сохраняется.
   void _toggleSidebar() {
     final bool next = !_sidebarCollapsed;
     setState(() => _sidebarCollapsed = next);
@@ -794,7 +937,7 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
       final (String msg, String? action) = CatalogFormats.splitAction(l10n.catalog_added_snackbar);
       AppSnackbar.show(context, message: msg, actionLabel: action, onAction: () => _go('/cart'));
     } else {
-      // medium и шире (прототип 2026-10-29, ADR-112): короткий тост внизу справа, ≈ 2 с (8 с при экранном чтении);
+      // medium и шире (прототип, ADR-114): короткий тост внизу справа, 1,8 с (8 с при экранном чтении);
       // итог и число позиций видны на кнопке корзины в шапке. У `customer` кнопки корзины в шапке нет — в тосте
       // остаётся действие «Открыть» (как прежний снекбар, паритет функций ADR-112).
       final bool customer = ref.read(catalogViewerRoleProvider) == RoleCode.customer;
@@ -873,11 +1016,16 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
 
   @override
   Widget build(BuildContext context) {
+    _tickerOn = TickerMode.of(context);
     final AppLocalizations l10n = AppLocalizations.of(context);
     final DsColors c = context.colors;
     final WindowClass wc = context.windowClass;
     ref.listen<int>(catalogSearchFocusRequestProvider, (int? _, int _) => _focusSearchFromShell());
-    final CatalogListKey? key = _prefsLoaded ? _listKey : null;
+    final CategoryTreeState tree = ref.watch(categoryTreeProvider);
+    final RoleCode? role = ref.watch(catalogViewerRoleProvider);
+    // Голый `/catalog` сотрудника на medium+ — переход на стартовую категорию, список корня не запрашивается.
+    final bool awaitingStart = _awaitingStart(tree, wc, role);
+    final CatalogListKey? key = _prefsLoaded && !awaitingStart ? _listKey : null;
     final CatalogListState fresh = key == null ? const CatalogListState() : ref.watch(catalogListProvider(key));
     // Смена выборки: пока новая загружается (ещё нет ни кэша, ни ответа сети), остаются прежние карточки и
     // тонкая полоса в области списка; полносеточный скелетон — только при самой первой загрузке (02 SCR-10.7).
@@ -893,13 +1041,11 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
     }
     _syncScroll(key, fresh);
     final OnlineStatus online = ref.watch(catalogOnlineStatusProvider);
-    final RoleCode? role = ref.watch(catalogViewerRoleProvider);
     final CatalogShelfPort? shelf = ref.watch(catalogShelfPortProvider);
     final Set<String> favIds = ref.watch(catalogFavoriteIdsProvider).value ?? const <String>{};
     // Переопределение звезды нужно только до ответа и для отката при ошибке: подтверждённое избранным снимается. Иначе
     // при долгоживущем экземпляре (`stableKey`) звезда расходится с избранным, изменённым на SCR-14 или SCR-40.
     _favoriteOverrides.removeWhere((String id, bool on) => favIds.contains(id) == on);
-    final CategoryTreeState tree = ref.watch(categoryTreeProvider);
     final DateTime now = ref.watch(clockProvider).nowUtc();
     final bool offline = list.offline || online == OnlineStatus.offline;
     final Category? category = _isCategory ? tree.tree?.find(widget.categoryId!) : null;
@@ -967,33 +1113,89 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
           )
         : null;
 
-    // Поля контента: compact — 16 с обеих сторон; medium+ — 16 от колонки категорий (у неё свои поля) и 24 справа.
-    final double side = compact ? context.space.s4 : context.space.s6; // money-double: allow — геометрия UI (lp)
-    final double start = context.space.s4; // money-double: allow — геометрия UI (lp)
-    final EdgeInsets listPadding = EdgeInsets.fromLTRB(start, context.space.s2, side, side);
+    // Поля контента: compact — 16 с обеих сторон; medium+ — прототип (ADR-114): 8 от колонки категорий (у неё свои
+    // поля), 24 справа, 40 снизу.
+    const EdgeInsets main = DsCatalogMetrics.mainPadding;
+    final double side = compact ? context.space.s4 : main.right; // money-double: allow — геометрия UI (lp)
+    final double start = compact ? context.space.s4 : main.left; // money-double: allow — геометрия UI (lp)
+    final EdgeInsets listPadding = EdgeInsets.fromLTRB(start, context.space.s2, side, compact ? side : main.bottom);
 
     // ---- заголовок, лента подкатегорий, строка управления
     final EdgeInsets hPad = EdgeInsets.only(left: start, right: side);
     final List<Category> path = _isCategory && tree.tree != null
         ? tree.tree!.pathTo(widget.categoryId!)
         : const <Category>[];
-    // Лента подкатегорий (medium+, макет заказчика): дети текущей категории, а в листовой подкатегории — её
-    // соседи с выбранной текущей; заголовок раздела — родитель ленты (02 SCR-12.3: «Все» + подкатегории).
-    final Category? ribbonParent = compact ? null : _ribbonParent(tree.tree, category);
-    final String? title = switch (widget.mode) {
-      CatalogScreenMode.root =>
-        _recent
-            ? l10n.catalog_recent_title
-            : (_filter.favorite == true ? l10n.catalog_sidebar_favorites : l10n.catalog_title_all),
-      CatalogScreenMode.category => ribbonParent?.name ?? category?.name,
-      CatalogScreenMode.search => l10n.search_title,
-    };
+    if (_isCategory && role != RoleCode.customer && path.isNotEmpty) {
+      _rememberRoot(path.first.id);
+    }
+    // Поиск, начатый в категории (medium+): колонка подсвечивает её корень, лента — этот корень с выбранной «Все
+    // товары» (прототип: выбор плитки и ленты при поиске сохраняется; нажатие карточки — выход из поиска в категорию).
+    final List<Category> searchOrigin = _isSearch && !compact && widget.categoryId != null && tree.tree != null
+        ? tree.tree!.pathTo(widget.categoryId!)
+        : const <Category>[];
+    // Лента подкатегорий (medium+, прототип ADR-114 — в режиме категории всегда): дети текущей категории, а в листовой
+    // подкатегории — её соседи с выбранной текущей; у корня без непустых детей — только «Все товары». Заголовок
+    // раздела — родитель ленты (для дерева в 2 уровня — корень; 02 SCR-12.3: «Все» + подкатегории).
+    final Category? ribbonParent = compact
+        ? null
+        : (_isSearch
+              ? (searchOrigin.isEmpty ? null : searchOrigin.first)
+              : (category == null ? null : (_ribbonParent(tree.tree, category) ?? category)));
+    final List<Category> roots = tree.tree?.roots ?? const <Category>[];
+    // Весь каталог (`?all=1` и подборки SCR-10; поиск не из категории) на medium+: лента — корневые категории с
+    // выбранной «Все товары» (02 SCR-10.3 B2, AC-UI-10-033); пока выбирается стартовая категория — ленты нет.
+    final bool wholeRibbon =
+        !compact &&
+        !awaitingStart &&
+        roots.isNotEmpty &&
+        (widget.mode == CatalogScreenMode.root || (_isSearch && searchOrigin.isEmpty));
+    final Widget? ribbon = ribbonParent != null
+        ? _subcategoryRibbon(
+            l10n,
+            padding: hPad,
+            setId: ribbonParent.id,
+            items: ribbonParent.children,
+            selectedId: _isSearch || widget.categoryId == ribbonParent.id ? null : widget.categoryId,
+            allCount: ribbonParent.productCount,
+            allName: ribbonParent.name,
+            onAll: () => _openCategory(ribbonParent),
+          )
+        : (wholeRibbon
+              ? _subcategoryRibbon(
+                  l10n,
+                  padding: hPad,
+                  setId: _wholeRibbonId,
+                  items: roots,
+                  selectedId: null,
+                  allCount: roots.fold<int>(0, (int sum, Category r) => sum + r.productCount),
+                  allName: null,
+                  // Поиск — выход во весь каталог; в самом «Все товары» карточка только показывает выбор (нажатие —
+                  // без действия, вид обычной выбранной карточки).
+                  onAll: _isSearch ? () => _go(_allLocation(view: _urlView?.value, sort: _sort?.value)) : () {},
+                )
+              : null);
+    final String? title = awaitingStart
+        ? null
+        : switch (widget.mode) {
+            CatalogScreenMode.root =>
+              _recent
+                  ? l10n.catalog_recent_title
+                  : (_filter.favorite == true ? l10n.catalog_sidebar_favorites : l10n.catalog_title_all),
+            CatalogScreenMode.category => ribbonParent?.name ?? category?.name,
+            // Прототип: «Поиск: «90»» (запрос как введён, без пробелов по краям). Поле очищено или короче 2 символов
+            // (Esc, ×) — «Результаты поиска», а не прежний запрос: `_activeQuery` при коротком вводе не сбрасывается
+            // (ревью V-04, PAR-02, R2C-02).
+            CatalogScreenMode.search =>
+              tooShort || _activeQuery.isEmpty ? l10n.search_title : l10n.catalog_search_title_query(_activeQuery),
+          };
     // На время смены выборки — прежнее «Найдено: N» (как и карточки), без мигания полосы-скелетона подзаголовка.
     final String? found = _foundText(l10n, list, tooShort);
-    final Widget? crumbs = path.length >= 2
+    // Крошки — только при глубине ≥ 3 (родитель ленты — не корень); в дереве из 2 уровней путь видят плитка корня,
+    // карточка «Все товары» ленты и заголовок «Каталог» (ADR-114). Корень крошек — весь каталог.
+    final Widget? crumbs = path.length >= 3
         ? CatalogBreadcrumbs(
             path: path,
-            onRoot: () => _go(_rootLocation(view: _urlView?.value, sort: _sort?.value)),
+            onRoot: () => _go(_allLocation(view: _urlView?.value, sort: _sort?.value)),
             onCategory: (Category c) => _go(_categoryLocation(c.id)),
           )
         : null;
@@ -1068,20 +1270,20 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
               SliverToBoxAdapter(
                 key: const ValueKey<String>('catalog-sliver-title'),
                 child: Padding(
-                  // Прототип: поле контента 18 + отступ заголовка 4 сверху → 22; снизу 14 до ленты, у которой поле 2,
-                  // а у [ScrollRibbon] — 4 (кольцо фокуса) → 12. Карточка ленты — на 74 от низа шапки, как в прототипе.
-                  padding: EdgeInsets.fromLTRB(start, context.space.s5 + 2, side, context.space.s3),
+                  // Прототип: поле контента 18 + отступ заголовка 4 сверху → 22; снизу 14 до ленты (у неё поле 2):
+                  // заголовок 91, карточка ленты 143 от верха окна при шапке 69, как в прототипе.
+                  padding: EdgeInsets.fromLTRB(start, main.top + 4, side, 14),
                   child: CatalogTitleBlock(title: title, found: found, breadcrumbs: crumbs, showFound: false),
                 ),
               ),
-              if (ribbonParent != null)
+              if (ribbon != null)
                 SliverToBoxAdapter(
                   key: const ValueKey<String>('catalog-sliver-ribbon'),
                   child: Padding(
-                    // Прототип: карточка ленты → кнопки строки управления 21 (поле ленты 2 + 18 + 1 — строка 42 с
-                    // кнопками 40): 4 поля [ScrollRibbon], 5 здесь, 8 поля строки и 4 поля цели 48.
-                    padding: EdgeInsets.only(bottom: context.space.s1 + 1),
-                    child: _subcategoryRibbon(l10n, ribbonParent, hPad),
+                    // Прототип: лента 152 → строка управления 42 через 18 (кнопки 40 — на 1 ниже её верха): 7 здесь,
+                    // 8 поля строки и 4 поля цели 48 → кнопки на 312 от верха окна.
+                    padding: const EdgeInsets.only(bottom: 7),
+                    child: ribbon,
                   ),
                 ),
               if (_isSearch && strip != null)
@@ -1099,7 +1301,7 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
                         // 3 здесь и 8 сверху у списка.
                         padding: EdgeInsets.fromLTRB(start, context.space.s2, side, context.space.s1 - 1),
                         child: CatalogToolbarRow(
-                          presets: _presets(l10n, list),
+                          presets: _presets(l10n, list, favIds.length),
                           controls: controlsFor,
                           viewLabels: <String>[
                             l10n.catalog_view_grid,
@@ -1121,7 +1323,9 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
                 key: const ValueKey<String>('catalog-sliver-filters'),
                 child: _filterPanelOpen
                     ? Padding(
-                        padding: EdgeInsets.fromLTRB(start, 0, side, context.space.s2),
+                        // Прототип: панель на 14 − 4 ниже строки управления 42 (у нас — на 4 ниже её цели 48 и полей)
+                        // и на 14 выше сетки (6 здесь и 8 сверху у списка).
+                        padding: EdgeInsets.fromLTRB(start, 4, side, 6),
                         child: _inlineFilters(l10n, list, role, loading: switching),
                       )
                     : const SizedBox.shrink(),
@@ -1140,9 +1344,11 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
         padding: listPadding,
         headerSlivers: headerSlivers,
         inert: switching,
-        // Сетка SCR-10/11/12 по прототипу: карточка от 176, зазор 16 (SCR-50 — прежние 160).
+        // Сетка SCR-10/11/12 по прототипу (ADR-114): карточка от 176, зазор 14, колонок без предела (9 при 1920);
+        // телефон — зазор 16 (SCR-50 — прежние 160).
         minCardWidth: DsBreakpoints.catalogCardMinWidth,
-        gridGap: context.space.s4,
+        gridGap: compact ? context.space.s4 : DsCatalogMetrics.gridGap,
+        uncappedColumns: !compact,
         callbacks: CatalogProductCallbacks(
           onOpen: _openProduct,
           onFavorite: (ProductSummary p, bool v) => unawaited(_toggleFavorite(p, v)),
@@ -1236,7 +1442,7 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
       // `CartFab` над нижней кромкой (02 UI-20-019 редакции 1.16) — только у `customer` на medium (D6; корзина
       // клиента — по кнопке, не закреплена, 02 SCR-50.2 E). Пустая корзина — построитель возвращает пустой виджет.
       final WidgetBuilder? fab = !expanded && role == RoleCode.customer ? ref.watch(catalogCartFabProvider) : null;
-      // medium и шире — одна раскладка (прототип 2026-10-29): колонка категорий 132 на фоне страницы · контент.
+      // medium и шире — одна раскладка (прототип, ADR-114): колонка категорий 144 на фоне страницы · контент.
       // `customer` на expanded/large — прежний сайдбар-список 240/292 со счётчиками, «★ Избранное N» и «Недавние
       // товары» (D6: структура режима клиента сохраняется). Колонка сворачивается до 72 (настройка пользователя).
       final bool customerList = expanded && role == RoleCode.customer;
@@ -1246,6 +1452,7 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
         selectedCategoryId: widget.categoryId,
         collapsed: _sidebarCollapsed,
         onToggleCollapsed: _toggleSidebar,
+        onAll: () => _go(_allLocation(view: _urlView?.value, sort: _sort?.value)),
         onCategory: _openCategory,
         onFavorites: () => _go(CatalogPaths.favorites),
         onRecentProduct: _openProductId,
@@ -1276,7 +1483,15 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
                   )
                 else
                   SizedBox(
-                    width: _sidebarCollapsed ? CatalogSidebar.collapsedWidth : CatalogSidebar.tilesWidth,
+                    width: _sidebarCollapsed
+                        ? CatalogSidebar.collapsedWidth
+                        : CatalogSidebar.widthFor(
+                            context,
+                            tree.tree?.roots ?? const <Category>[],
+                            selected: path.isNotEmpty
+                                ? path.first.id
+                                : (searchOrigin.isEmpty ? null : searchOrigin.first.id),
+                          ),
                     child: sidebar,
                   ),
                 // Якорь панели SCR-14 поверх контент-колонки (колонка категорий видна — 02 SCR-14.2, EQ-PD-05).
@@ -1379,20 +1594,39 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
     return parent != null && visible(parent) ? parent : null;
   }
 
-  /// Лента подкатегорий (прототип 2026-10-29): «Все товары» (родитель, нейтральная иконка-сетка — не картинка
-  /// родителя) + подкатегории; карточки 118×148 с картинкой категории из данных, без неё — нейтральная заглушка DS.
-  /// Смена подкатегории — `go` на expanded (тот же экран, меняется только список), `push` на medium.
-  Widget _subcategoryRibbon(AppLocalizations l10n, Category parent, EdgeInsets padding) {
-    final List<Category> children = parent.children.where((Category ch) => ch.productCount > 0).toList();
-    final String? current = widget.categoryId;
-    final int index = current == parent.id ? 0 : children.indexWhere((Category ch) => ch.id == current) + 1;
+  /// Набор ленты «весь каталог» (корневые категории) — для сброса прокрутки при смене набора.
+  static const String _wholeRibbonId = '\u0000catalog-all';
+
+  /// Лента подкатегорий (прототип, ADR-114): «Все товары» (нейтральная иконка-сетка — не картинка родителя) +
+  /// непустые [items] (подкатегории родителя или, для всего каталога, корневые категории); карточки 118×148 (шире при
+  /// длинном слове — без многоточия) с картинкой категории из данных, без неё — нейтральная заглушка DS; число товаров —
+  /// в подсказке и `Semantics`. [selectedId] `null` — выбрана «Все товары» (категория-родитель, поиск, весь каталог).
+  /// [allName] — название родителя для доступного имени «Все товары» (`null` — весь каталог). Смена подкатегории —
+  /// `go` на expanded (тот же экран, меняется только список), `push` на medium; в поиске нажатие карточки открывает
+  /// категорию (выход из поиска).
+  Widget _subcategoryRibbon(
+    AppLocalizations l10n, {
+    required EdgeInsets padding,
+    required String setId,
+    required List<Category> items,
+    required String? selectedId,
+    required int allCount,
+    required String? allName,
+    required VoidCallback onAll,
+  }) {
+    final List<Category> children = items.where((Category ch) => ch.productCount > 0).toList();
+    final int found = selectedId == null ? 0 : children.indexWhere((Category ch) => ch.id == selectedId) + 1;
+    final int? index = selectedId == null || found > 0 ? found : null;
+    String labelOf(int i) => i == 0 ? l10n.catalog_title_all : children[i - 1].name;
     return ScrollRibbon(
       key: const ValueKey<String>('catalog-subcategory-ribbon'),
       // Лента другой категории начинается с начала (прокрутка прежней не переносится).
-      setId: parent.id,
+      setId: setId,
       itemCount: children.length + 1,
       itemSize: CategoryTile.ribbonSize,
-      selectedIndex: index > 0 || current == parent.id ? index : null,
+      // Ширина карточки — по самому длинному слову подписи («Канализационные трубы и фитинги» — 136, без многоточия).
+      itemWidthOf: (int i) => CategoryTile.ribbonWidthFor(context, labelOf(i), selected: i == index),
+      selectedIndex: index,
       previousLabel: l10n.category_ribbon_prev,
       nextLabel: l10n.category_ribbon_next,
       padding: padding,
@@ -1402,11 +1636,14 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
             key: const ValueKey<String>('chip-sub-all'),
             variant: CategoryTileVariant.ribbon,
             label: l10n.catalog_title_all,
-            selected: current == parent.id,
-            countLabel: '${parent.productCount}',
-            // Видимая подпись «Все товары» входит в доступное имя (WCAG 2.5.3): «Все товары: Сантехника, 124 товара».
-            semanticLabel: l10n.category_ribbon_all_a11y(parent.productCount, parent.name),
-            onTap: () => _openCategory(parent),
+            selected: index == 0,
+            countLabel: '$allCount',
+            // Видимая подпись «Все товары» входит в доступное имя (WCAG 2.5.3): «Все товары: Сантехника, 124 товара»;
+            // у всего каталога — «Все товары, 124 товара».
+            semanticLabel: allName == null
+                ? l10n.category_tile_a11y(allCount, l10n.catalog_title_all)
+                : l10n.category_ribbon_all_a11y(allCount, allName),
+            onTap: onAll,
           );
         }
         final Category ch = children[i - 1];
@@ -1416,8 +1653,8 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
           label: ch.name,
           imageUrl: ch.imageUrl,
           iconKey: ch.iconKey,
-          selected: current == ch.id,
-          // Число товаров подкатегории — пилюлей в углу карточки (паритет функций ADR-112: прежние чипы со счётчиком).
+          selected: index == i,
+          // Число товаров подкатегории — в подсказке и `Semantics` (паритет функций ADR-114: прежние пилюли).
           countLabel: '${ch.productCount}',
           semanticLabel: l10n.category_tile_a11y(ch.productCount, ch.name),
           onTap: () => _openCategory(ch),
@@ -1429,14 +1666,21 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
   /// Подборки строки управления (прототип 2026-10-29: «Новые», «Избранные»; 02 C6 — «Недавние»): «Новые» —
   /// сортировка `updatedAt:desc` (недоступна в подборке «Недавние»: там порядок просмотра; признака «новинка» API не
   /// даёт — Q-335), «Избранные» — фильтр `favorite`, «Недавние» — подборка недавних товаров с действием «Очистить»
-  /// (B6). Выбранная — залитая иконка. SCR-11 — только «Избранные» (прототип: фильтр работает и при поиске; «Новые» —
-  /// нет: поиск не сортирует по `updatedAt`, «Недавние» — подборка каталога).
-  CatalogPresetBarData? _presets(AppLocalizations l10n, CatalogListState list) {
+  /// (B6). Выбранная — тинт и `Semantics.toggled` (вес 600 и контурный глиф прототипа — ADR-114 п. 7, отклонение от
+  /// A11Y-004). SCR-11 — только «Избранные» (фильтр работает и при поиске; «Новые» — нет: поиск не сортирует по
+  /// `updatedAt`, «Недавние» — подборка каталога).
+  CatalogPresetBarData? _presets(AppLocalizations l10n, CatalogListState list, int favoriteCount) {
+    // «Избранные»: число избранных товаров — в подсказке и `Semantics` (паритет функций ADR-114: прежняя плитка
+    // «★ Избранное N» колонки; видимое N — в меню ☰).
+    final String favoritesA11y = l10n.catalog_preset_favorites_a11y(favoriteCount);
     final CatalogStripChip favorites = CatalogStripChip(
       key: 'preset-favorites',
       label: l10n.catalog_preset_favorites_toolbar,
       icon: Icons.star_outline_rounded,
       selectedIcon: Icons.star_rounded,
+      glyph: DsGlyphKind.star,
+      tooltip: favoritesA11y,
+      semanticLabel: favoritesA11y,
       selected: _filter.favorite == true && !_recent,
       reselect: true,
       onTap: _togglePresetFavorites,
@@ -1452,6 +1696,7 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
           label: l10n.catalog_preset_newest,
           icon: Icons.schedule_rounded,
           selectedIcon: Icons.access_time_filled_rounded,
+          glyph: DsGlyphKind.clock,
           selected: !_recent && _effectiveSort == CatalogSort.updatedAtDesc,
           enabled: !_recent,
           reselect: true,
@@ -1587,13 +1832,20 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
     return chips;
   }
 
+  /// Пустой список. medium+ — белая карточка прототипа на месте сетки (`EmptyStateAppearance.card`, ADR-114, ревью
+  /// RV-13); compact — прежний вид с иллюстрацией. Тексты и действия (сброс, «Возможно, вы искали…», «Все категории»)
+  /// — прежние (паритет функций).
   Widget _emptyState(AppLocalizations l10n, CatalogListState list) {
     final bool filtered = _filter.activeCount > 0;
+    final EmptyStateAppearance look = context.windowClass == WindowClass.compact
+        ? EmptyStateAppearance.illustration
+        : EmptyStateAppearance.card;
     if (_isSearch) {
       final String? suggested = list.suggestedQuery;
       return EmptyState(
         key: const ValueKey<String>('catalog-empty'),
         variant: EmptyStateVariant.search,
+        appearance: look,
         title: l10n.ds_empty_search_title(_activeQuery),
         body: l10n.search_empty_body,
         actionLabel: filtered ? l10n.ds_button_reset : null,
@@ -1602,10 +1854,26 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
         onSecondaryAction: suggested == null ? null : () => _useHistoryQuery(suggested),
       );
     }
+    if (_recent) {
+      // Подборка «Недавние» пуста: в категории — только её товары (UI-12-007), поэтому свой текст и переход ко всем
+      // недавним (`/catalog?preset=recent&all=1`, как прежний блок «Недавние» колонки), а не «В этой категории пока нет
+      // товаров» (ревью PAR-04). У `customer` всех недавних SCR-10 нет — без действия.
+      final bool scoped = _isCategory && !_isCustomer;
+      return EmptyState(
+        key: const ValueKey<String>('catalog-empty'),
+        variant: EmptyStateVariant.category,
+        appearance: look,
+        title: _isCategory ? l10n.catalog_recent_empty_category_title : l10n.catalog_recent_empty_title,
+        body: l10n.catalog_recent_empty_body,
+        actionLabel: scoped ? l10n.catalog_recent_empty_all : null,
+        onAction: scoped ? () => _go(CatalogPaths.catalog(preset: 'recent', all: true)) : null,
+      );
+    }
     if (filtered) {
       return EmptyState(
         key: const ValueKey<String>('catalog-empty'),
         variant: EmptyStateVariant.category,
+        appearance: look,
         title: l10n.catalog_empty_filtered_title,
         body: l10n.catalog_empty_filtered_body,
         actionLabel: l10n.ds_button_reset,
@@ -1615,12 +1883,13 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
     return EmptyState(
       key: const ValueKey<String>('catalog-empty'),
       variant: EmptyStateVariant.category,
+      appearance: look,
       title: l10n.catalog_empty_category_title,
       body: _isCategory ? l10n.category_empty_body : l10n.catalog_empty_category_body,
       actionLabel: l10n.category_all_categories,
-      // compact — лист «Все категории»; medium+ — корень (категории — в колонке слева).
+      // compact — лист «Все категории»; medium+ — весь каталог (категории — в колонке слева).
       onAction: () =>
-          context.windowClass == WindowClass.compact ? unawaited(_openAllCategories()) : _go(_rootLocation()),
+          context.windowClass == WindowClass.compact ? unawaited(_openAllCategories()) : _go(_allLocation()),
     );
   }
 

@@ -60,8 +60,12 @@ abstract final class CategoryIcons {
   ];
 }
 
-/// Изображение категории из 1С (Q-022) или иконка по `iconKey`, иначе `category` (CAT-009):
-/// поле [size] на `surfaceVariant`; ошибка загрузки — та же иконка, фото товара не подставляется.
+/// Изображение категории из 1С (Q-022) или иконка по `iconKey`, иначе `category` (CAT-009): поле [size]
+/// ([width] × [height]), картинка вписывается [fit] (по умолчанию `contain`) с качеством [filterQuality] (по умолчанию
+/// `high`), без фона и скругления (ADR-114: плитки колонки и ленты каталога); фон [background] и скругление [radius] —
+/// по запросу (пункт списка `CategorySidebarItem`, плитка листа «Все категории»). Нет картинки или ошибка загрузки —
+/// [fallback] (по умолчанию — иконка по `iconKey`/названию); фото товара не подставляется. Появление — fade 200 мс
+/// только у первого кадра, смена URL — без мигания (`gaplessPlayback`).
 class CategoryImage extends StatelessWidget {
   /// Создаёт изображение.
   const CategoryImage({
@@ -76,7 +80,9 @@ class CategoryImage extends StatelessWidget {
     this.color,
     this.background,
     this.radius,
-    this.fit = BoxFit.cover,
+    this.fit = BoxFit.contain,
+    this.filterQuality = FilterQuality.high,
+    this.fallback,
   });
 
   /// URL изображения категории (`thumb`).
@@ -95,10 +101,10 @@ class CategoryImage extends StatelessWidget {
   final double? width;
   final double? height;
 
-  /// Фон поля (по умолчанию `surfaceVariant`).
+  /// Фон поля; `null` — без фона (ADR-114).
   final Color? background;
 
-  /// Скругление (по умолчанию `radius.sm`).
+  /// Скругление поля (обрезка картинки); `null` — без скругления и обрезки (ADR-114).
   final BorderRadius? radius;
 
   /// Размер иконки.
@@ -107,20 +113,29 @@ class CategoryImage extends StatelessWidget {
   /// Цвет иконки (по умолчанию `textSecondary`).
   final Color? color;
 
-  /// Вписывание картинки (`cover`; плитки колонки и ленты каталога — `contain`, прототип 2026-10-29).
+  /// Вписывание картинки: `contain` (плитка колонки, прототип), `scaleDown` (карточка ленты — без увеличения),
+  /// `cover` (пункт списка `CategorySidebarItem`, плитка листа «Все категории»).
   final BoxFit fit;
+
+  /// Качество масштабирования картинки (по умолчанию `high`: картинки категорий мелкие, 45–65 px по ширине).
+  final FilterQuality filterQuality;
+
+  /// Что показать без картинки и при ошибке загрузки; `null` — иконка по `iconKey`/названию размера [iconSize].
+  final Widget? fallback;
 
   @override
   Widget build(BuildContext context) {
     final DsColors c = context.colors;
-    final Widget icon = Center(
-      key: const ValueKey<String>('category-image-icon'),
-      child: Icon(
-        CategoryIcons.resolve(key: iconKey, name: name),
-        size: iconSize,
-        color: color ?? c.textSecondary,
-      ),
-    );
+    final Widget icon =
+        fallback ??
+        Center(
+          key: const ValueKey<String>('category-image-icon'),
+          child: Icon(
+            CategoryIcons.resolve(key: iconKey, name: name),
+            size: iconSize,
+            color: color ?? c.textSecondary,
+          ),
+        );
     final double w = width ?? size;
     final double h = height ?? size;
     final String? url = imageUrl;
@@ -139,6 +154,7 @@ class CategoryImage extends StatelessWidget {
         // Смена категории в ленте/сайдбаре не гасит уже показанную картинку (без мигания, заказчик 2026-10-28).
         gaplessPlayback: true,
         fit: fit,
+        filterQuality: filterQuality,
         frameBuilder: (BuildContext context, Widget child, int? frame, bool sync) {
           if (sync) {
             return child;
@@ -152,10 +168,9 @@ class CategoryImage extends StatelessWidget {
         errorBuilder: (BuildContext context, Object error, StackTrace? stack) => icon,
       );
     }
-    return ClipRRect(
-      borderRadius: radius ?? BorderRadius.all(context.radii.sm),
-      child: Container(width: w, height: h, color: background ?? c.surfaceVariant, child: content),
-    );
+    final Widget box = Container(width: w, height: h, color: background, child: content);
+    final BorderRadius? r = radius;
+    return r == null || r == BorderRadius.zero ? box : ClipRRect(borderRadius: r, child: box);
   }
 }
 
@@ -262,6 +277,10 @@ class CategorySidebarItem extends StatelessWidget {
             size: isChild ? 24 : 32,
             iconSize: isChild ? 18 : 24,
             color: selected ? c.primaryText : null,
+            // Пункт списка — прежний вид: поле `surfaceVariant`, скругление `sm`, `cover`.
+            background: c.surfaceVariant,
+            radius: BorderRadius.all(context.radii.sm),
+            fit: BoxFit.cover,
           );
     return Semantics(
       button: true,

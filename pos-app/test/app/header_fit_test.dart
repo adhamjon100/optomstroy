@@ -5,8 +5,9 @@
 //   аватара видны имя или роль — не уже 320 lp (QA паритета функций); время, итог корзины, колокольчик и аватар видны
 //   всегда — на /orders (продавец), /cashier (кассир, полная дата) и SCR-10;
 // - свёрнутое не пропадает: дата — в тултипе и `Semantics`, единицы корзины — в тултипе, имя и роль — в `Semantics`;
-// - порядок сворачивания: строка «Корзина · N шт» → роль → имя → «Оптомстрой» → полная дата «Кассы» → короткая →
-//   дата; затем узкие зазоры, затем поле поиска второй строкой;
+// - порядок сворачивания (ADR-114, RV-10): роль → имя → «Оптомстрой» → строка «Корзина» (всегда «Корзина», единицы —
+//   в тултипе) → полная дата «Кассы» → короткая → дата; затем узкие зазоры, затем поле поиска второй строкой;
+// - шапка 69 (12 + 44 + 12 + граница; прототип), с полем второй строкой — 125;
 // - на «Кассе» при medium дата видна второй строкой часов, пока хватает места (UI-30-013, AC-UI-30-020).
 // Шрифт Inter загружается из assets/fonts (ширины текста — как в приложении). Синтетические данные, без сети.
 // Тест-кейсы 12_TEST_PLAN: T-UI-115 (сжатие шапки по ширине), T-CART-037.
@@ -230,18 +231,32 @@ void main() {
     }
   });
 
-  testWidgets('1440 lp: ничего не свёрнуто — «Корзина · 6 шт», дата, имя и роль, «Оптомстрой», поле в строке', (
+  testWidgets('1440 lp: ничего не свёрнуто — «Корзина», дата, имя и роль, «Оптомстрой», поле в строке; шапка 69', (
     tester,
   ) async {
     await _pump(tester, _Target.orders, 1440);
     expect(_fit(tester), TopAppBarFit.full);
-    expect(find.descendant(of: _cart, matching: find.textContaining('Корзина · 6')), findsOneWidget);
+    // ADR-114 (RV-10): первая строка кнопки-итога — всегда «Корзина»; «5 поз. · 6 шт» — в тултипе и Semantics.
+    expect(find.descendant(of: _cart, matching: find.text('Корзина')), findsOneWidget);
+    expect(find.descendant(of: _cart, matching: find.textContaining('·')), findsNothing);
     expect(_in(find.text('чт, 22 окт')), findsOneWidget);
     expect(_in(find.text(_name)), findsOneWidget);
     expect(_in(find.text('Продавец')), findsOneWidget);
     expect(_in(find.text(kCatalogBrandWordmark)), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('top-app-bar-search-row')), findsNothing);
-    expect(tester.getSize(_header).height, 68);
+    expect(tester.getSize(_header).height, TopAppBarPos.fullHeight);
+    expect(TopAppBarPos.fullHeight, 69, reason: 'прототип: 12 + 44 + 12 + граница 1');
+  });
+
+  testWidgets('1024 lp (RV-10): кнопка-итог полная — «Корзина» и итог; свёрнуто имя (поле поиска ≥ 320)', (
+    tester,
+  ) async {
+    await _pump(tester, _Target.orders, 1024);
+    final TopAppBarFit fit = _fit(tester);
+    expect(fit.cartLabel, isTrue, reason: '«Корзина» сворачивается после «Оптомстрой»');
+    expect(find.descendant(of: _cart, matching: find.text('Корзина')), findsOneWidget);
+    expect(fit.user, TopAppBarUserFit.none, reason: '02 П.13: при 1024 имя прячется, поле поиска не уже 320');
+    _expectFits(tester, 'orders 1024');
   });
 
   testWidgets('«Касса» 1280 lp: полная дата «Чт, 22 октября 2026» видна рядом с корзиной (UI-30-013)', (tester) async {
@@ -274,8 +289,16 @@ void main() {
     final SemanticsHandle semantics = tester.ensureSemantics();
     await _pump(tester, _Target.orders, 700);
     final TopAppBarFit fit = _fit(tester);
-    expect(fit.cartLabel, isFalse, reason: '700 lp с корзиной: строка «Корзина · 6 шт» свёрнута');
-    expect(find.descendant(of: _cart, matching: find.textContaining('Корзина')), findsNothing);
+    // ADR-114: «Корзина» сворачивается после роли, имени и «Оптомстрой» — при 700 lp она ещё может быть видна.
+    expect(fit.user, TopAppBarUserFit.none, reason: '700 lp с корзиной: имя и роль свёрнуты');
+    if (!fit.cartLabel) {
+      expect(fit.wordmark, isFalse, reason: '«Корзина» сворачивается только после «Оптомстрой»');
+    }
+    expect(
+      find.descendant(of: _cart, matching: find.text('Корзина')),
+      fit.cartLabel ? findsOneWidget : findsNothing,
+      reason: '$fit',
+    );
     // Единицы корзины (`unitsText`, у строк фейка без подписи единицы — «6») — в тултипе кнопки-итога.
     expect(
       find.descendant(
@@ -298,13 +321,14 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('600 lp с корзиной: поле поиска второй строкой на всю ширину, шапка 124, состояние поля сохраняется', (
+  testWidgets('600 lp с корзиной: поле поиска второй строкой на всю ширину, шапка 125, состояние поля сохраняется', (
     tester,
   ) async {
     await _pump(tester, _Target.orders, 600);
     expect(_fit(tester).searchBelow, isTrue);
     expect(find.byKey(const ValueKey<String>('top-app-bar-search-row')), findsOneWidget);
-    expect(tester.getSize(_header).height, 68 + TopAppBarPos.searchRowHeight);
+    expect(tester.getSize(_header).height, TopAppBarPos.fullHeight + TopAppBarPos.searchRowHeight);
+    expect(tester.getSize(_header).height, 125);
     expect(tester.getTopLeft(_search).dy, greaterThanOrEqualTo(tester.getTopLeft(_header).dy + 66));
     // Ввод и фокус переживают смену ступени (поле переносится по ключу): окно шире — поле снова в строке.
     await tester.enterText(find.byKey(StaffShellHeader.searchFieldKey), 'смес');
@@ -321,16 +345,16 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('порядок сворачивания: «Корзина · N шт» → роль → имя → «Оптомстрой» → полная дата → дата; затем зазоры и '
-      'вторая строка поиска', () {
+  test('порядок сворачивания (ADR-114, RV-10): роль → имя → «Оптомстрой» → «Корзина» → полная дата → дата; затем '
+      'зазоры и вторая строка поиска', () {
     final List<TopAppBarFit> l = TopAppBarFit.ladder;
     expect(l.first, TopAppBarFit.full);
     final List<TopAppBarFit> inline = l.where((TopAppBarFit f) => !f.searchBelow && !f.tight).toList();
     expect(inline.map((TopAppBarFit f) => (f.cartLabel, f.user, f.wordmark, f.date)), <Object>[
       (true, TopAppBarUserFit.full, true, TopAppBarDateFit.full),
-      (false, TopAppBarUserFit.full, true, TopAppBarDateFit.full),
-      (false, TopAppBarUserFit.short, true, TopAppBarDateFit.full),
-      (false, TopAppBarUserFit.none, true, TopAppBarDateFit.full),
+      (true, TopAppBarUserFit.short, true, TopAppBarDateFit.full),
+      (true, TopAppBarUserFit.none, true, TopAppBarDateFit.full),
+      (true, TopAppBarUserFit.none, false, TopAppBarDateFit.full),
       (false, TopAppBarUserFit.none, false, TopAppBarDateFit.full),
       (false, TopAppBarUserFit.none, false, TopAppBarDateFit.short),
       (false, TopAppBarUserFit.none, false, TopAppBarDateFit.none),

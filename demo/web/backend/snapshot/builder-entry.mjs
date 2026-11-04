@@ -7,10 +7,14 @@
 // Шаги (как холодный старт воркера, demo-init.mjs):
 //  1. настоящие migrate (pos-api/migrations, db/migrations-dev) и seed (pos-api/seeds);
 //  2. сотрудники стенда 901/906/907/909 и служебные учётки сида 981/986/987 «Демо-история …» (demo-config.mjs);
-//  3. каталог настоящим конвейером: CatalogFullLoadService + SyntheticCatalogSource(FakeOnecGateway({catalog:
-//     {skuCount, seed}, includeFixtureCatalog: false})) — без подмеса фикстур;
-//  4. фото: синтетические JPEG (их готовит build-snapshot.mjs) → ImageDirectoryImporter (раскладка by-name) →
-//     product_images и файлы MEDIA_DIR/images/{sha}/{thumb|card|full}.webp — в ОДНОМ прогоне с данными.
+//  3. каталог по макету (WP-DATA-WEB, ADR-114: demo/catalog/design-catalog.json → pos-api/scripts/design_catalog.ts →
+//     экземпляр SyntheticCatalog) настоящим конвейером: CatalogFullLoadService + SyntheticCatalogSource(
+//     FakeOnecGateway({catalog, includeFixtureCatalog: false})) — без подмеса фикстур; затем то, чего конвейер не
+//     пишет: порядок категорий макета (sort_order), порог «мало» 4 и избранное сотрудников стенда
+//     (applyDesignCatalogSettings — тот же шаг, что в запасном пути воркера demo-init.mjs);
+//  4. фото товаров: PNG макета (раскладывает build-snapshot.mjs) → ImageDirectoryImporter (раскладка by-name);
+//     картинки категорий — category-images.mjs (product_images.category_id, categories.image_id); файлы
+//     MEDIA_DIR/images/{sha}/{thumb|card|full}.webp — в ОДНОМ прогоне с данными.
 // Приглашение 902, OTP, сессии, секреты и состояние имитатора 1С в снимок не попадают: их создаёт воркер на каждом
 // старте (critic [2]).
 import * as pgShim from '../alias/pg-shim.mjs';
@@ -21,12 +25,16 @@ import { resetDeterministicIds } from './det-ids.mjs';
 
 import { migrate, seed, DEV_MIGRATIONS_SCHEMA } from '@pos-api-dist/db/migrator.js';
 import { FakeOnecGateway } from '@pos-api-dist/integrations/onec/fake-onec.gateway.js';
+import { SyntheticCatalog, ean13 } from '@pos-api-dist/integrations/onec/synthetic-catalog.js';
 import { CatalogApplier } from '@pos-api-dist/sync/apply/catalog-applier.js';
 import { CatalogFullLoadService } from '@pos-api-dist/sync/apply/catalog-full-load.service.js';
 import { SyntheticCatalogSource } from '@pos-api-dist/sync/apply/catalog-source.js';
 import { createRunTracker } from '@pos-api-dist/sync/apply/run-tracker.js';
 import { ImageDirectoryImporter } from '@pos-api-dist/sync/images/image-directory-import.js';
 import { ImageStore } from '@pos-api-dist/sync/images/image-store.js';
+import { applyDesignCatalogSettings, buildDesignCatalog, categoryOrder, checkGeneratorMirror, photoPlan, validateDesignSpec } from '@pos-api-scripts/design_catalog.ts';
+
+export { importCategoryImages } from './category-images.mjs';
 
 const pg = pgShim.default;
 
@@ -64,9 +72,22 @@ async function deterministicSession(db, t0Iso) {
 }
 
 /**
+ * Каталог по макету из спецификации (новый экземпляр на каждую сборку БД) и его план: порядок категорий, фото товаров
+ * и категорий; problems — ошибки спецификации и расхождения зеркальных констант с генератором (сборка их не принимает).
+ */
+export function designCatalog(spec) {
+  const deps = { SyntheticCatalog, ean13 };
+  const problems = [...validateDesignSpec(spec), ...checkGeneratorMirror(deps, spec)];
+  if (problems.length) return { catalog: null, order: [], photos: { products: [], categories: [] }, problems };
+  const catalog = buildDesignCatalog(spec, deps);
+  return { catalog, order: categoryOrder(spec, catalog), photos: photoPlan(spec, catalog), stats: catalog.stats(), problems };
+}
+
+/**
  * Миграции, seeds, сотрудники, каталог. db — PGlite (memory://) с расширениями pgcrypto, pg_trgm, unaccent.
- * o: { dirs: {migrations, devMigrations, seeds, fixtures}, sku, catalogSeed, includeFixtureCatalog, t0 (ISO),
- *      deterministic (по умолчанию true; false — обычная сборка для S1), seedParams, log(level, msg) }
+ * o: { dirs: {migrations, devMigrations, seeds, fixtures}, catalog (экземпляр — designCatalog()), spec (спецификация
+ *      каталога), includeFixtureCatalog, t0 (ISO), deterministic (по умолчанию true; false — обычная сборка для S1),
+ *      seedParams, log(level, msg) }
  */
 export async function buildDb(db, o) {
   globalThis.__posDemoLog = o.log;
@@ -105,7 +126,7 @@ export async function buildDb(db, o) {
   t = performance.now();
   const gw = new FakeOnecGateway({
     fixturesDir: o.dirs.fixtures,
-    catalog: { skuCount: o.sku, seed: o.catalogSeed },
+    catalog: o.catalog,
     includeFixtureCatalog: o.includeFixtureCatalog,
     registerAll: false,
   });
@@ -113,11 +134,12 @@ export async function buildDb(db, o) {
   const runs = createRunTracker(pool);
   const results = await new CatalogFullLoadService(pool, new CatalogApplier(), runs, pino({ level: 'silent' }), det ? () => new Date(o.t0) : () => new Date()).loadAll(new SyntheticCatalogSource(gw), 'full', 'manual');
   T.catalog = results.map((r) => ({ entity: r.entity, status: r.status }));
+  T.catalogSettings = await applyDesignCatalogSettings(mc, o.spec, o.catalog, { staffPhones: STAFF.map((s) => s.phone) });
   T.catalogMs = Math.round(performance.now() - t);
   return { timings: T, pool, runs };
 }
 
-/** Фото: каталог dir с файлами `<onec_ref>.jpg` → ImageDirectoryImporter → product_images + mediaDir/images/**. */
+/** Фото товаров: каталог dir с файлами `<onec_ref>.png` → ImageDirectoryImporter → product_images + mediaDir/images/**. */
 export async function importPhotos(ctx, { dir, mediaDir }) {
   const t = performance.now();
   const r = await new ImageDirectoryImporter(ctx.pool, new ImageStore(mediaDir), ctx.runs, pino({ level: 'silent' })).run({ dir, layout: 'by-name', trigger: 'manual' });

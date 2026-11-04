@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT EDIT BY HAND.
 // Generator: scripts/gen_tokens_dart.py (RM-B-006)
-// Source: contracts/design-tokens/tokens.json (canonical sha256 31ea2b8fcd4858d3a96d8f15ebdd88453c981902ca331fe859ffb230f2f53d46)
+// Source: contracts/design-tokens/tokens.json (canonical sha256 9cbac28624a1540f8761044b1d6bc2c865186b343d294504be661658cfe83dd5)
 // DsSpacing - ds.space.1..10 (03 §7.1, §17.4)
 // ignore_for_file: public_member_api_docs
 

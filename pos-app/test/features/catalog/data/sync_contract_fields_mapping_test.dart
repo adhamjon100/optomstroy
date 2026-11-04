@@ -1,6 +1,9 @@
 // FIX-EF-01 / EQ-CSYNC-02 (OpenAPI 1.1.0): поля выгрузки `GET /catalog/sync/{entity}`, внесённые в контракт,
 // читаются DTO по схеме и попадают в строки кэша drift (а не вычисляются заново, когда сервер их прислал).
+// T-CAT-041 (ADR-114 п. 3): картинка категории переживает запись и чтение кэша (`imageSha` → `/images/{sha}/card`).
+// Ревью RP-03: основное фото товара в кэше выбирает DAO по `product_images_meta` (`imageIds` — uuid, а не sha256).
 import 'package:flutter_test/flutter_test.dart';
+import 'package:optomstroy/core/database/app_database.dart';
 import 'package:optomstroy/features/catalog/data/dto/catalog_dtos.dart';
 import 'package:optomstroy/features/catalog/data/mappers/catalog_mappers.dart';
 import 'package:optomstroy/features/catalog/domain/entities/sync.dart';
@@ -36,6 +39,48 @@ void main() {
     final row = page.rows.categories.single;
     expect((row.path.value, row.depth.value, row.isVisible.value), ('/$child', 0, true));
     expect(row.serverUpdatedAt.value, serverTime.millisecondsSinceEpoch);
+  });
+
+  test('T-CAT-041: imageUrl категории → imageSha кэша → тот же imageUrl; null и неверный адрес — null', () {
+    final String sha = 'ab' * 32;
+    final page = syncItemsToRows(CatalogSyncEntity.categories, <Map<String, dynamic>>[
+      <String, dynamic>{'id': root, 'name': 'Сантехника', 'imageUrl': '/images/$sha/card'},
+      <String, dynamic>{'id': child, 'name': 'Отопление'},
+      <String, dynamic>{'id': 'c-3', 'name': 'Электрика', 'imageUrl': 'https://cdn.example/x.png'},
+      <String, dynamic>{'id': 'c-4', 'name': 'Вентиляция', 'imageUrl': 'https://pos.example/images/$sha/card'},
+    ], serverTime: serverTime);
+    expect(page.rows.categories.map((r) => r.imageSha.value), <String?>[sha, null, null, sha]);
+
+    CategoryRow row(String id, String? imageSha) => CategoryRow(
+      id: id,
+      name: id,
+      nameNorm: id,
+      path: '/$id',
+      depth: 0,
+      sortOrder: 0,
+      imageSha: imageSha,
+      productCount: 1,
+      isVisible: true,
+      deletionMark: false,
+      serverUpdatedAt: 0,
+    );
+    final tree = categoryTreeFromRows(<CategoryRow>[row('a', sha), row('b', null)]);
+    expect(tree.find('a')?.imageUrl, '/images/$sha/card');
+    expect(tree.find('b')?.imageUrl, isNull);
+    expect(categoryImageShaFromUrl(null), isNull);
+    expect(categoryImageShaFromUrl('/images/${'A' * 64}/card'), isNull, reason: 'sha256 — строчные hex');
+    expect(categoryImageShaFromUrl('/images/$sha/thumb'), isNull);
+  });
+
+  test('RP-03: products — primaryImageSha не берётся из imageIds (uuid строк images)', () {
+    final page = syncItemsToRows(CatalogSyncEntity.products, <Map<String, dynamic>>[
+      <String, dynamic>{
+        'id': 'p-1',
+        'name': 'Унитаз',
+        'imageIds': <String>['00dc6acf-ac01-7293-8000-000000000001'],
+      },
+    ], serverTime: serverTime);
+    expect(page.rows.products.single.primaryImageSha.value, isNull);
   });
 
   test('products: multiplicity и isSellable', () {

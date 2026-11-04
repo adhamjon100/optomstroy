@@ -1,7 +1,10 @@
 // Компоненты экрана выбора товаров и drawer корзины после QA прототипа 2026-10-29 (ADR-112): подпись карточки ленты
 // без уменьшения кегля и без переноса внутри слова, нейтральная контурная кнопка и текстовая кнопка сброса, степпер-группа
 // drawer, сумма строки корзины одним кеглем, значок успеха тоста; раунд 2 — блок подписи ленты у низа карточки,
-// название строки drawer 13/600, глиф «Список». Данные синтетические.
+// название строки drawer 13/600, глиф «Список»; «точь-в-точь» 2026-10-31 (ADR-114): степпер-группа 102 × 34, сумма
+// строки 15/800, глифы прототипа вида и тоста. Данные синтетические.
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:optomstroy/core/utils/money.dart';
@@ -10,6 +13,7 @@ import 'package:optomstroy/design_system/components/app_snackbar.dart';
 import 'package:optomstroy/design_system/components/cart_line.dart';
 import 'package:optomstroy/design_system/components/category_tile.dart';
 import 'package:optomstroy/design_system/components/ds_glyph.dart';
+import 'package:optomstroy/design_system/components/ds_hairline.dart';
 import 'package:optomstroy/design_system/components/quantity_stepper.dart';
 import 'package:optomstroy/design_system/components/view_mode_segmented.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -89,7 +93,9 @@ void main() {
     expect((box.border! as Border).top.width, 1);
   });
 
-  testWidgets('QuantityStepper.group — визуально 112 × 32, цели касания 44 × 44, число 14/600', (tester) async {
+  testWidgets('QuantityStepper.group — визуально 102 × 34 (ADR-114), цели касания 44 × 44, число 14/600', (
+    tester,
+  ) async {
     await pumpDs(
       tester,
       Center(
@@ -103,11 +109,12 @@ void main() {
         ),
       ),
     );
-    // Занимаемое место — цели касания: 10 + 34 | 44 | 34 + 10 по ширине, 44 по высоте (03 §7.4, §9.20).
+    // Занимаемое место — цели касания: 15 + 1 + 34 − 6 | 6 + 32 + 6 | 34 + 1 + 15 − 6 по ширине, 44 по высоте
+    // (03 §7.4, §9.20) — 132 × 44 без изменения вида.
     final Size size = tester.getSize(find.byType(QuantityStepper));
     expect(size.width, 44 * 3);
-    expect(size.height, 44);
-    // Видимая группа — обводка 112 × 32.
+    expect(size.height, QuantityStepperSize.groupTarget);
+    // Видимая группа — обводка 1 радиус 9 вокруг 34 + 32 + 34 (прототип: 102 × 34).
     final Finder outline = find.descendant(
       of: find.byType(QuantityStepper),
       matching: find.byWidgetPredicate(
@@ -115,13 +122,25 @@ void main() {
             w is DecoratedBox && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).border != null,
       ),
     );
-    expect(tester.getSize(outline), const Size(34 + 44 + 34, 32));
+    expect(tester.getSize(outline), const Size(102, 34));
+    final BoxDecoration box = tester.widget<DecoratedBox>(outline).decoration as BoxDecoration;
+    expect(box.borderRadius, const BorderRadius.all(Radius.circular(9)));
+    expect((box.border! as Border).top.color, _c.border);
+    expect(
+      tester.getTopLeft(outline).dx - tester.getTopLeft(find.byType(QuantityStepper)).dx,
+      QuantityStepper.groupOuterInset,
+    );
     final Text value = tester.widget<Text>(find.text('2'));
     expect(value.style?.fontSize, 14);
     expect(value.style?.fontWeight, FontWeight.w600);
+    // Знаки «−» (U+2212) и «+» — текстом 18/400, как в прототипе.
+    for (final String sign in <String>['−', '+']) {
+      final Text t = tester.widget<Text>(find.text(sign));
+      expect((t.style?.fontSize, t.style?.fontWeight), (18, FontWeight.w400), reason: sign);
+    }
   });
 
-  testWidgets('CartLine.emphasized — суммы строк одним кеглем 14/700 без масштабирования', (tester) async {
+  testWidgets('CartLine.emphasized — суммы строк одним кеглем 15/800 без масштабирования (ADR-114)', (tester) async {
     Widget line(String key, int tyiyn) => CartLine(
       key: ValueKey<String>(key),
       title: 'Смеситель',
@@ -147,15 +166,15 @@ void main() {
     final Text a = tester.widget<Text>(
       find.descendant(of: find.byKey(const ValueKey<String>('a')), matching: find.textContaining('сом')),
     );
-    expect(a.style?.fontSize, 14);
-    expect(a.style?.fontWeight, FontWeight.w700);
-    // QA, раунд 2: название строки drawer — 13/600 (`label 600`) `textPrimary`, до 2 строк.
+    expect(a.style?.fontSize, 15, reason: 'прототип: lineSum 15/800');
+    expect(a.style?.fontWeight, FontWeight.w800);
+    // QA, раунд 2: название строки drawer — 13/600, до 2 строк; цвет — `catalogName` прототипа (ADR-114).
     final Text title = tester.widget<Text>(
       find.descendant(of: find.byKey(const ValueKey<String>('a')), matching: find.text('Смеситель')),
     );
     expect(title.style?.fontSize, 13);
     expect(title.style?.fontWeight, FontWeight.w600);
-    expect(title.style?.color, _c.textPrimary);
+    expect(title.style?.color, _c.catalogName, reason: 'ADR-114: название — catalogName #16206A');
     expect(title.maxLines, 2);
   });
 
@@ -184,10 +203,25 @@ void main() {
       return tester.getTopLeft(label).dy - tester.getTopLeft(card).dy;
     }
 
-    // Прототип: обводка 1,5 + поле 8 + картинка 92 + (127 − 92 − 31,2) — блок 13 × 1,2 × 2 прижат к низу, поле 10.
-    const double expected = 1.5 + 8 + 92 + (148 - 3 - 8 - 10 - 92 - 13 * 1.2 * 2);
-    expect(labelTop('one'), moreOrLessEquals(expected, epsilon: 0.01), reason: 'одна строка — у верха блока');
-    expect(labelTop('two'), moreOrLessEquals(expected, epsilon: 0.01), reason: 'на линии первой строки двух');
+    // Прототип: обводка 1,5 (при DPR 1 — 1, DsHairline) + поле 8 + картинка 92 + (внутренняя высота − 92 − блок
+    // подписи): блок max(31, строки) прижат к низу, поле 10 — подпись в одну строку у верха блока, на линии первой
+    // строки двухстрочной. Flutter округляет строку до целого (ADR-114: 16 против 15,6 у Inter), поэтому блок двух
+    // строк 32 > 31 и первая строка двух — на 1 выше (в прототипе — на 0,2); высота строки — из раскладки.
+    final double line = tester
+        .getSize(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('one')),
+            matching: find.byKey(const ValueKey<String>('category-tile-label')),
+          ),
+        )
+        .height;
+    final double border = DsHairline.widthFor(1.5, 1);
+    final double inner = 148 - 2 * border - 8 - 10;
+    double expected(int lines) =>
+        border + 8 + 92 + (inner - 92 - math.max(CategoryTile.ribbonLabelMinHeight, lines * line));
+    expect(labelTop('one'), moreOrLessEquals(expected(1), epsilon: 0.01), reason: 'одна строка — у верха блока');
+    expect(labelTop('two'), moreOrLessEquals(expected(2), epsilon: 0.01), reason: 'блок двух строк — у низа');
+    expect((labelTop('one') - labelTop('two')).abs(), lessThanOrEqualTo(1), reason: 'на линии первой строки двух ±1');
     // «Смесители для кухни» — две строки (не одна с многоточием): нижняя строка — на высоте второй строки блока.
     final Finder two = find.byKey(const ValueKey<String>('two'));
     final Finder first = find.descendant(of: two, matching: find.byKey(const ValueKey<String>('category-tile-label')));
@@ -217,15 +251,22 @@ void main() {
     expect(glyph, findsOneWidget);
     expect(tester.widget<DsGlyph>(glyph).size, 16);
     expect(find.byIcon(Icons.view_list_rounded), findsNothing);
-    expect(find.byIcon(Icons.grid_view_rounded), findsOneWidget);
+    // ADR-114: все три сегмента — глифы прототипа (залитая «сетка» 2×2, список, строки «Компакта»).
+    for (final DsGlyphKind kind in <DsGlyphKind>[DsGlyphKind.gridFilled, DsGlyphKind.compactLines]) {
+      expect(find.byWidgetPredicate((Widget w) => w is DsGlyph && w.kind == kind), findsOneWidget, reason: '$kind');
+    }
+    expect(find.byIcon(Icons.grid_view_rounded), findsNothing);
   });
 
   testWidgets('AppSnackbar.success — зелёный круг 18 с белой галочкой', (tester) async {
     await pumpDs(tester, const AppSnackbar(message: 'Добавлено: Смеситель', variant: AppSnackbarVariant.success));
     final Finder icon = find.byKey(AppSnackbar.successIconKey);
     expect(tester.getSize(icon), const Size(18, 18));
-    final Container circle = tester.widget<Container>(icon);
-    expect((circle.decoration! as BoxDecoration).color, AppSnackbar.successCircle(_c));
-    expect(tester.widget<Icon>(find.descendant(of: icon, matching: find.byType(Icon))).color, _c.onSuccess);
+    // ADR-114: глиф прототипа — круг `toastCheck` #2FB36A с галочкой `onSuccess`.
+    final DsGlyph circle = tester.widget<DsGlyph>(icon);
+    expect(circle.kind, DsGlyphKind.checkCircle);
+    expect(circle.color, AppSnackbar.successCircle(_c));
+    expect(AppSnackbar.successCircle(_c), _c.toastCheck);
+    expect(circle.markColor, _c.onSuccess);
   });
 }

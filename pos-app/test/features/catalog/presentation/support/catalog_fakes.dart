@@ -104,6 +104,56 @@ CategoryTree categoryTree() => CategoryTree.fromFlat(const <Category>[
   Category(id: 'c-pipes', name: 'Трубы и фитинги', productCount: 0, iconKey: 'valve', sortOrder: 2),
 ]);
 
+/// Корни прототипа «точь-в-точь» (`visual/prototype/Main.dc.html`, ADR-114) в порядке колонки: id, название, число
+/// товаров. «Сантехника» — с 9 подкатегориями ленты.
+const List<(String, String, int)> kDesignRoots = <(String, String, int)>[
+  ('heating', 'Отопление', 4),
+  ('plumbing', 'Сантехника', 12),
+  ('water', 'Водоснабжение', 4),
+  ('electric', 'Электрика', 4),
+  ('vent', 'Вентиляция', 3),
+  ('build', 'Строительные материалы', 3),
+  ('tools', 'Инструменты', 3),
+  ('fasteners', 'Крепеж и фурнитура', 3),
+];
+
+/// Подкатегории «Сантехники» прототипа (лента): последняя — длинное слово («Канализационные» — карточка 136).
+const List<String> kDesignPlumbingSubs = <String>[
+  'Унитазы',
+  'Раковины',
+  'Ванны',
+  'Душевые кабины',
+  'Инсталляции',
+  'Биде',
+  'Писсуары',
+  'Сифоны',
+  'Канализационные трубы и фитинги',
+];
+
+/// Дерево прототипа: 8 корней [kDesignRoots], у «Сантехники» — [kDesignPlumbingSubs] (`p-sub-0` …); [imageUrl] —
+/// картинка корня по id (`null` — без картинки), [subImageUrl] — подкатегории по индексу.
+CategoryTree designCategoryTree({String? Function(String id)? imageUrl, String? Function(int i)? subImageUrl}) =>
+    CategoryTree.fromFlat(<Category>[
+      for (int i = 0; i < kDesignRoots.length; i++)
+        Category(
+          id: kDesignRoots[i].$1,
+          name: kDesignRoots[i].$2,
+          productCount: kDesignRoots[i].$3,
+          sortOrder: i,
+          hasChildren: kDesignRoots[i].$1 == 'plumbing',
+          imageUrl: imageUrl?.call(kDesignRoots[i].$1),
+        ),
+      for (int i = 0; i < kDesignPlumbingSubs.length; i++)
+        Category(
+          id: 'p-sub-$i',
+          parentId: 'plumbing',
+          name: kDesignPlumbingSubs[i],
+          productCount: 1,
+          sortOrder: i,
+          imageUrl: subImageUrl?.call(i),
+        ),
+    ]);
+
 /// Ответ, который можно задержать: `hold()` → запрос ждёт `release()`.
 final class Gate {
   Completer<void>? _c;
@@ -365,13 +415,20 @@ final class CatalogHarness {
   ];
 }
 
-/// Приложение для экрана: без маршрутизатора (навигация — no-op) или с [router].
-Widget catalogApp(CatalogHarness h, {Widget? home, GoRouter? router, Size? size}) {
+/// Приложение для экрана: без маршрутизатора (навигация — no-op) или с [router]; [images] — фабрика картинок (по
+/// умолчанию прозрачный пиксель).
+Widget catalogApp(
+  CatalogHarness h, {
+  Widget? home,
+  GoRouter? router,
+  Size? size,
+  ProductImageProviderFactory images = transparentImage,
+}) {
   Widget wrap(BuildContext context, Widget? child) {
     final MediaQueryData mq = MediaQuery.of(context);
     return MediaQuery(
       data: mq.copyWith(disableAnimations: true, size: size ?? mq.size, padding: EdgeInsets.zero),
-      child: ProductImageScope(providerFor: transparentImage, child: child!),
+      child: ProductImageScope(providerFor: images, child: child!),
     );
   }
 

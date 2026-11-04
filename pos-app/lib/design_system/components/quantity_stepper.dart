@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:optomstroy/design_system/components/ds_hairline.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -14,12 +15,14 @@ enum QuantityStepperSize {
   /// Кнопки 36, поле 48×36 (только expanded с мышью).
   sm(button: 36, field: 48, height: 36),
 
-  /// Группа drawer корзины (прототип 2026-10-29; expanded/large): общая обводка `border` 1, радиус `sm`; визуально
-  /// кнопки 34×32 без фона (hover — `surfaceHover`), число `body 600 tnum` без своей рамки (это кнопка нампада, а не
-  /// поле ввода), поле 44×32 — всего 112×32. Цели касания — 44×44 (03 §7.4: POS-мониторы бывают сенсорными, тип
-  /// указателя не проверяется): невидимое поле 6 сверху и снизу, у «−» и «+» — 10 с внешней стороны; занимаемое место
-  /// 132×44 ([groupTarget]).
-  group(button: 34, field: 44, height: 32);
+  /// Группа drawer корзины по прототипу без округления (ADR-114 п. 6; expanded/large): общая обводка 1 `border` с
+  /// радиусом `badge` 9 вокруг кнопок 34×32 без фона (hover — `surfaceHover`) со знаками «−» (U+2212) и «+» 18/400
+  /// `textPrimary` и числа 14/600 без своей рамки (это кнопка нампада, а не поле ввода), поле не уже 32 — видимая
+  /// часть 102×34. Цели касания — 44×44 у «−», числа и «+» (03 §7.4, A11Y-003: POS-мониторы бывают сенсорными, тип
+  /// указателя не проверяется) без изменения вида: невидимое поле 5 над и под обводкой и
+  /// [QuantityStepper.groupOuterInset] 15 с внешней стороны; число забирает у каждой кнопки по 6 у внутреннего края
+  /// (видимые границы ячеек не нарисованы, знаки остаются в целях своих кнопок); занимаемое место 132×44.
+  group(button: 34, field: 32, height: 32);
 
   const QuantityStepperSize({required this.button, required this.field, required this.height});
 
@@ -100,12 +103,23 @@ class QuantityStepper extends StatefulWidget {
   /// Интервал автоповтора.
   static const Duration repeatInterval = Duration(milliseconds: 150);
 
+  /// Размер [QuantityStepperSize.group]: невидимое поле целей касания от края виджета до видимой обводки (слева и
+  /// справа). Строка drawer корзины выносит его в зазор перед степпером, чтобы обводка стояла на месте прототипа.
+  static const double groupOuterInset = _groupOuterPad;
+
   @override
   State<QuantityStepper> createState() => _QuantityStepperState();
 }
 
-/// Невидимое поле цели касания «−»/«+» группы с внешней стороны: 34 + 10 = 44.
-const double _groupOuterPad = QuantityStepperSize.groupTarget - 34;
+/// Невидимое поле цели касания «−»/«+» группы с внешней стороны (до обводки).
+const double _groupOuterPad = 15;
+
+/// Обводка группы (CSS-px прототипа).
+const double _groupBorder = 1;
+
+/// Часть видимой ячейки «−»/«+» у внутреннего края, которая относится к цели числа: цель «−» и «+» —
+/// 15 + 1 + 34 − 6 = 44, цель числа — 6 + 32 + 6 = 44.
+const double _groupInnerShare = 6;
 
 class _QuantityStepperState extends State<QuantityStepper> {
   Timer? _repeat;
@@ -138,12 +152,15 @@ class _QuantityStepperState extends State<QuantityStepper> {
     final DsColors c = context.colors;
     final QuantityStepperSize s = widget.size;
     final bool group = s == QuantityStepperSize.group;
-    final TextStyle valueStyle = (group ? context.text.body : context.text.bodyLg).copyWith(
-      fontWeight: FontWeight.w600,
-      color: widget.error ? c.error : c.textPrimary,
-      fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-      height: 1.1,
-    );
+    // Группа (прототип): 14/600 без `tnum`; иначе — `bodyLg 600 tnum`.
+    final TextStyle valueStyle = group
+        ? context.text.chip.copyWith(color: widget.error ? c.error : c.textPrimary)
+        : context.text.bodyLg.copyWith(
+            fontWeight: FontWeight.w600,
+            color: widget.error ? c.error : c.textPrimary,
+            fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+            height: 1.1,
+          );
     final Widget field = Semantics(
       label: widget.valueSemantics ?? (widget.unit == null ? widget.value : '${widget.value} ${widget.unit}'),
       button: widget.onValueTap != null,
@@ -152,21 +169,25 @@ class _QuantityStepperState extends State<QuantityStepper> {
         key: const ValueKey<String>('quantity-stepper-value'),
         onTap: widget.onValueTap,
         builder: (BuildContext context, DsInteractionState st) => group
-            // Группа: число без своей рамки, поле не уже 44 (цель касания 44×44, визуально — 32 по высоте; кольцо
-            // фокуса — вокруг видимой части).
+            // Группа: число без своей рамки, поле не уже 32; цель касания — поле и по 6 у соседних кнопок (44×44;
+            // кольцо фокуса — вокруг видимой части).
             ? SizedBox(
                 height: QuantityStepperSize.groupTarget,
                 child: Center(
-                  child: DsFocusRing(
-                    visible: st.focused,
-                    borderRadius: BorderRadius.all(context.radii.sm),
-                    child: Container(
-                      constraints: BoxConstraints(minWidth: s.field),
-                      height: s.height,
-                      padding: EdgeInsets.symmetric(horizontal: context.space.s1),
-                      alignment: Alignment.center,
-                      color: st.hovered && widget.onValueTap != null ? c.surfaceHover : null,
-                      child: Text(widget.value, maxLines: 1, style: valueStyle),
+                  widthFactor: 1,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: _groupInnerShare),
+                    child: DsFocusRing(
+                      visible: st.focused,
+                      borderRadius: BorderRadius.all(context.radii.sm),
+                      child: Container(
+                        constraints: BoxConstraints(minWidth: s.field),
+                        height: s.height,
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        alignment: Alignment.center,
+                        color: st.hovered && widget.onValueTap != null ? c.surfaceHover : null,
+                        child: Text(widget.value, maxLines: 1, style: valueStyle),
+                      ),
                     ),
                   ),
                 ),
@@ -207,6 +228,7 @@ class _QuantityStepperState extends State<QuantityStepper> {
       context,
       key: const ValueKey<String>('quantity-stepper-decrement'),
       icon: Icons.remove_rounded,
+      sign: '\u2212',
       label: widget.decreaseLabel,
       onTap: widget.onDecrement,
       onLongPressStart: widget.onDecrement == null ? null : _startRepeat,
@@ -217,6 +239,7 @@ class _QuantityStepperState extends State<QuantityStepper> {
       context,
       key: const ValueKey<String>('quantity-stepper-increment'),
       icon: Icons.add_rounded,
+      sign: '+',
       label: widget.increaseLabel,
       onTap: widget.onIncrement,
       onLongPressStart: widget.onIncrementLongPress,
@@ -240,20 +263,20 @@ class _QuantityStepperState extends State<QuantityStepper> {
         return KeyEventResult.ignored;
       },
       child: group
-          // Группа: обводка рисуется под строкой целей касания (визуально 32 по высоте, внутри внешних полей «−»/«+»),
-          // сами цели — 44×44.
+          // Группа: обводка рисуется под строкой целей касания (видимая часть 34 по высоте, внутри внешних полей
+          // «−»/«+»), сами цели — 44 по высоте.
           ? Stack(
               children: <Widget>[
                 Positioned.fill(
                   left: _groupOuterPad,
                   right: _groupOuterPad,
-                  top: (QuantityStepperSize.groupTarget - s.height) / 2,
-                  bottom: (QuantityStepperSize.groupTarget - s.height) / 2,
+                  top: (QuantityStepperSize.groupTarget - s.height) / 2 - _groupBorder,
+                  bottom: (QuantityStepperSize.groupTarget - s.height) / 2 - _groupBorder,
                   child: IgnorePointer(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.all(context.radii.sm),
-                        border: Border.all(color: widget.error ? c.error : c.border, width: widget.error ? 2 : 1),
+                        borderRadius: BorderRadius.all(context.radii.badge),
+                        border: widget.error ? Border.all(color: c.error, width: 2) : DsHairline.all(context, c.border),
                       ),
                     ),
                   ),
@@ -272,6 +295,7 @@ class _QuantityStepperState extends State<QuantityStepper> {
     BuildContext context, {
     required Key key,
     required IconData icon,
+    required String sign,
     required String label,
     required VoidCallback? onTap,
     VoidCallback? onLongPressStart,
@@ -298,28 +322,50 @@ class _QuantityStepperState extends State<QuantityStepper> {
           onTap: onTap,
           builder: (BuildContext context, DsInteractionState s) => group
               // Группа: кнопка 34×32 без фона, hover — `surfaceHover`, pressed — `surfacePressed`; цель 44×44 —
-              // невидимое поле 6 сверху и снизу и [_groupOuterPad] с внешней стороны группы; кольцо — вокруг кнопки.
+              // невидимое поле 6 сверху и снизу и [_groupOuterPad] + обводка с внешней стороны группы, а внутренние 6
+              // ячейки — у цели числа (ячейка рисуется поверх края цели); кольцо — вокруг кнопки. Знак — текстом, как в
+              // прототипе («−» U+2212 и «+», 18/400).
               ? SizedBox(
-                  width: side + _groupOuterPad,
+                  width: QuantityStepperSize.groupTarget,
                   height: QuantityStepperSize.groupTarget,
-                  child: Align(
-                    alignment: outerEnd ? AlignmentDirectional.centerStart : AlignmentDirectional.centerEnd,
-                    child: DsFocusRing(
-                      visible: s.focused,
-                      borderRadius: BorderRadius.all(context.radii.sm),
-                      child: AnimatedContainer(
-                        duration: context.motion.of(const Duration(milliseconds: 150)),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: <Widget>[
+                      PositionedDirectional(
+                        start: outerEnd ? -_groupInnerShare : _groupOuterPad + _groupBorder,
+                        top: (QuantityStepperSize.groupTarget - size.height) / 2,
                         width: side,
                         height: size.height,
-                        decoration: BoxDecoration(
-                          color: !enabled ? null : (s.pressed ? c.surfacePressed : (s.hovered ? c.surfaceHover : null)),
-                          borderRadius: outerEnd
-                              ? BorderRadiusDirectional.horizontal(end: context.radii.sm)
-                              : BorderRadiusDirectional.horizontal(start: context.radii.sm),
+                        child: DsFocusRing(
+                          visible: s.focused,
+                          borderRadius: BorderRadius.all(context.radii.sm),
+                          child: AnimatedContainer(
+                            duration: context.motion.of(const Duration(milliseconds: 150)),
+                            width: side,
+                            height: size.height,
+                            decoration: BoxDecoration(
+                              color: !enabled
+                                  ? null
+                                  : (s.pressed ? c.surfacePressed : (s.hovered ? c.surfaceHover : null)),
+                              borderRadius: outerEnd
+                                  ? BorderRadiusDirectional.horizontal(end: context.radii.badge)
+                                  : BorderRadiusDirectional.horizontal(start: context.radii.badge),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              sign,
+                              maxLines: 1,
+                              textScaler: TextScaler.noScaling,
+                              style: context.text.title.copyWith(
+                                fontWeight: FontWeight.w400,
+                                height: 1,
+                                color: enabled ? c.textPrimary : c.disabledText,
+                              ),
+                            ),
+                          ),
                         ),
-                        child: Icon(icon, size: 18, color: enabled ? c.textPrimary : c.disabledText),
                       ),
-                    ),
+                    ],
                   ),
                 )
               : DsFocusRing(

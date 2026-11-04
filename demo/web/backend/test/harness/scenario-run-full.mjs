@@ -195,7 +195,7 @@ export async function runScenario(be, { log = console.log, version = '0.1.0+1', 
   {
     const before = (await be.stats()).gate.stats;
     const slow = be.api('POST', '/api/v1/auth/step-up', { headers: A, body: { method: 'pin', operation: 'sync.run.full', pin: '715382' } });
-    const qs = ['F', 'F4', 'F42', 'F425', 'F4252'];
+    const qs = ['SL', 'SL1', 'SL10', 'SL100', 'SL1001'];
     const ids = qs.map(() => crypto.randomUUID());
     const reqs = qs.map((q, i) => be.api('GET', `/api/v1/search/products?q=${encodeURIComponent(q)}&limit=10`, { headers: C, id: ids[i] }));
     for (let i = 0; i < 4; i++) be.cancel(ids[i]);

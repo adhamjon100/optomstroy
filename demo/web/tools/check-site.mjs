@@ -63,8 +63,20 @@ const REQUIRED = [
 ];
 const missing = REQUIRED.filter((f) => !has(f));
 add('состав сайта: все обязательные файлы на месте', missing.length === 0, missing.length ? missing : `${REQUIRED.length} файлов`);
+// WP-DATA-WEB (каталог по макету, ADR-114): фото товаров и картинки категорий — по 3 размера на каждое изображение
+// снимка (manifest.images.files), не меньше одного.
 const images = files.filter((f) => /^images\/[0-9a-f]{64}\/(thumb|card|full)\.webp$/.test(f));
-add('фото товаров: images/<sha>/{thumb,card,full}.webp', images.length >= 600, `${images.length} файлов`);
+let imagesManifest = null;
+try {
+  imagesManifest = JSON.parse(readFileSync(`${SITE}/demo/snapshot/manifest.json`, 'utf8')).images ?? null;
+} catch {
+  /* нет манифеста — ошибка состава выше */
+}
+add(
+  'фото товаров и категорий: images/<sha>/{thumb,card,full}.webp — 3 файла на каждое изображение снимка',
+  images.length > 0 && imagesManifest && images.length === imagesManifest.files && images.length === 3 * imagesManifest.distinct,
+  `${images.length} файлов; в манифесте снимка ${imagesManifest?.distinct ?? '?'} изображений × 3 = ${imagesManifest?.files ?? '?'} (товаров ${imagesManifest?.products ?? '?'}, категорий ${imagesManifest?.categories ?? '?'})`,
+);
 
 // ---------------------------------------------------------------- 2. demo/build.json
 let demoBuild = null;

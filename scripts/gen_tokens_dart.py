@@ -3,13 +3,19 @@
 
 Output: one file per class, following 03_UX_UI_DESIGN_SYSTEM.md §17.1-§17.5:
     ds_colors.dart       DsColors (ThemeExtension) - palette B is the default (kernel v1.9 §24.1; values ADR-111)
-    ds_typography.dart   DsTypography (ThemeExtension)
+                         + component colours `componentColor` (ADR-114)
+    ds_typography.dart   DsTypography (ThemeExtension) - scale `text.styles` + component styles `text.component`
     ds_spacing.dart      DsSpacing (ThemeExtension)
-    ds_radii.dart        DsRadii (ThemeExtension)
-    ds_elevation.dart    DsElevation (ThemeExtension)
+    ds_radii.dart        DsRadii (ThemeExtension) - scale + prototype radii (ADR-114)
+    ds_elevation.dart    DsElevation (ThemeExtension) - e0..e3 + component shadows (ADR-114)
     ds_motion.dart       DsMotion (ThemeExtension)
-    ds_breakpoints.dart  WindowClass, DsBreakpoints
+    ds_breakpoints.dart  WindowClass, DsBreakpoints, DsCatalogMetrics (`catalog`, ADR-114)
     ds_density.dart      DsDensity, DsDensityValues
+
+Component tokens (tokens.json 1.2.0, ADR-114) are the exact values of the approved prototype for the goods
+selection screen SCR-10/11/12, the staff header and the cart drawer. Component colours do not depend on the
+palette: every DsColors constant gets the same `componentColor` values, except the overrides of an alternative
+with status "aa-variant".
 
 Deterministic: the same tokens.json always gives byte-identical files. Field order
 comes from fixed orders in this script or from sorted keys, never from dict order
@@ -27,10 +33,12 @@ Usage:
     --check                 do not write; exit 1 if OUT_DIR differs from the generated output
     --with-alternative-a    also emit DsColors.lightA (alternatives.A, historical, not used in R1)
 
-Every alternative must define exactly the colour tokens of `color`. Alternatives with status
-"rollback" (alternatives.B_2026_10_21 - palette B before ADR-111) are ALWAYS emitted, without a
-flag, so `make gen` and `--check` give the same output everywhere:
-B_2026_10_21 -> DsColors.lightB20261021 (lowerCamelCase because of lint constant_identifier_names).
+Every alternative with a `color` block must define exactly the colour tokens of `color`. Alternatives with
+status "rollback" (alternatives.B_2026_10_21 - palette B before ADR-111) and "aa-variant"
+(alternatives.AA_2026_10_31 - palette B with the AA shades of the ADR-114 contrast exceptions; it has only
+`componentColor` overrides) are ALWAYS emitted, without a flag, so `make gen` and `--check` give the same
+output everywhere: B_2026_10_21 -> DsColors.lightB20261021, AA_2026_10_31 -> DsColors.lightAA20261031
+(lowerCamelCase because of lint constant_identifier_names).
 
 Exit codes: 0 - ok; 1 - --check found differences; 2 - invalid input or arguments.
 """
@@ -40,6 +48,7 @@ import argparse
 import hashlib
 import json
 import sys
+import textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -47,8 +56,52 @@ DEFAULT_TOKENS = ROOT / "contracts" / "design-tokens" / "tokens.json"
 DEFAULT_SCHEMA = ROOT / "contracts" / "design-tokens" / "tokens.schema.json"
 
 TEXT_ORDER = ["display", "h1", "h2", "h3", "title", "bodyLg", "body", "label", "caption", "micro"]
+# Members of DsTypography that a component style name must not take (the `*Medium` / `*Selected` getters are
+# checked separately).
+TEXT_RESERVED = {"numeric", "fontFamily", "inter", "price", "priceOf", "copyWith", "lerp", "type", "hashCode",
+                 "runtimeType", "toString"}
 RADIUS_ORDER = ["xs", "sm", "md", "lg", "xl", "full"]
+# Prototype radii (ADR-114): (tokens.json radius key = Dart field, what it is for).
+COMPONENT_RADIUS = [
+    ("segment", "view segment button"),
+    ("badge", "badges 17-18 lp, cart quantity stepper"),
+    ("control", "search field, chips, sort, segment group, card and drawer buttons, cart chip, bell, photo placeholder"),
+    ("catalogCard", "product grid card and catalog empty state (`card` is the BorderRadius getter of 03 §17.4)"),
+    ("star", "favourite star button 34 lp"),
+    ("arrow", "ribbon arrows 38 lp"),
+    ("avatar", "header avatar 38 lp"),
+    ("circle", "ribbon placeholder circle 56 lp"),
+]
 ELEVATION_ORDER = ["0", "1", "2", "3"]
+# Component shadows (ADR-114): (tokens.json elevation key = Dart field, what it is for).
+COMPONENT_ELEVATION = [
+    ("cardHover", "hover of a product card and a list row"),
+    ("ribbonArrow", "subcategory ribbon arrows"),
+    ("drawer", "cart drawer"),
+    ("toast", "catalog toast"),
+]
+# Catalog geometry (ADR-114): (tokens.json catalog key = Dart constant, what it is for).
+CATALOG_DART = [
+    ("columnMinWidth", "category column minimum width (= DsBreakpoints.catalogColumn); "
+                       "the real width is max(132, longest word + 46), whole lp"),
+    ("columnPadding", "category column padding"),
+    ("tileGap", "gap between root category tiles"),
+    ("tileMinHeight", "root category tile minimum height"),
+    ("tilePadding", "root category tile padding"),
+    ("tileArt", "root category tile picture box (contain)"),
+    ("ribbonCard", "subcategory ribbon card (grows to the longest word)"),
+    ("ribbonGap", "gap between ribbon cards"),
+    ("ribbonPad", "ribbon inner padding"),
+    ("ribbonArrowStepCards", "cards moved by one ribbon arrow press"),
+    ("mainPadding", "main content padding"),
+    ("gridMinCard", "grid card minimum width (= DsBreakpoints.catalogCardMinWidth)"),
+    ("gridGap", "grid gap"),
+    ("gridCardHeight", "grid card height"),
+    ("gridCardHeightWrapped", "grid card height when «price + / шт» does not fit on one line"),
+    ("toolbarHeight", "toolbar row height"),
+    ("chipHeight", "toolbar chip height"),
+    ("segmentHeight", "view segment button height"),
+]
 WINDOW_ORDER = ["compact", "medium", "expanded", "large"]
 DENSITY_ORDER = ["standard", "compact"]
 DURATION_ORDER = ["fast", "base", "slow", "splashLogo", "mascotTransition"]
@@ -114,6 +167,13 @@ def color_doc(value) -> str:
     return f"rgba({r},{g},{b},{num(value['opacity'])})"
 
 
+def doc(text: str, indent: int = 2) -> str:
+    """`///` comment of [text] at [indent] spaces, wrapped at spaces to PAGE_WIDTH (dart format never wraps comments)."""
+    pad = " " * indent + "/// "
+    lines = textwrap.wrap(text, PAGE_WIDTH - len(pad), break_long_words=False, break_on_hyphens=False)
+    return "".join(pad + line + "\n" for line in lines)
+
+
 def header(source_hash: str, title: str) -> str:
     return (
         "// GENERATED CODE - DO NOT EDIT BY HAND.\n"
@@ -171,11 +231,49 @@ def check_invariants(t: dict) -> None:
     lay = t["layout"]
     if lay["gridMinColumns"] > lay["gridMaxColumns"]:
         problems.append("layout.gridMinColumns > layout.gridMaxColumns")
-    # Elevation scrim refers to an alpha colour.
-    for lvl in ELEVATION_ORDER:
-        scrim = t["elevation"][lvl]["scrim"]
+    # Elevation scrim refers to an alpha colour; `baseColor` (ADR-114) - every shadow is that palette colour.
+    for lvl in ELEVATION_ORDER + [k for k, _ in COMPONENT_ELEVATION]:
+        level = t["elevation"][lvl]
+        scrim = level["scrim"]
         if scrim is not None and not isinstance(t["color"][scrim], dict):
             problems.append(f"elevation.{lvl}.scrim must refer to a translucent colour")
+        base = level.get("baseColor")
+        if base is not None:
+            base_hex = t["color"][base]
+            if not isinstance(base_hex, str):
+                problems.append(f"elevation.{lvl}.baseColor must refer to an opaque colour")
+            else:
+                for i, s in enumerate(level["shadows"]):
+                    if s["color"]["rgb"].upper() != base_hex.upper():
+                        problems.append(f"elevation.{lvl}.shadows[{i}].color.rgb must equal color.{base} {base_hex}")
+    # Component colours (ADR-114) never shadow palette names; alternatives only override known ones.
+    comp = t["componentColor"]
+    clash = sorted(set(comp) & set(t["color"]))
+    if clash:
+        problems.append(f"componentColor repeats palette tokens: {clash}")
+    for key, alt in sorted(t["alternatives"].items()):
+        unknown = sorted(set(alt.get("componentColor") or {}) - set(comp))
+        if unknown:
+            problems.append(f"alternatives.{key}.componentColor: unknown tokens {unknown}")
+        if alt["status"] == "aa-variant" and "color" in alt:
+            problems.append(f"alternatives.{key}: an aa-variant overrides componentColor only")
+    # Component text styles (ADR-114) never take a DsTypography member name.
+    styles = t["text"]["component"]
+    members = set(TEXT_ORDER) | TEXT_RESERVED
+    members |= {f"{n}Medium" for n, s in t["text"]["styles"].items() if "fontWeightMedium" in s}
+    selected = {f"{n}Selected" for n, s in styles.items() if "fontWeightSelected" in s}
+    for n in sorted(set(styles) & (members | selected)):
+        problems.append(f"text.component.{n} clashes with a DsTypography member")
+    for n in sorted(selected & members):
+        problems.append(f"getter {n} clashes with a DsTypography member")
+    # Catalog geometry (ADR-114) repeats two layout sizes - they must not drift apart.
+    cat = t["catalog"]
+    if set(cat) != {k for k, _ in CATALOG_DART}:
+        problems.append("catalog keys must be exactly the CATALOG_DART keys of this generator")
+    elif cat["columnMinWidth"] != lay["catalogColumn"]:
+        problems.append("catalog.columnMinWidth must equal layout.catalogColumn")
+    elif cat["gridMinCard"] != lay["catalogCardMinWidth"]:
+        problems.append("catalog.gridMinCard must equal layout.catalogCardMinWidth")
     if problems:
         raise TokenError("token invariants violated:\n" + "\n".join("  " + p for p in problems))
 
@@ -260,60 +358,102 @@ def rollback_const_name(key: str) -> str:
     return "light" + key.replace("_", "")
 
 
+def component_colors(t: dict, alt: dict | None = None) -> dict[str, str]:
+    """componentColor name -> HEX (ADR-114), with the `componentColor` overrides of [alt] when given."""
+    comp = {n: v["value"] for n, v in t["componentColor"].items()}
+    if alt is not None:
+        comp.update(alt.get("componentColor") or {})
+    return comp
+
+
 def gen_colors(t: dict, h: str, with_a: bool) -> str:
     names = sorted(t["color"].keys())
+    comp_names = sorted(t["componentColor"].keys())
     alts = t["alternatives"]
     for key in sorted(alts):
-        if sorted(alts[key]["color"].keys()) != names:
+        if "color" in alts[key] and sorted(alts[key]["color"].keys()) != names:
             raise TokenError(f"alternatives.{key}.color must define exactly the same tokens as color")
     alt_a = alts["A"]["color"]
     rollbacks = sorted(k for k in alts if alts[k]["status"] == "rollback")
+    aa_variants = sorted(k for k in alts if alts[k]["status"] == "aa-variant")
     out = [header(h, "DsColors - ds.color.* (03 §5.3, §17.2); default palette B «Оранжевый», "
-                     "kernel v1.9 §24.1, ADR-111")]
+                     "kernel v1.9 §24.1, ADR-111; component colours ADR-114")]
     out.append("import 'package:flutter/material.dart';\n\n")
     out.append("/// Colour tokens `ds.color.*`. Field names follow kernel §8.1, §17.5, §18.2 item 15.\n")
     out.append("///\n/// Palette B role rule (03 §5.9, DS-098): `primary` is a fill only, always with\n")
     out.append("/// `onPrimary`; text, prices, links and selection indicators use `primaryText`.\n")
     out.append("/// ADR-111: white `onPrimary` on `primary` #D9380F is 4.64:1 (AA); white text is forbidden\n")
     out.append("/// only on orange fills below 4.5:1, e.g. `brandAccent` #FF8700 (2.41:1).\n")
+    out.append("///\n/// Component colours (`componentColor`, ADR-114) are the exact prototype values of the goods\n")
+    out.append("/// selection screen SCR-10/11/12, the staff header and the cart drawer. They are the same in every\n")
+    out.append("/// palette constant except [lightAA20261031], which swaps in the AA shades of the four ADR-114\n")
+    out.append("/// contrast exceptions (CP-096, CP-097, CP-106, CP-120).\n")
     out.append("@immutable\nclass DsColors extends ThemeExtension<DsColors> {\n")
-    out.append(fmt(Seq("const DsColors({", [f"required this.{n}" for n in names], "});"), 2))
+    out.append(fmt(Seq("const DsColors({", [f"required this.{n}" for n in names + comp_names], "});"), 2))
     out.append("\n")
     for n in names:
         out.append(f"  final Color {n};\n")
     out.append("\n")
+    comp_main = component_colors(t)
+    out.append(documented([
+        doc(f"Component colour {comp_main[n].upper()} (ADR-114): {t['componentColor'][n]['use']}.")
+        + f"  final Color {n};\n"
+        for n in comp_names
+    ]))
+    out.append("\n")
 
-    def palette(const_name: str, colors: dict, doc: str) -> None:
+    def palette(const_name: str, colors: dict, comp: dict, text: str) -> None:
         # A trailing line comment on every item: `dart format` always keeps one item per line here.
-        out.append(f"  /// {doc}\n")
+        out.append(doc(text))
         out.append(f"  static const DsColors {const_name} = DsColors(\n")
         for n in names:
             out.append(f"    {n}: {dart_color(colors[n])}, // {color_doc(colors[n])}\n")
+        out.append("    // Component colours (ADR-114).\n")
+        for n in comp_names:
+            out.append(f"    {n}: {dart_color(comp[n])}, // {color_doc(comp[n])}\n")
         out.append("  );\n\n")
 
-    palette("lightB", t["color"],
+    palette("lightB", t["color"], comp_main,
             "Palette B «Оранжевый» - main R1 palette (03 §5.3; kernel v1.9 §24.1; values ADR-111).")
     for key in rollbacks:
-        palette(rollback_const_name(key), alts[key]["color"],
+        palette(rollback_const_name(key), alts[key]["color"], comp_main,
                 f"Rollback alternatives.{key} ({alts[key]['name']}): AppTheme.light(colors: ...).")
+    for key in aa_variants:
+        swapped = ", ".join(sorted(alts[key]["componentColor"]))
+        palette(rollback_const_name(key), t["color"], component_colors(t, alts[key]),
+                f"alternatives.{key} ({alts[key]['name']}): palette B with the AA shades of {swapped}. "
+                "Not active (owner decision 1: exact prototype colours); AppTheme.light(colors: ...).")
     if with_a:
-        palette("lightA", alt_a, "Historical alternative A+ (03 §5.2). Not used in R1.")
+        palette("lightA", alt_a, comp_main, "Historical alternative A+ (03 §5.2). Not used in R1.")
     out.append("  /// Default theme colours (03 §17.2): palette B.\n")
     out.append("  static const DsColors light = lightB;\n\n")
-    out.append(copy_with("DsColors", [("Color", n) for n in names]))
-    out.append(lerp("DsColors", [f"{n}: Color.lerp({n}, other.{n}, t)!" for n in names]))
+    out.append(copy_with("DsColors", [("Color", n) for n in names + comp_names]))
+    out.append(lerp("DsColors", [f"{n}: Color.lerp({n}, other.{n}, t)!" for n in names + comp_names]))
     return "".join(out)
+
+
+def component_style_doc(s: dict) -> str:
+    """Short description of a component text style: size/weight, line height, letter spacing."""
+    lh = f"line height {num(s['lineHeight'])} lp" if "lineHeight" in s else f"height {num(s['height'])}"
+    sel = f", selected {s['fontWeightSelected']}" if "fontWeightSelected" in s else ""
+    tnum = ", tabular figures" if s["tabularFigures"] else ""
+    return f"{num(s['fontSize'])}/{s['fontWeight']}{sel}, {lh}, letter-spacing {num(s['letterSpacing'])}{tnum}"
 
 
 def gen_typography(t: dict, h: str) -> str:
     tx = t["text"]
     styles = tx["styles"]
+    comp = tx["component"]
+    comp_order = sorted(comp)
     family = tx["fontFamily"]
-    out = [header(h, "DsTypography - ds.text.* (03 §6.2, §17.3)")]
+    out = [header(h, "DsTypography - ds.text.* (03 §6.2, §17.3); component styles ADR-114")]
     out.append("import 'package:flutter/material.dart';\n\n")
     out.append("/// Text scale `ds.text.*` (font family Inter, D-17). Sizes in logical pixels.\n")
+    out.append("///\n/// Component styles (`text.component`, ADR-114) are the prototype values without rounding to the\n")
+    out.append("/// scale, for the goods selection screen SCR-10/11/12, the staff header and the cart drawer. Weight 800\n")
+    out.append("/// is the static Inter-ExtraBold.ttf instanced from the bundled Inter-Variable.ttf.\n")
     out.append("@immutable\nclass DsTypography extends ThemeExtension<DsTypography> {\n")
-    out.append(fmt(Seq("const DsTypography({", [f"required this.{n}" for n in TEXT_ORDER], "});"), 2))
+    out.append(fmt(Seq("const DsTypography({", [f"required this.{n}" for n in TEXT_ORDER + comp_order], "});"), 2))
     out.append("\n")
     fields = []
     for n in TEXT_ORDER:
@@ -323,13 +463,16 @@ def gen_typography(t: dict, h: str) -> str:
             f"letter-spacing {num(s['letterSpacing'])}; contrast class: {s['contrastClass']}.\n"
             f"  final TextStyle {n};\n"
         )
+    for n in comp_order:
+        s = comp[n]
+        fields.append(doc(f"ADR-114: {component_style_doc(s)} - {s['use']}.") + f"  final TextStyle {n};\n")
     out.append(documented(fields))
     out.append("\n  /// Tabular figures for prices, stock, quantities, codes, OTP timers (03 §6.1).\n")
     feats = ["FontFeature.tabularFigures()" for f in tx["numericFontFeatures"] if f == "tnum"]
     out.append(fmt(Seq("static const List<FontFeature> numeric = <FontFeature>[", feats, "];"), 2))
     out.append("\n")
     out.append(f"  static const String fontFamily = '{family}';\n\n")
-    out.append("  /// Scale of 03 §6.2 with the Inter family.\n")
+    out.append("  /// Scale of 03 §6.2 and the component styles of ADR-114 with the Inter family.\n")
     scale = []
     for n in TEXT_ORDER:
         s = styles[n]
@@ -340,6 +483,19 @@ def gen_typography(t: dict, h: str) -> str:
             f"fontWeight: FontWeight.w{s['fontWeight']}",
             f"letterSpacing: {num(s['letterSpacing'])}",
         ], ")"))
+    for n in comp_order:
+        s = comp[n]
+        height = (f"{num(s['lineHeight'])} / {num(s['fontSize'])}" if "lineHeight" in s else num(s["height"]))
+        args = [
+            "fontFamily: fontFamily",
+            f"fontSize: {num(s['fontSize'])}",
+            f"height: {height}",
+            f"fontWeight: FontWeight.w{s['fontWeight']}",
+            f"letterSpacing: {num(s['letterSpacing'])}",
+        ]
+        if s["tabularFigures"]:
+            args.append("fontFeatures: numeric")
+        scale.append(Seq(f"{n}: TextStyle(", args, ")"))
     out.append(fmt(Seq("static const DsTypography inter = DsTypography(", scale, ");"), 2))
     out.append("\n")
     for n in TEXT_ORDER:
@@ -349,6 +505,13 @@ def gen_typography(t: dict, h: str) -> str:
             out.append(fmt(Seq(f"TextStyle get {n}Medium => {n}.copyWith(",
                                [f"fontWeight: FontWeight.w{s['fontWeightMedium']}"], ");"), 2))
             out.append("\n")
+    for n in comp_order:
+        s = comp[n]
+        if "fontWeightSelected" in s:
+            out.append(f"  /// `{n}` in the selected state: weight {s['fontWeightSelected']} (ADR-114).\n")
+            out.append(fmt(Seq(f"TextStyle get {n}Selected => {n}.copyWith(",
+                               [f"fontWeight: FontWeight.w{s['fontWeightSelected']}"], ");"), 2))
+            out.append("\n")
     price = tx["price"]
     out.append(f"  /// Price: {price['base']}/{price['fontWeight']} + tabular figures.\n")
     out.append(f"  TextStyle get price => priceOf({price['base']});\n\n")
@@ -356,8 +519,8 @@ def gen_typography(t: dict, h: str) -> str:
     out.append(fmt(Seq("TextStyle priceOf(TextStyle base) => base.copyWith(",
                        [f"fontWeight: FontWeight.w{price['fontWeight']}", "fontFeatures: numeric"], ");"), 2))
     out.append("\n")
-    out.append(copy_with("DsTypography", [("TextStyle", n) for n in TEXT_ORDER]))
-    out.append(lerp("DsTypography", [f"{n}: TextStyle.lerp({n}, other.{n}, t)!" for n in TEXT_ORDER]))
+    out.append(copy_with("DsTypography", [("TextStyle", n) for n in TEXT_ORDER + comp_order]))
+    out.append(lerp("DsTypography", [f"{n}: TextStyle.lerp({n}, other.{n}, t)!" for n in TEXT_ORDER + comp_order]))
     return "".join(out)
 
 
@@ -389,52 +552,74 @@ def gen_spacing(t: dict, h: str) -> str:
 
 def gen_radii(t: dict, h: str) -> str:
     r = t["radius"]
-    out = [header(h, "DsRadii - ds.radius.{xs,sm,md,lg,xl,full} (03 §7.5, §17.4)")]
+    keys = RADIUS_ORDER + [k for k, _ in COMPONENT_RADIUS]
+    if set(r) != set(keys):
+        raise TokenError(f"radius keys must be exactly {keys}")
+    out = [header(h, "DsRadii - ds.radius.{xs,sm,md,lg,xl,full} (03 §7.5, §17.4) + prototype radii (ADR-114)")]
     out.append("import 'package:flutter/material.dart';\n\n")
     out.append("/// Corner radii `ds.radius.*`. `xl` - only the form card of SCR-01...SCR-04 and SCR-08\n")
-    out.append("/// (kernel §18.2 item 15); SCR-06, SCR-07 use `lg`.\n")
+    out.append("/// (kernel §18.2 item 15); SCR-06, SCR-07 use `lg`. The prototype radii (ADR-114) are for the goods\n")
+    out.append("/// selection screen SCR-10/11/12, the staff header and the cart drawer only.\n")
     out.append("@immutable\nclass DsRadii extends ThemeExtension<DsRadii> {\n")
-    out.append(fmt(Seq("const DsRadii({", [f"required this.{k}" for k in RADIUS_ORDER], "});"), 2))
+    out.append(fmt(Seq("const DsRadii({", [f"required this.{k}" for k in keys], "});"), 2))
     out.append("\n")
-    out.append(documented([f"  /// `ds.radius.{k}` = {r[k]} lp.\n  final Radius {k};\n" for k in RADIUS_ORDER]))
+    fields = [f"  /// `ds.radius.{k}` = {r[k]} lp.\n  final Radius {k};\n" for k in RADIUS_ORDER]
+    fields += [doc(f"`ds.radius.{k}` = {r[k]} lp (ADR-114): {use}.") + f"  final Radius {k};\n"
+               for k, use in COMPONENT_RADIUS]
+    out.append(documented(fields))
     out.append("\n")
     out.append(fmt(Seq("static const DsRadii defaults = DsRadii(",
-                       [f"{k}: Radius.circular({num(r[k])})" for k in RADIUS_ORDER], ");"), 2))
+                       [f"{k}: Radius.circular({num(r[k])})" for k in keys], ");"), 2))
     out.append("\n")
     out.append("  /// Card corners (`md`).\n  BorderRadius get card => BorderRadius.all(md);\n\n")
     out.append("  /// Bottom sheet top corners (`lg`).\n  BorderRadius get sheetTop => BorderRadius.vertical(top: lg);\n\n")
-    out.append(copy_with("DsRadii", [("Radius", k) for k in RADIUS_ORDER]))
-    out.append(lerp("DsRadii", [f"{k}: Radius.lerp({k}, other.{k}, t)!" for k in RADIUS_ORDER]))
+    out.append(copy_with("DsRadii", [("Radius", k) for k in keys]))
+    out.append(lerp("DsRadii", [f"{k}: Radius.lerp({k}, other.{k}, t)!" for k in keys]))
     return "".join(out)
 
 
 def gen_elevation(t: dict, h: str) -> str:
     el = t["elevation"]
-    scrims = sorted({el[k]["scrim"] for k in ELEVATION_ORDER if el[k]["scrim"]})
+    # (tokens.json key, Dart field, what it is for): the kernel scale e0..e3, then the ADR-114 shadows.
+    levels_order = [(k, f"e{k}", None) for k in ELEVATION_ORDER] + [(k, k, use) for k, use in COMPONENT_ELEVATION]
+    if set(el) != {k for k, _, _ in levels_order}:
+        raise TokenError(f"elevation keys must be exactly {[k for k, _, _ in levels_order]}")
+    scrims = sorted({el[k]["scrim"] for k, _, _ in levels_order if el[k]["scrim"]})
     overlay_token = scrims[0] if scrims else "overlay"
-    out = [header(h, "DsElevation - ds.elevation.0..3 (03 §7.6, §17.4; kernel §8.3)")]
+    out = [header(h, "DsElevation - ds.elevation.0..3 (03 §7.6, §17.4; kernel §8.3) + component shadows (ADR-114)")]
     out.append("import 'package:flutter/material.dart';\n\n")
     out.append("/// Shadows `ds.elevation.*` (kernel §8.3 has priority over R4 §5.4, kernel §17.5).\n")
+    out.append("///\n/// Component shadows (ADR-114) are the prototype values on the `textPrimary` base rgba(14,20,86,a);\n")
+    out.append("/// e0...e3 keep the kernel §8.3 values for the other screens.\n")
     out.append("@immutable\nclass DsElevation extends ThemeExtension<DsElevation> {\n")
     out.append(fmt(Seq("const DsElevation({",
-                       [f"required this.e{k}" for k in ELEVATION_ORDER] + ["required this.overlay"], "});"), 2))
+                       [f"required this.{f}" for _, f, _ in levels_order] + ["required this.overlay"], "});"), 2))
     out.append("\n")
     fields = []
-    for k in ELEVATION_ORDER:
+    for k, field, use in levels_order:
         lvl = el[k]
         extras = []
+        if lvl.get("baseColor"):
+            extras.append(f"base `{lvl['baseColor']}`")
         if lvl["borderColor"]:
             extras.append(f"border `{lvl['borderColor']}` {num(lvl['borderWidth'])} px")
         if lvl["scrim"]:
             extras.append(f"`{lvl['scrim']}` scrim under the element")
         desc = "; ".join(extras) if extras else "no border"
-        fields.append(f"  /// `ds.elevation.{k}`: {len(lvl['shadows'])} shadow(s); {desc}.\n"
-                      f"  final List<BoxShadow> e{k};\n")
+        shadows = ", ".join(
+            f"{num(s['x'])} {num(s['y'])} {num(s['blur'])} {num(s['spread'])} {color_doc(s['color'])}" for s in lvl["shadows"]
+        )
+        if use is None:
+            fields.append(f"  /// `ds.elevation.{k}`: {len(lvl['shadows'])} shadow(s); {desc}.\n"
+                          f"  final List<BoxShadow> {field};\n")
+        else:
+            fields.append(doc(f"`ds.elevation.{k}` (ADR-114): {use}; {shadows}; {desc}.")
+                          + f"  final List<BoxShadow> {field};\n")
     fields.append(f"  /// Scrim colour (= `DsColors.{overlay_token}`).\n  final Color overlay;\n")
     out.append(documented(fields))
     out.append("\n")
     levels: list = []
-    for k in ELEVATION_ORDER:
+    for k, field, _ in levels_order:
         shadows = [
             Seq("BoxShadow(", [
                 f"color: {dart_color(s['color'])}",
@@ -444,13 +629,12 @@ def gen_elevation(t: dict, h: str) -> str:
             ], ")")
             for s in el[k]["shadows"]
         ]
-        levels.append(Seq(f"e{k}: <BoxShadow>[", shadows, "]"))
+        levels.append(Seq(f"{field}: <BoxShadow>[", shadows, "]"))
     levels.append(f"overlay: {dart_color(t['color'][overlay_token])}")
     out.append(fmt(Seq("static const DsElevation defaults = DsElevation(", levels, ");"), 2))
     out.append("\n")
-    out.append(copy_with("DsElevation", [("List<BoxShadow>", f"e{k}") for k in ELEVATION_ORDER]
-                         + [("Color", "overlay")]))
-    out.append(lerp("DsElevation", [f"e{k}: BoxShadow.lerpList(e{k}, other.e{k}, t)!" for k in ELEVATION_ORDER]
+    out.append(copy_with("DsElevation", [("List<BoxShadow>", f) for _, f, _ in levels_order] + [("Color", "overlay")]))
+    out.append(lerp("DsElevation", [f"{f}: BoxShadow.lerpList({f}, other.{f}, t)!" for _, f, _ in levels_order]
                     + ["overlay: Color.lerp(overlay, other.overlay, t)!"]))
     return "".join(out)
 
@@ -500,7 +684,8 @@ def gen_motion(t: dict, h: str) -> str:
 def gen_breakpoints(t: dict, h: str) -> str:
     bp = t["breakpoint"]
     lay = t["layout"]
-    out = [header(h, "DsBreakpoints - ds.breakpoint.* (03 §7.2, §7.3, §8.4, §17.4; kernel §17.5)")]
+    out = [header(h, "DsBreakpoints - ds.breakpoint.* (03 §7.2, §7.3, §8.4, §17.4; kernel §17.5); "
+                     "DsCatalogMetrics - catalog.* (ADR-114)")]
     out.append("import 'dart:math' as math;\n\n")
     out.append("import 'package:flutter/widgets.dart';\n\n")
     out.append("/// Window classes (03 §7.2).\n")
@@ -530,9 +715,43 @@ def gen_breakpoints(t: dict, h: str) -> str:
     out.append("  /// [contentWidth] is the content zone WITHOUT side margins (on `large` - at most\n")
     out.append("  /// [contentMaxLarge], applied by the caller). [minCardWidth] defaults to [cardMinWidth];\n")
     out.append("  /// the catalog grid SCR-10/11/12 passes [catalogCardMinWidth] (ADR-111).\n")
-    out.append("  static int gridColumns(double contentWidth, double gap, {double minCardWidth = cardMinWidth}) {\n")
+    out.append("  /// [maxColumns] defaults to [gridMaxColumns]; `null` - no upper limit, as the prototype's\n")
+    out.append("  /// `repeat(auto-fill, minmax(176px, 1fr))` of the staff catalog on medium+ (ADR-114,\n")
+    out.append("  /// [DsCatalogMetrics.gridGap]). The lower limit [gridMinColumns] always applies.\n")
+    # Positional + named parameters do not fit on one line: `dart format` puts each on its own line and keeps
+    # `{` after the last positional one. The signature is fixed, so its split form is written as is.
+    out.append("  static int gridColumns(\n    double contentWidth,\n    double gap, {\n"
+               "    double minCardWidth = cardMinWidth,\n    int? maxColumns = gridMaxColumns,\n  }) {\n")
     out.append("    final int n = ((contentWidth + gap) / (minCardWidth + gap)).floor();\n")
-    out.append("    return math.max(gridMinColumns, math.min(gridMaxColumns, n));\n  }\n}\n")
+    out.append("    return math.max(gridMinColumns, maxColumns == null ? n : math.min(maxColumns, n));\n  }\n}\n")
+    out.append(gen_catalog_metrics(t))
+    return "".join(out)
+
+
+def gen_catalog_metrics(t: dict) -> str:
+    """DsCatalogMetrics - the `catalog` group (ADR-114), appended to ds_breakpoints.dart."""
+    cat = t["catalog"]
+    out = ["\n/// Catalog geometry of SCR-10/11/12 for staff on medium+: prototype values without rounding\n"
+           "/// (ADR-114), in logical pixels.\nclass DsCatalogMetrics {\n  DsCatalogMetrics._();\n\n"]
+    consts = []
+    for key, use in CATALOG_DART:
+        v = cat[key]
+        if isinstance(v, dict) and set(v) == {"top", "right", "bottom", "left"}:
+            text = f"{use}: top {num(v['top'])}, right {num(v['right'])}, bottom {num(v['bottom'])}, left {num(v['left'])}."
+            decl = (f"  static const EdgeInsets {key} = EdgeInsets.fromLTRB("
+                    f"{num(v['left'])}, {num(v['top'])}, {num(v['right'])}, {num(v['bottom'])});\n")
+        elif isinstance(v, dict) and set(v) == {"width", "height"}:
+            text = f"{use}: {num(v['width'])} x {num(v['height'])}."
+            decl = f"  static const Size {key} = Size({num(v['width'])}, {num(v['height'])});\n"
+        elif isinstance(v, int) and key == "ribbonArrowStepCards":
+            text = f"{use}: {v}."
+            decl = f"  static const int {key} = {v};\n"
+        else:
+            text = f"{use}: {num(v)}."
+            decl = f"  static const double {key} = {num(v)};\n"
+        consts.append(doc(text[0].upper() + text[1:]) + decl)
+    out.append(documented(consts))
+    out.append("}\n")
     return "".join(out)
 
 

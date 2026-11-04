@@ -4,9 +4,10 @@
 
 /// Построитель location маршрутов SCR-10…SCR-17, SCR-43, SCR-44, SCR-50.
 abstract final class CatalogPaths {
-  /// SCR-10 `/catalog?preset=&view=&sort=`.
-  static String catalog({String? preset, String? view, String? sort}) =>
-      _with('/catalog', <String, String?>{'preset': preset, 'view': view, 'sort': sort});
+  /// SCR-10 `/catalog?preset=&view=&sort=&all=`. [all] — весь каталог «Все товары» (`all=1`): у сотрудника на medium+
+  /// голый `/catalog` открывает корневую категорию (ADR-114 решение 4), «Все товары» — заголовок «Каталог» колонки.
+  static String catalog({String? preset, String? view, String? sort, bool all = false}) =>
+      _with('/catalog', <String, String?>{'preset': preset, 'view': view, 'sort': sort, 'all': all ? '1' : null});
 
   /// SCR-11 `/catalog/search?q=&categoryId=&view=&sort=`; `categoryId` — поиск начат на SCR-12 (02 SCR-11.6:
   /// «Назад» возвращает в эту категорию).

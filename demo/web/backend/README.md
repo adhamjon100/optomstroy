@@ -11,7 +11,7 @@ node demo/web/backend/build-backend.mjs [--skip-tsc] [--skip-snapshot] [--no-min
 node --test "demo/web/backend/test/*.test.mjs"
 ```
 
-Перед запуском задать `TEMP`/`TMP` на `D:\optomstroy\.tmp`. Сборка занимает около 45 с: tsc около 6–10 с, снимок БД и фото около 20 с (WP-B4), esbuild около 14 с.
+Перед запуском задать `TEMP`/`TMP` на `D:\optomstroy\.tmp`. Сборка занимает около 55 с: tsc около 10–15 с, снимок БД и фото около 13 с (WP-B4; каталог по макету), esbuild около 25 с (замер 2026-10-31).
 
 Сборка пишет `backend.js`, `build.json` и `THIRD_PARTY_NOTICES.txt` сначала в `demo/web/.build/staging` и копирует их в `site/` только при чистых проверках (review fixes): сборка с ошибками оставляет в `site/` прежнюю удачную.
 
@@ -104,7 +104,7 @@ PGlite — одно соединение. Как бэкенд с этим жив
 
 ```
 node --test "demo/web/backend/test/*.test.mjs"
-node demo/web/backend/test/harness/worker-harness.mjs [--sku 120] [--no-strict] [--refresh-ms 3000] [--json <файл>] [--quiet]
+node demo/web/backend/test/harness/worker-harness.mjs [--no-strict] [--refresh-ms 3000] [--json <файл>] [--quiet]
 ```
 
 `test/harness/worker-harness.mjs` запускает собранный `site/backend/backend.js` в `worker_threads`. Прослойка
@@ -155,7 +155,7 @@ node demo/web/backend/test/harness/worker-harness.mjs [--sku 120] [--no-strict] 
 Проверка (Node, `worker_threads`, storage `memory`; «перезагрузка» — `dump` → новый воркер с `loadDataDir`):
 
 ```
-node demo/web/backend/test/harness/b3-acceptance.mjs [--sku 500] [--json <файл>] [--quiet]
+node demo/web/backend/test/harness/b3-acceptance.mjs [--json <файл>] [--quiet]
 node demo/web/backend/test/harness/worker-harness.mjs          # сценарии WP-B2 на новой точке входа
 ```
 
@@ -171,7 +171,7 @@ node demo/web/backend/test/harness/worker-harness.mjs          # сценари�
 собранный). Отдельно:
 
 ```
-node demo/web/backend/snapshot/build-snapshot.mjs [--sku 500] [--photos 300] [--no-site] [--s1] [--out <каталог>]
+node demo/web/backend/snapshot/build-snapshot.mjs [--no-site] [--s1] [--out <каталог>]
 node demo/web/backend/test/harness/b4-acceptance.mjs [--json <файл>] [--quiet] [--skip-determinism] [--skip-s1]
 ```
 
@@ -183,16 +183,33 @@ node demo/web/backend/test/harness/b4-acceptance.mjs [--json <файл>] [--quie
 | Путь | Что это |
 |---|---|
 | `snapshot/build-snapshot.mjs` | сборка снимка и фото, проверки, копия в `site/` |
-| `snapshot/builder-entry.mjs` | построитель БД (Node): migrate, seed, сотрудники и «Демо-история …», каталог конвейером, `ImageDirectoryImporter` |
+| `snapshot/builder-entry.mjs` | построитель БД (Node): migrate, seed, сотрудники и «Демо-история …», каталог по макету конвейером (`designCatalog`, `applyDesignCatalogSettings`), `ImageDirectoryImporter`, картинки категорий |
 | `snapshot/bundle-builder.mjs` | esbuild для Node теми же подменами, что `backend.js`, но встроенные модули и `sharp` — настоящие |
 | `snapshot/det-ids.mjs` | детерминированный UUID v7 вместо `dist/common/ids/uuid.js` — только в построителе |
 | `snapshot/export-copy.mjs` | формат S2: выгрузка `COPY … TO '/dev/blob'`, проверка, восстановление (и в воркере) |
-| `snapshot/photos.mjs` | синтетические JPEG-заглушки (sharp) |
+| `snapshot/photos.mjs` | спецификация каталога и фото `demo/catalog` (чтение, sha256 файлов = спецификации) |
+| `snapshot/category-images.mjs` | картинки категорий: PNG макета → `processImage` → `ImageStore` → `registerCategoryImage` (`product_images.category_id`, `categories.image_id`) |
 | `snapshot/forbidden.mjs` | полный список запрещённых строк ПДн из `pii-map.json` и поиск |
 | `snapshot/data-steps.mjs` | `ensureUsers` — общий для построителя и `demo-init.mjs` |
 | `.build/snapshot/{manifest.json, data.copy, data.copy.gz, images.json, report.json}` | результат; `report.json` — проверки и размеры |
-| `.build/images/{sha}/{thumb,card,full}.webp` | фото (их пишет `ImageStore` pos-api) |
+| `.build/images/{sha}/{thumb,card,full}.webp` | фото товаров и картинки категорий (их пишет `ImageStore` pos-api) |
 | `site/demo/snapshot/{manifest.json, data.copy.gz}`, `site/images/**` | копия для сайта |
+
+Каталог (WP-DATA-WEB, 2026-10-31; ADR-114) собирается по прототипу экрана выбора товаров. Спецификация —
+`demo/catalog/design-catalog.json`: 8 корней, 33 подкатегории, 78 товаров, из них 26 товаров макета и ровно 12 в
+«Сантехнике», и 29 фото. Её читает `pos-api/scripts/design_catalog.ts`: пустой `SyntheticCatalog` (refSeed 1031)
+дополняется через `merge()` папками, товарами, характеристиками, упаковками, штрихкодами, тремя видами цен и
+остатками. Тот же экземпляр отдают `FakeOnecGateway`, срезы остатков и цен pos-worker и товары синтетики кассира
+(`createDemoCashierState({ catalog })`). Встроенная в `backend.js` спецификация и снимок сверяются по профилю и
+sha256 (`DEMO_BUILD.catalog`). Сборка останавливается в трёх случаях:
+- спецификация с ошибками (`validateDesignSpec`);
+- закрытые константы генератора разошлись с зеркальными (`checkGeneratorMirror`);
+- sha256 файла фото ≠ спецификации.
+
+После загрузки каталога SQL пишет то, чего конвейер 1С не пишет: `categories.sort_order` по макету,
+`low_stock_threshold = 4` и SL1001 в `favorites_products` сотрудников 901/906/907/909. Картинки категорий —
+`product_images` с `category_id` и `source_ref import:category:<ref>/<файл>`, плюс `categories.image_id`. API отдаёт
+их как `Category.imageUrl`. Число SKU (`--sku`, `init.sku`) больше не параметр: каталог задаёт спецификация.
 
 Детерминизм: два прогона дают байт-в-байт одинаковые `data.copy`, `data.copy.gz` и `images.json`, а манифест
 отличается только `builtAt`.
@@ -208,15 +225,18 @@ node demo/web/backend/test/harness/b4-acceptance.mjs [--json <файл>] [--quie
 
 Восстановление (`demo-init.mjs`, холодный старт эпохи):
 1. Параллельно с миграциями — `fetch` `manifest.json` и `data.copy.gz` своего origin, `DecompressionStream`, sha256.
-2. Снимок берётся, только если sha данных = `DEMO_BUILD.snapshot.dataSha256` бандла, число SKU совпадает, а миграции,
-   dev-миграции и seeds снимка = файлы виртуальной fs.
+2. Снимок берётся, только если sha данных = `DEMO_BUILD.snapshot.dataSha256` бандла, каталог снимка = каталог
+   бандла (профиль и sha256 `demo/catalog/design-catalog.json` = `DEMO_BUILD.catalog`), а миграции, dev-миграции и
+   seeds снимка = файлы виртуальной fs.
 3. Одна транзакция под замком pg-shim: `session_replication_role = replica`, DELETE строк, которые вставили сами
    миграции (`manifest.migrationRows`), `COPY FROM`, `setval`, пересчёт цепочки аудита, `REFRESH MATERIALIZED VIEW`,
    сверка числа строк.
-4. Любая ошибка → ROLLBACK и запасной путь: seeds и каталог конвейером, как в WP-B3, но без фото.
+4. Любая ошибка → ROLLBACK и запасной путь: seeds и каталог конвейером, как в WP-B3, с тем же порядком категорий,
+   порогом «мало» и избранным (`applyDesignCatalogSettings`), но без фото и картинок категорий.
 
-Ключ эпохи (`lib/epoch.mjs`) берёт из манифеста только блок `epoch`: привязку фото «товар → sha», параметры
-каталога, сотрудников, формат и T0. Схемы и строк снимка в нём нет: более поздняя миграция меняет снимок, но ключ не
+Ключ эпохи (`lib/epoch.mjs`) берёт из манифеста только блок `epoch`: привязку фото «товар/категория → sha»,
+параметры каталога (профиль, sha256 спецификации), сотрудников, формат и T0. Отдельно в ключ входят
+`pos-api/scripts/design_catalog.ts`, `demo/catalog/design-catalog.json` и список sha256 фото `demo/catalog/photos`. Схемы и строк снимка в нём нет: более поздняя миграция меняет снимок, но ключ не
 меняет, а к данным зрителя её применяет настоящий мигратор.
 
 Тестовые сообщения воркера: `snapcheck` (число строк таблиц, фото, время данных, приглашение, аудит; только чтение);

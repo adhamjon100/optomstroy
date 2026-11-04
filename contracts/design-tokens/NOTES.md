@@ -20,12 +20,19 @@
 ядро не редактируется, отклонение записано в ADR-111, подтверждение заказчика — Q-333. Прежние значения —
 `alternatives.B_2026_10_21` (откат). История версий — `CHANGELOG.md`.
 
+**Версия 1.2.0 (2026-10-31, ADR-114).** Владелец: «сделай точь-в-точь, даже цвета». Значения прототипа переносятся
+без округления до шкал для экрана выбора товаров SCR-10/11/12, шапки сотрудника и drawer корзины (`componentColor`,
+`text.component`, радиусы `segment`…`circle`, тени `cardHover`…`toast`, группа `catalog`). Источник значений —
+вычисленные стили прототипа (`.tmp/redesign2/design/design-spec.md`, план `plan.json` → appChanges[0]). Решение
+владельца 1: цвета точно; 4 пары ниже нормы контраста — отклонение от A11Y-002 / NFR-A11Y-001 в ADR-114, их AA-оттенки
+— `alternatives.AA_2026_10_31` (§3 п. 14). Палитра B и прежние шкалы не менялись.
+
 ## 1. Состав
 
 | Файл | Что это |
 |---|---|
-| `tokens.json` | Источник истины. Основная палитра — B «Оранжевый» в значениях ADR-111. В `alternatives.A` — палитра A только для справки; в `alternatives.B_2026_10_21` — прежняя палитра B для отката (`status: rollback`). Пары для проверки контраста — в `contrast.pairs` |
-| `tokens.schema.json` | JSON Schema (draft 2020-12). Проверяет все 41 цвет (с 1.1.0 — плюс `primaryContainerBorder`, `onPrimaryContainer`), обе альтернативы, кратность размеров 4 lp, перечни и формат пар контраста |
+| `tokens.json` | Источник истины. Основная палитра — B «Оранжевый» в значениях ADR-111. В `alternatives.A` — палитра A только для справки; в `alternatives.B_2026_10_21` — прежняя палитра B для отката (`status: rollback`); в `alternatives.AA_2026_10_31` — AA-оттенки исключений ADR-114 (`status: aa-variant`). С 1.2.0 — компонентные токены прототипа (`componentColor`, `text.component`, `catalog`, новые ключи `radius` и `elevation`). Пары для проверки контраста — в `contrast.pairs` |
+| `tokens.schema.json` | JSON Schema (draft 2020-12). Проверяет все 41 цвет (с 1.1.0 — плюс `primaryContainerBorder`, `onPrimaryContainer`), 22 компонентных цвета (1.2.0), три альтернативы, кратность размеров 4 lp у шкал (у размеров прототипа — целые без кратности), перечни и формат пар контраста |
 | `CHANGELOG.md` | Журнал версий `meta.version` (шаг 16 CI) |
 | `../../scripts/gen_tokens_dart.py` | Генератор Dart-классов. Перед генерацией проверяет файл по схеме и инварианты (§3). Каталог вывода передаётся аргументом |
 | `../../scripts/check_contrast.py` | Проверка контраста по WCAG 2.x для пар из `contrast.pairs` |
@@ -43,6 +50,14 @@
 - `density` → `DsDensity`.
 
 В `layout` лежат размеры раскладки из 03 §7.3, §8.4 и §17.4: сайдбар, корзина, rail, `cardMinWidth`, `contentMaxLarge`. С 1.1.0 (ADR-111) — размеры прототипа: `topBarHeight` 68, `navDrawer` 320, `cartDrawer` 420, `catalogColumn` 132, `catalogCardMinWidth` 176; прежние ключи сохранены (SCR-40, SCR-50, customer).
+
+С 1.2.0 (ADR-114) добавлены группы прототипа:
+
+- `componentColor` → поля `DsColors` после палитры (`DsColors.lightB.catalogName` и т. д.); каждое значение — `{value, use}`;
+- `text.component` → поля `DsTypography` (`catalogTitle`, `catalogPrice` …) и геттеры `*Selected`;
+- `radius.segment` … `radius.circle` → поля `DsRadii`;
+- `elevation.cardHover` … `elevation.toast` → поля `DsElevation`;
+- `catalog` → класс `DsCatalogMetrics` (статические константы `double`, `int`, `EdgeInsets`, `Size`) в `ds_breakpoints.dart`.
 
 ## 2. Команды
 
@@ -105,7 +120,7 @@ python -I -X utf8 scripts/check_contrast.py                        # код 1 п
     - Запасные системные шрифты из 03 §6.1 не выводятся: golden-тесты идут только с Inter.
     - `contrastClass` — справочная колонка «порог контраста» из 03 §6.2.
     - Геттеры `*Medium` создаются для стилей, у которых есть `fontWeightMedium` (`bodyLg`, `body`, `caption`), как в 03 §17.3.
-12. **Пары контраста** (`contrast.pairs`, 90 пар, ID `CP-001…CP-090`; до 1.1.0 — 83). Взяты из 03 §5.4.2 (B), строк B в §5.4.3, §5.4.5 и правил §5.3, §5.8; CP-084…CP-090 — ADR-111. Повторяющиеся строки разных таблиц сведены в одну пару; в поле `source` указаны все разделы. Статусы:
+12. **Пары контраста** (`contrast.pairs`, с 1.2.0 — 133 пары, ID `CP-001…CP-133`, новые CP-091…CP-133 — ADR-114, п. 14; CP-124…CP-133 — фоны hover и pressed строк каталога, ревью RC-07; в 1.1.0 — 90; до 1.1.0 — 83). Взяты из 03 §5.4.2 (B), строк B в §5.4.3, §5.4.5 и правил §5.3, §5.8; CP-084…CP-090 — ADR-111. Повторяющиеся строки разных таблиц сведены в одну пару; в поле `source` указаны все разделы. Статусы:
     - `allowed` — проверяется порогом: `text` 4.5, `large-text` 3.0, `non-text` 3.0. С 1.1.0 сюда перешли белый на `primary` / `primaryHover` / `primaryPressed` (CP-032…CP-034: 4.64 / 5.76 / 7.00) и `textTertiary` на `background` / `surfaceHover` (CP-022, CP-024);
     - `forbidden` — запрещённое сочетание, нарушением не считается. Так помечены: `primary` как текст (CP-026…CP-028: #D9380F проходит AA только на `surface`); `primary` как единственный индикатор (CP-065…CP-067 — 3:1 теперь проходит, запрет остаётся правилом ролей DS-098); `primaryText` как текст на `iconButtonPressed`; `favorite` без контура (CP-086); белый на `brandAccent` (CP-087);
     - `exception` — `disabledText`/`disabledBg`, логотип `brandAccent`;
@@ -125,6 +140,48 @@ python -I -X utf8 scripts/check_contrast.py                        # код 1 п
     - CP-087 «#FFFFFF на brandAccent» (`text`) обязательна со статусом `forbidden`: запрет белого действует для оранжевых заливок ниже 4.5:1.
 
     Нарушение любого пункта — код выхода 1. Тот же инвариант «allowed ⇔ ≥ 4.5» проверяет `pos-app/test/design_system/tokens_test.dart`.
+14. **Компонентные токены прототипа (1.2.0, ADR-114).**
+    - **Компонентные цвета отдельно от палитры.** `componentColor` — не часть `color`: иначе `alternatives.A` и
+      `B_2026_10_21` пришлось бы дополнять выдуманными историческими значениями. Генератор добавляет те же значения во
+      все константы `DsColors` (`lightB`, `lightB20261021`, `lightA`); набор `aa-variant` заменяет только свои ключи.
+      Имена не пересекаются с палитрой (инвариант генератора и `check_contrast.py`). Пары контраста называют их так же,
+      как цвета палитры.
+    - **Решение владельца 1 — «точно».** Четыре пары ниже нормы — исключения ADR-114 со статусом `exception` и полем
+      `decision: "ADR-114"`: CP-096 `catalogMetaOnPage` на `background` 4.32, CP-097 `searchPlaceholder` на
+      `surfaceVariant` 4.05, CP-106 `photoPlaceholderText` на `photoPlaceholderBg` 3.37, CP-120 `favoriteOutline` на
+      `surface` 2.11 (non-text). Перечень зашит в `check_contrast.py` (`ADR114_EXCEPTIONS`) и в `tokens_test.dart`:
+      правка одного `tokens.json` не может добавить исключение. Исключения самой WCAG — `WCAG_EXCEPTIONS`: CP-062
+      (неактивный элемент), CP-079 (логотип) и CP-095 — текст отключённой кнопки «Нет в наличии» `catalogMeta` на
+      `disabledBg` 4.14 (WCAG 1.4.3 не требует контраста у неактивных элементов; это не отклонение A11Y-002, но ADR-114
+      должен его назвать). Любая другая пара `exception` — ошибка.
+    - **AA-оттенки** — `alternatives.AA_2026_10_31`: #687184, #6D6D6D, #6A7282, #BC8D31 (4.51 / 4.55 / 4.50 / 3.00 —
+      запас минимальный, любая правка требует пересчёта). Включаются одной строкой:
+      `AppTheme.light(colors: DsColors.lightAA20261031)`. `check_contrast.py` требует, чтобы набор заменял ровно 4 цвета
+      исключений и чтобы с ним проходили все `allowed` и все 4 исключения.
+    - **Декоративные пары 1.2.0**: значок-картинка заглушки фото #9AA3B2 на #F4F7FB (2.37 — смысл передаёт текст),
+      белая галочка в круге тоста (2.70 — смысл передаёт текст тоста), плашки, разделители, рамка «Отложить».
+    - **Текст.** Межстрочный множитель 1.21 = CSS `line-height: normal` у Inter (hhea (1984 + 494) / 2048 = 1.2100);
+      у бейджей — высота строки в lp (18, 17) через `lineHeight`. Движок Flutter округляет высоту строки до целого
+      (18 × 1.21 → 22, 17 → 21, 15 → 18), а Chrome округляет отдельно восхождение и нисхождение (21, 20, 19), поэтому
+      у `catalogPrice`, `totalLabel` (21), `listPrice` (20), `lineSum`, `avatarInitial`, `listName` (19) тоже задан
+      `lineHeight` (ревью RV-15); у остальных стилей 1.21 даёт ту же строку, что Chrome. Дробные строки CSS 1.2
+      (`tileLabel` 14.4, `ribbonLabel` 15.6) движок округляет до 14 и 16 — точнее не задать. Цифры пропорциональные (`tabularFigures: false`):
+      в прототипе нет `font-variant-numeric`, а правило 03 §6.1 (tnum у цен) для этих стилей отступает по ADR-114.
+      `bellBadge` 10 lp — ниже минимума A11Y-008 (11 lp у цифр бейджей); схема допускает 10 только для стилей
+      `text.component`, отклонение должен назвать ADR-114.
+    - **Радиус 14** называется `catalogCard`: имя `card` занято геттером `BorderRadius get card` (= `md`) из 03 §17.4.
+    - **Тени.** Компонентные тени — на основе `textPrimary` #0E1456 (поле `baseColor`, генератор сверяет rgb с палитрой).
+      `e0…e3` оставлены со значениями ядра §8.3 (rgba(27,31,42)) — их используют другие экраны; ADR-114 касается только
+      экрана выбора товаров, шапки и drawer корзины. `blurRadius` Flutter = blur CSS, как у `e1…e3`; разницу
+      гауссова размытия Chrome и Flutter оценивает сверка снимков (WP-QA).
+    - **`DsCatalogMetrics`** лежит в `ds_breakpoints.dart` (новый файл не нужен; генератор выводит 8 файлов, как и
+      раньше). `gridColumns(..., maxColumns: null)` снимает верхний предел 6 только для каталога сотрудника.
+    - **Inter 800.** `Inter-ExtraBold.ttf` — статический экземпляр из `pos-app/assets/fonts/Inter/Inter-Variable.ttf`
+      (fontTools 4.60.0, wght=800, opsz=14, `SOURCE_DATE_EPOCH` = метка исходного файла — сборка воспроизводима, sha256 в
+      `SOURCE.txt`). Подключён в `pubspec.yaml` весом 800 и в `ds_test_support.dart`.
+    - **CSS веб-демо.** `demo/web/site-src/build-site.mjs` строит `demo-tokens.css` из `tokens.json`; новые группы он
+      читает частично (радиусы и тени — да, `componentColor`, `text.component`, `catalog` — нет). Структура
+      `elevation.*.shadows[].color.rgb` сохранена, чтобы сборщик не сломался.
 
 ## 4. Ограничения и что передаётся дальше
 
@@ -140,6 +197,20 @@ python -I -X utf8 scripts/check_contrast.py                        # код 1 п
 - **`tokens_test.dart`** (JSON ↔ Dart, RM-C-003) и Dart-эквивалент `contrast.py` (T-DS-001…012) — этап C. Список пар для них уже есть в `contrast.pairs`.
 
 ## 5. Результаты проверок
+
+### 5.0. Версия 1.2.0 (2026-10-31, ADR-114)
+
+| Проверка | Результат |
+|---|---|
+| Схема по мета-схеме 2020-12; `tokens.json` по схеме | 0 ошибок |
+| `gen_tokens_dart.py` дважды во временные каталоги + `diff -r` | пустой вывод |
+| `gen_tokens_dart.py pos-app/lib/design_system/tokens --check` | «checked 8 files, 0 differ», код 0 |
+| Вывод генератора после `dart format --page-width 120` (Dart 3.10.7) | «Formatted 8 files (0 changed)» |
+| `check_contrast.py` | 133 пары: PASS 97, FORBIDDEN 11, DECOR 15, EXCEPTION 7 (из них ADR-114 — 4), REFERENCE 3; нарушений 0, расхождений 0, ошибок 0; AA-набор: 4 из 4 PASS; `RESULT: OK` (ревью RC-07, RV-15) |
+| Отрицательные тесты `check_contrast.py` (копии) | CP-096 `allowed` → 1; лишний `exception` (CP-093) → 1; без CP-120 → 1; AA-оттенок ниже порога → 1; AA заменяет лишний цвет → 1; `decision` у чужой пары → 1; исключение уже проходит порог → 1; без `AA_2026_10_31` → 1 |
+| Отрицательные тесты генератора | rgb тени ≠ `baseColor` → 2; `catalog.gridMinCard` ≠ `layout.catalogCardMinWidth` → 2; стиль с именем члена (`priceOf`) → 2; компонентный цвет с именем палитры → 2 (схема) |
+| `flutter analyze` (pos-app) | No issues found |
+| `flutter test test/design_system/tokens_test.dart` | All tests passed (15); с `--dart-define=DS_TOKENS_JSON=<копия с лишним exception>` — тест контраста падает |
 
 ### 5.1. Версия 1.1.0 (2026-10-29, ADR-111)
 

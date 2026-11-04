@@ -40,7 +40,8 @@ const BUILTINS = new Set(builtinModules.filter((m) => !m.startsWith('_')));
 export function demoBuildInfoFromSite(site = SITE) {
   const b = JSON.parse(readFileSync(`${site}/backend/build.json`, 'utf8'));
   const info = { appVersion: b.appVersion, epochKey: b.epochKey, migrationBase: b.epoch?.migrationBase ?? EPOCH_MIGRATION_BASE, stateFormat: DEMO_DATA.stateFormat };
-  if (b.snapshot) info.snapshot = { format: b.snapshot.format, dataSha256: b.snapshot.dataSha256, skuCount: b.snapshot.skuCount };
+  if (b.catalog) info.catalog = { profile: b.catalog.profile, specSha256: b.catalog.specSha256 };
+  if (b.snapshot) info.snapshot = { format: b.snapshot.format, dataSha256: b.snapshot.dataSha256, skuCount: b.snapshot.skuCount, profile: b.snapshot.profile ?? null, specSha256: b.snapshot.specSha256 ?? null };
   return info;
 }
 
@@ -177,7 +178,7 @@ export async function startNativeBackend(opts = {}) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const r = await buildNativeReference({ force: process.argv.includes('--force') });
   console.log(JSON.stringify({ ...r.report, demoBuildInfo: undefined }, null, 1).slice(0, 3000));
-  const be = await startNativeBackend({ sku: 500, initOpts: { seed: false }, onLog: (lv, m) => console.log(`[ref ${lv}]`, String(m).slice(0, 300)) });
+  const be = await startNativeBackend({ initOpts: { seed: false }, onLog: (lv, m) => console.log(`[ref ${lv}]`, String(m).slice(0, 300)) });
   console.log('ready', be.initMs, 'ms', JSON.stringify(be.ready.timings).slice(0, 600));
   const h = await be.api('GET', '/health', { headers: { 'X-Device-Id': crypto.randomUUID(), 'X-App-Version': be.ready.appVersion } });
   console.log('/health', h.status, JSON.stringify(h.json));

@@ -1,21 +1,31 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:optomstroy/design_system/components/ds_glyph.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 
 /// Вид `FavoriteToggle` (03 §9.23).
 enum FavoriteToggleVariant {
-  /// На фото в сетке: круг 34 `surface` (сплошной, прототип 2026-10-29) + иконка 20; цель 48.
+  /// На фото в сетке (прототип, ADR-114): белый круг 34 `surface` без обводки + звезда прототипа 20
+  /// (`DsGlyphKind.star`, линия 1,8 `favoriteOutline`; в избранном — заливка `favorite`); цель 48. Фон круга при
+  /// наведении и нажатии не меняется (как в прототипе).
   onImage,
 
   /// В строке списка: иконка 24, цель 48 (40 визуально).
   inline,
+
+  /// В строках «Списка» и «Компакта» экрана выбора товаров (03 §9.23 ред. 1.18, ADR-114, ревью RV-17): звезда
+  /// прототипа 24 тех же цветов, что [onImage] (`favoriteOutline`, в избранном — заливка `favorite`), без круга; цель
+  /// 48. Фон при наведении и нажатии не меняется — строка красит свой (контур на круге hover был бы ещё бледнее).
+  catalogInline,
 }
 
 /// Избранное `FavoriteToggle` (03 §9.23; ядро §8.1, v1.9 §24.1): только звезда (DS-094).
-/// Выкл. — `star` outlined `warning`; вкл. — заливка `favorite` + контур `warning`.
+/// [FavoriteToggleVariant.inline]: выкл. — `star` outlined `warning`; вкл. — заливка `favorite` + контур `warning`.
+/// [FavoriteToggleVariant.onImage] и [FavoriteToggleVariant.catalogInline] — звезда прототипа цвета `favoriteOutline`
+/// (решение владельца 1, ADR-114: 2,11:1 — исключение CP-120), в избранном — заливка `favorite`.
 /// Optimistic-переключение и снекбары — у вызывающего кода; здесь — визуал и ANIM-009
 /// (scale 1 → 1,3 → 1 за 200 мс; reduce-motion — мгновенно).
 class FavoriteToggle extends StatefulWidget {
@@ -68,8 +78,17 @@ class _FavoriteToggleState extends State<FavoriteToggle> with SingleTickerProvid
   Widget build(BuildContext context) {
     final DsColors c = context.colors;
     final bool onImage = widget.variant == FavoriteToggleVariant.onImage;
+    // Звезда прототипа (ADR-114): на фото сетки и в строках каталога.
+    final bool prototype = onImage || widget.variant == FavoriteToggleVariant.catalogInline;
     final double iconSize = onImage ? 20 : 24;
-    final Widget star = widget.selected
+    final Widget star = prototype
+        ? DsGlyph(
+            kind: DsGlyphKind.star,
+            size: iconSize,
+            color: c.favoriteOutline,
+            fillColor: widget.selected ? c.favorite : null,
+          )
+        : widget.selected
         ? Stack(
             alignment: Alignment.center,
             children: <Widget>[
@@ -96,7 +115,10 @@ class _FavoriteToggleState extends State<FavoriteToggle> with SingleTickerProvid
         onTap: widget.onChanged == null ? null : () => widget.onChanged!(!widget.selected),
         enabled: widget.onChanged != null,
         builder: (BuildContext context, DsInteractionState s) {
-          final Color? hover = s.pressed ? c.iconButtonPressed : (s.hovered ? c.surfaceVariant : null);
+          // Звезда прототипа — без смены фона (в прототипе у кнопки-звезды нет hover и :active).
+          final Color? hover = prototype
+              ? null
+              : (s.pressed ? c.iconButtonPressed : (s.hovered ? c.surfaceVariant : null));
           return SizedBox.square(
             dimension: 48,
             child: Center(

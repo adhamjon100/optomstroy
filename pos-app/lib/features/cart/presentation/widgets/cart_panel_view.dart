@@ -39,6 +39,8 @@ import 'package:optomstroy/design_system/components/cart_panel.dart';
 import 'package:optomstroy/design_system/components/cart_summary.dart';
 import 'package:optomstroy/design_system/components/confirm_dialog.dart';
 import 'package:optomstroy/design_system/components/discount_input.dart';
+import 'package:optomstroy/design_system/components/ds_glyph.dart';
+import 'package:optomstroy/design_system/components/ds_hairline.dart';
 import 'package:optomstroy/design_system/components/empty_state.dart';
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/price_text.dart';
@@ -795,23 +797,26 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
         ),
       );
     } else if (empty) {
-      body = Center(
-        child: SingleChildScrollView(
-          child: EmptyState(
-            variant: EmptyStateVariant.cart,
-            title: l10n.cart_empty_title,
-            body: l10n.cart_empty_body,
-            actionLabel: widget.variant == CartPanelVariant.screen ? l10n.cart_empty_to_catalog : null,
-            onAction: widget.variant == CartPanelVariant.screen
-                ? () => GoRouter.of(context).go(can.customer ? CartPaths.home : CartPaths.catalog)
-                : null,
-            secondaryActionLabel: parkedCount != null && parkedCount > 0 ? l10n.cart_empty_parked(parkedCount) : null,
-            onSecondaryAction: parkedCount != null && parkedCount > 0 ? () => unawaited(_openParked()) : null,
-          ),
-        ),
+      final Widget emptyState = EmptyState(
+        variant: EmptyStateVariant.cart,
+        title: l10n.cart_empty_title,
+        body: l10n.cart_empty_body,
+        // Drawer (прототип, ADR-114): «Корзина пуста» 17/700 и подсказка 14 #6B7487 у верхнего края списка.
+        appearance: _drawer ? EmptyStateAppearance.drawer : EmptyStateAppearance.illustration,
+        actionLabel: widget.variant == CartPanelVariant.screen ? l10n.cart_empty_to_catalog : null,
+        onAction: widget.variant == CartPanelVariant.screen
+            ? () => GoRouter.of(context).go(can.customer ? CartPaths.home : CartPaths.catalog)
+            : null,
+        secondaryActionLabel: parkedCount != null && parkedCount > 0 ? l10n.cart_empty_parked(parkedCount) : null,
+        onSecondaryAction: parkedCount != null && parkedCount > 0 ? () => unawaited(_openParked()) : null,
       );
+      body = _drawer
+          ? SingleChildScrollView(padding: CartPanel.drawerBodyPadding, child: emptyState)
+          : Center(child: SingleChildScrollView(child: emptyState));
     } else {
       body = ListView.builder(
+        // Drawer (прототип): `padding: 6px 20px` — поля 20 по бокам у самих строк (`CartLine.emphasized`).
+        padding: _drawer ? EdgeInsets.symmetric(vertical: CartPanel.drawerBodyPadding.top) : null,
         itemCount: lines.length,
         itemBuilder: (BuildContext context, int i) => _line(
           l10n,
@@ -838,7 +843,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
               if (can.canDiscount && server != null && !empty)
                 Padding(
                   padding: _drawer
-                      ? EdgeInsets.fromLTRB(context.space.s5, context.space.s3, context.space.s5, 0)
+                      ? EdgeInsets.fromLTRB(context.space.s5, context.space.s4, context.space.s5, 0)
                       : EdgeInsets.symmetric(horizontal: context.space.s5),
                   child: _discountInput(l10n, s, server, offline: offline),
                 ),
@@ -863,8 +868,14 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
                 // UI-20-034: итог — из ответа сервера и пересчитывается им при оформлении (MNY-001, D-23).
                 note: l10n.cart_summary_server_note,
                 drawer: _drawer,
+                // Прототип: `padding: 16px 20px 20px`, строки через 12; низ — у зоны G (`CartPanel.drawerFooterPadding`).
                 padding: _drawer
-                    ? EdgeInsets.fromLTRB(context.space.s5, context.space.s4, context.space.s5, context.space.s2)
+                    ? EdgeInsets.fromLTRB(
+                        context.space.s5,
+                        can.canDiscount && server != null && !empty ? CartSummary.drawerGap : context.space.s4,
+                        context.space.s5,
+                        0,
+                      )
                     : null,
               ),
             ],
@@ -896,42 +907,45 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
             ),
           ),
         if (_drawer)
-          // Drawer (medium и шире, 02 UI-20-015/016 редакции 1.16): «Отложить · F8» (нейтральная контурная `neutral`,
-          // flex 1) и «Создать заказ · F9» (primary, flex 1,4) в одну строку, высота 48; у клиента — только
-          // «Отправить заявку».
-          Row(
-            children: <Widget>[
-              if (can.canPark) ...<Widget>[
+          // Drawer (medium и шире, 02 UI-20-015/016 редакции 1.16; вид — прототип, ADR-114): «Отложить · F8»
+          // (нейтральная контурная `neutral` 14/600, `flex: 1`) и «Создать заказ · F9» (primary 15/700, `flex: 1.4`) в
+          // одну строку, высота 46 (цель 48), радиус 10, зазор 10; у клиента — только «Отправить заявку». Ширины — как
+          // у CSS `flex` с основой 0: свободное место делится 1 : 1,4 после собственных полей кнопок (у «Отложить» —
+          // 6 + рамка 1 с каждой стороны, у «Создать заказ» — 6 + 6): при ширине 380 — 157,3 и 212,7.
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints box) => Row(
+              children: <Widget>[
+                if (can.canPark) ...<Widget>[
+                  SizedBox(
+                    width: CartPanel.drawerParkWidth(box.maxWidth),
+                    child: AppButton(
+                      key: CartKeys.park,
+                      label: cartHotkeyHints ? l10n.cart_cta_park_hotkey : l10n.cart_cta_park,
+                      variant: AppButtonVariant.neutral,
+                      size: AppButtonSize.drawer,
+                      expand: true,
+                      fitLabel: true,
+                      loading: s.isBusy(CartOp.park),
+                      onPressed: parkEnabled ? () => unawaited(_park()) : null,
+                    ),
+                  ),
+                  const SizedBox(width: CartPanel.drawerButtonGap),
+                ],
                 Expanded(
-                  flex: 10,
                   child: AppButton(
-                    key: CartKeys.park,
-                    label: cartHotkeyHints ? l10n.cart_cta_park_hotkey : l10n.cart_cta_park,
-                    variant: AppButtonVariant.neutral,
-                    size: AppButtonSize.cta,
+                    key: CartKeys.createOrder,
+                    label: can.customer
+                        ? l10n.cart_customer_submit
+                        : (cartHotkeyHints ? l10n.cart_cta_create_order_hotkey : l10n.cart_cta_create_order),
+                    size: AppButtonSize.drawer,
                     expand: true,
                     fitLabel: true,
-                    loading: s.isBusy(CartOp.park),
-                    onPressed: parkEnabled ? () => unawaited(_park()) : null,
+                    loading: s.isBusy(CartOp.checkout),
+                    onPressed: _ctaEnabled(s) ? () => unawaited(_createOrder()) : null,
                   ),
                 ),
-                SizedBox(width: context.space.s2),
               ],
-              Expanded(
-                flex: 14,
-                child: AppButton(
-                  key: CartKeys.createOrder,
-                  label: can.customer
-                      ? l10n.cart_customer_submit
-                      : (cartHotkeyHints ? l10n.cart_cta_create_order_hotkey : l10n.cart_cta_create_order),
-                  size: AppButtonSize.cta,
-                  expand: true,
-                  fitLabel: true,
-                  loading: s.isBusy(CartOp.checkout),
-                  onPressed: _ctaEnabled(s) ? () => unawaited(_createOrder()) : null,
-                ),
-              ),
-            ],
+            ),
           )
         else ...<Widget>[
           if (can.canPark && !empty) ...<Widget>[
@@ -967,8 +981,9 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
       child: CartPanel(
         variant: widget.variant,
         title: l10n.cart_title,
-        // Drawer: «Корзина · N поз.» (UI-20-001 редакции 1.16) — суффикс вместо бейджа; при 0 — без суффикса.
-        titleSuffix: _drawer && s.positions > 0 ? l10n.cart_drawer_title_count(s.positions) : null,
+        // Drawer: «Корзина · N поз.» (UI-20-001 редакции 1.16) — суффикс вместо бейджа; у пустой корзины —
+        // «· 0 поз.», как в прототипе (ADR-114).
+        titleSuffix: _drawer ? l10n.cart_drawer_title_count(s.positions) : null,
         count: s.positions,
         countLabel: l10n.cart_a11y_positions(s.positions),
         counter: counter,
@@ -1112,6 +1127,18 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
               ),
             ),
           );
+    if (_drawer) {
+      return _drawerPlaceRow(
+        l10n,
+        c,
+        s,
+        server,
+        can,
+        customerName: customerName,
+        warehouse: warehouse,
+        offline: offline,
+      );
+    }
     return Container(
       padding: EdgeInsets.fromLTRB(context.space.s5, context.space.s2, context.space.s3, context.space.s1),
       decoration: BoxDecoration(
@@ -1129,24 +1156,18 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
                 height: 40,
                 child: Row(
                   children: <Widget>[
-                    Icon(
-                      Icons.person_outline_rounded,
-                      size: _drawer ? 18 : 20,
-                      color: _drawer ? c.textPrimary : c.textSecondary,
-                    ),
+                    Icon(Icons.person_outline_rounded, size: 20, color: c.textSecondary),
                     SizedBox(width: context.space.s2),
                     Expanded(
-                      child: customerName == null && _drawer
-                          ? _customerEmptyLabel(l10n.cart_customer_empty, c)
-                          : Text(
-                              customerName ?? l10n.cart_customer_empty,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: context.text.body.copyWith(
-                                fontWeight: FontWeight.w500,
-                                color: customerName == null ? c.textSecondary : c.textPrimary,
-                              ),
-                            ),
+                      child: Text(
+                        customerName ?? l10n.cart_customer_empty,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.body.copyWith(
+                          fontWeight: FontWeight.w500,
+                          color: customerName == null ? c.textSecondary : c.textPrimary,
+                        ),
+                      ),
                     ),
                     if (s.isBusy(CartOp.customer))
                       const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
@@ -1164,11 +1185,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
                               },
                       )
                     else
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        size: 20,
-                        color: offline ? c.disabledText : (_drawer ? c.textTertiary : c.textSecondary),
-                      ),
+                      Icon(Icons.chevron_right_rounded, size: 20, color: offline ? c.disabledText : c.textSecondary),
                   ],
                 ),
               ),
@@ -1179,9 +1196,91 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
     );
   }
 
-  /// «Клиент: **не выбран**» drawer (прототип): подпись до двоеточия — `body textPrimary`, остаток — 700.
-  Widget _customerEmptyLabel(String text, DsColors c) {
-    final TextStyle base = context.text.body.copyWith(color: c.textPrimary);
+  /// Зона B drawer по прототипу (ADR-114 п. 6, design-spec §13): строка «Клиент» на всю ширину — поля 14 / 20, нижняя
+  /// граница `border`, высота 47; слева глиф человека 18 `textPrimary` линией 1,8 и через 10 «Клиент: **не выбран**»
+  /// 14 (остаток после двоеточия — 700) или имя клиента 14/600; справа шеврон 16 `catalogMeta` линией 2,2 или, при
+  /// выбранном клиенте, «Сбросить» (цель 44). Склад и вид цены (UI-20-005; в прототипе их нет — паритет функций) —
+  /// строкой ниже с полями 20, с той же нижней границей.
+  Widget _drawerPlaceRow(
+    AppLocalizations l10n,
+    DsColors c,
+    CartState s,
+    Cart server,
+    CartPermissions can, {
+    required String? customerName,
+    required Widget warehouse,
+    required bool offline,
+  }) {
+    final BorderSide divider = DsHairline.side(context, c.border);
+    final bool busy = s.isBusy(CartOp.customer);
+    final bool enabled = !offline && !busy;
+    final TextStyle text = context.text.chip.copyWith(fontWeight: FontWeight.w400, color: c.textPrimary);
+    final Widget customer = InkWell(
+      key: CartKeys.customer,
+      onTap: enabled ? () => unawaited(_pickCustomer(server)) : null,
+      hoverColor: c.surfaceHover,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: CartPanel.drawerClientRowHeight),
+        padding: EdgeInsets.symmetric(horizontal: context.space.s5),
+        decoration: BoxDecoration(border: Border(bottom: divider)),
+        child: Row(
+          children: <Widget>[
+            DsGlyph(kind: DsGlyphKind.person, size: 18, color: offline ? c.disabledText : c.textPrimary),
+            const SizedBox(width: CartPanel.drawerClientGap),
+            Expanded(
+              child: customerName == null
+                  ? _customerEmptyLabel(l10n.cart_customer_empty, c, base: text)
+                  : Text(
+                      customerName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: text.copyWith(fontWeight: FontWeight.w600),
+                    ),
+            ),
+            const SizedBox(width: CartPanel.drawerClientGap),
+            if (busy)
+              const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+            else if (customerName != null)
+              AppIconButton(
+                icon: Icons.close_rounded,
+                small: true,
+                iconSize: 20,
+                semanticLabel: l10n.ds_button_reset,
+                onPressed: offline
+                    ? null
+                    : () async {
+                        final Failure? f = await _cart.clearCustomer();
+                        if (f != null) _snackError(f);
+                      },
+              )
+            else
+              DsGlyph(
+                kind: DsGlyphKind.chevronRight,
+                size: 16,
+                strokeWidth: 2.2,
+                color: offline ? c.disabledText : c.catalogMeta,
+              ),
+          ],
+        ),
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (can.canChooseCustomer) customer,
+        if (server.warehouseId != null)
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: context.space.s5),
+            decoration: BoxDecoration(border: Border(bottom: divider)),
+            child: warehouse,
+          ),
+      ],
+    );
+  }
+
+  /// «Клиент: **не выбран**» drawer (прототип): подпись до двоеточия — [base] (14/400 `textPrimary`), остаток — 700.
+  Widget _customerEmptyLabel(String text, DsColors c, {required TextStyle base}) {
     final int colon = text.indexOf(':');
     return Text.rich(
       colon <= 0
@@ -1301,6 +1400,11 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
       if (line.sku != null) l10n.catalog_card_sku(line.sku!),
       if (line.unitPrice != null) '${PriceText.format(line.unitPrice!)} ${l10n.product_price_unit(unit)}'.trim(),
     ];
+    // Диктор: цена за единицу в форме `PriceText.spoken` (без «запятой» и нулевых тыйынов; ADR-114 п. 4, A11Y-020).
+    final List<String> metaSpoken = <String>[
+      if (line.sku != null) l10n.catalog_card_sku(line.sku!),
+      if (line.unitPrice != null) '${PriceText.spoken(line.unitPrice!)} ${l10n.product_price_unit(unit)}'.trim(),
+    ];
     ds.CartLineTone tone = ds.CartLineTone.normal;
     String? message;
     final List<Widget> actions = <Widget>[];
@@ -1373,6 +1477,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
           ? () => unawaited(_changeVariant(line, picker))
           : null,
       subtitle: meta.isEmpty ? null : meta.join(' · '),
+      subtitleSemanticLabel: metaSpoken.isEmpty ? null : metaSpoken.join(' · '),
       imageUrl: line.imageUrl,
       quantity: stepper,
       lineTotal: line.preliminary ? (line.serverQuantity == null ? null : line.lineTotal) : line.lineTotal,
@@ -1389,6 +1494,8 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
       selected: selected,
       dense: dense,
       emphasized: _drawer,
+      // Степпер-группа (expanded/large): поле её целей касания — в зазоре перед ней, обводка — на месте прототипа.
+      stepperInset: stepperSize == QuantityStepperSize.group ? QuantityStepper.groupOuterInset : 0,
     );
     if (widget.variant != CartPanelVariant.panel) {
       // Свайп удаления на тач-экранах (UI-20-018, A11Y-017).

@@ -7,8 +7,12 @@
 #   start-demo.cmd -NoApp           — только сервер (Enter — остановка)
 #   start-demo.cmd -Smoke           — самопроверка: сервер, вход кассира, каталог, запуск приложения, снимок экрана
 #   start-demo.cmd -KeepAppData     — не очищать данные приложения (demo\data) перед запуском
+#   start-demo.cmd -Sku 500         — синтетический каталог из 500 товаров и фикстуры 1С вместо каталога по макету
+#
+# Каталог по умолчанию — по макету экрана выбора товаров (demo\catalog\design-catalog.json, фото — demo\catalog\photos;
+# ТЗ 15 ADR-114): тот же, что в веб-демо.
 param(
-  [int]$Sku = 500,
+  [int]$Sku = 0,
   [ValidateSet('onec', 'none')][string]$QrProvider = 'onec',
   [switch]$NoApp,
   [switch]$Smoke,
@@ -65,6 +69,20 @@ if (-not (Test-Path (Join-Path $api 'dist\main.js'))) {
   if ($code -ne 0) { Say "Сборка сервера не удалась. Журнал: $(Join-Path $logs 'build.log')" 'Red'; Exit-Early }
 }
 if (-not $NoApp -and -not (Test-Path $app)) { Say "Нет приложения: $app. Соберите демо: demo\build-demo.ps1" 'Red'; Exit-Early }
+
+# Каталог: по макету (спецификация + фото в demo\catalog) или, с -Sku N, синтетический из N товаров.
+$catalogSpec = Join-Path $demo 'catalog\design-catalog.json'
+$script:designSpec = $null
+if ($Sku -lt 0) { Say '-Sku: число товаров синтетического каталога, больше 0.' 'Red'; Exit-Early 2 }
+if ($Sku -eq 0) {
+  if (-not (Test-Path -LiteralPath $catalogSpec)) { Say "Нет каталога демо: $catalogSpec. Нужна папка проекта целиком." 'Red'; Exit-Early }
+  try { $script:designSpec = Get-Content -LiteralPath $catalogSpec -Raw -Encoding UTF8 | ConvertFrom-Json } catch {
+    Say "Не читается каталог демо $catalogSpec`: $($_.Exception.Message)" 'Red'; Exit-Early
+  }
+  $catalogLabel = "каталог по макету: $(@($script:designSpec.products).Count) товаров, фото из макета"
+} else {
+  $catalogLabel = "$Sku товаров"
+}
 
 # Каталог данных вшит в сборку приложения (demo_env.json → APP_DATA_DIR): папку демо перенесли — нужна пересборка.
 $envFile = Join-Path $demo 'demo_env.json'
@@ -141,7 +159,8 @@ $script:stack = $null
 function Start-Stack {
   # stdin стека — канал этого окна (--exit-on-stdin-end): закрытие канала или окна консоли = штатная остановка
   # API, воркера, фейка 1С, прокси и PostgreSQL. Вывод — в demo\logs через cmd.exe.
-  $nodeArgs = @('scripts/local-stack.mjs', 'serve', '--cashier-fixtures', "--catalog-fixtures=$Sku",
+  $catalogArg = if ($script:designSpec) { "--catalog-spec=`"$catalogSpec`"" } else { "--catalog-fixtures=$Sku" }
+  $nodeArgs = @('scripts/local-stack.mjs', 'serve', '--cashier-fixtures', $catalogArg,
     '--qr-provider', $QrProvider, '--qr-paid-after-polls', '4', '--ready-file', "`"$ready`"", '--exit-on-stdin-end', '--otp-any-phone')
   $cmdLine = "`"$($node.Source)`" $($nodeArgs -join ' ') 1>`"$stackLog`" 2>`"$stackErr`""
   $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -237,6 +256,48 @@ function Invoke-ApiSmoke {
   $items = if ($c.Body -and $c.Body.items) { @($c.Body.items) } else { @() }
   $first = if ($items.Count -gt 0) { " первый: «$($items[0].name)»" } else { '' }
   Check 'GET /catalog/products?limit=20 (с токеном кассира)' ($c.Status -eq 200 -and $items.Count -gt 0) "HTTP $($c.Status), товаров на странице: $($items.Count)$first$(if ($c.Status -ne 200) { ' ' + (Short $c.Text) })"
+  if ($script:designSpec -and $c.Status -eq 200) { Invoke-DesignCatalogSmoke $token $dev }
+}
+
+# Каталог по макету (ADR-114): корни в порядке макета с картинками; стартовая категория (больше всех товаров) — та же,
+# что по спецификации; её картинка отдаётся мини-прокси :8080; её товары с фото, избранное спецификации отмечено.
+function Invoke-DesignCatalogSmoke([string]$token, [string]$dev) {
+  $spec = $script:designSpec
+  $roots = @($spec.categories)
+  $r = Invoke-Api 'GET' "$apiBase/catalog/categories" -Token $token -DeviceId $dev
+  $cats = if ($r.Body -and $r.Body.items) { @($r.Body.items) } else { @() }
+  $names = @($cats | ForEach-Object { [string]$_.name })
+  $withImage = @($cats | Where-Object { [string]$_.imageUrl -match '^/images/[0-9a-f]{64}/card$' }).Count
+  $inOrder = ($names -join '|') -ceq (@($roots | ForEach-Object { [string]$_.name }) -join '|')
+  Check 'GET /catalog/categories: корни по макету, у каждого картинка' ($r.Status -eq 200 -and $inOrder -and $withImage -eq $roots.Count) "HTTP $($r.Status), корней $($cats.Count) из $($roots.Count), с картинкой $withImage$(if (-not $inOrder) { '; порядок: ' + ($names -join ', ') })"
+  if ($cats.Count -eq 0) { return }
+
+  # Стартовая категория: наибольший productCount, при равенстве — первая по sortOrder (решение владельца 2026-10-31).
+  $byRoot = @{}
+  foreach ($p in @($spec.products)) { $byRoot[[string]$p.cat] = 1 + [int]$byRoot[[string]$p.cat] }
+  $want = @($roots | Sort-Object @{ Expression = { [int]$byRoot[[string]$_.id] }; Descending = $true }, @{ Expression = { [int]$_.sortOrder } })[0]
+  $top = @($cats | Sort-Object @{ Expression = { [int]$_.productCount }; Descending = $true }, @{ Expression = { [int]$_.sortOrder } })[0]
+  $wantCount = [int]$byRoot[[string]$want.id]
+  Check "стартовая категория «$($want.name)» — больше всех товаров" ($top.name -ceq $want.name -and [int]$top.productCount -eq $wantCount) "наибольший productCount у «$($top.name)»: $($top.productCount), по спецификации $wantCount"
+
+  $img = $null
+  try {
+    $img = $script:http.GetAsync("$proxy$($top.imageUrl)").GetAwaiter().GetResult()
+    $type = [string]$img.Content.Headers.ContentType
+    $bytes = $img.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult().Length
+    Check "картинка «$($top.name)» через мини-прокси :8080" ([int]$img.StatusCode -eq 200 -and $type -eq 'image/webp' -and $bytes -gt 0) "HTTP $([int]$img.StatusCode) $type, $bytes байт"
+  } catch {
+    Check "картинка «$($top.name)» через мини-прокси :8080" $false $_.Exception.GetBaseException().Message
+  } finally { if ($img) { $img.Dispose() } }
+
+  $own = @($spec.products | Where-Object { [string]$_.cat -eq [string]$want.id })
+  $ownPhotos = @($own | Where-Object { $_.photo }).Count
+  $favs = @($spec.favorites | Where-Object { $f = $_; @($own | Where-Object { $_.sku -eq $f }).Count -gt 0 })
+  $p = Invoke-Api 'GET' "$apiBase/catalog/products?categoryId=$($top.id)&includeSubcategories=true&limit=50" -Token $token -DeviceId $dev
+  $list = if ($p.Body -and $p.Body.items) { @($p.Body.items) } else { @() }
+  $photos = @($list | Where-Object { $_.primaryImage -and ($_.primaryImage.cardUrl -or $_.primaryImage.url) }).Count
+  $favOk = @($favs | Where-Object { $f = $_; @($list | Where-Object { $_.sku -eq $f -and $_.isFavorite -eq $true }).Count -eq 1 }).Count
+  Check "товары «$($top.name)»: фото и избранное" ($p.Status -eq 200 -and $list.Count -eq $own.Count -and $photos -eq $ownPhotos -and $favOk -eq $favs.Count) "HTTP $($p.Status), товаров $($list.Count) из $($own.Count), с фото $photos из $ownPhotos, избранное $favOk из $($favs.Count) ($($favs -join ', '))"
 }
 
 $script:winApiLoaded = $false
@@ -351,7 +412,7 @@ function Invoke-AppSmoke {
 $script:appStarted = $false
 $script:exitCode = 0
 function Invoke-Demo {
-  Say "1/2  Запускаю сервер и загружаю демо-данные ($Sku товаров, клиенты, долги)... это 1–3 минуты" 'Cyan'
+  Say "1/2  Запускаю сервер и загружаю демо-данные ($catalogLabel, клиенты, долги)... это 1–3 минуты" 'Cyan'
   Start-Stack
   if (-not (Wait-StackReady)) { $script:exitCode = 1; return }
   Say "     Сервер готов: $apiBase (версия приложения $($script:appVersion))" 'Green'

@@ -120,7 +120,7 @@ void main() {
   });
 
   testWidgets('SCR-12 customer (E, D6): прежний сайдбар-список со счётчиками, «★ Избранное N» и «Недавние товары»; '
-      'сворачивается до 72, выбор сохраняется', (tester) async {
+      'сворачивается до 72, выбор сохраняется (ADR-114: на expanded без изменений, T-CAT-039)', (tester) async {
     final FakeShelfPort shelf = FakeShelfPort(
       favorites: <String>{'p1', 'p2'},
       recent: <RecentProduct>[RecentProduct(product: product(7), viewedAt: kNow)],
@@ -152,6 +152,29 @@ void main() {
     await settle(tester);
     expect(tester.getSize(sidebar).width, closeTo(DsBreakpoints.sidebarCollapsed - 1, 0.5));
     expect(await prefs.sidebarCollapsed(), isTrue);
+  });
+
+  testWidgets('T-CAT-039 customer medium (820): колонка плиток без «★ Избранное» и «Недавних» (ADR-114); избранное — '
+      'кнопкой «Избранные» строки управления', (tester) async {
+    final FakeShelfPort shelf = FakeShelfPort(
+      favorites: <String>{'p1', 'p2'},
+      recent: <RecentProduct>[RecentProduct(product: product(7), viewedAt: kNow)],
+    );
+    addTearDown(shelf.dispose);
+    await _pump(
+      tester,
+      CatalogHarness(role: RoleCode.customer, shelf: shelf),
+      initial: '/catalog/c/c-mix',
+      size: kMedium,
+      shell: true,
+    );
+    final Finder sidebar = find.byType(CatalogSidebar);
+    expect(tester.widget<CatalogSidebar>(sidebar).layout, CatalogSidebarLayout.tiles);
+    expect(find.byKey(const ValueKey<String>('sidebar-category-c-mix')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('sidebar-favorites')), findsNothing, reason: 'колонка — только категории');
+    expect(find.byKey(const ValueKey<String>('sidebar-recent')), findsNothing);
+    expect(find.byKey(const ValueKey<String>('chip-preset-favorites')), findsOneWidget, reason: 'избранное — в строке');
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('customer medium+: после «+ Добавить» тост «Добавлено: {name}» с действием «Открыть» → /cart '

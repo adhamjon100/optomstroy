@@ -73,6 +73,15 @@ const String _apiDirDefine = String.fromEnvironment('E2E_API_DIR');
 const String _catalogSku = String.fromEnvironment('E2E_CATALOG_SKU', defaultValue: '500');
 
 const Key _catalogRoot = ValueKey<String>('stub-SCR-10');
+
+/// SCR-10 «Все товары»: голый `/catalog` сотрудника на medium и шире открывает стартовую категорию (ADR-114,
+/// AC-UI-10-033), весь каталог — `/catalog?all=1`.
+const String _allProducts = '/catalog?all=1';
+
+/// Экран после входа: SCR-10 (compact) или стартовая категория SCR-12 (medium и шире, ADR-114).
+final Finder _landing = find.byWidgetPredicate(
+  (Widget w) => w.key == _catalogRoot || w.key == const ValueKey<String>('stub-SCR-12'),
+);
 const Key _searchField = ValueKey<String>('catalog-search-field');
 const Key _productScreen = ValueKey<String>('scr-14');
 
@@ -537,7 +546,7 @@ void main() {
       await _tap(tester, find.byKey(RegistrationSecurityScreen.completeKey));
 
       // SCR-10 и первичная загрузка кэша (NFR-PERF-006: индикатор «Загружаем каталог… N %» в оболочке).
-      await pumpUntilFound(tester, find.byKey(_catalogRoot), timeout: const Duration(seconds: 60));
+      await pumpUntilFound(tester, _landing, timeout: const Duration(seconds: 60));
       expect(_where(tester), startsWith('/catalog'));
       await _waitCatalogCache(tester);
       await _expectProductPhotoLoaded(tester);
@@ -555,7 +564,7 @@ void main() {
 
       // Товар с характеристиками: поиск по артикулу → карточка → вариант (не по умолчанию).
       final ({String productId, String sku, String variantId, String variantName}) vp = await _variantProduct(tester);
-      _router(tester)!.go('/catalog');
+      _router(tester)!.go(_allProducts);
       await pumpUntilFound(tester, find.byKey(_catalogRoot));
       await _settle(tester);
       await _search(tester, vp.sku, vp.productId);
@@ -611,14 +620,14 @@ void main() {
       // Офлайн: стек остановлен. Первое же действие пользователя (поиск) не достаёт сервер → ответ из кэша
       // устройства с пометкой (SCR-11 `search-offline-note`), сеть помечается `offline`.
       await tester.runAsync(_stack.stop);
-      _router(tester)!.go('/catalog');
+      _router(tester)!.go(_allProducts);
       await pumpUntilFound(tester, find.byKey(_catalogRoot));
       await _settle(tester);
       final String offlineId = await _productIdBySku(tester, 'F3241');
       await _search(tester, 'F3241', offlineId);
       await pumpUntilFound(tester, find.byKey(const ValueKey<String>('search-offline-note')));
       // SCR-10 из кэша: `OfflineBanner` «Показаны данные от HH:MM» (возраст данных) → карточка из кэша.
-      _router(tester)!.go('/catalog');
+      _router(tester)!.go(_allProducts);
       await pumpUntilFound(tester, find.byKey(_catalogRoot));
       final Finder banner = find.descendant(
         of: find.byKey(const ValueKey<String>('catalog-offline-banner')),

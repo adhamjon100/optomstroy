@@ -1,55 +1,53 @@
-// Синтетические «фото» товаров для снимка веб-демо (WP-B4; plan §3.5 шаг 5). Только Node и только при сборке:
-// sharp из pos-api/node_modules. Это не фото товаров, а заглушки: мягкий фон в цвете категории, простая фигура,
-// артикул и подпись «ДЕМО · фото-заглушка». Байты детерминированы (тот же sharp, тот же текст → тот же JPEG), поэтому
-// sha256 исходника, а с ним адреса /images/{sha}/… и снимок не меняются от пересборки.
-import { createRequire } from 'node:module';
+// Фото демо-каталога для снимка веб-демо (WP-B4; WP-DATA-WEB 2026-10-31, ADR-114). Только Node и только при сборке.
+// Каталог по макету — demo/catalog/design-catalog.json (pos-api/scripts/design_catalog.ts), фото — PNG макета
+// demo/catalog/photos/*.png как есть (без перекодирования и увеличения; WebP thumb/card/full делает processImage
+// pos-api). Байты исходников фиксированы, поэтому sha256, адреса /images/{sha}/… и снимок не меняются от пересборки.
+// Прежние синтетические JPEG-заглушки (каталог SyntheticCatalog seed 1, 500 SKU) больше не строятся.
 import { createHash } from 'node:crypto';
-import { NM } from '../lib/paths.mjs';
+import { createRequire } from 'node:module';
+import { existsSync, readFileSync } from 'node:fs';
+import { NM, ROOT } from '../lib/paths.mjs';
 
-const require = createRequire(`${NM}/`);
-const sharp = require('sharp');
+/** Каталог спецификации и фото (в git). */
+export const CATALOG_DIR = `${ROOT}/demo/catalog`;
+export const CATALOG_SPEC = `${CATALOG_DIR}/design-catalog.json`;
 
-/** Палитра фона/фигуры (светлый фон, насыщенная фигура) — по категории. */
-const PALETTE = [
-  ['#EAF1FB', '#1F5FAE'],
-  ['#FDEEE9', '#D9380F'],
-  ['#E7F6EE', '#177245'],
-  ['#FFF4E0', '#8A5300'],
-  ['#F1ECFB', '#5B3FA8'],
-  ['#E6F5F7', '#11707E'],
-  ['#F3F1EC', '#5B6478'],
-  ['#FBEAF1', '#A3245A'],
-];
-const esc = (s) => String(s).replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c]);
-const hash = (s) => createHash('sha256').update(s).digest();
+const sha256 = (b) => createHash('sha256').update(b).digest('hex');
 
-function shape(kind, fg) {
-  switch (kind) {
-    case 0:
-      return `<circle cx="320" cy="200" r="112" fill="${fg}" opacity="0.88"/><rect x="262" y="150" width="116" height="100" rx="16" fill="#FFFFFF" opacity="0.92"/>`;
-    case 1:
-      return `<rect x="208" y="92" width="224" height="216" rx="36" fill="${fg}" opacity="0.88"/><circle cx="320" cy="200" r="58" fill="#FFFFFF" opacity="0.92"/>`;
-    case 2:
-      return `<polygon points="320,82 424,142 424,262 320,322 216,262 216,142" fill="${fg}" opacity="0.88"/><rect x="286" y="150" width="68" height="100" rx="12" fill="#FFFFFF" opacity="0.92"/>`;
-    default:
-      return `<path d="M320 78 C 382 168, 426 214, 426 252 A 106 106 0 0 1 214 252 C 214 214, 258 168, 320 78 Z" fill="${fg}" opacity="0.88"/><circle cx="320" cy="250" r="44" fill="#FFFFFF" opacity="0.92"/>`;
+/** Спецификация каталога: { spec, sha256 (байты файла), bytes }. */
+export function readCatalogSpec(file = CATALOG_SPEC) {
+  const buf = readFileSync(file);
+  return { spec: JSON.parse(buf.toString('utf8')), sha256: sha256(buf), bytes: buf.length };
+}
+
+/**
+ * Файлы фото спецификации: существуют, sha256 = spec.photos[].sha256. → { files: Map(name → {path, sha256, bytes}),
+ * problems }.
+ */
+export function checkCatalogPhotos(spec, dir = CATALOG_DIR) {
+  const files = new Map();
+  const problems = [];
+  for (const p of spec.photos ?? []) {
+    const path = `${dir}/${p.file}`;
+    if (!existsSync(path)) {
+      problems.push(`фото ${p.name}: нет файла demo/catalog/${p.file}`);
+      continue;
+    }
+    const buf = readFileSync(path);
+    const s = sha256(buf);
+    if (s !== p.sha256) problems.push(`фото ${p.name}: sha256 файла ${s.slice(0, 12)}… ≠ спецификации ${String(p.sha256).slice(0, 12)}…`);
+    files.set(p.name, { path, sha256: s, bytes: buf.length });
   }
+  return { files, problems };
 }
 
-/** JPEG 640×480 для товара: { sku, category, index }. */
-export async function syntheticPhoto({ sku, category, index }) {
-  const h = hash(`${category}`);
-  const [bg, fg] = PALETTE[h[0] % PALETTE.length];
-  const label = esc(String(sku ?? `#${index + 1}`).slice(0, 24));
-  const cat = esc(String(category ?? '').slice(0, 32));
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480">
-  <rect width="640" height="480" fill="${bg}"/>
-  ${shape(index % 4, fg)}
-  <text x="320" y="378" font-family="Arial, sans-serif" font-size="36" font-weight="bold" text-anchor="middle" fill="#0E1456">${label}</text>
-  <text x="320" y="414" font-family="Arial, sans-serif" font-size="20" text-anchor="middle" fill="#5B6478">${cat}</text>
-  <text x="320" y="452" font-family="Arial, sans-serif" font-size="18" text-anchor="middle" fill="#656E80">ДЕМО · фото-заглушка</text>
-</svg>`;
-  return sharp(Buffer.from(svg)).jpeg({ quality: 82, mozjpeg: false }).toBuffer();
+/** Отсортированный список «имя sha256» фото по файлам (ключ эпохи, lib/epoch.mjs). */
+export function catalogPhotoShas(spec, dir = CATALOG_DIR) {
+  return (spec.photos ?? []).map((p) => `${p.name} ${existsSync(`${dir}/${p.file}`) ? sha256(readFileSync(`${dir}/${p.file}`)) : 'missing'}`).sort();
 }
 
-export const sharpVersion = () => sharp.versions?.sharp ?? null;
+/** Версия sharp построителя (sharp грузится только здесь — модуль читает и lib/epoch.mjs). */
+export function sharpVersion() {
+  const require = createRequire(`${NM}/`);
+  return require('sharp').versions?.sharp ?? null;
+}

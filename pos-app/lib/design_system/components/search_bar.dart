@@ -12,7 +12,7 @@ import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 
 /// Варианты `SearchBar` (03 §9.7).
 enum SearchBarVariant {
-  /// В `TopAppBarPos.full` (прототип 2026-10-29): высота 44, до 680, кнопки 32 внутри поля.
+  /// В `TopAppBarPos.full` (прототип, ADR-114): высота 44, радиус 10, до 680, кнопки 32 внутри поля.
   header,
 
   /// На всю ширину под шапкой (compact).
@@ -25,10 +25,12 @@ enum SearchBarVariant {
 /// Поле поиска `SearchBar` (03 §9.7). Имя совпадает с Material `SearchBar` — импортируйте
 /// `package:flutter/material.dart` с `hide SearchBar` (канон имён — ядро §8.5).
 ///
-/// * [SearchBarVariant.header] (шапка medium+, ADR-112): высота 44 (область ввода и тач-цель поля — 48), радиус
-///   `md`, фон `surfaceVariant`, поля 16 слева / 8 справа, иконка `search` 18 `textSecondary`, текст `body`,
-///   плейсхолдер `textTertiary` (4.51:1 на `surfaceVariant`, ADR-111); «очистить» и сканер — кнопки 32×32 с
-///   радиусом `sm` внутри поля, цель касания 44;
+/// * [SearchBarVariant.header] (шапка medium+, прототип без округления — ADR-114 п. 6): высота 44 (область ввода и
+///   тач-цель поля — 48), радиус `control` 10, фон `surfaceVariant` #EAF1FB, поля 14 слева / 8 справа, зазор 10;
+///   лупа — глиф прототипа 18 `textSecondary` (линия 2), текст `body` 14 `textPrimary`, плейсхолдер
+///   `searchPlaceholder` #757575 (цвет Chrome по умолчанию; 4,05:1 — исключение ADR-114 п. 9 (1), CP-097);
+///   «очистить» (крест; в прототипе её нет — паритет функций) и сканер (штрихкод в рамке, линия 1,8) — кнопки 32×32
+///   с радиусом `sm` внутри поля, цель касания 48;
 /// * [SearchBarVariant.compact] / [SearchBarVariant.customers]: высота 44 (compact) / 48, иконка 20, текст
 ///   `bodyLg`, плейсхолдер `textSecondary`, кнопки `AppIconButton`.
 ///
@@ -93,6 +95,12 @@ class SearchBar extends StatefulWidget {
   /// Наибольшая ширина варианта `header` (прототип: `max-width: 680px`).
   static const double headerMaxWidth = 680;
 
+  /// Поле `header` слева (прототип: `padding-left: 14px`).
+  static const double _headerPadStart = 14;
+
+  /// Зазор `header` между лупой и вводом (прототип: `gap: 10px`).
+  static const double _headerGap = 10;
+
   @override
   State<SearchBar> createState() => _SearchBarState();
 }
@@ -140,7 +148,7 @@ class _SearchBarState extends State<SearchBar> {
     final bool hovered = preview?.hovered ?? _hovered;
     final bool header = widget.variant == SearchBarVariant.header;
     final double height = header ? SearchBar.headerHeight : (context.windowClass == WindowClass.compact ? 44 : 48);
-    final BorderRadius radius = BorderRadius.all(header ? context.radii.md : context.radii.sm);
+    final BorderRadius radius = BorderRadius.all(header ? context.radii.control : context.radii.sm);
     final TextStyle textStyle = header ? context.text.body : context.text.bodyLg;
     final double line = (textStyle.fontSize ?? 14) * (textStyle.height ?? 1.4);
     final String placeholder =
@@ -153,15 +161,21 @@ class _SearchBarState extends State<SearchBar> {
     // header: поле 44 визуально, область ввода и тач-цель — 48 (по 2 px сверху и снизу за кромкой фона).
     final double target = header ? SearchBar.headerTarget : height;
     final Widget content = Padding(
+      // header: `padding: 0 8px 0 14px; gap: 10px` прототипа. Правое поле 8 — это часть цели касания 48 кнопки
+      // 32 (по 8 с каждой стороны), поэтому при кнопке справа поля нет: видимая кнопка — в 8 от края, как в прототипе.
       padding: header
-          ? EdgeInsetsDirectional.only(start: context.space.s4, end: context.space.s2)
+          ? EdgeInsetsDirectional.only(
+              start: SearchBar._headerPadStart,
+              end: scanner || _controller.text.isNotEmpty ? 0 : context.space.s2,
+            )
           : const EdgeInsetsDirectional.only(start: 12, end: 4),
       child: Row(
         children: <Widget>[
-          ExcludeSemantics(
-            child: Icon(Icons.search_rounded, size: header ? 18 : 20, color: c.textSecondary),
-          ),
-          SizedBox(width: header ? context.space.s3 : 8),
+          if (header)
+            DsGlyph(kind: DsGlyphKind.magnifier, size: 18, color: c.textSecondary)
+          else
+            ExcludeSemantics(child: Icon(Icons.search_rounded, size: 20, color: c.textSecondary)),
+          SizedBox(width: header ? SearchBar._headerGap : 8),
           Expanded(
             child: CallbackShortcuts(
               bindings: <ShortcutActivator, VoidCallback>{
@@ -189,9 +203,11 @@ class _SearchBarState extends State<SearchBar> {
                   filled: false,
                   hintText: placeholder,
                   hintMaxLines: 1,
-                  // header: `textTertiary` на `surfaceVariant` — 4.51:1 (ADR-111, CP-084); иначе — `textSecondary`.
+                  // header: `searchPlaceholder` #757575 прототипа на `surfaceVariant` — 4,05:1, исключение по решению
+                  // владельца (ADR-114 п. 9 (1), CP-097; AA-оттенок #6D6D6D — `alternatives.AA_2026_10_31`); иначе —
+                  // `textSecondary`.
                   hintStyle: textStyle.copyWith(
-                    color: header ? c.textTertiary : c.textSecondary,
+                    color: header ? c.searchPlaceholder : c.textSecondary,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -201,6 +217,7 @@ class _SearchBarState extends State<SearchBar> {
           if (_controller.text.isNotEmpty)
             header
                 ? _FieldIconButton(
+                    // В прототипе кнопки нет (паритет функций: Esc и «очистить») — Material-крест, как раньше.
                     icon: Icons.close_rounded,
                     iconSize: 18,
                     color: c.textSecondary,
@@ -238,7 +255,9 @@ class _SearchBarState extends State<SearchBar> {
     final Widget background = AnimatedContainer(
       duration: context.motion.of(context.motion.fast),
       height: height,
-      decoration: BoxDecoration(color: focused ? c.surface : c.surfaceVariant, borderRadius: radius),
+      // Фокус: у поля шапки фон не меняется (прототип: `#EAF1FB`, `outline: none`; ревью V-02) — фокус видно по обводке
+      // 2 `primaryText` (A11Y-010); у остальных вариантов — фон `surface` (03 §9.7).
+      decoration: BoxDecoration(color: focused && !header ? c.surface : c.surfaceVariant, borderRadius: radius),
       // Обводка рисуется поверх (foreground), чтобы не уменьшать высоту поля и тач-целей.
       foregroundDecoration: BoxDecoration(
         borderRadius: radius,
@@ -248,13 +267,24 @@ class _SearchBarState extends State<SearchBar> {
       ),
       child: header ? null : content,
     );
+    // Загрузка: тонкая полоса 2 px под полем, спиннер в суффиксе не дублируется (03 §9.7). У `header` полоса лежит в
+    // нижнем невидимом поле области 48 (под фоном 44), поэтому поле стоит в шапке по центру, как в прототипе (12 сверху).
+    final Widget progress = SizedBox(height: 2, child: widget.loading ? const AppProgress.linear(thin: true) : null);
+    final double gap = (target - height) / 2;
     final Widget box = header
         ? SizedBox(
             height: target,
             child: Stack(
               children: <Widget>[
-                Positioned(left: 0, right: 0, top: (target - height) / 2, height: height, child: background),
+                Positioned(left: 0, right: 0, top: gap, height: height, child: background),
                 Positioned.fill(child: content),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: gap + height,
+                  height: 2,
+                  child: IgnorePointer(child: progress),
+                ),
               ],
             ),
           )
@@ -266,15 +296,13 @@ class _SearchBarState extends State<SearchBar> {
       onExit: (_) => setState(() => _hovered = false),
       child: Semantics(
         label: widget.semanticLabel,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            box,
-            // Загрузка: тонкая полоса 2 px под полем, спиннер в суффиксе не дублируется (03 §9.7).
-            SizedBox(height: 2, child: widget.loading ? const AppProgress.linear(thin: true) : null),
-          ],
-        ),
+        child: header
+            ? box
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[box, progress],
+              ),
       ),
     );
     if (header) {

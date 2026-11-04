@@ -10,7 +10,8 @@ enum CatalogSettingScope {
   /// `user` — очищается при выходе, `SESSION_REVOKED` и смене пользователя (07 §11.4): история поиска.
   user('user'),
 
-  /// `device` — переживает выход того же пользователя (вид, сортировка, свёрнутый сайдбар).
+  /// `device` — переживает выход того же пользователя (файл БД пользователя остаётся): последний открытый корень
+  /// каталога (ADR-114 решение 4). Вид, сортировка и свёрнутый сайдбар — `user` (EQ-CAT-05).
   device('device');
 
   const CatalogSettingScope(this.value);
@@ -45,4 +46,9 @@ abstract final class CatalogSettingKeys {
 
   /// Свёрнутый сайдбар SCR-10 (expanded), scope `device`.
   static const String sidebarCollapsed = 'sidebar_collapsed';
+
+  /// Последняя открытая корневая категория каталога сотрудника (medium+, ADR-114 решение 4; 02 П.3 п. 11) — id
+  /// категории, scope `device` в файле БД пользователя: переживает «Выйти» того же пользователя (ревью PAR-01)
+  /// `[НОВОЕ ИМЯ]`.
+  static const String lastRoot = 'catalog_last_root';
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:optomstroy/design_system/components/app_bottom_sheet.dart';
 import 'package:optomstroy/design_system/components/ds_glyph.dart';
+import 'package:optomstroy/design_system/components/ds_hairline.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
@@ -26,8 +27,10 @@ enum SortMenuStyle {
   /// Кнопка 36 с обводкой `borderStrong` (касса, заказы, SCR-50, compact).
   standard,
 
-  /// Строка управления каталога medium+ (прототип 2026-10-29): 40 (цель 48), `surface`, обводка `border`, радиус
-  /// `md`, иконка `swap_vert` 18 и текущий пункт `body 500`.
+  /// Строка управления каталога medium+ (прототип, ADR-114): 40 (цель 48), поля 0 14, `surface`, обводка `border` 1,
+  /// радиус `control` 10, глиф «стрелки вверх/вниз» 17 (линия 2) + зазор 8 + текущий пункт `sortLabel 14/500`
+  /// `textPrimary` («По названию А–Я» — ширина 175,4). Меню пунктов — как у `standard` (паритет: 7 / 6 пунктов вместо
+  /// перебора 4 вариантов прототипа).
   toolbar,
 }
 
@@ -49,19 +52,25 @@ class SortMenu<T> extends StatelessWidget {
   });
 
   /// Оценка ширины кнопки с подписью (до раскладки): поля 12, иконка 20, зазор 8, подпись `label 500`, обводка;
-  /// стиль `toolbar` — поля 12, глиф 18, зазор 8, подпись `body 500`.
+  /// стиль `toolbar` — поля 14, глиф 17, зазор 8, подпись `sortLabel 14/500`, обводка 1.
   static double estimateWidth(BuildContext context, String label, {SortMenuStyle style = SortMenuStyle.standard}) =>
       style == SortMenuStyle.toolbar
-      ? context.space.s3 * 2 +
-            18 +
+      ? toolbarPadding * 2 +
+            toolbarGlyph +
             context.space.s2 +
-            dsTextWidth(context, label, context.text.body.copyWith(fontWeight: FontWeight.w500)) +
-            2
+            dsTextWidth(context, label, context.text.sortLabel) +
+            2 * DsHairline.of(context)
       : context.space.s3 * 2 +
             20 +
             context.space.s2 +
             dsTextWidth(context, label, context.text.label.copyWith(fontWeight: FontWeight.w500)) +
             2;
+
+  /// Поля кнопки стиля `toolbar` по горизонтали (прототип: `padding: 0 14px`).
+  static const double toolbarPadding = 14;
+
+  /// Глиф кнопки стиля `toolbar` (прототип: SVG 17 × 17).
+  static const double toolbarGlyph = 17;
 
   /// Пункты (≤ 8).
   final List<SortMenuOption<T>> options;
@@ -201,9 +210,9 @@ class SortMenu<T> extends StatelessWidget {
     );
   }
 
-  /// Кнопка стиля `toolbar`.
+  /// Кнопка стиля `toolbar` (прототип, ADR-114).
   Widget _toolbarButton(BuildContext context, DsColors c, DsInteractionState s) {
-    final BorderRadius radius = BorderRadius.all(context.radii.md);
+    final BorderRadius radius = BorderRadius.all(context.radii.control);
     final Color bg = s.pressed ? c.surfacePressed : (s.hovered ? c.surfaceHover : c.surface);
     return SizedBox(
       height: 48,
@@ -215,17 +224,13 @@ class SortMenu<T> extends StatelessWidget {
           child: Container(
             height: 40,
             constraints: const BoxConstraints(minWidth: 48),
-            padding: EdgeInsets.symmetric(horizontal: context.space.s3),
-            decoration: BoxDecoration(
-              color: bg,
-              border: Border.all(color: c.border),
-              borderRadius: radius,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: toolbarPadding),
+            decoration: BoxDecoration(color: bg, border: DsHairline.all(context, c.border), borderRadius: radius),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 // Двойная стрелка «вниз · вверх» прототипа (в Material Icons такой нет).
-                DsGlyph(kind: DsGlyphKind.sortArrows, size: 18, color: c.textPrimary),
+                DsGlyph(kind: DsGlyphKind.sortArrows, size: toolbarGlyph, color: c.textPrimary),
                 if (!iconOnly) ...<Widget>[
                   SizedBox(width: context.space.s2),
                   Flexible(
@@ -233,7 +238,7 @@ class SortMenu<T> extends StatelessWidget {
                       _currentLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: context.text.body.copyWith(fontWeight: FontWeight.w500, color: c.textPrimary),
+                      style: context.text.sortLabel.copyWith(color: c.textPrimary),
                     ),
                   ),
                 ],

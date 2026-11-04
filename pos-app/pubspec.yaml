@@ -131,7 +131,8 @@ flutter:
     - assets/brand/logo_orange.png
 
   # Шрифт Inter подключён локально, без сетевых запросов (RM-C-003 п. 4, 03 §6.1).
-  # Вариативный Inter-Variable.ttf в бандл не входит: статические начертания 400/500/600/700.
+  # Вариативный Inter-Variable.ttf в бандл не входит: статические начертания 400/500/600/700/800.
+  # 800 — статический экземпляр из Inter-Variable.ttf (fontTools, без загрузок; ADR-114, assets/fonts/Inter/SOURCE.txt).
   fonts:
     - family: Inter
       fonts:
@@ -143,3 +144,5 @@ flutter:
           weight: 600
         - asset: assets/fonts/Inter/Inter-Bold.ttf
           weight: 700
+        - asset: assets/fonts/Inter/Inter-ExtraBold.ttf
+          weight: 800

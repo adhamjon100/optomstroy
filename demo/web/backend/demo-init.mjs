@@ -9,13 +9,16 @@
 //  2. Настоящий мигратор pos-api (и на тёплом старте: новые миграции применяются к данным; изменённая применённая
 //     миграция → fatal epoch_incompatible, страница предлагает «Сбросить демо»).
 //  3. Холодный старт: seeds, demo_meta, секреты эпохи, ключ JWT, сотрудники 901/906/907/909, служебные учётки сида,
-//     каталог настоящим конвейером (CatalogFullLoadService + SyntheticCatalogSource). Шаги идемпотентны: старт,
-//     оборванный посреди холодной инициализации, просто доделывает её.
+//     каталог по макету (WP-DATA-WEB 2026-10-31, ADR-114: demo/catalog/design-catalog.json, встроен в бандл →
+//     pos-api/scripts/design_catalog.ts) настоящим конвейером (CatalogFullLoadService + SyntheticCatalogSource), затем
+//     порядок категорий макета, порог «мало» 4 и избранное сотрудников стенда (applyDesignCatalogSettings — как в
+//     построителе снимка; картинок категорий и фото в запасном пути нет). Шаги идемпотентны: старт, оборванный
+//     посреди холодной инициализации, просто доделывает её.
 //  4. Каждый старт: приглашение 902 создаётся или продлевается (ничего со сроком не «запекается», critic [2]);
 //     восстановление после падения процесса ДО WorkerRuntime (critic [1]): активные задачи pg-boss → retry,
 //     прогоны sync_runs running/queued → failed, аренда строк outbox снята.
 //  5. Имитатор 1С: PosFakeOnec + журнал синтетики, состояние из demo_meta, сверка с данными PGlite (critic [0]).
-//  6. createApp(config) без listen; WorkerRuntime (источник срезов stock/prices — тот же синтетический каталог,
+//  6. createApp(config) без listen; WorkerRuntime (источник срезов stock/prices — тот же каталог по макету,
 //     иначе в режиме расширения они «без источника» и /sync/status навсегда degraded).
 //  7. Догоняние (единицей работы): задачи всех сущностей расписания режима extension (stock, prices, receivables,
 //     order_status, images), onec.changes, customers и outbox.dispatch — сразу, а не по cron (critic [2]);
@@ -39,7 +42,7 @@ import { migrate, seed, DEV_MIGRATIONS_SCHEMA } from '@pos-api-dist/db/migrator.
 import { FakeOnecGateway, catalogProducts } from '@pos-api-dist/integrations/onec/fake-onec.gateway.js';
 import { FakeExchangePlan } from '@pos-api-dist/integrations/onec/fake-exchange-plan.js';
 import { SyntheticCashier } from '@pos-api-dist/integrations/onec/synthetic-cashier.js';
-import { SyntheticCatalog } from '@pos-api-dist/integrations/onec/synthetic-catalog.js';
+import { SyntheticCatalog, ean13 } from '@pos-api-dist/integrations/onec/synthetic-catalog.js';
 import { CatalogApplier } from '@pos-api-dist/sync/apply/catalog-applier.js';
 import { CatalogFullLoadService } from '@pos-api-dist/sync/apply/catalog-full-load.service.js';
 import { SyntheticCatalogSource } from '@pos-api-dist/sync/apply/catalog-source.js';
@@ -61,6 +64,9 @@ import { SmsRuntime } from '@pos-api-dist/notifications/sms/sms-runtime.js';
 import { schedulerConfigFromEnv } from '@pos-api-dist/sync/scheduler/scheduler.config.js';
 import { ENTITY_QUEUES, EXTENSION_POLLED_ENTITIES, ONEC_EXCHANGE_NODE } from '@pos-api-dist/sync/scheduler/sync-queues.js';
 import { PosFakeOnec } from '@pos-api-scripts/pos_fake_onec.ts';
+import { applyDesignCatalogSettings, buildDesignCatalog } from '@pos-api-scripts/design_catalog.ts';
+// Спецификация каталога по макету — в бандле (esbuild, JSON); её sha256 и профиль — DEMO_BUILD.catalog (build-backend).
+import DESIGN_CATALOG_SPEC from '../../catalog/design-catalog.json';
 
 import { DEMO_BUILD, DEMO_DATA, FLUSH, INVITATION, ONEC_GATEWAY_RETRY, QR_DEFAULTS, SEED_ACCOUNTS, STAFF, demoEnv } from './demo-config.mjs';
 import { FakeOnecOverlay, createDemoCashierState } from './demo-overlay.mjs';
@@ -403,8 +409,13 @@ async function loadSnapshotSource(init) {
   if (want && !init.snapshotAnyBuild && manifest?.data?.sha256 !== want.dataSha256) {
     return { skip: `снимок сайта ${String(manifest?.data?.sha256).slice(0, 12)}… ≠ снимок сборки бэкенда ${String(want.dataSha256).slice(0, 12)}…` };
   }
-  const sku = manifest?.source?.catalog?.skuCount;
-  if (init.sku !== undefined && Number(init.sku) !== sku) return { skip: `снимок на ${sku} SKU, запрошено ${init.sku}` };
+  // Каталог снимка = каталог этого бандла (профиль и sha256 спецификации demo/catalog/design-catalog.json): иначе
+  // срезы остатков и цен воркера и товары синтетики кассира разошлись бы с данными снимка.
+  const sc = manifest?.source?.catalog ?? {};
+  const own = DEMO_BUILD.catalog;
+  if (own && (sc.profile !== own.profile || sc.specSha256 !== own.specSha256)) {
+    return { skip: `каталог снимка ${sc.profile ?? '?'}/${String(sc.specSha256).slice(0, 12)}… ≠ каталог бандла ${own.profile}/${String(own.specSha256).slice(0, 12)}…` };
+  }
   const fetchMs = ms(t);
   const t2 = now();
   let data;
@@ -510,7 +521,7 @@ export async function initBackend(init, ctx) {
   // путь — seeds + сотрудники + каталог конвейером ниже.
   let snapshotUsed = null;
   if (preloadedS1) {
-    snapshotUsed = { format: 's1-datadir', data: { sha256: null }, source: { catalog: { skuCount: init.sku ?? null } }, images: null };
+    snapshotUsed = { format: 's1-datadir', data: { sha256: null }, source: { catalog: { profile: DEMO_DATA.catalog.profile, skuCount: DESIGN_CATALOG_SPEC.products.length } }, images: null };
     T.snapshot = { used: true, format: 's1-datadir' };
   }
   if (snapshotP) {
@@ -542,7 +553,7 @@ export async function initBackend(init, ctx) {
     T.seedMs = ms(t3);
     if (snapshotUsed) {
       const c = snapshotUsed.source?.catalog ?? {};
-      await writeMeta(db, 'catalog', { loaded: true, source: 'snapshot', at: new Date().toISOString(), skuCount: c.skuCount ?? null, dataSha256: snapshotUsed.data.sha256, images: snapshotUsed.images?.products ?? 0 });
+      await writeMeta(db, 'catalog', { loaded: true, source: 'snapshot', at: new Date().toISOString(), profile: c.profile ?? null, skuCount: c.skuCount ?? null, dataSha256: snapshotUsed.data.sha256, images: snapshotUsed.images?.products ?? 0, categoryImages: snapshotUsed.images?.categories ?? 0 });
     }
     meta = await readMeta(db);
   }
@@ -561,16 +572,20 @@ export async function initBackend(init, ctx) {
   }
 
   // ---------------------------------------------------------------- каталог (холодный старт)
-  // Один синтетический каталог (seed 1) — и для первой загрузки, и для срезов stock/prices pos-worker.
-  const catalogGw = new FakeOnecGateway({ catalog: { skuCount: init.sku ?? DEMO_DATA.catalog.skuCount, seed: DEMO_DATA.catalog.seed }, includeFixtureCatalog: DEMO_DATA.catalog.includeFixtureCatalog, registerAll: false });
+  // Один каталог по макету (спецификация бандла) — и для первой загрузки, и для срезов stock/prices pos-worker, и для
+  // товаров синтетики кассира: тот же, из которого собран снимок (сверка профиля и sha256 — loadSnapshotSource).
+  const catalog = buildDesignCatalog(DESIGN_CATALOG_SPEC, { SyntheticCatalog, ean13 });
+  const catalogGw = new FakeOnecGateway({ catalog, includeFixtureCatalog: DEMO_DATA.catalog.includeFixtureCatalog, registerAll: false });
   if (!warm && !meta.values.catalog?.loaded) {
     progress('catalog', 40, 'Загружаем каталог…');
     const t4 = now();
     const cpool = new pg.Pool({ application_name: 'catalog-load' });
     const r = await new CatalogFullLoadService(cpool, new CatalogApplier(), createRunTracker(cpool), pino({ level: 'silent' })).loadAll(new SyntheticCatalogSource(catalogGw), 'full', 'manual');
+    // То, чего конвейер не пишет (как в построителе снимка): порядок категорий, порог «мало», избранное сотрудников.
+    T.catalogSettings = await applyDesignCatalogSettings(mc, DESIGN_CATALOG_SPEC, catalog, { staffPhones: STAFF.map((s) => s.phone) });
     T.catalogMs = ms(t4);
     if (opened.kind === 'opfs') await storage.flush('init:catalog');
-    await writeMeta(db, 'catalog', { loaded: true, at: new Date().toISOString(), skuCount: init.sku ?? DEMO_DATA.catalog.skuCount, status: r?.status ?? null });
+    await writeMeta(db, 'catalog', { loaded: true, at: new Date().toISOString(), profile: DEMO_DATA.catalog.profile, skuCount: DESIGN_CATALOG_SPEC.products.length, status: r?.status ?? null });
   }
 
   // ---------------------------------------------------------------- каждый старт: приглашение, восстановление
@@ -595,7 +610,7 @@ export async function initBackend(init, ctx) {
   // ---------------------------------------------------------------- имитатор 1С: состояние и сверка (critic [0])
   progress('fake1c', 55, 'Запускаем имитатор «1С»…');
   const t6 = now();
-  const cs = createDemoCashierState({ SyntheticCashier, SyntheticCatalog, FakeExchangePlan, catalogProducts }, { catalogSku: init.sku ?? DEMO_DATA.catalog.skuCount, extraCustomers: DEMO_DATA.cashier.extraCustomers });
+  const cs = createDemoCashierState({ SyntheticCashier, FakeExchangePlan, catalogProducts }, { catalog, extraCustomers: DEMO_DATA.cashier.extraCustomers });
   const fake = new PosFakeOnec(init.qrPaidAfterPolls ?? QR_DEFAULTS.paidAfterPolls, cs);
   let fakeDirty = false;
   const overlay = new FakeOnecOverlay(fake, cs, { onDirty: () => (fakeDirty = true) });
@@ -639,7 +654,7 @@ export async function initBackend(init, ctx) {
   const wpool = createPool(config, 'pos-worker');
   const sms = new SmsRuntime({ config, pool: wpool, logger: pinoSmsLogger(wlog.child({ component: 'sms' })), listener: createOtpDeliveryListener({ config, pool: wpool }) });
   const schedulerConfig = schedulerConfigFromEnv(config, init.schedulerOverrides ?? {});
-  // Срезы stock/prices в режиме расширения — тот же синтетический каталог (seed 1), что загружен в БД.
+  // Срезы stock/prices в режиме расширения — тот же каталог по макету, что загружен в БД.
   const sync = createSyncWorkerWiring({ config, pool: wpool, log: wlog, scheduler: schedulerConfig, source: new SyntheticCatalogSource(catalogGw) });
   const orders = createOrdersWorkerWiring({
     config,

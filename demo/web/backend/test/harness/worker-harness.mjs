@@ -3,8 +3,8 @@
 // тот же протокол моста, что у страницы (plan §3.3): init → ready {features}, http → http:start → http:res,
 // http:cancel, control → control:res, stats/logs/reqstats → res, shutdown.
 //
-//   API:  const be = await startWorkerBackend({ sku: 120, strict: true }); await be.api('GET', '/health'); …; await be.close();
-//   CLI:  node demo/web/backend/test/harness/worker-harness.mjs [--sku 120] [--no-strict] [--json <файл>] [--quiet]
+//   API:  const be = await startWorkerBackend({ strict: true }); await be.api('GET', '/health'); …; await be.close();
+//   CLI:  node demo/web/backend/test/harness/worker-harness.mjs [--no-strict] [--json <файл>] [--quiet]
 //         прогон scenario-run-full.mjs + проверка приёмки WP-B2; код выхода 0 — всё выполнено, 1 — нет.
 //
 // Внешние файлы vfs (шрифты Inter) передаются байтами (opts.vfsExternal) из site/backend по build.json.
@@ -21,9 +21,9 @@ const dec = new TextDecoder();
 
 /**
  * Запустить бэкенд в worker_threads и дождаться ready.
- * opts: { site, sku=120, storage='memory', qrPaidAfterPolls=2, strict=true, gate, shim, onecRetry, initOpts, onLog,
- *         initTimeoutMs=120000, snapshot (false — без снимка site/demo/snapshot; снимок берётся, только если его
- *         число SKU = sku, иначе воркер грузит каталог конвейером),
+ * opts: { site, storage='memory', qrPaidAfterPolls=2, strict=true, gate, shim, onecRetry, initOpts, onLog,
+ *         initTimeoutMs=120000, snapshot (false — без снимка site/demo/snapshot; снимок берётся, только если он
+ *         собран из того же каталога по макету, что встроен в бандл, иначе воркер грузит каталог конвейером),
  *         WP-T1: backendFile (другой бандл — эталон native-runner.mjs), boot { clockOffsetMs, netRecorder } (см.
  *         worker-boot.mjs), onNet(event) }
  */
@@ -165,7 +165,6 @@ export async function startWorkerBackend(opts = {}) {
       opts: {
         storage: opts.storage ?? 'memory',
         pgliteBase: pathToFileURL(`${site}/backend/pglite/`).href,
-        sku: opts.sku ?? 120,
         qrPaidAfterPolls: opts.qrPaidAfterPolls ?? 2,
         vfsExternal,
         ...(snapshotData ? { snapshotData } : {}),
@@ -316,7 +315,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const { runScenario } = await import('./scenario-run-full.mjs');
   const t = Date.now();
   const be = await startWorkerBackend({
-    sku: Number(arg('--sku', 120)),
     strict: !argv.includes('--no-strict'),
     // таймер пересчёта расписаний (SyncScheduler.startRefresh) каждые 3 с вместо 60 с — единицы «timer» в прогоне
     initOpts: { schedulerOverrides: { scheduleRefreshMs: Number(arg('--refresh-ms', 3000)) } },

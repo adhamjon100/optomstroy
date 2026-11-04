@@ -76,6 +76,21 @@ abstract final class CatalogCardMapper {
     return (p.price?.amount ?? range?.min, false);
   }
 
+  /// Строка цены карточки сетки как показана («от 10 450,00 сом») и единица («/ шт») — высота ряда сетки по ценам его
+  /// карточек (`kProductCardGridPriceWraps`, ревью V-01); цены нет — `(null, null)`. Те же строки, что у [map].
+  static (String?, String?) priceLine(CatalogCardContext ctx, ProductSummary p) {
+    final (Money? amount, bool from) = price(p);
+    if (amount == null) {
+      return (null, null);
+    }
+    final String formatted = PriceText.format(amount);
+    final String unit = p.baseUnit?.label ?? '';
+    return (
+      from ? ctx.l10n.catalog_card_price_from(formatted) : formatted,
+      unit.isEmpty ? null : ctx.l10n.catalog_card_price_unit(unit),
+    );
+  }
+
   /// Уровень и текст бейджа остатка.
   static (StockBadgeLevel, String) stock(CatalogCardContext ctx, ProductSummary p) {
     final AppLocalizations l10n = ctx.l10n;
@@ -166,7 +181,12 @@ abstract final class CatalogCardMapper {
     final (StockBadgeLevel level, String stockText) = stock(ctx, p);
     final (ProductCardActionKind kind, String? actionLabel) = action(ctx, p, cartQty: cartQty);
     final bool favorite = ctx.isFavorite(p);
-    final String priceA11y = amount == null ? l10n.ds_price_missing : PriceText.format(amount);
+    // Цена для диктора — форма `PriceText.spoken` («2 350 сом», «16 007 сом 50 тыйын»; без нулевых тыйынов и без
+    // «запятой», 03 A11Y-020, ADR-114 п. 4), у вариантов — с «от».
+    final String? spokenPrice = amount == null ? null : PriceText.spoken(amount);
+    final String priceA11y = spokenPrice == null
+        ? l10n.ds_price_missing
+        : (from ? l10n.catalog_card_price_from(spokenPrice) : spokenPrice);
     final String stockA11y = stockText;
     return ProductCardData(
       id: p.id,
@@ -195,18 +215,15 @@ abstract final class CatalogCardMapper {
         // «Компакт»: «Нет данных» тем же кеглем, что соседние кнопки; «Остаток неизвестен» — в тултипе (UI-10-118).
         ProductCardActionKind.unavailable when actionLabel == l10n.ds_stock_unknown =>
           l10n.catalog_card_stock_unknown_short,
+        // Прототип «Компакта»: «Нет» (полное «Нет в наличии» — в тултипе и в строке наличия; ADR-114).
+        ProductCardActionKind.unavailable when actionLabel == l10n.catalog_card_out_of_stock =>
+          l10n.catalog_card_out_short,
         _ => null,
       },
       actionBusy:
           (kind == ProductCardActionKind.add || kind == ProductCardActionKind.inCart) && ctx.busyIds.contains(p.id),
       dimmed: level == StockBadgeLevel.out,
-      semanticLabel: l10n.catalog_card_a11y(
-        p.name,
-        priceA11y.replaceAll(PriceText.groupSeparator, '').replaceAll(' ', ' '),
-        sku ?? l10n.catalog_card_sku_missing,
-        stockA11y,
-        unit,
-      ),
+      semanticLabel: l10n.catalog_card_a11y(p.name, priceA11y, sku ?? l10n.catalog_card_sku_missing, stockA11y, unit),
     );
   }
 }

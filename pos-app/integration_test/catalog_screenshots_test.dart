@@ -108,6 +108,10 @@ const Size _narrowSize = Size(1100, 768);
 const Size _mediumSize = Size(820, 768);
 
 const Key _catalogRoot = ValueKey<String>('stub-SCR-10');
+
+/// SCR-10 «Все товары»: голый `/catalog` сотрудника на medium и шире открывает стартовую категорию (ADR-114,
+/// AC-UI-10-033), весь каталог — `/catalog?all=1` (заголовок «Каталог» колонки).
+const String _allProducts = '/catalog?all=1';
 const Key _categoryRoot = ValueKey<String>('stub-SCR-12');
 const Key _searchRoot = ValueKey<String>('stub-SCR-11');
 const Key _ordersRoot = ValueKey<String>('stub-SCR-25');
@@ -433,7 +437,12 @@ Future<void> _staffLogin(WidgetTester tester) async {
     timeout: const Duration(seconds: 10),
   );
   await _tap(tester, find.byKey(RegistrationSecurityScreen.completeKey));
-  await pumpUntilFound(tester, find.byKey(_catalogRoot), timeout: const Duration(seconds: 60));
+  // После входа — стартовая категория (medium и шире, ADR-114) или SCR-10 (compact).
+  await pumpUntilFound(
+    tester,
+    find.byWidgetPredicate((Widget w) => w.key == _catalogRoot || w.key == _categoryRoot),
+    timeout: const Duration(seconds: 60),
+  );
   await pumpUntil<bool>(
     tester,
     () async => _container(tester).read(catalogFreshnessProvider).fullyLoaded ? true : null,
@@ -1158,9 +1167,10 @@ void _qaHeaderGeometry(WidgetTester tester, String what) {
   }
 }
 
-/// (j) Колонка категорий свёрнута и снова развёрнута (паритет функций ADR-112): кнопка внизу колонки → 72 lp,
-/// плитки-иконки с тултипами, «Каталог» и «Недавние» скрыты; снимки на [sizes] (основное окно — и с тултипом
-/// наведения на плитку [root]); затем снова 132. Настройка `sidebarCollapsed` возвращается в исходное значение.
+/// (j) Колонка категорий свёрнута и снова развёрнута (паритет функций ADR-112): значок «‹‹» строки «Каталог»
+/// (ADR-114) → 72 lp, плитки-иконки с тултипами, «Каталог» скрыт; снимки на [sizes] (основное окно — и с тултипом
+/// наведения на плитку [root]); затем снова прежняя ширина (144 у дерева прототипа, 132 у коротких названий).
+/// Настройка `sidebarCollapsed` возвращается в исходное значение.
 Future<void> _qaSidebarCollapsed(WidgetTester tester, Size main, List<Size> sizes, Category root) async {
   const Key toggleKey = ValueKey<String>('catalog-sidebar-toggle');
   const Key columnKey = ValueKey<String>('catalog-sidebar-column');
@@ -1417,7 +1427,7 @@ Future<void> _designQa(WidgetTester tester, List<Size> sizes) async {
     timeout: const Duration(seconds: 20),
   );
   _note('QA: корзина очищена=$empty${failure == null ? '' : ' (ответ: $failure)'}');
-  _router(tester)!.go('/catalog');
+  _router(tester)!.go(_allProducts);
   await pumpUntilFound(tester, find.byKey(_catalogRoot), timeout: const Duration(seconds: 20));
   tester.view.reset();
   await _settle(tester, frames: 6);
@@ -1489,6 +1499,8 @@ void main() {
     }
 
     // --- SCR-10 (окно 1366×768 при DPR монитора) -----------------------------------------------------------
+    // После входа открыта стартовая категория (ADR-114); снимок 01 — весь каталог «Все товары».
+    _router(tester)!.go(_allProducts);
     await pumpUntilFound(tester, find.byKey(_catalogRoot), timeout: const Duration(seconds: 30));
     await _listReady(tester, photos: const Duration(seconds: 4));
     final _Frame shot1 = await _shot(tester, '01_catalog');

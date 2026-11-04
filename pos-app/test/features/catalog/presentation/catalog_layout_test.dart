@@ -5,11 +5,17 @@
 // вид с подписями), сетка (колонки от 176 по ширине области, «+ Добавить» на одной линии, «В корзине · N — ещё +1»,
 // повторные нажатия — без лишних добавлений, крупный шрифт без переполнения), «Список» и «Компакт» по прототипу,
 // тексты — из ARB. Данные синтетические.
-// Тест-кейсы 12_TEST_PLAN: T-CAT-037 (кнопка карточки по состоянию корзины), T-CAT-038 (сетка auto-fill от 176).
+// «Точь-в-точь» 2026-10-31 (ADR-114): колонка — только «Каталог» 19/700 и плитки корней (144 у дерева прототипа, 132 у
+// коротких названий; поля 20 / 14 / 24 / 18, зазор 10), лента — карточки по самому длинному слову, стрелки листают на 3
+// карточки, сетка без предела колонок с зазором 14 (9 / 6 / 5 / 4), ячейка 340 / 360, фото ≤ 146 `scaleDown`; геометрия
+// — с настоящим Inter (тестовый шрифт шире, строка управления под ним переносится).
+// Тест-кейсы 12_TEST_PLAN: T-CAT-037 (кнопка карточки по состоянию корзины), T-CAT-038 (сетка auto-fill от 176),
+// T-CAT-039 (колонка «Каталог» — только категории).
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show SynchronousFuture;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide SearchBar;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,6 +26,7 @@ import 'package:optomstroy/core/enums.dart' show RoleCode;
 import 'package:optomstroy/core/error/failure.dart';
 import 'package:optomstroy/core/error/result.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
+import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/core/utils/qty.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/app_progress.dart';
@@ -46,6 +53,8 @@ import 'package:optomstroy/features/catalog/presentation/screens/category_screen
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_sidebar.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_toolbar.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_workspace.dart';
+
+import '../../../design_system/ds_test_support.dart' show loadInterFont;
 
 import 'support/catalog_fakes.dart';
 
@@ -143,6 +152,26 @@ class _CartQty extends Notifier<Map<String, Qty>> {
   void set(Map<String, Qty> value) => state = value;
 }
 
+/// Картинка, загрузка которой завершается ошибкой (как 404 сервера).
+final class _FailingImage extends ImageProvider<_FailingImage> {
+  const _FailingImage(this.url);
+
+  final String url;
+
+  @override
+  Future<_FailingImage> obtainKey(ImageConfiguration configuration) => SynchronousFuture<_FailingImage>(this);
+
+  @override
+  ImageStreamCompleter loadImage(_FailingImage key, ImageDecoderCallback decode) =>
+      OneFrameImageStreamCompleter(Future<ImageInfo>.error(StateError('404 $url')));
+
+  @override
+  bool operator ==(Object other) => other is _FailingImage && other.url == url;
+
+  @override
+  int get hashCode => url.hashCode;
+}
+
 /// Значения `app_ru.arb` без заполнителей.
 Set<String> _arbRu() {
   final Map<String, dynamic> arb = jsonDecode(File('lib/l10n/app_ru.arb').readAsStringSync()) as Map<String, dynamic>;
@@ -198,9 +227,9 @@ void main() {
     expect(CategoryIcons.resolve(name: 'Прочее'), Icons.category_rounded);
   });
 
-  testWidgets('лента подкатегорий: одинаковые карточки, стрелки ‹ › на ширину видимой части и скрытие на краях', (
-    tester,
-  ) async {
+  testWidgets('лента подкатегорий: карточки 118×148, стрелки ‹ › (шеврон link 18 в круге 38) листают на 3 карточки, '
+      'на краях скрываются (ADR-114)', (tester) async {
+    await tester.runAsync(loadInterFont);
     final CatalogHarness h = CatalogHarness(
       catalog: FakeCatalogRepository(items: products(6), tree: _wideTree()),
     );
@@ -211,7 +240,7 @@ void main() {
     final Size first = tester.getSize(find.byKey(const ValueKey<String>('chip-sub-c-san-1')));
     expect(CategoryTile.ribbonSize, const Size(118, 148), reason: 'прототип 2026-10-29');
     expect(all, CategoryTile.ribbonSize);
-    expect(first, CategoryTile.ribbonSize, reason: 'карточки одного размера');
+    expect(first, CategoryTile.ribbonSize, reason: 'короткие подписи — одна ширина 118');
     final CategoryTile allTile = tester.widget<CategoryTile>(find.byKey(const ValueKey<String>('chip-sub-all')));
     expect(allTile.selected, isTrue);
     expect(allTile.label, 'Все товары', reason: 'первая карточка — «Все товары» (catalog_title_all)');
@@ -229,20 +258,24 @@ void main() {
     // Подписи стрелок — ключи ARB `category_ribbon_prev/next` (закрывают CQ-LAY-02).
     expect(find.bySemanticsLabel('Прокрутить подкатегории вправо'), findsOneWidget);
     expect(tester.getSize(find.byKey(ScrollRibbon.nextKey)), const Size(48, 48), reason: 'цель 48');
-    final Icon chevron = tester.widget<Icon>(
-      find.descendant(of: find.byKey(ScrollRibbon.nextKey), matching: find.byIcon(Icons.chevron_right_rounded)),
+    final DsGlyph chevron = tester.widget<DsGlyph>(
+      find.descendant(of: find.byKey(ScrollRibbon.nextKey), matching: find.byType(DsGlyph)),
     );
+    expect(chevron.kind, DsGlyphKind.chevronRight);
     expect(chevron.size, 18);
-    expect(chevron.color, DsColors.lightB.textSecondary, reason: 'шеврон — textSecondary: синий — только фокус и info');
-    final double viewport = tester.getSize(find.byKey(const ValueKey<String>('scroll-ribbon-list'))).width;
+    expect(chevron.color, DsColors.lightB.link, reason: 'прототип: шеврон #1F5FA8 (ADR-114)');
+    // Шаг — 3 карточки по 118 + зазор 10 (прототип `scrollBy(3 × 128)`), с выравниванием по началу карточки.
+    const double step = 3 * (118 + 10);
     await tester.tap(find.byKey(ScrollRibbon.nextKey));
     await settle(tester);
     final double afterNext = _ribbonOffset(tester);
-    expect(afterNext, greaterThan(viewport * 0.6), reason: 'прокрутка примерно на ширину видимой части');
-    expect(afterNext, lessThanOrEqualTo(viewport));
+    expect(afterNext, step, reason: 'стрелка — на 3 карточки');
     expect(find.byKey(ScrollRibbon.previousKey), findsOneWidget);
+    await tester.tap(find.byKey(ScrollRibbon.nextKey));
+    await settle(tester);
+    expect(_ribbonOffset(tester), 2 * step);
 
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 8; i++) {
       if (find.byKey(ScrollRibbon.nextKey).evaluate().isEmpty) {
         break;
       }
@@ -251,16 +284,20 @@ void main() {
     }
     expect(find.byKey(ScrollRibbon.nextKey), findsNothing, reason: 'в конце — без «›»');
     expect(find.byKey(const ValueKey<String>('chip-sub-c-san-20')).hitTestable(), findsOneWidget);
+    final double end = _ribbonOffset(tester);
 
     expect(find.bySemanticsLabel('Прокрутить подкатегории влево'), findsOneWidget);
     await tester.tap(find.byKey(ScrollRibbon.previousKey));
     await settle(tester);
-    expect(_ribbonOffset(tester), lessThan(afterNext * 5));
+    expect(_ribbonOffset(tester), lessThan(end));
+    expect(_ribbonOffset(tester) % (118 + 10), 0, reason: 'назад — тоже по началу карточки');
     expect(find.byKey(ScrollRibbon.nextKey), findsOneWidget);
   });
 
   testWidgets('вертикальный ритм по прототипу (QA, раунд 2): от верха контента карточка ленты 74, кнопки строки '
       'управления 243, сетка 298; первая плитка колонки 57', (tester) async {
+    // Настоящий Inter: под тестовым шрифтом строка управления при 1440 переносится (сетка ниже на 51).
+    await tester.runAsync(loadInterFont);
     final CatalogHarness h = CatalogHarness(
       catalog: FakeCatalogRepository(items: products(6), tree: _wideTree()),
     );
@@ -324,9 +361,8 @@ void main() {
     expect(tester.widget<CategoryTile>(find.byKey(const ValueKey<String>('chip-sub-c-san-10'))).selected, isTrue);
   });
 
-  testWidgets('лента: картинка категории из данных; без неё — иконка-заглушка DS, фото товара не подставляется', (
-    tester,
-  ) async {
+  testWidgets('T-CAT-041: картинка категории — колонка 46×40 contain, лента scaleDown ≤ 96×88; без неё — иконка '
+      'iconKey / «четыре квадрата»; ошибка загрузки — заглушка; фото товара не подставляется', (tester) async {
     final ProductSummary p = product(1);
     final ProductSummary withPhoto = ProductSummary(
       id: p.id,
@@ -344,23 +380,89 @@ void main() {
         isPrimary: true,
       ),
     );
+    // Корень «Сантехника» — с картинкой; «Отопление» — без картинки с ключом `heating`; подкатегория 3 — картинка с
+    // ошибкой загрузки (404).
+    final CategoryTree tree = CategoryTree.fromFlat(<Category>[
+      const Category(
+        id: 'c-san',
+        name: 'Сантехника',
+        productCount: 120,
+        hasChildren: true,
+        imageUrl: 'http://img.test/images/cat-san/thumb.webp',
+      ),
+      for (int i = 1; i <= 4; i++)
+        Category(
+          id: 'c-san-$i',
+          parentId: 'c-san',
+          name: 'Подкатегория $i',
+          productCount: 10,
+          sortOrder: i,
+          imageUrl: switch (i) {
+            1 => 'http://img.test/images/cat-1/thumb.webp',
+            3 => 'http://img.test/images/broken/thumb.webp',
+            _ => null,
+          },
+        ),
+      const Category(id: 'c-heat', name: 'Отопление', productCount: 30, sortOrder: 1, iconKey: 'heating'),
+    ]);
     final CatalogHarness h = CatalogHarness(
-      catalog: FakeCatalogRepository(items: <ProductSummary>[withPhoto], tree: _wideTree()),
+      catalog: FakeCatalogRepository(items: <ProductSummary>[withPhoto], tree: tree),
     );
-    await _pump(tester, h, '/catalog/c/c-san');
-    final Finder withImage = find.byKey(const ValueKey<String>('chip-sub-c-san-1'));
-    final Finder noImage = find.byKey(const ValueKey<String>('chip-sub-c-san-2'));
-    expect(find.descendant(of: withImage, matching: find.byType(Image)), findsOneWidget);
+    setWindow(tester, kExpanded);
+    final GoRouter router = _router('/catalog/c/c-san');
+    addTearDown(router.dispose);
+    // Картинки: «broken» — ошибка загрузки (как 404), остальные — прозрачный пиксель.
+    ImageProvider<Object> images(String url) => url.contains('broken') ? _FailingImage(url) : transparentImage(url);
+    await tester.pumpWidget(catalogApp(h, router: router, images: images));
+    await settle(tester);
+    await tester.pump();
+
+    // Колонка: картинка корня 46×40 `contain`; без картинки — иконка по `iconKey`.
+    final Finder sanTile = find.byKey(const ValueKey<String>('sidebar-category-c-san'));
+    final Image sanImage = tester.widget<Image>(find.descendant(of: sanTile, matching: find.byType(Image)));
+    expect(sanImage.fit, BoxFit.contain);
+    expect((sanImage.width, sanImage.height), (46.0, 40.0));
+    final Finder heatTile = find.byKey(const ValueKey<String>('sidebar-category-c-heat'));
+    expect(find.descendant(of: heatTile, matching: find.byType(Image)), findsNothing);
     expect(
-      find.descendant(of: noImage, matching: find.byKey(const ValueKey<String>('category-tile-placeholder'))),
+      find.descendant(
+        of: heatTile,
+        matching: find.byIcon(CategoryIcons.resolve(key: 'heating', name: 'Отопление')),
+      ),
       findsOneWidget,
+      reason: 'иконка по iconKey',
     );
+
+    // Лента: картинка подкатегории — `scaleDown` в поле ≤ 96×88; без картинки и у «Все товары» — «четыре квадрата».
+    final Finder withImage = find.byKey(const ValueKey<String>('chip-sub-c-san-1'));
+    final Image ribbonImage = tester.widget<Image>(find.descendant(of: withImage, matching: find.byType(Image)));
+    expect(ribbonImage.fit, BoxFit.scaleDown);
+    expect((ribbonImage.width, ribbonImage.height), (96.0, 88.0));
+    for (final String key in <String>['chip-sub-all', 'chip-sub-c-san-2']) {
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey<String>(key)),
+          matching: find.byWidgetPredicate((Widget w) => w is DsGlyph && w.kind == DsGlyphKind.gridOutline),
+        ),
+        findsOneWidget,
+        reason: '$key: «четыре квадрата»',
+      );
+    }
+    final Finder noImage = find.byKey(const ValueKey<String>('chip-sub-c-san-2'));
     expect(
       find.descendant(of: noImage, matching: find.byType(Image)),
       findsNothing,
       reason: 'без фото товара',
     );
     expect(find.descendant(of: noImage, matching: find.byType(ProductImage)), findsNothing);
+    // Ошибка загрузки — следующая ступень: заглушка ленты, не пустое место.
+    final Finder broken = find.byKey(const ValueKey<String>('chip-sub-c-san-3'));
+    expect(
+      find.descendant(of: broken, matching: find.byKey(const ValueKey<String>('category-tile-placeholder'))),
+      findsOneWidget,
+      reason: '404 → заглушка',
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('«Новые»: включает сортировку updatedAt:desc с выбранным видом, повторно — прежнюю; '
@@ -402,28 +504,47 @@ void main() {
     );
   });
 
-  testWidgets('«Избранные» строки управления — настоящий фильтр favorite (залитая звезда); повторно снимается', (
-    tester,
-  ) async {
+  testWidgets('«Избранные» строки управления — настоящий фильтр favorite (звезда прототипа, Semantics.toggled, число '
+      'избранных в подсказке); повторно снимается', (tester) async {
+    final SemanticsHandle semantics = tester.ensureSemantics();
     final FakeShelfPort shelf = FakeShelfPort(favorites: <String>{'p1'});
     addTearDown(shelf.dispose);
     final CatalogHarness h = CatalogHarness(shelf: shelf);
     await _pump(tester, h, '/catalog/c/c-sanitary');
     final Finder favorites = find.byKey(const ValueKey<String>('chip-preset-favorites'));
     expect(tester.widget<ToolbarToggleButton>(favorites).label, 'Избранные');
-    expect(find.descendant(of: favorites, matching: find.byIcon(Icons.star_outline_rounded)), findsOneWidget);
+    expect(
+      find.descendant(
+        of: favorites,
+        matching: find.byWidgetPredicate((Widget w) => w is DsGlyph && w.kind == DsGlyphKind.star),
+      ),
+      findsOneWidget,
+      reason: 'контурная звезда прототипа 17',
+    );
+    // Паритет ADR-114: число избранных (прежняя плитка «★ Избранное N» колонки) — в подсказке и Semantics.
+    expect(tester.widget<ToolbarToggleButton>(favorites).tooltip, 'Избранные, 1 товар');
+    final Finder favoritesNode = find.bySemanticsLabel('Избранные, 1 товар');
+    expect(
+      tester.getSemantics(favoritesNode),
+      containsSemantics(isButton: true, hasToggledState: true, isToggled: false),
+    );
     await tester.tap(favorites);
     await settle(tester);
     expect(h.catalog.productCalls.last.filter.favorite, isTrue);
     expect(tester.widget<ToolbarToggleButton>(favorites).selected, isTrue);
     expect(
-      find.descendant(of: favorites, matching: find.byIcon(Icons.star_rounded)),
-      findsOneWidget,
-      reason: 'выбранное — не только цветом (A11Y-004)',
+      tester.getSemantics(favoritesNode),
+      containsSemantics(hasToggledState: true, isToggled: true),
+      reason: 'выбранное — не только цветом: состояние для диктора (A11Y-004; вид — прототипа, ADR-114 п. 7)',
     );
+    final int calls = h.catalog.productCalls.length;
     await tester.tap(find.byKey(const ValueKey<String>('chip-preset-favorites')));
     await settle(tester);
-    expect(h.catalog.productCalls.last.filter.favorite, isNull);
+    expect(h.catalog.productCalls.length, greaterThan(calls), reason: 'снятие — новый запрос');
+    expect(h.catalog.productCalls.last.filter.favorite, isNull, reason: 'повторное нажатие снимает фильтр');
+    expect(tester.widget<ToolbarToggleButton>(favorites).selected, isFalse);
+    expect(tester.getSemantics(favoritesNode), containsSemantics(isToggled: false));
+    semantics.dispose();
   });
 
   testWidgets('сетка: колонки от 176 по ширине области (без CP: продавец и клиент — 6); «+ Добавить» на одной линии', (
@@ -453,23 +574,41 @@ void main() {
       expect(buttonsY.toSet(), hasLength(1), reason: '$role: кнопки ряда на одной линии');
     }
 
-    // 1366: колонка 132, постоянной CP нет (корзина — drawer по кнопке шапки, ADR-112) → 6 колонок у продавца; у
+    // 1366: колонка плиток, постоянной CP нет (корзина — drawer по кнопке шапки, ADR-112) → 6 колонок у продавца; у
     // клиента на expanded — прежний сайдбар-список 292 (D6) → 5 колонок.
     await check(RoleCode.seller, 6);
     await check(RoleCode.customer, 5);
-    expect(DsBreakpoints.gridColumns(1440 - 132 - 40, 16, minCardWidth: DsBreakpoints.catalogCardMinWidth), 6);
-    expect(DsBreakpoints.gridColumns(1280 - 132 - 40, 16, minCardWidth: DsBreakpoints.catalogCardMinWidth), 5);
-    expect(DsBreakpoints.gridColumns(1024 - 132 - 40, 16, minCardWidth: DsBreakpoints.catalogCardMinWidth), 4);
+    // ADR-114: зазор 14, без предела колонок; ширина контента = окно − колонка 144 − поля 8 + 24.
+    int cols(double content) =>
+        DsBreakpoints.gridColumns(content, 14, minCardWidth: DsBreakpoints.catalogCardMinWidth, maxColumns: null);
+    expect(cols(1920 - 144 - 32), 9);
+    expect(cols(1440 - 144 - 32), 6);
+    expect(cols(1366 - 144 - 32), 6);
+    expect(cols(1280 - 144 - 32), 5);
+    expect(cols(1024 - 144 - 32), 4);
   });
 
-  testWidgets('сетка auto-fill от 176 (прототип): окна 1440, 1280 и 1024 — 6, 5 и 4 колонки; зазор 16', (tester) async {
-    for (final (Size size, int cols) in <(Size, int)>[
-      (const Size(1440, 1180), 6),
-      (const Size(1280, 900), 5),
-      (const Size(1024, 800), 4),
+  testWidgets('сетка auto-fill от 176 (прототип, ADR-114): окна 1920, 1440, 1366, 1280 и 1024 — 9, 6, 6, 5 и 4 '
+      'колонки; зазор 14; ячейка 340, 360 — только у ряда, где «цена / шт» не помещается (1920; ревью V-01)', (
+    tester,
+  ) async {
+    await tester.runAsync(loadInterFont);
+    for (final (Size size, int cols, double extent) in <(Size, int, double)>[
+      (const Size(1920, 1080), 9, 360),
+      (const Size(1440, 1180), 6, 340),
+      (const Size(1366, 768), 6, 340),
+      (const Size(1280, 900), 5, 340),
+      (const Size(1024, 800), 4, 340),
     ]) {
-      final CatalogHarness h = CatalogHarness(catalog: FakeCatalogRepository(items: products(12)));
-      await _pump(tester, h, '/catalog/c/c-sanitary', size: size);
+      // Первый товар — самая длинная цена макета «10 450,00 сом»; остальные — «2 350,00 сом».
+      final CatalogHarness h = CatalogHarness(
+        catalog: FakeCatalogRepository(
+          items: <ProductSummary>[product(0, priceSom: 10450), ...products(11, from: 1)],
+          tree: designCategoryTree(),
+        ),
+      );
+      await _pump(tester, h, '/catalog/c/heating', size: size);
+      expect(tester.getSize(find.byType(CatalogSidebar)).width, 144, reason: '$size: колонка по дереву прототипа');
       final double firstTop = tester.getTopLeft(find.byKey(const ValueKey<String>('product-p0'))).dy;
       final List<Rect> row = <Rect>[
         for (int i = 0; i < 12; i++)
@@ -479,7 +618,15 @@ void main() {
       ];
       expect(row, hasLength(cols), reason: '${size.width.toInt()}: колонок в первом ряду');
       expect(row.first.width, greaterThanOrEqualTo(DsBreakpoints.catalogCardMinWidth), reason: '$size');
-      expect(row[1].left - row[0].right, closeTo(16, 0.5), reason: '$size: зазор сетки 16');
+      expect(row[1].left - row[0].right, closeTo(14, 0.01), reason: '$size: зазор сетки 14');
+      expect(row.first.height, extent, reason: '$size: высота ячейки');
+      expect(row.map((Rect r) => r.height).toSet(), <double>{extent}, reason: '$size: ряд одной высоты');
+      if (size.width == 1920) {
+        // Второй ряд — только короткие цены: 340 (ряд CSS-сетки прототипа — по самой высокой карточке ряда).
+        final Rect second = tester.getRect(find.byKey(const ValueKey<String>('product-p9')));
+        expect(second.height, 340, reason: '1920: ряд без переноса «/ шт»');
+        expect(second.top - row.first.bottom, closeTo(14, 0.01), reason: '1920: зазор после ряда 360');
+      }
       await tester.pumpWidget(const SizedBox());
     }
   });
@@ -528,20 +675,19 @@ void main() {
     ];
     expect(texts, isNotEmpty);
     for (final String t in texts) {
-      // Числа — счётчики товаров категорий и избранного из данных (паритет функций ADR-112).
-      final bool count = RegExp(r'^\d+$').hasMatch(t);
-      expect(arb.contains(t) || categories.contains(t) || count, isTrue, reason: '«$t» — не из ARB и не из данных');
+      expect(arb.contains(t) || categories.contains(t), isTrue, reason: '«$t» — не из ARB и не из данных');
     }
-    expect(
-      texts,
-      containsAll(<String>['Каталог', 'Избранное', 'Все товары', 'Новые', 'Избранные', 'Недавние', 'Фильтры']),
-    );
+    expect(texts, containsAll(<String>['Каталог', 'Все товары', 'Новые', 'Избранные', 'Недавние', 'Фильтры']));
+    // ADR-114: в колонке — только «Каталог» и названия корней (пилюль числа, «★ Избранное», «Недавних» нет).
+    final List<String> column = _texts(tester, find.byType(CatalogSidebar));
+    expect(column.toSet(), <String>{'Каталог', for (final Category c in categoryTree().roots) c.name});
+    expect(column.where((String t) => RegExp(r'^\d+$').hasMatch(t)), isEmpty, reason: 'без пилюль числа');
     expect(find.byType(ProductCardGrid), findsWidgets);
   });
 
-  testWidgets('medium: корни — колонкой 132 (без полосы корней), подкатегории — лентой, подборки — в строке', (
-    tester,
-  ) async {
+  testWidgets('medium: корни — колонкой 132 (короткие названия; без полосы корней), подкатегории — лентой, подборки — '
+      'в строке', (tester) async {
+    await tester.runAsync(loadInterFont);
     final GoRouter router = await _pump(
       tester,
       CatalogHarness(shelf: FakeShelfPort()),
@@ -550,7 +696,11 @@ void main() {
     );
     expect(find.byKey(const ValueKey<String>('chip-all-categories')), findsNothing);
     expect(find.byKey(const ValueKey<String>('chip-cat-c-mix')), findsNothing);
-    expect(tester.getSize(find.byType(CatalogSidebar)).width, DsBreakpoints.catalogColumn);
+    expect(
+      tester.getSize(find.byType(CatalogSidebar)).width,
+      DsBreakpoints.catalogColumn,
+      reason: 'короткие названия — наименьшая ширина 132',
+    );
     expect(find.byKey(const ValueKey<String>('sidebar-title')), findsOneWidget);
     expect(tester.widget<CategoryTile>(find.byKey(const ValueKey<String>('sidebar-category-c-mix'))).selected, isTrue);
     expect(find.byKey(const ValueKey<String>('chip-sub-c-mix-kitchen')), findsOneWidget);
@@ -568,28 +718,58 @@ void main() {
     expect(_location(router), isNot(contains('kitchen')));
   });
 
-  testWidgets('колонка категорий 132: заголовок «Каталог» h3 700, плитки ≥ 88; выбранная — тинт и подпись 700', (
-    tester,
-  ) async {
-    await _pump(tester, CatalogHarness(shelf: FakeShelfPort()), '/catalog/c/c-mix');
-    expect(tester.getSize(find.byType(CatalogSidebar)).width, DsBreakpoints.catalogColumn);
-    final Text title = tester.widget<Text>(find.byKey(const ValueKey<String>('sidebar-title')));
-    expect(title.data, 'Каталог');
-    expect(title.style?.fontSize, 20);
-    expect(title.style?.fontWeight, FontWeight.w700);
-    final Finder selected = find.byKey(const ValueKey<String>('sidebar-category-c-mix'));
-    final Finder other = find.byKey(const ValueKey<String>('sidebar-category-c-sanitary'));
-    expect(tester.getSize(selected).height, greaterThanOrEqualTo(CategoryTile.sidebarMinHeight));
-    Text label(Finder tile) => tester.widget<Text>(
-      find.descendant(of: tile, matching: find.byKey(const ValueKey<String>('category-tile-label'))),
+  testWidgets('колонка «Каталог» по прототипу (T-CAT-039): 144 у дерева прототипа, только заголовок 19/700 и плитки '
+      'корней; поля 20 / 14 / 24 / 18, плитки 112 с зазором 10; выбранная — тинт и подпись 700', (tester) async {
+    await tester.runAsync(loadInterFont);
+    final FakeShelfPort shelf = FakeShelfPort(favorites: <String>{'p1'});
+    addTearDown(shelf.dispose);
+    final CatalogHarness h = CatalogHarness(
+      shelf: shelf,
+      catalog: FakeCatalogRepository(items: products(6), tree: designCategoryTree()),
     );
-    expect(label(selected).style?.fontWeight, FontWeight.w700, reason: 'выбранная — вес 700 (не только цвет)');
-    expect(label(other).style?.fontWeight, FontWeight.w600);
-    expect(find.byKey(const ValueKey<String>('sidebar-favorites')), findsOneWidget);
+    await _pump(tester, h, '/catalog/c/plumbing', size: const Size(1440, 900));
+    final Rect column = tester.getRect(find.byType(CatalogSidebar));
+    expect(column.width, 144, reason: 'макет 143,3: min-content «Водоснабжение» 12/600 + поля');
+    final Finder titleFinder = find.byKey(const ValueKey<String>('sidebar-title'));
+    final Text title = tester.widget<Text>(titleFinder);
+    expect(title.data, 'Каталог');
+    expect(title.style?.fontSize, 19);
+    expect(title.style?.fontWeight, FontWeight.w700);
+    // «Каталог» — x 22 (поле 18 + 4), y 20 от верха колонки (прототип).
+    expect(tester.getTopLeft(titleFinder).dx - column.left, 22);
+    expect(tester.getTopLeft(titleFinder).dy - column.top, closeTo(20, 1));
+    final List<Rect> tiles = <Rect>[
+      for (final (String id, String _, int _) in kDesignRoots)
+        tester.getRect(find.byKey(ValueKey<String>('sidebar-category-$id'))),
+    ];
+    expect(tiles.first.left - column.left, 18, reason: 'поле слева 18');
+    expect(column.right - tiles.first.right, 14, reason: 'поле справа 14');
+    expect(tiles.first.width, 112);
+    expect(tiles.first.top - column.top, 57, reason: '20 + «Каталог» 23 + 14');
+    for (int i = 1; i < tiles.length; i++) {
+      expect(tiles[i].top - tiles[i - 1].bottom, 10, reason: 'зазор плиток 10');
+      expect(tiles[i].height, greaterThanOrEqualTo(CategoryTile.sidebarMinHeight));
+    }
+    Finder tile(String id) => find.byKey(ValueKey<String>('sidebar-category-$id'));
+    Text label(Finder t) => tester.widget<Text>(
+      find.descendant(of: t, matching: find.byKey(const ValueKey<String>('category-tile-label'))),
+    );
+    expect(tester.widget<CategoryTile>(tile('plumbing')).selected, isTrue);
+    expect(label(tile('plumbing')).style?.fontWeight, FontWeight.w700, reason: 'выбранная — вес 700 (не только цвет)');
+    expect(label(tile('heating')).style?.fontWeight, FontWeight.w600);
+    // Число товаров — в подсказке и Semantics плитки, пилюли нет; «★ Избранное» и «Недавних» в колонке нет.
+    expect(find.byKey(const ValueKey<String>('category-tile-count')), findsNothing);
+    expect(tester.widget<CategoryTile>(tile('plumbing')).semanticLabel, 'Сантехника, 12 товаров');
+    expect(find.byKey(const ValueKey<String>('sidebar-favorites')), findsNothing);
+    expect(find.byKey(const ValueKey<String>('sidebar-recent')), findsNothing);
+    // Короткие названия — наименьшая ширина 132.
+    await tester.pumpWidget(const SizedBox());
+    await _pump(tester, CatalogHarness(shelf: shelf), '/catalog/c/c-mix', size: const Size(1440, 900));
+    expect(tester.getSize(find.byType(CatalogSidebar)).width, DsBreakpoints.catalogColumn);
   });
 
-  testWidgets('карточка сетки по прототипу: фото 150 contain, звезда 34, название 2 строки, «Арт.», остаток, '
-      'цена с «/ шт», «+ Добавить»; нет в наличии — серая «Нет в наличии»', (tester) async {
+  testWidgets('карточка сетки по прототипу: фото ≤ 146 scaleDown в поле 150, звезда 34, название 2 строки, «Арт.», '
+      'остаток, цена с «/ шт», «+ Добавить»; нет в наличии — серая «Нет в наличии»', (tester) async {
     final FakeShelfPort shelf = FakeShelfPort();
     addTearDown(shelf.dispose);
     final CatalogHarness h = CatalogHarness(
@@ -606,9 +786,11 @@ void main() {
     final ProductImage photo = tester.widget<ProductImage>(
       find.descendant(of: card, matching: find.byType(ProductImage)),
     );
-    expect(photo.height, kProductCardGridImageHeight);
-    expect(photo.fit, BoxFit.contain);
-    expect(tester.getSize(find.descendant(of: card, matching: find.byType(ProductImage))).height, 150);
+    // ADR-114: фото не больше 146 и не увеличивается (`scaleDown`), без фона — в поле 150 (отступ снизу 10).
+    expect(photo.height, kProductCardGridPhotoHeight);
+    expect(photo.fit, BoxFit.scaleDown);
+    expect(tester.getSize(find.descendant(of: card, matching: find.byType(ProductImage))).height, 146);
+    expect(kProductCardGridImageHeight, 150);
     expect(
       tester.widget<FavoriteToggle>(find.descendant(of: card, matching: find.byType(FavoriteToggle))).variant,
       FavoriteToggleVariant.onImage,
@@ -617,6 +799,7 @@ void main() {
     final Text name = tester.widget<Text>(find.descendant(of: card, matching: find.text(product(0).name)));
     expect(name.maxLines, 2);
     expect(name.style?.fontWeight, FontWeight.w600);
+    expect(name.style?.color, DsColors.lightB.catalogName, reason: 'прототип: #16206A');
     expect(find.descendant(of: card, matching: find.text('Арт. F4200-CR')), findsOneWidget);
     expect(
       tester.widget<StockBadge>(find.descendant(of: card, matching: find.byType(StockBadge))).variant,
@@ -634,7 +817,14 @@ void main() {
       findsOneWidget,
     );
     expect(find.descendant(of: out, matching: find.text('Нет в наличии')), findsWidgets);
-    expect(find.descendant(of: out, matching: find.byIcon(Icons.cancel_rounded)), findsOneWidget);
+    // Строка наличия — серая (ADR-114): крест `stockOutIcon`, текст `stockOutText` (не error).
+    final DsGlyph cross = tester.widget<DsGlyph>(
+      find.descendant(
+        of: out,
+        matching: find.byWidgetPredicate((Widget w) => w is DsGlyph && w.kind == DsGlyphKind.crossCircle),
+      ),
+    );
+    expect(cross.color, DsColors.lightB.stockOutIcon);
     // Недоступная кнопка: для экранного диктора — кнопка без действия, нажатие ничего не добавляет.
     final SemanticsHandle semantics = tester.ensureSemantics();
     final Finder unavailable = find.descendant(
@@ -705,9 +895,17 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(ProductCardGrid), findsWidgets);
     expect(find.byKey(const ValueKey<String>('catalog-subcategory-ribbon')), findsOneWidget);
-    final double extent = tester.getSize(find.byKey(const ValueKey<String>('product-p0'))).height;
-    expect(extent, kProductCardGridExtent(const TextScaler.linear(1.3)));
-    expect(extent, greaterThan(kProductCardGridExtent(TextScaler.noScaling)));
+    final Size card = tester.getSize(find.byKey(const ValueKey<String>('product-p0')));
+    // Высота ячейки — по масштабу и ширине карточки (перенос «/ шт», ADR-114).
+    const TextScaler big = TextScaler.linear(1.3);
+    final bool wraps = kProductCardGridPriceWraps(
+      big,
+      card.width,
+      price: PriceText.format(Money.som(2350)),
+      unit: '/ шт',
+    );
+    expect(card.height, kProductCardGridExtent(big, priceWraps: wraps));
+    expect(card.height, greaterThan(kProductCardGridExtent(TextScaler.noScaling)));
     for (final String view in <String>['view-mode-list', 'view-mode-compact']) {
       await tester.tap(find.byKey(ValueKey<String>(view)));
       await settle(tester);

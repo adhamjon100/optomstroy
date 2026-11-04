@@ -13,7 +13,10 @@
 //   APP_DATA_DIR   — только dev/staging-сборки (integration_test, машина разработки): абсолютный каталог, куда
 //                    пишутся данные приложения (БД drift `pos_<user_id>.db`, файл secure storage, кэш) вместо
 //                    каталога ОС (%APPDATA% на Windows). В prod ключ игнорируется. Значение — только константа
-//                    сборки (`--dart-define`), не пользовательский ввод.
+//                    сборки (`--dart-define`), не пользовательский ввод;
+//   ENV_BANNER     — `false` убирает полосу `EnvBanner` «DEV · TEST DATA» (13 RM-C-008). Задаёт только точка входа
+//                    веб-демо (`demoAppConfig`, 15 ADR-114 п. 9 (5)); `AppConfig.fromEnvironment` ключ не читает —
+//                    в сборках Windows и Android вне prod полоса есть всегда.
 import 'package:path/path.dart' as p;
 
 /// Окружение сборки — профили `APP_ENV` (dev | staging | prod, 16 §4.3; ревью C-MN-04).
@@ -59,6 +62,7 @@ final class AppConfig {
     required this.logLevel,
     required this.features,
     this.appDataDir,
+    this.envBanner = true,
   });
 
   /// Значения, переданные при сборке (`--dart-define-from-file=config/<env>.json`).
@@ -115,6 +119,7 @@ final class AppConfig {
       throw const ConfigException('FEATURE_FACE_SCAN: true запрещено в prod (R2, D-14)');
     }
 
+    final envBannerRaw = read('ENV_BANNER');
     return AppConfig(
       apiBaseUrl: Uri.parse(baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl),
       environment: environment,
@@ -122,6 +127,7 @@ final class AppConfig {
       features: Map.unmodifiable(features),
       // prod: ключ игнорируется — данные только в каталоге ОС.
       appDataDir: environment == AppEnvironment.prod ? null : parseAppDataDir(read('APP_DATA_DIR')),
+      envBanner: envBannerRaw == null || _parseBool(envBannerRaw, 'ENV_BANNER'),
     );
   }
 
@@ -163,7 +169,15 @@ final class AppConfig {
   /// Каталог данных приложения для dev/staging-сборок (`APP_DATA_DIR`); в prod всегда `null`.
   final String? appDataDir;
 
+  /// Полоса `EnvBanner` вне prod (13 RM-C-008); `false` — только у веб-демо (`ENV_BANNER=false`, 15 ADR-114 п. 9 (5)).
+  final bool envBanner;
+
   bool get isProd => environment == AppEnvironment.prod;
+
+  /// Код окружения для полосы `EnvBanner` над приложением (13 RM-C-008): `dev`, `staging`; `null` — полосы нет:
+  /// prod и веб-демо ([envBanner] `false` задаёт его точка входа — 15 ADR-114 п. 9 (5); пометку тестовых данных там
+  /// несут вкладка и панель «ДЕМО»). В dev-сборках Windows и Android полоса остаётся.
+  String? get envBannerCode => isProd || !envBanner ? null : environment.name;
 
   /// Флаг включён (неизвестный флаг — выключен).
   bool isEnabled(String flag) => features[flag] ?? false;

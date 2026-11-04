@@ -245,6 +245,8 @@ class _VariantPickerSheetState extends ConsumerState<VariantPickerSheet> {
         AppButton(
           key: const ValueKey<String>('variant-picker-add'),
           label: l10n.variant_add_cta(PriceText.format(_sum())),
+          // Диктор — сумма без «запятой» и нулевых тыйынов (ADR-114 п. 4, ревью R2C-04).
+          semanticLabel: l10n.variant_add_cta(PriceText.spoken(_sum())),
           onPressed: _qty.isEmpty || _busy || _s.cta == ProductCta.hidden ? null : _submit,
           loading: _busy,
           size: AppButtonSize.l,
@@ -267,6 +269,10 @@ class _VariantPickerSheetState extends ConsumerState<VariantPickerSheet> {
     final String sub = <String>[
       if (v.sku != null && v.sku!.isNotEmpty) l10n.product_sku_variant(v.sku!),
       if (price != null) '${PriceText.format(price)} ${l10n.product_price_unit(unit)}',
+    ].join(' · ');
+    final String subSpoken = <String>[
+      if (v.sku != null && v.sku!.isNotEmpty) l10n.product_sku_variant(v.sku!),
+      if (price != null) '${PriceText.spoken(price)} ${l10n.product_price_unit(unit)}',
     ].join(' · ');
     return Container(
       key: ValueKey<String>('variant-row-${v.id}'),
@@ -298,9 +304,13 @@ class _VariantPickerSheetState extends ConsumerState<VariantPickerSheet> {
                     ),
                   ),
                   if (sub.isNotEmpty)
-                    Text(
-                      sub,
-                      style: context.text.caption.copyWith(color: c.textSecondary, fontFeatures: _tnum),
+                    Semantics(
+                      label: subSpoken,
+                      excludeSemantics: true,
+                      child: Text(
+                        sub,
+                        style: context.text.caption.copyWith(color: c.textSecondary, fontFeatures: _tnum),
+                      ),
                     ),
                   const SizedBox(height: 4),
                   StockBadge(level: level, label: badgeLabel, variant: StockBadgeVariant.inline),

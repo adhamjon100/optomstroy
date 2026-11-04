@@ -1,12 +1,15 @@
 // T-CAT-003, T-CAT-004 (widget): SCR-12 «Категория» и переходы SCR-10/11/12/14 (RM-E-007).
-// Подкатегории — только при наличии (AC-UI-12-001), крошки при глубине ≥ 2 (AC-UI-12-006),
+// Подкатегории — только при наличии (AC-UI-12-001); лента — всегда, у корня без детей — только «Все товары», крошки —
+// при глубине ≥ 3 (ADR-114; было ≥ 2, AC-UI-12-006),
 // удалённая категория (AC-UI-12-007), повторный тап по выбранной — без действия, двойной тап —
 // один переход, поиск из шапки SCR-10 → SCR-11 через 300 мс, сохранение вида/сортировки в URL.
 import 'package:flutter/material.dart' hide SearchBar;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:optomstroy/design_system/components/category_tile.dart';
 import 'package:optomstroy/design_system/components/product_card.dart';
 import 'package:optomstroy/features/catalog/domain/entities/catalog_query.dart';
+import 'package:optomstroy/features/catalog/domain/entities/category.dart';
 import 'package:optomstroy/features/catalog/domain/entities/product.dart';
 import 'package:optomstroy/features/catalog/presentation/screens/catalog_filters_screen.dart';
 import 'package:optomstroy/features/catalog/presentation/screens/catalog_screen.dart';
@@ -75,9 +78,8 @@ Future<GoRouter> _pump(WidgetTester tester, CatalogHarness h, String initial, {S
 String _location(GoRouter r) => r.routeInformationProvider.value.uri.toString();
 
 void main() {
-  testWidgets('категория с подкатегориями: лента «Все» + дети, корень выбран в колонке; лист — только подборки', (
-    tester,
-  ) async {
+  testWidgets('категория с подкатегориями: лента «Все» + дети, корень выбран в колонке; корень без детей — лента «Все '
+      'товары» и подборки (ADR-114)', (tester) async {
     final CatalogHarness h = CatalogHarness();
     final GoRouter router = await _pump(tester, h, '/catalog/c/c-mix');
     expect(find.byKey(const ValueKey<String>('stub-SCR-12')), findsOneWidget);
@@ -93,7 +95,11 @@ void main() {
 
     router.go('/catalog/c/c-sanitary');
     await settle(tester);
-    expect(find.byKey(const ValueKey<String>('chip-sub-all')), findsNothing);
+    // ADR-114 (02 П.3 п. 1): лента в режиме категории — всегда; у корня без детей — одна выбранная «Все товары».
+    expect(find.byKey(const ValueKey<String>('catalog-subcategory-ribbon')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('chip-sub-all')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('chip-sub-c-mix-kitchen')), findsNothing);
+    expect(tester.widget<CategoryTile>(find.byKey(const ValueKey<String>('chip-sub-all'))).selected, isTrue);
     expect(
       find.byKey(const ValueKey<String>('chip-preset-favorites')),
       findsOneWidget,
@@ -127,13 +133,43 @@ void main() {
     expect(inList('Цемент М500 50 кг'), findsNothing, reason: 'товар другой категории в списке не показывается');
   });
 
-  testWidgets('крошки при глубине ≥ 2 ведут к уровню', (tester) async {
-    final GoRouter router = await _pump(tester, CatalogHarness(), '/catalog/c/c-mix-kitchen');
+  testWidgets('крошки при глубине ≥ 3 ведут к уровню; на глубине 2 крошек нет — к родителю ведёт «Все товары» ленты '
+      '(ADR-114)', (tester) async {
+    final CatalogHarness h = CatalogHarness(
+      catalog: FakeCatalogRepository(
+        items: products(6),
+        tree: CategoryTree.fromFlat(const <Category>[
+          Category(id: 'c-mix', name: 'Смесители', productCount: 124, hasChildren: true),
+          Category(id: 'c-mix-kitchen', parentId: 'c-mix', name: 'Для кухни', productCount: 48, hasChildren: true),
+          Category(id: 'c-mix-k-one', parentId: 'c-mix-kitchen', name: 'Однорычажные', productCount: 30),
+          Category(id: 'c-mix-k-two', parentId: 'c-mix-kitchen', name: 'Двухвентильные', productCount: 18),
+          Category(id: 'c-mix-bath', parentId: 'c-mix', name: 'Для ванной', productCount: 76),
+        ]),
+      ),
+    );
+    // Глубина 2: крошек нет; заголовок — родитель ленты, «Все товары» ведёт к нему.
+    final GoRouter router = await _pump(tester, h, '/catalog/c/c-mix-bath');
     expect(find.byType(BackButton), findsNothing);
+    expect(find.byType(CatalogBreadcrumbs), findsNothing, reason: 'путь видят плитка корня и «Все товары» ленты');
+    await tester.tap(find.byKey(const ValueKey<String>('chip-sub-all')));
+    await settle(tester);
+    expect(_location(router), startsWith('/catalog/c/c-mix'));
+    expect(_location(router), isNot(contains('bath')));
+
+    // Глубина 3: крошки «Каталог › Смесители › Для кухни»; уровень — переход, «Каталог» — весь каталог.
+    router.go('/catalog/c/c-mix-k-one');
+    await settle(tester);
+    expect(find.byType(CatalogBreadcrumbs), findsOneWidget);
     expect(find.text('Каталог'), findsWidgets);
     await tester.tap(find.descendant(of: find.byType(CatalogBreadcrumbs), matching: find.text('Смесители')));
     await settle(tester);
     expect(_location(router), startsWith('/catalog/c/c-mix'));
+    expect(_location(router), isNot(contains('k-one')));
+    router.go('/catalog/c/c-mix-k-two');
+    await settle(tester);
+    await tester.tap(find.descendant(of: find.byType(CatalogBreadcrumbs), matching: find.text('Каталог')));
+    await settle(tester);
+    expect(_location(router), startsWith('/catalog?all=1'), reason: 'корень крошек — «Все товары»');
   });
 
   testWidgets('удалённая категория: «Категория больше не существует» → «К каталогу»', (tester) async {

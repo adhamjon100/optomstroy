@@ -14,9 +14,11 @@ import 'package:optomstroy/design_system/components/app_dropdown.dart';
 import 'package:optomstroy/design_system/components/app_radio.dart';
 import 'package:optomstroy/design_system/components/app_switch.dart';
 import 'package:optomstroy/design_system/components/app_text_field.dart';
+import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/filter_panel.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/features/catalog/domain/entities/catalog_query.dart';
@@ -240,17 +242,23 @@ List<Widget> buildCatalogFilterSections({
   ];
 }
 
-/// Встроенная панель фильтров SCR-10/11/12 на medium и шире (прототип 2026-10-29, ADR-112; 02 SCR-13.2): белая
-/// карточка `catalog-filter-panel` (обводка `border`, радиус `md`, поля 12/16), элементы — `Wrap` 20 × 12:
+/// Встроенная панель фильтров SCR-10/11/12 на medium и шире (прототип, ADR-112, ADR-114; 02 SCR-13.2; ревью RV-14):
+/// белая карточка `catalog-filter-panel` (обводка 1 `border`, радиус `md` 12, поля 12/16 до видимых элементов —
+/// у нас 5/16 до целей 48, видимая строка 34; высота 60 при одной линии, как в прототипе), элементы — `Wrap` 20 по
+/// горизонтали:
 /// - «Только в наличии» (`filter-in-stock`), «Только избранное» (`filter-favorites`), «Только с фото»
-///   (`filter-with-photo`) — `AppCheckbox`;
+///   (`filter-with-photo`) — флажки прототипа ([CatalogFilterCheck]: квадрат 18 `primary`, зазор 8, подпись 14);
 /// - цена от / до (`filter-price-from` / `-to`, поля 120, целые сомы ≤ 9 цифр; «от > до» — ошибка, применение
 ///   блокирует вызывающий через [priceRangeInvalid]);
 /// - склад — только staff (AC-UI-13-009), склад корзины по умолчанию — с пометкой «· склад корзины»;
 /// - бренды: первые 5 + «Показать все» (`filter-brand-*`), бренд с 0 товаров недоступен (если не выбран);
 ///   характеристики — только при наличии значений, ≤ 10 пар
 ///   (`filter-attr-*`);
-/// - «Сбросить фильтры» ([onReset]) и пометка офлайна ([offlineNote]).
+/// - «Сбросить фильтры» ([onReset]) — ссылка прототипа ([CatalogFilterResetLink]: 14/500 `link` #1F5FA8, 34 в цели 48) — и пометка
+///   офлайна ([offlineNote]).
+///
+/// Набор фильтров приложения шире прототипа (там — только «Только в наличии»): все они остаются в этой же панели
+/// (паритет функций ADR-114), переносясь на следующие линии.
 ///
 /// Каждое изменение — [onUpdate] с функцией правки текущего черновика; применение (через 300 мс) — у вызывающего.
 Widget buildCatalogFilterInline({
@@ -280,13 +288,11 @@ Widget buildCatalogFilterInline({
     bool value,
     CatalogFilter Function(CatalogFilter f, bool on) update, {
     bool enabled = true,
-  }) => IntrinsicWidth(
-    child: AppCheckbox(
-      key: ValueKey<String>(key),
-      value: value,
-      label: label,
-      onChanged: enabled ? (bool? v) => onUpdate((CatalogFilter f) => update(f, v == true)) : null,
-    ),
+  }) => CatalogFilterCheck(
+    key: ValueKey<String>(key),
+    value: value,
+    label: label,
+    onChanged: enabled ? (bool v) => onUpdate((CatalogFilter f) => update(f, v)) : null,
   );
 
   Widget group(String title, List<Widget> children, {Key? key}) => Wrap(
@@ -460,13 +466,11 @@ Widget buildCatalogFilterInline({
               (CatalogFilter f, bool on) => attrUpdate(f, a.key, v.value, on),
             ),
         ]),
-    AppButton(
+    // Сброс — ссылка прототипа `link` #1F5FA8 (ADR-114 п. 5; прежде — `primaryText`).
+    CatalogFilterResetLink(
       key: const ValueKey<String>('catalog-filters-reset'),
       label: l10n.catalog_filters_reset,
-      onPressed: onReset,
-      // Сброс — текстовая кнопка `primaryText`: ссылки — `primaryText` (ядро §24.1, DS-098), синий — фокус и info.
-      variant: AppButtonVariant.text,
-      size: AppButtonSize.s,
+      onTap: onReset,
     ),
     if (offlineNote != null)
       Text(
@@ -475,21 +479,162 @@ Widget buildCatalogFilterInline({
         style: context.text.caption.copyWith(color: c.textSecondary),
       ),
   ];
+  // Прототип: поля 12 / 16 до видимых элементов строки 34; цели нажатия — 48 (на 7 выше и ниже видимой части), поэтому
+  // по вертикали поле 5, а между линиями 0 (видимый зазор 14 против 12 прототипа — только при нескольких линиях).
+  const double target = 48; // money-double: allow — геометрия UI (lp)
+  const double inset = (target - CatalogFilterResetLink.height) / 2; // money-double: allow — геометрия UI (lp)
+  final double vertical = context.space.s3 - inset; // money-double: allow — геометрия UI (lp)
   return Container(
     key: const ValueKey<String>('catalog-filter-panel'),
-    padding: EdgeInsets.symmetric(horizontal: context.space.s4, vertical: context.space.s3),
+    padding: EdgeInsets.symmetric(horizontal: context.space.s4, vertical: vertical),
     decoration: BoxDecoration(
       color: c.surface,
       border: Border.all(color: c.border),
       borderRadius: BorderRadius.all(context.radii.md),
     ),
-    child: Wrap(
-      spacing: context.space.s5,
-      runSpacing: context.space.s3,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: items,
-    ),
+    child: Wrap(spacing: context.space.s5, crossAxisAlignment: WrapCrossAlignment.center, children: items),
   );
+}
+
+/// Флажок встроенной панели фильтров по прототипу (ADR-114, ревью RV-14) — «родной» флажок Chrome 18 × 18 с
+/// `accent-color: #D9380F`: поле слева 4 и справа 3 (поля флажка Chrome), квадрат радиуса 2 — выключен: `surface` с
+/// обводкой 1 `borderStrong` (у Chrome — #767676; отдельного токена нет), включён: заливка `primary` и белая галочка;
+/// зазор 8; подпись `body 14` `textPrimary`. Нажимается вся строка (подпись тоже, как `<label>` прототипа); цель — 48
+/// по высоте; фокус — кольцо вокруг квадрата; `Semantics.checked`.
+class CatalogFilterCheck extends StatelessWidget {
+  const CatalogFilterCheck({super.key, required this.value, required this.label, required this.onChanged});
+
+  /// Отмечен.
+  final bool value;
+
+  /// Подпись (видимая и для screen reader).
+  final String label;
+
+  /// `null` — недоступен (бренд без товаров в выборке).
+  final ValueChanged<bool>? onChanged;
+
+  /// Сторона квадрата (прототип: 18).
+  static const double box = 18; // money-double: allow — геометрия UI (lp)
+
+  @override
+  Widget build(BuildContext context) {
+    final DsColors c = context.colors;
+    final ValueChanged<bool>? change = onChanged;
+    final bool enabled = change != null;
+    final VoidCallback? tap = change == null ? null : () => change(!value);
+    const BorderRadius radius = BorderRadius.all(Radius.circular(2));
+    return Semantics(
+      checked: value,
+      enabled: enabled,
+      label: label,
+      excludeSemantics: true,
+      onTap: tap,
+      child: DsInteractive(
+        enabled: enabled,
+        onTap: tap,
+        builder: (BuildContext context, DsInteractionState s) {
+          final Color fill = !enabled ? c.disabledBg : (value ? c.primary : c.surface);
+          final Color line = !enabled ? c.disabledText : (s.hovered || s.pressed ? c.textSecondary : c.borderStrong);
+          return SizedBox(
+            height: 48,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(start: 4, end: 3),
+                  child: DsFocusRing(
+                    visible: s.focused,
+                    borderRadius: radius,
+                    child: AnimatedContainer(
+                      duration: context.motion.of(context.motion.fast),
+                      width: box,
+                      height: box,
+                      decoration: BoxDecoration(
+                        color: fill,
+                        borderRadius: radius,
+                        border: value && enabled ? null : Border.all(color: line),
+                      ),
+                      child: value ? Icon(Icons.check_rounded, size: 15, color: c.onPrimary) : null,
+                    ),
+                  ),
+                ),
+                SizedBox(width: context.space.s2),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.text.body.copyWith(color: enabled ? c.textPrimary : c.disabledText),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// «Сбросить фильтры» по прототипу (ADR-114 п. 5, ревью RV-14): текстовая кнопка 34 (поля 0 12, радиус `sm` 8,
+/// прозрачная — у прототипа фон при наведении не меняется), подпись `sortLabel 14/500` цвета `link` #1F5FA8; цель —
+/// 48 по высоте; фокус — кольцо.
+class CatalogFilterResetLink extends StatelessWidget {
+  const CatalogFilterResetLink({super.key, required this.label, required this.onTap});
+
+  /// Подпись («Сбросить фильтры», «Сбросить все», «Очистить»).
+  final String label;
+
+  /// Действие; `null` — ссылка недоступна (`disabledText`, без действия).
+  final VoidCallback? onTap;
+
+  /// Видимая высота (прототип: 34).
+  static const double height = 34; // money-double: allow — геометрия UI (lp)
+
+  /// Ширина ссылки с подписью [label] до раскладки (строка управления каталога выбирает ступень сворачивания).
+  static double estimateWidth(BuildContext context, String label) => // money-double: allow — геометрия UI (lp)
+      context.space.s3 * 2 + dsTextWidth(context, label, context.text.sortLabel);
+
+  @override
+  Widget build(BuildContext context) {
+    final DsColors c = context.colors;
+    final BorderRadius radius = BorderRadius.all(context.radii.sm);
+    final VoidCallback? tap = onTap;
+    return Semantics(
+      button: true,
+      enabled: tap != null,
+      label: label,
+      excludeSemantics: true,
+      onTap: tap,
+      child: DsInteractive(
+        onTap: tap,
+        enabled: tap != null,
+        builder: (BuildContext context, DsInteractionState s) => SizedBox(
+          height: 48,
+          child: Center(
+            widthFactor: 1,
+            child: DsFocusRing(
+              visible: s.focused,
+              borderRadius: radius,
+              child: Container(
+                height: height,
+                padding: EdgeInsets.symmetric(horizontal: context.space.s3),
+                decoration: BoxDecoration(borderRadius: radius),
+                child: Center(
+                  widthFactor: 1,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: context.text.sortLabel.copyWith(color: tap == null ? c.disabledText : c.link),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Контроллеры полей цены (текст в сомах), синхронизируются с фильтром при сбросе.

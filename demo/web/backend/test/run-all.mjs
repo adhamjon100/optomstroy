@@ -6,7 +6,7 @@
 //
 // Порядок (последовательно, чтобы замеры сторожа и памяти не мешали друг другу):
 //   1. модульные тесты node --test: crypto-shim, net-guard, work-gate, pg-shim, shims, gate, storage-idb, bundle,
-//      contract;
+//      contract, durability, design-catalog (каталог по макету, WP-DATA-WEB);
 //   2. differential.test.mjs — набор API (README 1–6, негативные ветки, обход операций приложения) на бандле,
 //      эталоне и повторно на бандле; OpenAPI; покрытие; → .build/t1/differential.json, .build/contract-report.md;
 //   3. critic.test.mjs — перезагрузка, обрыв, часы +3/+10 дней, 0.1.0+1, «1С недоступна», сеть, долги после старта;
@@ -39,7 +39,7 @@ const say = (...a) => console.log(`[run-all ${el()}]`, ...a);
 process.env.TEMP ||= `${ROOT}/.tmp`;
 process.env.TMP ||= `${ROOT}/.tmp`;
 
-const UNIT = ['crypto-shim', 'net-guard', 'work-gate', 'pg-shim', 'shims', 'gate', 'storage-idb', 'bundle', 'contract', 'durability'].map((n) => `${HERE}/${n}.test.mjs`);
+const UNIT = ['crypto-shim', 'net-guard', 'work-gate', 'pg-shim', 'shims', 'gate', 'storage-idb', 'bundle', 'contract', 'durability', 'design-catalog'].map((n) => `${HERE}/${n}.test.mjs`);
 /** Хранилище браузерного soak (review fixes: OPFS — основное хранилище Chrome/Edge — тоже прогоняется). */
 const SOAK_STORAGE = arg('--soak-storage', 'idb');
 
@@ -177,6 +177,8 @@ if (!has('--skip-critic')) {
 // ---------------------------------------------------------------- 3б. настоящий PostgreSQL (review fixes, critic [18])
 if (!has('--skip-realpg')) {
   say('realpg-diff.mjs: бандл ↔ настоящий PostgreSQL 17 ↔ бандл (≈ 5–6 мин)…');
+  // отчёт прошлого прогона не должен засчитываться, если этот прогон оборвался по времени (regress: ложный «OK»)
+  rmSync(`${T1_DIR}/realpg.json`, { force: true });
   const r = await runNode([`${HERE}/realpg/realpg-diff.mjs`, '--json', `${T1_DIR}/realpg.json`], { label: 'realpg', timeoutMs: 1_800_000 });
   const rp = existsSync(`${T1_DIR}/realpg.json`) ? JSON.parse(readFileSync(`${T1_DIR}/realpg.json`, 'utf8')) : null;
   summary.steps.realpg = rp && { code: r.code, ms: r.ms, postgres: rp.postgres, runs: rp.runs?.map((x) => ({ label: x.label, requests: x.requests, checks: x.checks, status5xx: x.status5xx?.length, audit: x.audit })), compared: rp.differential?.compared, dbLayerDiffs: rp.differential?.real?.length, flaky: rp.differential?.flaky?.length, orderOnly: rp.differential?.orderOnlyAR?.length, sameScenarioFailures: rp.checks?.sameScenarioFailures, collation: rp.probes?.collation && { sameOrder: rp.probes.collation.sameOrder, sameLower: rp.probes.collation.sameLower, sameIlike: rp.probes.collation.sameIlike, locale: [rp.probes.collation.pglite.locale, rp.probes.collation.postgres.locale] }, error: rp.error ?? null };

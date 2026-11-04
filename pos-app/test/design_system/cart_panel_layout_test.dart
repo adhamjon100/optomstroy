@@ -63,8 +63,8 @@ void main() {
     expect(tester.getBottomLeft(find.text('Создать заказ')).dy, greaterThan(700));
   });
 
-  testWidgets('drawer (overlay, ADR-112): «Корзина · 5 поз.» без бейджа, крестик, без радиуса, тень e3; высота низа — '
-      'в AppSnackbarRegion', (WidgetTester tester) async {
+  testWidgets('drawer (overlay, ADR-112, ADR-114): «Корзина · 5 поз.» без бейджа, крестик, без радиуса, тень drawer '
+      'прототипа; высота низа — в AppSnackbarRegion', (WidgetTester tester) async {
     final ValueNotifier<double> bottom = ValueNotifier<double>(0);
     addTearDown(bottom.dispose);
     await pumpDs(tester, _drawer(bottom: bottom), size: const Size(420, 800), scroll: false);
@@ -78,7 +78,11 @@ void main() {
     );
     final BoxDecoration decoration = box.decoration as BoxDecoration;
     expect(decoration.borderRadius, isNull, reason: 'drawer без радиуса');
-    expect(decoration.boxShadow, DsElevation.defaults.e3);
+    // Прототип: box-shadow −12 0 40 rgba(14,20,86,.18) — токен `elevation.drawer` (ADR-114; было e3).
+    expect(decoration.boxShadow, DsElevation.defaults.drawer);
+    final BoxShadow shadow = decoration.boxShadow!.single;
+    expect((shadow.offset, shadow.blurRadius, shadow.spreadRadius), (const Offset(-12, 0), 40.0, 0.0));
+    expect(shadow.color, const Color.fromRGBO(14, 20, 86, 0.18));
     expect(bottom.value, greaterThanOrEqualTo(168), reason: 'итоги 120 + кнопки 48 (+ поля)');
   });
 

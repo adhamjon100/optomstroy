@@ -16,6 +16,8 @@ class NavigationDrawerItem {
     this.selectedIcon,
     this.selected = false,
     this.key,
+    this.trailing,
+    this.semanticLabel,
   });
 
   /// Иконка (outlined).
@@ -35,6 +37,13 @@ class NavigationDrawerItem {
 
   /// Ключ строки (тесты).
   final Key? key;
+
+  /// Текст справа в строке — число («Избранное 12», ADR-114 п. 1: видимое число избранных перенесено сюда из колонки
+  /// каталога); `null` — без него.
+  final String? trailing;
+
+  /// Подпись для screen reader («Избранное, 12 товаров»); `null` — [label].
+  final String? semanticLabel;
 }
 
 /// Группа пунктов [NavigationDrawerApp]: необязательный заголовок + пункты.
@@ -53,7 +62,9 @@ class NavigationDrawerGroup {
 /// Drawer навигации оболочки сотрудника на medium и шире (03 §9.71; D3, ADR-112).
 ///
 /// Ширина [DsBreakpoints.navDrawer] 320, фон `surface`, справа граница `border`. Сверху — [header] (логотип);
-/// ниже — [groups]: заголовок группы `label 600 textSecondary`, строки 48 с иконкой 24 и подписью `body`.
+/// ниже — [groups]: заголовок группы `label 600 textSecondary`, строки 48 с иконкой 24 и подписью `body`; справа —
+/// [NavigationDrawerItem.trailing] 12/600 (`catalogMeta`; при наведении и нажатии — `textSecondary`, у выбранного —
+/// `onPrimaryContainer`: на этих фонах `catalogMeta` ниже 4,5:1, CP-124/125).
 /// Выбранный пункт — фон `primaryContainer`, подпись `onPrimaryContainer 600`, залитая иконка и полоса 3 px
 /// `primaryText` слева (признак не только цветом, A11Y-004). Вся панель — `Semantics`-группа [semanticLabel]
 /// («Навигация»). Esc закрывает ([onClose]); затемнение и его тап — у `Scaffold.drawer`.
@@ -181,10 +192,11 @@ class _DrawerRow extends StatelessWidget {
     final DsColors c = context.colors;
     final bool selected = item.selected;
     final BorderRadius radius = BorderRadius.all(context.radii.md);
+    final String? trailing = item.trailing;
     return Semantics(
       button: true,
       selected: selected,
-      label: item.label,
+      label: item.semanticLabel ?? item.label,
       excludeSemantics: true,
       // Действие «нажать» для TalkBack/Narrator: жест DsInteractive из семантики исключён.
       onTap: item.onTap,
@@ -225,6 +237,20 @@ class _DrawerRow extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (trailing != null) ...<Widget>[
+                      SizedBox(width: context.space.s2),
+                      Text(
+                        trailing,
+                        key: const ValueKey<String>('nav-drawer-item-trailing'),
+                        maxLines: 1,
+                        style: context.text.caption.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: selected
+                              ? c.onPrimaryContainer
+                              : (s.pressed || s.hovered ? c.textSecondary : c.catalogMeta),
+                        ),
+                      ),
+                    ],
                     SizedBox(width: context.space.s3),
                   ],
                 ),

@@ -15,8 +15,8 @@ import 'package:optomstroy/core/error/result.dart';
 import 'package:optomstroy/core/error/screen_state.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
-import 'package:optomstroy/design_system/components/app_checkbox.dart';
 import 'package:optomstroy/design_system/components/app_snackbar.dart';
+import 'package:optomstroy/design_system/components/category_tile.dart';
 import 'package:optomstroy/design_system/components/notification_bell.dart';
 import 'package:optomstroy/design_system/components/product_card.dart';
 import 'package:optomstroy/design_system/components/product_image.dart';
@@ -33,6 +33,7 @@ import 'package:optomstroy/features/catalog/domain/entities/product.dart';
 import 'package:optomstroy/features/catalog/presentation/providers/catalog_ports.dart';
 import 'package:optomstroy/features/catalog/presentation/screens/catalog_screen.dart';
 import 'package:optomstroy/features/catalog/presentation/state/catalog_prefs.dart';
+import 'package:optomstroy/features/catalog/presentation/widgets/catalog_filter_form.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_header.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_logo.dart';
 
@@ -65,11 +66,17 @@ void main() {
     await settle(tester);
     expect(find.byKey(const ValueKey<String>('catalog-skeleton')), findsNothing);
     expect(find.byType(ProductCardGrid), findsWidgets);
-    expect(find.text('Все товары'), findsOneWidget);
+    // «Все товары» — заголовок и выбранная карточка ленты корней (ADR-114: во всём каталоге лента — корни, 02 B2).
+    expect(find.text('Все товары'), findsNWidgets(2));
+    final Text title = tester.widget<Text>(find.byKey(const ValueKey<String>('catalog-title')));
+    expect(title.data, 'Все товары');
+    expect((title.style?.fontSize, title.style?.fontWeight), (30, FontWeight.w800), reason: 'прототип: h1 30/800');
+    expect(tester.widget<CategoryTile>(find.byKey(const ValueKey<String>('chip-sub-all'))).selected, isTrue);
     expect(find.text('Найдено: 6 товаров'), findsOneWidget);
     expect(find.text('Арт. F4200-CR'), findsOneWidget);
     expect(find.text(StockBadge.displayLabel('В наличии · 24 шт')), findsWidgets);
-    expect(find.textContaining('2 350'), findsWidgets);
+    // Цена — всегда 2 знака, разряды U+00A0 (ADR-114, T-DS-103).
+    expect(find.textContaining('2\u00A0350,00\u00A0сом', findRichText: true), findsWidgets);
     // Кэш запрошен до сети (≤ 100 мс), затем ровно один сетевой запрос первой страницы.
     expect(repo.cachedCalls, hasLength(1));
     expect(repo.productCalls, hasLength(1));
@@ -98,11 +105,13 @@ void main() {
     expect(find.text('Абдулла'), findsOneWidget);
     expect(find.text('Продавец'), findsOneWidget);
     expect(find.bySemanticsLabel('Уведомления, 3 непрочитанных'), findsOneWidget);
-    // Колонка плиток корневых категорий (макет заказчика 2026-10-28): заголовок «Каталог», плитки, «★ Избранное».
+    // Колонка плиток корневых категорий (ADR-114): только заголовок «Каталог» и плитки; «★ Избранное» — кнопка
+    // «Избранные» строки управления (число — в подсказке и Semantics) и пункт drawer навигации.
     expect(find.byKey(const ValueKey<String>('sidebar-title')), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('sidebar-category-c-mix')), findsOneWidget);
     expect(find.text('Смесители'), findsWidgets);
-    expect(find.byKey(const ValueKey<String>('sidebar-favorites')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('sidebar-favorites')), findsNothing);
+    expect(find.bySemanticsLabel('Избранные, 2 товара'), findsOneWidget, reason: 'число избранных — у «Избранные»');
     expect(
       find.byKey(const ValueKey<String>('catalog-cart-panel')),
       findsNothing,
@@ -375,7 +384,9 @@ void main() {
       expect(find.byKey(const ValueKey<String>('catalog-filter-panel')), findsOneWidget);
       expect(sliverKeys(), closed, reason: 'открытие панели не меняет состав slivers (без пересоздания списка)');
       expect(identical(image(), imageBefore), isTrue, reason: 'фото карточки не пересоздаётся');
-      expect(tester.widget(find.byKey(const ValueKey<String>('filter-in-stock'))), isA<AppCheckbox>());
+      // Флажок панели — по прототипу (ADR-114, RV-14): квадрат 18, цель 48 на всю строку, Semantics.checked.
+      expect(tester.widget(find.byKey(const ValueKey<String>('filter-in-stock'))), isA<CatalogFilterCheck>());
+      expect(tester.getSize(find.byKey(const ValueKey<String>('filter-in-stock'))).height, 48);
       final int before = h.catalog.productCalls.length;
       await tester.tap(find.byKey(const ValueKey<String>('filter-in-stock')));
       await tester.pump(const Duration(milliseconds: 200));
@@ -529,9 +540,9 @@ void main() {
     );
     addTearDown(shelf.dispose);
     await _pump(tester, CatalogHarness(shelf: shelf));
-    // Быстрый доступ — блок «Недавние» в колонке (паритет функций ADR-112); «Очистить» строки управления — при
-    // выбранной подборке.
-    expect(find.byKey(const ValueKey<String>('sidebar-recent')), findsOneWidget);
+    // ADR-114: блока «Недавние» в колонке больше нет — подборка «Недавние» строки управления (паритет функций);
+    // «Очистить» — при выбранной подборке.
+    expect(find.byKey(const ValueKey<String>('sidebar-recent')), findsNothing);
     expect(find.byKey(const ValueKey<String>('catalog-recent-clear')), findsNothing);
     await tester.tap(find.byKey(const ValueKey<String>('chip-preset-recent')));
     await settle(tester);

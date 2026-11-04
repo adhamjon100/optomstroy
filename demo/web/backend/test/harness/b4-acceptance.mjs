@@ -15,7 +15,7 @@
 //      CREDIT_LIMIT_EXCEEDED, «Долг в лимите» → 201; запрещённые строки ПДн — ни в одном ответе; /sync/status ok.
 //   S1. Тот же состав, загруженный как каталог данных PGlite (dumpDataDir обычной, не детерминированной сборки —
 //      .build/snapshot/s1-datadir.tar.gz, build-snapshot.mjs --s1): число строк всех таблиц и ответы
-//      GET /catalog/products, /search/products?q=F4252, /catalog/sync/products совпадают с S2 (id и время маскируются).
+//      GET /catalog/products, /search/products?q=SL1001, /catalog/sync/products совпадают с S2 (id и время маскируются).
 //   P. Запасной путь без снимка (каталог конвейером, как WP-B3): те же ответы без полей фото совпадают с S2.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -166,11 +166,11 @@ function compare(a, b, opts) {
   return `differ @${i}: …${fa.slice(Math.max(0, i - 80), i + 80)} ≠ …${fb.slice(Math.max(0, i - 80), i + 80)}`;
 }
 
-/** Ответы каталога для сравнения: /catalog/products, /search/products?q=F4252, все страницы /catalog/sync/products и images. */
+/** Ответы каталога для сравнения: /catalog/products, /search/products?q=SL1001, все страницы /catalog/sync/products и images. */
 async function catalogResponses(d) {
   const out = {};
   out.products = (await d.call('GET', '/catalog/products?limit=40')).json;
-  out.search = (await d.call('GET', '/search/products?q=F4252&limit=20')).json;
+  out.search = (await d.call('GET', '/search/products?q=SL1001&limit=20')).json;
   const all = async (entity) => {
     const items = [];
     let since = null;
@@ -251,7 +251,7 @@ try {
   say('== S2: холодный старт со снимком');
   const bodiesS2 = [];
   const tS2 = Date.now();
-  const s2 = await startWorkerBackend({ sku: manifest.source.catalog.skuCount, strict: true, initOpts: { seed: false, catchUp: false, buildId: 'b4-acceptance' }, onLog: (lv, m) => !QUIET && lv === 'error' && console.log('[worker error]', String(m).slice(0, 300)) });
+  const s2 = await startWorkerBackend({ strict: true, initOpts: { seed: false, catchUp: false, buildId: 'b4-acceptance' }, onLog: (lv, m) => !QUIET && lv === 'error' && console.log('[worker error]', String(m).slice(0, 300)) });
   backends.push(s2);
   const sn = s2.ready.timings.snapshot;
   report.phases.S2 = { initMs: s2.initMs, wallMs: Date.now() - tS2, timings: s2.ready.timings };
@@ -383,7 +383,7 @@ try {
     say('== S1: каталог данных PGlite (обычная сборка)');
     const bodiesS1 = [];
     const s1Bytes = new Uint8Array(readFileSync(s1File)).buffer;
-    const s1 = await startWorkerBackend({ sku: manifest.source.catalog.skuCount, strict: true, snapshot: false, initOpts: { seed: false, catchUp: false, loadDataDir: s1Bytes, snapshotPreloaded: true, buildId: 'b4-s1' } });
+    const s1 = await startWorkerBackend({ strict: true, snapshot: false, initOpts: { seed: false, catchUp: false, loadDataDir: s1Bytes, snapshotPreloaded: true, buildId: 'b4-s1' } });
     backends.push(s1);
     const ck1 = (await s1.rpc({ type: 'snapcheck' })).data;
     const keys = [...new Set([...Object.keys(ck1.counts), ...Object.keys(ck2.counts)])].sort();
@@ -400,9 +400,9 @@ try {
       `${keys.length} таблиц; расхождения: ${JSON.stringify(cdiff)}; S1 ${(s1Bytes.byteLength / 1e6).toFixed(2)} МБ gzip против S2 ${(sn.gzBytes / 1e6).toFixed(2)} МБ gzip`,
     );
     add(
-      'S1.2 одинаковые ответы GET /catalog/products, /search/products?q=F4252, /catalog/sync/products и /catalog/sync/images (все страницы), /catalog/categories (id и время маскируются)',
+      'S1.2 одинаковые ответы GET /catalog/products, /search/products?q=SL1001, /catalog/sync/products и /catalog/sync/images (все страницы), /catalog/categories (id и время маскируются)',
       Object.values(cmp).every((v) => v === 'equal' || v === 'same-set') && (catS2.search?.items ?? []).length > 0,
-      `${JSON.stringify(cmp).slice(0, 600)}; F4252 → ${(catS2.search?.items ?? []).length} товаров; /catalog/sync/products ${catS2.syncProducts.items.length}`,
+      `${JSON.stringify(cmp).slice(0, 600)}; SL1001 → ${(catS2.search?.items ?? []).length} товаров; /catalog/sync/products ${catS2.syncProducts.items.length}`,
     );
     report.phases.S1.piiHits = scanText(bodiesS1.map((b) => b.text).join('\n'), FORBIDDEN);
     await s1.close();
@@ -412,7 +412,7 @@ try {
   // ======================================================================== P. запасной путь без снимка
   if (!argv.includes('--skip-pipeline')) {
     say('== P: без снимка (каталог конвейером)');
-    const p = await startWorkerBackend({ sku: manifest.source.catalog.skuCount, strict: true, snapshot: false, initOpts: { seed: false, catchUp: false, buildId: 'b4-pipeline' } });
+    const p = await startWorkerBackend({ strict: true, snapshot: false, initOpts: { seed: false, catchUp: false, buildId: 'b4-pipeline' } });
     backends.push(p);
     const ckp = (await p.rpc({ type: 'snapcheck' })).data;
     const d = new Dev(p, []);

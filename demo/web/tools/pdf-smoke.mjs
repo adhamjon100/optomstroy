@@ -3,21 +3,34 @@
 // Netlify (site/_headers). Помощники CDP и вход в интерфейсе — как в tools/smoke.mjs (тот же сценарий входа).
 //
 //   node demo/web/tools/pdf-smoke.mjs [--port 8097] [--cdp 9417] [--storage idb|opfs] [--out <каталог>] [--keep-profile]
+//   node demo/web/tools/pdf-smoke.mjs --url https://<id>--<сайт>.netlify.app [--cdp N] [--storage idb] [--out <каталог>]
+//                                     [--profile-root <каталог>]
+//
+// Режим --url (превью Netlify): свой сервер не запускается, страница — с указанного https-origin под настоящими
+// заголовками Netlify. Запросы, ответы (статус, Content-Type), CSP документа, чужие хосты и /api/ — только из событий
+// CDP (Network.*, Log, Audits); Chrome резолвит только хост превью (--host-resolver-rules … EXCLUDE <хост>,
+// --no-proxy-server). Профиль Chrome — рядом с <out> (или в --profile-root), удаляется.
 //
 // Шаги:
 //   1. вход кассира 906 в интерфейсе (номер → «Получить код» → 246810 при ВЫКЛЮЧЕННОЙ семантике (WEB-KI-21) → PIN
 //      715382 дважды → согласие → «Начать работу»);
-//   2. заказ продавца 907 через мост страницы (как приложение): QR, «Оплатить сейчас» → платёж received, номер «1С»;
+//   2. заказ продавца 907 через мост страницы (как приложение): строка в базовой единице и, если в каталоге есть,
+//      строка в упаковке; QR, «Оплатить сейчас» → платёж received, номер «1С»;
 //   3. в интерфейсе 906: #/orders/<id> → «Товарный чек» → «Просмотр» (PdfPreview пакета printing → pdf.js), снимок;
-//      Esc → «Печать» (Printing.layoutPdf: скрытый iframe blob: + встроенный скрипт печати пакета), снимок.
+//      «Закрыть» в шапке предпросмотра (uiA-13) → диалог закрыт → «Печать» (Printing.layoutPdf: скрытый iframe blob: +
+//      встроенный скрипт печати пакета), снимок; «Счёт на оплату» → «Просмотр», Esc;
+//   4. содержимое: байты, которые отрисовал предпросмотр (копия data из pdfjsLib.getDocument), → текст pdf.js сайта:
+//      номер документа и номер «1С», «1 <единица> × …» (название единицы / упаковки, не код ОКЕИ), подвал, знак «ДЕМО».
+//      PDF сохраняются в <out>/receipt-preview.pdf и invoice-preview.pdf.
 // Пишет: нарушения CSP (Log, Audits, securitypolicyviolation в каждом кадре), запросы на чужие хосты, ошибки консоли,
-// исключения, новые вкладки (запасной путь печати пакета — открыть PDF в новой вкладке), вызовы печати.
-// Скачиваний нет: Chrome запущен с --host-resolver-rules «все имена → NOTFOUND, кроме 127.0.0.1» (запрос на CDN
-// виден в журнале как попытка, но байты не приходят) и Browser.setDownloadBehavior deny.
+// исключения, падения вкладок/кадров, новые вкладки (запасной путь печати пакета — открыть PDF в новой вкладке),
+// вызовы печати. Настоящего диалога печати в headless нет — это ручная проверка (WEB-KI-26).
+// Скачиваний нет: Chrome запущен с --host-resolver-rules «все имена → NOTFOUND, кроме 127.0.0.1» (в режиме --url —
+// кроме хоста превью; запрос на CDN виден в журнале как попытка, но байты не приходят) и Browser.setDownloadBehavior deny.
 // Итог — <out>/pdf-smoke.json и снимки <out>/NN-*.png; код 0 — все проверки зелёные. Сервер и браузер — по PID,
 // профиль удаляется.
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,12 +40,23 @@ const WEB = resolve(HERE, '..').replace(/\\/g, '/');
 const ROOT = resolve(WEB, '../..').replace(/\\/g, '/');
 const argv = process.argv.slice(2);
 const arg = (k, d) => (argv.includes(k) ? argv[argv.indexOf(k) + 1] : d);
+const REMOTE_URL = arg('--url', null);
+const REMOTE = REMOTE_URL !== null;
 const PORT = Number(arg('--port', 8097));
 const CDP = Number(arg('--cdp', 9417));
 const STORAGE = arg('--storage', 'idb');
-const OUT = resolve(arg('--out', `${ROOT}/.tmp/web_demo/pdfcsp/run-${new Date().toISOString().replace(/[:.]/g, '-')}`)).replace(/\\/g, '/');
+const OUT = resolve(arg('--out', `${ROOT}/.tmp/web_demo/pdfcsp/${REMOTE ? 'remote' : 'run'}-${new Date().toISOString().replace(/[:.]/g, '-')}`)).replace(/\\/g, '/');
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const PROFILE = `${ROOT}/.tmp/web_demo/pdfcsp/chrome-profile-${Date.now()}`;
+// По умолчанию — рядом с <out>: для --out по умолчанию это прежний .tmp/web_demo/pdfcsp.
+const PROFILE = `${resolve(arg('--profile-root', dirname(OUT))).replace(/\\/g, '/')}/chrome-profile-${Date.now()}`;
+let ORIGIN = `http://127.0.0.1:${PORT}`;
+if (REMOTE) {
+  const u = new URL(REMOTE_URL);
+  if (u.protocol !== 'https:' || (u.pathname !== '/' && u.pathname !== '') || u.search || u.hash) throw new Error(`--url: нужен https-origin без пути и параметров, например https://<id>--<сайт>.netlify.app (дано ${REMOTE_URL})`);
+  ORIGIN = u.origin;
+}
+const HOST = new URL(ORIGIN).hostname;
+const WATERMARK = 'ДЕМО · тестовые данные · не фискальный документ'; // backend/demo-overlay.mjs WATERMARK_TEXT
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const t0 = Date.now();
 const log = (...a) => console.log(`${((Date.now() - t0) / 1000).toFixed(1).padStart(6)}s`, ...a);
@@ -40,7 +64,29 @@ mkdirSync(OUT, { recursive: true });
 process.env.TEMP ||= `${ROOT}/.tmp`;
 process.env.TMP ||= `${ROOT}/.tmp`;
 
-const R = { port: PORT, cdp: CDP, storage: STORAGE, startedAt: new Date().toISOString(), checks: [], exceptions: [], consoleErrors: [], consoleWarnings: [], csp: [], cspIssues: [], foreign: [], failedLoads: [], targets: [], pids: {}, shots: [], steps: {} };
+const R = { mode: REMOTE ? 'remote' : 'local', origin: ORIGIN, port: REMOTE ? null : PORT, cdp: CDP, storage: STORAGE, startedAt: new Date().toISOString(), checks: [], exceptions: [], consoleErrors: [], consoleWarnings: [], csp: [], cspIssues: [], foreign: [], failedLoads: [], targets: [], crashes: [], responses: [], apiRequests: [], docHeaders: null, pids: {}, shots: [], steps: {} };
+const lowerKeys = (h) => Object.fromEntries(Object.entries(h ?? {}).map(([k, v]) => [k.toLowerCase(), String(v)]));
+// CSP для «/*» из собранного site/_headers (что должно прийти с Netlify).
+const builtCsp = (() => {
+  try {
+    const lines = readFileSync(`${WEB}/site/_headers`, 'utf8').split(/\r?\n/);
+    const at = lines.indexOf('/*');
+    for (let i = at + 1; at >= 0 && i < lines.length && /^\s+\S/.test(lines[i]); i++) {
+      const m = /^\s+Content-Security-Policy:\s*(.+)$/i.exec(lines[i]);
+      if (m) return m[1].trim();
+    }
+  } catch {
+    /* нет сборки */
+  }
+  return null;
+})();
+const builtBuild = (() => {
+  try {
+    return JSON.parse(readFileSync(`${WEB}/site/demo/build.json`, 'utf8'));
+  } catch {
+    return null;
+  }
+})();
 const check = (name, ok, evidence) => {
   R.checks.push({ name, ok: !!ok, evidence: evidence === undefined ? null : evidence });
   log(`${ok ? 'OK  ' : 'FAIL'} ${name}${evidence !== undefined ? ` — ${JSON.stringify(evidence).slice(0, 500)}` : ''}`);
@@ -59,13 +105,14 @@ const killTree = (pid) => {
   }
 };
 
-if (!(await portFree(PORT))) throw new Error(`порт ${PORT} занят`);
+if (!REMOTE && !(await portFree(PORT))) throw new Error(`порт ${PORT} занят`);
 if (!(await portFree(CDP))) throw new Error(`порт CDP ${CDP} занят`);
-const ORIGIN = `http://127.0.0.1:${PORT}`;
-const server = spawn(process.execPath, [`${HERE}/serve-site.mjs`, '--port', String(PORT), '--quiet'], { stdio: ['ignore', 'pipe', 'pipe'] });
-R.pids.server = server.pid;
+const server = REMOTE ? null : spawn(process.execPath, [`${HERE}/serve-site.mjs`, '--port', String(PORT), '--quiet'], { stdio: ['ignore', 'pipe', 'pipe'] });
+R.pids.server = server?.pid ?? null;
 mkdirSync(PROFILE, { recursive: true });
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${CDP}`, `--user-data-dir=${PROFILE}`, '--window-size=1280,800', '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-background-networking', '--disable-component-update', '--disable-sync', '--disable-default-apps', '--lang=ru', '--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1', 'about:blank'], { stdio: 'ignore' });
+const chromeArgs = ['--headless=new', `--remote-debugging-port=${CDP}`, `--user-data-dir=${PROFILE}`, '--window-size=1280,800', '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-background-networking', '--disable-component-update', '--disable-sync', '--disable-default-apps', '--lang=ru', `--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE ${REMOTE ? HOST : '127.0.0.1'}`];
+if (REMOTE) chromeArgs.push('--no-proxy-server');
+const chrome = spawn(CHROME, [...chromeArgs, 'about:blank'], { stdio: 'ignore' });
 R.pids.browser = chrome.pid;
 
 // ---------------------------------------------------------------- CDP (как tools/smoke.mjs)
@@ -115,7 +162,18 @@ async function connect() {
     } else if (m.method === 'Network.requestWillBeSent') {
       const u = m.params.request.url;
       if (!u.startsWith(ORIGIN) && !/^(data|blob|chrome|about|devtools|chrome-extension):/.test(u)) R.foreign.push({ type: s?.type, url: u.slice(0, 200) });
+      if (u.startsWith(`${ORIGIN}/api/`)) R.apiRequests.push({ type: s?.type, method: m.params.request.method, path: u.slice(ORIGIN.length, ORIGIN.length + 160) });
       if (/\/pdfjs\/|pdfjs-dist|pdf\.worker/.test(u)) (R.pdfjsRequests ||= []).push({ type: s?.type, url: u.replace(ORIGIN, '').slice(0, 200) });
+    } else if (m.method === 'Network.responseReceived') {
+      const r = m.params.response;
+      if (String(r.url).startsWith(ORIGIN)) {
+        const path = r.url.slice(ORIGIN.length);
+        const h = lowerKeys(r.headers);
+        R.responses.push({ type: s?.type, rtype: m.params.type, path: path.slice(0, 160), status: r.status, mime: r.mimeType, ct: h['content-type'] ?? null, ce: h['content-encoding'] ?? null });
+        if (m.params.type === 'Document' && s?.type === 'page' && !R.docHeaders) R.docHeaders = { path: path.slice(0, 80), status: r.status, protocol: r.protocol ?? null, csp: h['content-security-policy'] ?? null, xRobotsTag: h['x-robots-tag'] ?? null, xContentTypeOptions: h['x-content-type-options'] ?? null, xFrameOptions: h['x-frame-options'] ?? null, server: h.server ?? null };
+      }
+    } else if (m.method === 'Target.targetCrashed' || m.method === 'Inspector.targetCrashed') {
+      R.crashes.push({ at: Date.now() - t0, method: m.method, type: s?.type ?? null, ...m.params });
     } else if (m.method === 'Network.loadingFailed') {
       if (!m.params.canceled) R.failedLoads.push({ type: s?.type, error: m.params.errorText, blocked: m.params.blockedReason ?? null });
     } else if (m.method === 'Runtime.exceptionThrown') {
@@ -135,14 +193,31 @@ async function connect() {
 }
 async function initSession(sid, type) {
   const tasks = [send('Runtime.enable', {}, sid), send('Network.enable', {}, sid)];
-  if (type === 'page' || type === 'iframe') tasks.push(send('Page.enable', {}, sid), send('Log.enable', {}, sid), send('Audits.enable', {}, sid));
+  if (type === 'page' || type === 'iframe') tasks.push(send('Page.enable', {}, sid), send('Log.enable', {}, sid), send('Audits.enable', {}, sid), send('Inspector.enable', {}, sid));
   if (['page', 'iframe', 'worker', 'shared_worker'].includes(type)) tasks.push(send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sid));
   await Promise.allSettled(tasks);
 }
 // Наблюдение страницы (до любого скрипта, в каждом кадре): нарушения CSP; вызов встроенной функции печати пакета
 // printing (она первым делом делает focus() скрытого iframe #__net_nfet_printing__); вызовы canvas.toBlob (пакет
-// переводит каждую отрисованную pdf.js страницу в PNG); клики по ссылкам (запасной путь печати — PDF в новой вкладке).
+// переводит каждую отрисованную pdf.js страницу в PNG); клики по ссылкам (запасной путь печати — PDF в новой вкладке);
+// копия байтов каждого документа, который пакет передаёт в pdfjsLib.getDocument (загрузчик сайта pdfjs/pdf.min.js
+// присваивает window.pdfjsLib — свойство-ловушка оборачивает его getDocument на месте, поведение не меняется).
 const OBSERVER = `(() => {
+  window.__pdfDocs = [];
+  let lib;
+  try {
+    Object.defineProperty(window, 'pdfjsLib', { configurable: true, enumerable: true, get: function () { return lib; }, set: function (v) {
+      lib = v;
+      if (v && v.__demo && typeof v.getDocument === 'function' && !v.__smokeWrapped) {
+        const g = v.getDocument;
+        v.getDocument = function (src) {
+          try { if (!window.__pdfExtracting && src && src.data && src.data.length && window.__pdfDocs.length < 12) window.__pdfDocs.push({ at: Date.now(), bytes: src.data.slice() }); } catch (e) {}
+          return g.apply(this, arguments);
+        };
+        v.__smokeWrapped = true;
+      }
+    } });
+  } catch (e) {}
   window.__cspViolations = [];
   document.addEventListener('securitypolicyviolation', function (e) { window.__cspViolations.push({ d: e.violatedDirective, e: e.effectiveDirective, u: String(e.blockedURI).slice(0, 160), s: String(e.sample || '').slice(0, 120), f: String(e.sourceFile || '').slice(-60) }); });
   const focus = HTMLElement.prototype.focus;

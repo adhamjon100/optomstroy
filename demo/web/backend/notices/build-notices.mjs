@@ -157,6 +157,12 @@ export function buildNotices({ metafile, legalText, pglite, build, flutterNotice
   out.push('  демо по решению владельца (а) от 2026-10-29 только для просмотра; это не предоставление лицензии.');
   out.push('  Все права защищены (ADR-113 п. 11 (а)). All rights reserved; view only, no licence granted.');
   out.push('');
+  out.push('Изображения товаров и категорий (images/…):');
+  out.push('  Изображения товаров и категорий — материалы заказчика из макета, только для демонстрации; права — у');
+  out.push('  правообладателей. Названия и марки товаров демо-каталога приведены как в макете, это тестовые данные, а не');
+  out.push('  предложение товаров (demo/catalog/PHOTOS.md; ADR-114, Q-338). Product and category images are the');
+  out.push('  customer\'s design materials, for demonstration only; all rights belong to their owners.');
+  out.push('');
   out.push('Разделы:');
   out.push(`  1. backend/backend.js — пакеты npm, вошедшие в бандл (${entries.length}), по metafile esbuild`);
   out.push(`  2. backend/pglite/ — PGlite ${pglite.version}, PostgreSQL и OpenSSL (pgcrypto)`);

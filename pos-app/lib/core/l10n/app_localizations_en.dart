@@ -1448,6 +1448,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get catalog_card_out_of_stock => 'Нет в наличии';
 
   @override
+  String get catalog_card_out_short => 'Нет';
+
+  @override
   String get catalog_card_price_changed => 'Цена изменилась';
 
   @override
@@ -1567,6 +1570,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get catalog_preset_favorites => 'Избранное';
 
   @override
+  String catalog_preset_favorites_a11y(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Избранные, $count товара',
+      many: 'Избранные, $count товаров',
+      few: 'Избранные, $count товара',
+      one: 'Избранные, $count товар',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get catalog_preset_favorites_toolbar => 'Избранные';
 
   @override
@@ -1595,6 +1611,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get catalog_recent_clear_offline_tooltip => 'Нужна сеть';
 
   @override
+  String get catalog_recent_empty_all => 'Все недавние';
+
+  @override
+  String get catalog_recent_empty_body => 'Здесь появятся товары, которые вы открывали';
+
+  @override
+  String get catalog_recent_empty_category_title => 'В этой категории вы ещё не открывали товары';
+
+  @override
+  String get catalog_recent_empty_title => 'Вы ещё не открывали товары';
+
+  @override
   String get catalog_recent_title => 'Недавние товары';
 
   @override
@@ -1604,6 +1632,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get catalog_scanner_hid_hint => 'Используйте сканер: наведите на штрихкод и нажмите курок';
+
+  @override
+  String catalog_search_title_query(String query) {
+    return 'Поиск: «$query»';
+  }
+
+  @override
+  String get catalog_sidebar_all_a11y => 'Каталог — все товары';
 
   @override
   String get catalog_sidebar_categories_title => 'Категории товаров';
@@ -2825,7 +2861,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ds_loading_long => 'Долгая загрузка…';
 
   @override
-  String get ds_no_photo => 'Нет фото';
+  String get ds_no_photo => 'Фото появится из 1С';
 
   @override
   String ds_offline_banner(String time) {

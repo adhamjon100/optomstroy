@@ -37,7 +37,6 @@ class App extends ConsumerWidget {
     if (ref.watch(appDatabaseProvider.select((db) => db != null))) ref.watch(syncSchedulerProvider);
     final DisplayPreferences display = ref.watch(displayPreferencesProvider);
     final AppConfig config = ref.watch(appConfigProvider);
-    final environment = config.environment;
     return MaterialApp.router(
       routerConfig: router,
       // Название продукта не переводится (отдельного ключа ARB нет); заголовок окна Windows задаёт
@@ -49,7 +48,8 @@ class App extends ConsumerWidget {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       debugShowCheckedModeBanner: false,
-      // Глобальные состояния поверх навигации: маркер окружения вне prod (EnvBanner, RM-C-008),
+      // Глобальные состояния поверх навигации: маркер окружения вне prod (EnvBanner, RM-C-008; в веб-демо его нет —
+      // ADR-114 п. 9 (5), `AppConfig.envBannerCode`),
       // SCR-90 «Требуется обновление» / мягкий баннер версии (RM-C-015) и слой сессии (RM-D-009):
       // SCR-08 overlay (idle 30 мин, фон > 5 мин, Ctrl+L, UNLOCK_REQUIRED), StepUpDialog по 403 STEP_UP_REQUIRED,
       // SCR-90 C «Сессия завершена». Холодный старт — маршрут SCR-08 `/auth/unlock?mode=cold`, который
@@ -63,7 +63,7 @@ class App extends ConsumerWidget {
         child: ProductImageBase(
           baseUri: config.apiBaseUrl,
           child: EnvBanner(
-            environmentCode: environment == AppEnvironment.prod ? null : environment.name,
+            environmentCode: config.envBannerCode,
             child: AppVersionGate(child: SessionGate(coverColdStart: false, child: child ?? const SizedBox.shrink())),
           ),
         ),

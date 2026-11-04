@@ -18,11 +18,14 @@ export const DEMO_BUILD =
 
 /**
  * Параметры данных эпохи (входят в ключ эпохи — lib/epoch.mjs): изменить их — значит начать демо заново.
- * Каталог — настоящим конвейером из SyntheticCatalog seed 1, без подмеса фикстур (иначе «Основной склад» и
- * «Розничная» дублируются, plan §3.5); синтетика кассира SyntheticCashier seed 7 + extraCustomers обычных клиентов.
+ * Каталог — по прототипу экрана выбора товаров (WP-DATA-WEB 2026-10-31, ADR-114): спецификация
+ * demo/catalog/design-catalog.json (profile, refSeed и lowStockThreshold — те же, сборка снимка сверяет) →
+ * pos-api/scripts/design_catalog.ts → настоящий конвейер, без подмеса фикстур (иначе «Основной склад» и «Розничная»
+ * дублируются, plan §3.5); порог «мало» 4 — только в демо (в макете 4 шт — «В наличии», 3 — «Мало»; по умолчанию
+ * pos-api 5, Q-021). Синтетика кассира SyntheticCashier seed 7 + extraCustomers обычных клиентов.
  */
 export const DEMO_DATA = Object.freeze({
-  catalog: Object.freeze({ skuCount: 500, seed: 1, includeFixtureCatalog: false }),
+  catalog: Object.freeze({ profile: 'design-2026-10-31', refSeed: 1031, includeFixtureCatalog: false, lowStockThreshold: 4 }),
   cashier: Object.freeze({ seed: 7, extraCustomers: 20 }),
   /** Версия формата demo_meta (секреты, состояние имитатора 1С, сид). */
   stateFormat: 1,

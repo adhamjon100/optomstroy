@@ -170,7 +170,10 @@ void main() {
         ),
       );
       expect(find.text('Нет данных из 1С'), findsOneWidget);
-      expect(find.textContaining('0,00'), findsNothing);
+      // Без снимка долг не «0,00 сом» (цены каталога теперь всегда с «,00» — ADR-114, поэтому ищется сумма 0,00
+      // целиком, а не подстрока).
+      expect(find.descendant(of: find.byKey(CustomerHomeKeys.debt), matching: find.byType(PriceText)), findsNothing);
+      expect(find.textContaining(RegExp(r'(?<!\d)0,00'), findRichText: true), findsNothing);
     });
 
     testWidgets('офлайн: «Мой долг» скрыт, баннер офлайна, каталог из кэша', (tester) async {

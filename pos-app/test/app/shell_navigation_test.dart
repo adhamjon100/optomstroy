@@ -208,7 +208,7 @@ void main() {
       expect(find.byKey(StaffShellHeader.searchFieldKey), findsOneWidget);
       expect(find.byType(TopAppBarPos), findsOneWidget);
       expect(find.byType(TopAppBarClock), findsOneWidget, reason: 'часы и дата сотрудника (UI-10-005, UI-10-032)');
-      expect(tester.getSize(find.byType(TopAppBarPos)).height, 68);
+      expect(tester.getSize(find.byType(TopAppBarPos)).height, TopAppBarPos.fullHeight, reason: 'прототип: 69');
     });
 
     testWidgets('часы и дата: время Бишкека из clockProvider перед колокольчиком, смена по границе минуты; на «Кассе» '
@@ -275,7 +275,11 @@ void main() {
         tester.getSize(find.byKey(StaffShellHeader.searchFieldKey)).width,
         greaterThanOrEqualTo(TopAppBarPos.searchMinWidth),
       );
-      expect(tester.getSize(find.byType(TopAppBarPos)).height, 68, reason: 'поле поиска — в строке');
+      expect(
+        tester.getSize(find.byType(TopAppBarPos)).height,
+        TopAppBarPos.fullHeight,
+        reason: 'поле поиска — в строке',
+      );
       expect(tester.takeException(), isNull);
     });
 
@@ -435,6 +439,45 @@ void main() {
       expect(_links(tester), isNot(contains('/cashier')));
     });
 
+    testWidgets('«Избранное» — справа число избранных товаров, Semantics «Избранное, N товаров» (ADR-114 п. 1: '
+        'перенесено из колонки каталога; T-CAT-039)', (tester) async {
+      final SemanticsHandle semantics = tester.ensureSemantics();
+      final StreamController<Set<String>> ids = StreamController<Set<String>>.broadcast();
+      addTearDown(ids.close);
+      await _pump(
+        tester,
+        AppMode.seller,
+        initial: '/orders',
+        role: RoleCode.seller,
+        overrides: <Override>[
+          catalogFavoriteIdsProvider.overrideWith((Ref ref) async* {
+            yield <String>{'p1', 'p2'};
+            yield* ids.stream;
+          }),
+        ],
+      );
+      await _openDrawer(tester);
+      final Finder favorites = find.byKey(const ValueKey<String>('shell-nav-tab-favorites'));
+      expect(
+        find.descendant(of: favorites, matching: find.byKey(const ValueKey<String>('nav-drawer-item-trailing'))),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: favorites, matching: find.text('2')),
+        findsOneWidget,
+        reason: 'видимое N',
+      );
+      expect(find.bySemanticsLabel('Избранное, 2 товара'), findsOneWidget);
+      // Число следует за избранным пользователя.
+      ids.add(<String>{'p1'});
+      await tester.pumpAndSettle();
+      expect(find.descendant(of: favorites, matching: find.text('1')), findsOneWidget);
+      expect(find.bySemanticsLabel('Избранное, 1 товар'), findsOneWidget);
+      // У других пунктов числа нет.
+      expect(find.byKey(const ValueKey<String>('nav-drawer-item-trailing')), findsOneWidget);
+      semantics.dispose();
+    });
+
     testWidgets('ссылки фильтруются isPathAllowedForRole (G-7)', (tester) async {
       // Режим «Администратор» при роли seller: касса, отчёты и админ-разделы закрыты роли.
       await _pump(tester, AppMode.admin, initial: '/orders', role: RoleCode.seller);
@@ -511,11 +554,12 @@ void main() {
         matching: find.byKey(const ValueKey<String>('top-app-bar-cart-badge')),
       );
       expect(find.descendant(of: badge, matching: find.text('${c.items.length}')), findsOneWidget);
-      // Первая строка — «Корзина · 6 …» (единицы корзины, как прежняя подпись CartFab; паритет функций ADR-112).
+      // Первая строка — всегда «Корзина» (прототип, ADR-114 / RV-10); позиции и единицы — в тултипе и Semantics.
       final Text label = tester.widget<Text>(
         find.descendant(of: button, matching: find.byKey(const ValueKey<String>('top-app-bar-cart-label'))),
       );
-      expect(label.data, startsWith('Корзина · 6'));
+      expect(label.data, 'Корзина');
+      expect(find.byTooltip(RegExp('^5 поз. · 6')), findsOneWidget, reason: 'единицы — в тултипе (паритет)');
       expect(
         find.descendant(of: button, matching: find.text(PriceText.format(const Money(1600750), fixed2: true))),
         findsOneWidget,
@@ -532,9 +576,8 @@ void main() {
       expect(FocusManager.instance.primaryFocus?.debugLabel, 'cart-header-button', reason: 'A11Y-011');
     });
 
-    testWidgets('medium 800 lp: итог сервера виден одной строкой, без подписи «Корзина» (02 UI-10-041)', (
-      tester,
-    ) async {
+    testWidgets('medium 800 lp: итог сервера виден всегда; строка «Корзина» — по ступени шапки (ADR-114: сворачивается '
+        'после «Оптомстрой»; 02 UI-10-041)', (tester) async {
       serveCart(repo, canonCart());
       await _pump(
         tester,
@@ -548,7 +591,15 @@ void main() {
         find.descendant(of: button, matching: find.text(PriceText.format(const Money(1600750), fixed2: true))),
         findsOneWidget,
       );
-      expect(find.descendant(of: button, matching: find.text('Корзина')), findsNothing);
+      final TopAppBarFit fit = TopAppBarFit.of(tester.element(button));
+      if (!fit.cartLabel) {
+        expect(fit.wordmark, isFalse, reason: '«Оптомстрой» сворачивается раньше «Корзина»');
+      }
+      expect(
+        find.descendant(of: button, matching: find.text('Корзина')),
+        fit.cartLabel ? findsOneWidget : findsNothing,
+        reason: '$fit',
+      );
     });
 
     testWidgets('пока сервер не ответил — вторая строка «N поз.», без суммы', (tester) async {
@@ -655,7 +706,8 @@ void main() {
       ),
     );
     await settle(tester, frames: 10);
-    expect(find.byKey(const ValueKey<String>('stub-SCR-10')), findsOneWidget);
+    // ADR-114 решение 4: голый `/catalog` сотрудника на medium+ открывает корневую категорию (тот же экран семейства).
+    expect(find.byKey(const ValueKey<String>('stub-SCR-12')), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('catalog-search-field')), findsOneWidget);
     expect(find.byType(CatalogHeader), findsOneWidget);
     expect(find.byType(StaffShellHeader), findsNothing);
@@ -682,6 +734,30 @@ void main() {
       expect(_path(router), '/transactions');
       await ctrl(LogicalKeyboardKey.digit1);
       expect(_path(router), '/cashier');
+    });
+
+    testWidgets('фокус не на элементе (веб после входа и разблокировки PIN) — Ctrl+1…5 и Ctrl+Shift+N работают '
+        '(ревью PAR-03)', (tester) async {
+      final GoRouter router = await _pump(tester, AppMode.cashier, initial: '/cashier');
+      Future<void> idle() async {
+        FocusManager.instance.primaryFocus?.unfocus(disposition: UnfocusDisposition.scope);
+        await tester.pump();
+        expect(FocusManager.instance.primaryFocus, isA<FocusScopeNode>(), reason: 'фокус — у области, не у элемента');
+      }
+
+      Future<void> ctrl(LogicalKeyboardKey key) async {
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(key);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await tester.pumpAndSettle();
+      }
+
+      await idle();
+      await ctrl(LogicalKeyboardKey.digit4);
+      expect(_path(router), '/transactions');
+      await idle();
+      await ctrl(LogicalKeyboardKey.digit1);
+      expect(_path(router), '/cashier', reason: 'одно действие на нажатие (без двойного перехода)');
     });
 
     testWidgets('Ctrl+1…5 в поле ввода не перехватываются (02 §3.8)', (tester) async {

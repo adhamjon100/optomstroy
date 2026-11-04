@@ -2,7 +2,9 @@
 // после `appOverrides`. Ровно три провайдера `core/di/core_providers.dart`, и ни одного из них нет в `appOverrides`
 // (двойное переопределение Riverpod падает в debug — проверяет test/app/demo/demo_root_wiring_test.dart):
 // - `appConfigProvider` — константы сборки `env/web_demo.json`, но `API_BASE_URL` = `<origin сайта>/api/v1`: фото
-//   `/images/...` и адреса превью берутся с того же сайта без пересборки под адрес Netlify;
+//   `/images/...` и адреса превью берутся с того же сайта без пересборки под адрес Netlify; `ENV_BANNER=false` — без
+//   полосы «DEV · TEST DATA» (решение владельца, 15 ADR-114 п. 9 (5); пометку тестовых данных несут вкладка и панель
+//   «ДЕМО»), в dev-сборках Windows и Android полоса остаётся;
 // - `httpClientAdapterProvider` — мост к серверу в Web Worker ([DemoBridgeAdapter]); его получают основной Dio и Dio для
 //   refresh, поэтому интерсепторы, refresh, step-up, ETag, повторы и разбор DTO остаются настоящими;
 // - `backendHealthProbeProvider` — `/health` через тот же адаптер ([DemoHealthProbe]).
@@ -25,9 +27,10 @@ const Map<String, String> demoBuildConstants = <String, String>{
   'FEATURE_CUSTOMER_SELF_SERVICE': String.fromEnvironment('FEATURE_CUSTOMER_SELF_SERVICE'),
 };
 
-/// Конфигурация веб-демо: [constants] сборки и `API_BASE_URL` = `[origin]/api/v1`.
+/// Конфигурация веб-демо: [constants] сборки, `API_BASE_URL` = `[origin]/api/v1` и `ENV_BANNER=false` (без полосы
+/// `EnvBanner`, 15 ADR-114 п. 9 (5)).
 AppConfig demoAppConfig(String origin, {Map<String, String> constants = demoBuildConstants}) =>
-    AppConfig.fromMap(<String, String>{...constants, 'API_BASE_URL': '$origin/api/v1'});
+    AppConfig.fromMap(<String, String>{...constants, 'API_BASE_URL': '$origin/api/v1', 'ENV_BANNER': 'false'});
 
 /// Три переопределения веб-демо поверх [bridge]; [origin] — origin сайта (по умолчанию — от моста).
 List<Override> demoOverrides(DemoBridge bridge, {String? origin, Map<String, String> constants = demoBuildConstants}) {

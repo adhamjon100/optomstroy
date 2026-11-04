@@ -73,7 +73,7 @@ void main() {
       final BoxDecoration d = _decorationIn(tester, button);
       expect(d.color, _c.primaryContainer);
       expect((d.border! as Border).top.color, _c.primaryContainerBorder);
-      expect(d.borderRadius, const BorderRadius.all(Radius.circular(12)));
+      expect(d.borderRadius, const BorderRadius.all(Radius.circular(10)), reason: 'прототип: radius 10 (ADR-114)');
       expect(
         tester.getSize(find.descendant(of: button, matching: find.byType(AnimatedContainer)).first).height,
         TopAppBarCartButton.height,
@@ -381,6 +381,59 @@ void main() {
       expect(taps, <String>['orders']);
     });
 
+    testWidgets('trailing — число справа 12/600 catalogMeta (у выбранного onPrimaryContainer); semanticLabel — своя '
+        'подпись диктора (ADR-114 п. 1)', (tester) async {
+      final SemanticsHandle semantics = tester.ensureSemantics();
+      Widget build({required bool selected}) => Align(
+        alignment: Alignment.topLeft,
+        child: SizedBox(
+          height: 300,
+          child: NavigationDrawerApp(
+            semanticLabel: 'Навигация',
+            groups: <NavigationDrawerGroup>[
+              NavigationDrawerGroup(
+                items: <NavigationDrawerItem>[
+                  NavigationDrawerItem(
+                    key: const ValueKey<String>('nav-favorites'),
+                    icon: Icons.star_border_rounded,
+                    label: 'Избранное',
+                    trailing: '12',
+                    semanticLabel: 'Избранное, 12 товаров',
+                    selected: selected,
+                    onTap: () {},
+                  ),
+                  NavigationDrawerItem(
+                    key: const ValueKey<String>('nav-plain'),
+                    icon: Icons.people_outline_rounded,
+                    label: 'Клиенты',
+                    onTap: () {},
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+      await pumpDs(tester, build(selected: false), scroll: false);
+      final Finder trailing = find.byKey(const ValueKey<String>('nav-drawer-item-trailing'));
+      expect(trailing, findsOneWidget, reason: 'только у пункта с trailing');
+      final Text t = tester.widget<Text>(trailing);
+      expect(t.data, '12');
+      expect((t.style?.fontSize, t.style?.fontWeight, t.style?.color), (12.0, FontWeight.w600, _c.catalogMeta));
+      expect(
+        tester.getSemantics(find.byKey(const ValueKey<String>('nav-favorites'))),
+        containsSemantics(label: 'Избранное, 12 товаров', isButton: true),
+      );
+      expect(
+        tester.getTopLeft(trailing).dx,
+        greaterThan(tester.getTopRight(find.text('Избранное')).dx),
+        reason: 'число — справа от подписи',
+      );
+      await pumpDs(tester, build(selected: true), scroll: false);
+      expect(tester.widget<Text>(trailing).style?.color, _c.onPrimaryContainer);
+      semantics.dispose();
+    });
+
     testWidgets('Semantics: область «Навигация», пункты — кнопки с selected, заголовок группы — header', (
       tester,
     ) async {
@@ -522,7 +575,7 @@ void main() {
   });
 
   group('ViewModeSegmented.toolbar — радиогруппа', () {
-    testWidgets('сегменты — радиокнопки (inMutuallyExclusiveGroup, checked); выбранный — тинт и 700; ←/→', (
+    testWidgets('сегменты — радиокнопки (inMutuallyExclusiveGroup, checked); выбранный — тинт, вес 600 прототипа; ←/→', (
       tester,
     ) async {
       final SemanticsHandle semantics = tester.ensureSemantics();
@@ -562,7 +615,9 @@ void main() {
         tester.getSemantics(seg(ProductViewMode.list)),
         containsSemantics(label: 'Список', isInMutuallyExclusiveGroup: true, hasCheckedState: true, isChecked: false),
       );
-      expect(tester.widget<Text>(find.text('Сетка')).style?.fontWeight, FontWeight.w700);
+      // ADR-114: вид прототипа — вес одинаков (600), выбранный — заливка и цвет; признак формы (700 и обводка 2) — при
+      // системном высоком контрасте (catalog_components_test, RC-05).
+      expect(tester.widget<Text>(find.text('Сетка')).style?.fontWeight, FontWeight.w600);
       expect(tester.widget<Text>(find.text('Сетка')).style?.color, _c.onPrimaryContainer);
       expect(tester.widget<Text>(find.text('Компакт')).style?.color, ViewModeSegmented.toolbarIdle(_c));
 
@@ -576,7 +631,14 @@ void main() {
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pumpAndSettle();
-      expect(changes.length, greaterThanOrEqualTo(2), reason: 'стрелки меняют вид');
+      expect(changes, <ProductViewMode>[ProductViewMode.list, ProductViewMode.compact], reason: '→ — следующий вид');
+      expect(tester.getSemantics(seg(ProductViewMode.compact)), containsSemantics(isChecked: true));
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(changes, hasLength(2), reason: '«Компакт» — последний, → без события');
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pumpAndSettle();
+      expect(changes.last, ProductViewMode.list, reason: '← — предыдущий вид');
       semantics.dispose();
     });
   });

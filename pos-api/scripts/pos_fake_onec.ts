@@ -25,7 +25,9 @@
  * долг в лимите, просрочка, без долга, почти исчерпан лимит, лимит не задан, без отсрочки, неполный снимок,
  * «устаревший», покупатель с историей и возвратом, аванс — и `--cashier-extra` обычных; реализации за
  * `SALES_HISTORY_MONTHS`+, оплаты, возвраты, правила скидок). Товары строк реализаций — синтетический каталог
- * `--catalog-sku N` (seed 1, тот же, что загружает `load_catalog_fixtures`), иначе товар фикстуры. Методы по состоянию:
+ * `--catalog-sku N` (seed 1, тот же, что загружает `load_catalog_fixtures`) или каталог по макету
+ * `--catalog-spec <design-catalog.json>` (тот же, что `load_catalog_fixtures --spec`: ссылки детерминированы
+ * спецификацией; демо Windows, ADR-114), иначе товар фикстуры. Методы по состоянию:
  * - `GET /pos/v1/changes`, `POST …/changes/ack`, `POST …/changes/reregister` — план обмена над синтетикой кассира
  *   (клиенты, соглашения, скидки, реализации, оплаты, документы возврата; пагинация `limit`/`cursor`);
  * - `GET /pos/v1/customers?phone=` — поиск по телефону; `POST /pos/v1/customers` — 201 / 200 (повтор externalId) /
@@ -63,7 +65,13 @@ import {
   SyntheticCashier,
   SyntheticOnecRejection,
 } from '../src/integrations/onec/synthetic-cashier.js';
-import { SyntheticCatalog } from '../src/integrations/onec/synthetic-catalog.js';
+import { ean13, SyntheticCatalog } from '../src/integrations/onec/synthetic-catalog.js';
+import {
+  buildDesignCatalog,
+  checkGeneratorMirror,
+  type DesignCatalogSpec,
+  validateDesignSpec,
+} from './design_catalog.js';
 
 type Json = Record<string, unknown>;
 
@@ -121,18 +129,36 @@ function loadFixtures(): Map<string, Json> {
   return m;
 }
 
+/**
+ * Каталог по макету из файла спецификации (`--catalog-spec`): те же проверки и тот же `buildDesignCatalog`, что у
+ * `load_catalog_fixtures --spec` (`designCatalogOf`), — ссылки товаров совпадают с загруженными в БД.
+ */
+export function designCatalogFromFile(file: string): SyntheticCatalog {
+  const spec = JSON.parse(readFileSync(file, 'utf8')) as DesignCatalogSpec;
+  const deps = { SyntheticCatalog, ean13 };
+  const problems = [...validateDesignSpec(spec), ...checkGeneratorMirror(deps, spec)];
+  if (problems.length) throw new Error(`спецификация ${file}: ${problems.slice(0, 8).join('; ')}`);
+  return buildDesignCatalog(spec, deps);
+}
+
 /** Синтетика кассира и план обмена над ней (`--cashier`). */
 export interface FakeCashierState {
   readonly cashier: SyntheticCashier;
   readonly exchange: FakeExchangePlan;
 }
 
-/** Режим кассира: синтетика (`extraCustomers` обычных клиентов) и план обмена; товары — каталог `catalogSku` (seed 1). */
+/**
+ * Режим кассира: синтетика (`extraCustomers` обычных клиентов) и план обмена; товары — экземпляр каталога `catalog`
+ * (каталог по макету, загруженный в БД), иначе каталог `catalogSku` (seed 1).
+ */
 export function createCashierState(
-  o: { readonly catalogSku?: number; readonly extraCustomers?: number } = {},
+  o: { readonly catalogSku?: number; readonly extraCustomers?: number; readonly catalog?: SyntheticCatalog } = {},
 ): FakeCashierState {
-  const products =
-    o.catalogSku && o.catalogSku > 0 ? catalogProducts(new SyntheticCatalog({ skuCount: o.catalogSku, seed: 1 })) : [];
+  const products = o.catalog
+    ? catalogProducts(o.catalog)
+    : o.catalogSku && o.catalogSku > 0
+      ? catalogProducts(new SyntheticCatalog({ skuCount: o.catalogSku, seed: 1 }))
+      : [];
   const cashier = new SyntheticCashier({
     ...(products.length > 0 ? { products } : {}),
     ...(o.extraCustomers !== undefined ? { extraCustomers: o.extraCustomers } : {}),
@@ -590,13 +616,22 @@ async function main(): Promise<void> {
       'qr-paid-after-polls': { type: 'string', default: '2' },
       cashier: { type: 'boolean', default: false },
       'catalog-sku': { type: 'string', default: '0' },
+      'catalog-spec': { type: 'string' },
       'cashier-extra': { type: 'string', default: '20' },
     },
   });
+  if (values['catalog-spec'] !== undefined && Number(values['catalog-sku']) > 0) {
+    process.stderr.write('pos_fake_onec: --catalog-spec несовместим с --catalog-sku N\n');
+    process.exit(2);
+  }
+  // Каталог по макету — как у загрузчика: товары строк реализаций есть в БД стека.
+  const catalog =
+    values.cashier && values['catalog-spec'] !== undefined ? designCatalogFromFile(values['catalog-spec']) : undefined;
   const cashierState = values.cashier
     ? createCashierState({
         catalogSku: Number(values['catalog-sku']),
         extraCustomers: Number(values['cashier-extra']),
+        ...(catalog ? { catalog } : {}),
       })
     : null;
   const fake = new PosFakeOnec(Number(values['qr-paid-after-polls']), cashierState);

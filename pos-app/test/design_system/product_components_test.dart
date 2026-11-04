@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show Uint8List;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
+import 'package:optomstroy/design_system/components/ds_glyph.dart';
 import 'package:optomstroy/design_system/components/image_gallery.dart';
 import 'package:optomstroy/design_system/components/product_image.dart';
 import 'package:optomstroy/design_system/components/quantity_numpad_sheet.dart';
@@ -27,15 +28,49 @@ final Uint8List _png1x1 = Uint8List.fromList(<int>[
 
 void main() {
   group('ProductImage', () {
-    testWidgets('нет фото — заглушка «Нет фото» (INV-050)', (WidgetTester tester) async {
+    // ARB `ds_no_photo` — «Фото появится из 1С» (прототип, ADR-114; до него — «Нет фото»).
+    testWidgets('нет фото — заглушка «Фото появится из 1С» (INV-050, ADR-114)', (WidgetTester tester) async {
       await pumpDs(tester, const SizedBox(width: 200, child: ProductImage(url: null)));
       expect(find.byKey(const ValueKey<String>('product-image-placeholder')), findsOneWidget);
-      expect(find.text('Нет фото'), findsOneWidget);
+      expect(find.text('Фото появится из 1С'), findsOneWidget);
+    });
+
+    testWidgets('плашка прототипа: photoPlaceholderBg радиус 10, глиф-картинка 34, зазор 6, подпись sku 12; '
+        'меньше 64 — пустая (ADR-114)', (WidgetTester tester) async {
+      await pumpDs(
+        tester,
+        const Column(
+          children: <Widget>[
+            SizedBox(width: 160, height: 146, child: ProductImagePlaceholder(side: 146, plate: true)),
+            SizedBox(
+              width: 60,
+              height: 52,
+              child: ProductImagePlaceholder(key: ValueKey<String>('small'), side: 52, plate: true),
+            ),
+          ],
+        ),
+      );
+      const DsColors c = DsColors.lightB;
+      final Finder big = find.byKey(const ValueKey<String>('product-image-placeholder')).first;
+      final BoxDecoration plate = tester.widget<Container>(big).decoration! as BoxDecoration;
+      expect(plate.color, c.photoPlaceholderBg);
+      expect(plate.borderRadius, const BorderRadius.all(Radius.circular(10)));
+      final DsGlyph glyph = tester.widget<DsGlyph>(find.descendant(of: big, matching: find.byType(DsGlyph)));
+      expect((glyph.kind, glyph.size, glyph.color), (DsGlyphKind.photo, 34.0, c.photoPlaceholderIcon));
+      final Finder label = find.text('Фото появится из 1С');
+      expect(tester.widget<Text>(label).style?.fontSize, 12);
+      expect(tester.widget<Text>(label).style?.color, c.photoPlaceholderText);
+      expect(tester.getTopLeft(label).dy - tester.getBottomLeft(find.byType(DsGlyph)).dy, 6, reason: 'gap 6');
+      expect(
+        find.descendant(of: find.byKey(const ValueKey<String>('small')), matching: find.byType(Text)),
+        findsNothing,
+        reason: 'строка списка 60×52 — пустая плашка',
+      );
     });
 
     testWidgets('миниатюра < 64 — заглушка без подписи', (WidgetTester tester) async {
       await pumpDs(tester, const ProductImage(url: null, dimension: 48));
-      expect(find.text('Нет фото'), findsNothing);
+      expect(find.text('Фото появится из 1С'), findsNothing);
     });
 
     testWidgets('относительный путь сервера `/images/{sha}/card` загружается от адреса API (ProductImageBase)', (

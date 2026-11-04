@@ -394,7 +394,8 @@ class ReportsBranch extends StatefulShellBranchData {
 
 /// SCR-10 Рабочее пространство продавца / Каталог (staff).
 class CatalogRoute extends GoRouteData with $CatalogRoute {
-  /// Маршрут `/catalog?preset=&view=&sort=`.
+  /// Маршрут `/catalog?preset=&view=&sort=`; `all=1` (весь каталог «Все товары», ADR-114) читается из адреса в
+  /// [build] и [CatalogFamilyHost] — типизированные параметры и `routes.g.dart` не меняются.
   const CatalogRoute({this.preset, this.view, this.sort});
 
   /// `recent` — подборка «Недавние» (02 §4.1).
@@ -407,7 +408,8 @@ class CatalogRoute extends GoRouteData with $CatalogRoute {
   final String? sort;
 
   @override
-  Widget build(BuildContext context, GoRouterState state) => CatalogScreen(preset: preset, view: view, sort: sort);
+  Widget build(BuildContext context, GoRouterState state) =>
+      CatalogScreen(preset: preset, view: view, sort: sort, all: state.uri.queryParameters['all'] == '1');
 
   /// medium/expanded/large — страница без анимации перехода (02 SCR-10.5 ANIM-024: SB и CP не анимируются) с экраном
   /// всего семейства каталога ([CatalogFamilyHost] по верхней записи `/catalog` → `/catalog/c/{id}` →

@@ -143,7 +143,7 @@ describe('собранный backend.js: сбой записи, задачи, «
   let ctx;
   let C;
   before(async () => {
-    be = await startWorkerBackend({ sku: 500, initOpts: { seed: false, testHooks: true } });
+    be = await startWorkerBackend({ initOpts: { seed: false, testHooks: true } });
     ctx = createCtx(be, { label: 'durability' });
     C = ctx.dev('windows', { name: 'кассир 906' });
     await C.login('+996777000906');
@@ -210,7 +210,7 @@ describe('собранный backend.js: сбой записи, задачи, «
 
 describe('сид истории: «F5» посреди шага не создаёт второй заказ', () => {
   test('dump, пока шаг «shipped» уже создал заказ → новый старт продолжает его: 5 заказов истории, resumed ≥ 1', async () => {
-    let be = await startWorkerBackend({ sku: 500, initOpts: { seedDelayMs: 100 } });
+    let be = await startWorkerBackend({ initOpts: { seedDelayMs: 100 } });
     let dump = null;
     let at = null;
     try {
@@ -230,7 +230,7 @@ describe('сид истории: «F5» посреди шага не созда�
     } finally {
       await be.terminate();
     }
-    be = await startWorkerBackend({ sku: 500, initOpts: { seedDelayMs: 100, loadDataDir: dump } });
+    be = await startWorkerBackend({ initOpts: { seedDelayMs: 100, loadDataDir: dump } });
     try {
       let s;
       for (let i = 0; i < 600; i++) {

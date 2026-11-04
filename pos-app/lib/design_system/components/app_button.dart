@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:optomstroy/design_system/components/app_progress.dart';
+import 'package:optomstroy/design_system/components/ds_hairline.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
@@ -7,12 +8,13 @@ import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 
 /// Варианты `AppButton` (03 §9.1). `secondary` = `tonal`.
 ///
-/// `tint` — тинт с декоративной рамкой (прототип 2026-10-29, ADR-112): заливка `primaryContainer`, обводка
-/// `primaryContainerBorder` 1,5, текст `onPrimaryContainer` (6.19:1) — «В корзине · N — ещё +1» карточки каталога.
+/// `tint` — тинт с декоративной рамкой (прототип, ADR-112, ADR-114): заливка `primaryContainer`, обводка
+/// `primaryContainerBorder` 1,5 CSS-px (`DsHairline`: 1 lp при DPR 1), текст `onPrimaryContainer` (6.19:1) —
+/// «В корзине · N — ещё +1» карточки каталога.
 ///
-/// `neutral` — нейтральная контурная (прототип 2026-10-29): фон `surface`, обводка 1 — `border`, затемнённый на 12 %
-/// к `borderStrong` (≈ #D5DEEA прототипа, декоративная), текст `textPrimary` 600; hover — `surfaceHover`. Второстепенное
-/// действие рядом с основной кнопкой: «Отложить · F8» drawer корзины — оранжевой остаётся только «Создать заказ · F9».
+/// `neutral` — нейтральная контурная (прототип): фон `surface`, обводка 1 `neutralButtonBorder` (#D5DEEA прототипа,
+/// декоративная, ADR-114), текст `textPrimary` 600; hover — `surfaceHover`. Второстепенное действие рядом с основной
+/// кнопкой: «Отложить · F8» drawer корзины — оранжевой остаётся только «Создать заказ · F9».
 ///
 /// Ссылки («Сбросить фильтры», «Сбросить все» каталога) — вариант `text` (`primaryText`, ядро §24.1, DS-098): синий
 /// `info` закреплён за фокусом и информационными статусами и для ссылок не используется (ревью переноса прототипа
@@ -21,8 +23,9 @@ enum AppButtonVariant { primary, secondary, tonal, outlined, text, danger, succe
 
 /// Размеры `AppButton` (03 §7.4): S 36 / M 44 / L 52; тач-цель 44 / 48 / 52.
 ///
-/// `card` / `cardCompact` — кнопки карточек каталога по прототипу 2026-10-29 (03 §9.11, §9.13; ADR-112): 40 / 34
-/// визуально (цель 48 / 44), радиус `md`, подпись `body` / `label` вес 700.
+/// `card` / `cardCompact` — кнопки карточек каталога по прототипу (03 §9.11, §9.13; ADR-112, ADR-114): 40 / 34
+/// визуально (цель 48 / 44), радиус `control` 10, подпись `chip 14` вес 700. `drawer` — кнопки зоны G drawer корзины
+/// (прототип): 46 (цель 48), радиус `control`, основная — 15/700, `neutral` — 14/600.
 enum AppButtonSize {
   /// Инлайн-действия в таблицах.
   s(height: 36, target: 44, padding: 12, icon: 20, spinner: 16),
@@ -33,11 +36,15 @@ enum AppButtonSize {
   /// CTA.
   l(height: 52, target: 52, padding: 24, icon: 24, spinner: 20),
 
-  /// Кнопка карточки сетки и строки списка каталога: 40 (цель 48), радиус `md`, `body 700`.
+  /// Кнопка карточки сетки и строки списка каталога: 40 (цель 48), радиус `control` 10, 14/700.
   card(height: 40, target: 48, padding: 12, icon: 18, spinner: 16),
 
-  /// Кнопка строки «Компакт» каталога: 34 (цель 44), радиус `md`, `label 700`.
+  /// Кнопка строки «Компакт» каталога: 34 (цель 44), радиус `control` 10, 14/700 (прототип: базовый 14 перекрывает 13).
   cardCompact(height: 34, target: 44, padding: 8, icon: 16, spinner: 14),
+
+  /// Кнопки зоны G drawer корзины по прототипу (ADR-114): 46 (цель 48), радиус `control` 10; основная — 15/700,
+  /// `neutral` — 14/600.
+  drawer(height: 46, target: 48, padding: 12, icon: 20, spinner: 18),
 
   /// Кнопки зоны G drawer корзины в одну строку («Отложить · F8», «Создать заказ · F9»; прототип 2026-10-29,
   /// ADR-112): 48 (цель 48), радиус `md`, `body 700`.
@@ -66,11 +73,15 @@ enum AppButtonSize {
   /// Размер спиннера в `loading`.
   final double spinner;
 
-  /// Кнопки карточек каталога (радиус `md`, вес 700).
+  /// Кнопки карточек каталога (радиус `control`, вес 700).
   bool get isCard => this == card || this == cardCompact;
 
-  /// Радиус `md` (кнопки карточек и зоны G drawer корзины); остальные размеры — `sm`.
-  bool get roundedMd => isCard || this == cta;
+  /// Радиус `control` 10 прототипа (кнопки карточек каталога и drawer корзины, ADR-114).
+  bool get roundedControl => isCard || this == drawer;
+
+  /// Радиус `md` 12 (`cta` — кнопки зоны G drawer корзины до ADR-114); радиус `control` — у [roundedControl];
+  /// остальные размеры — `sm`.
+  bool get roundedMd => this == cta;
 }
 
 /// Кнопка `AppButton` (03 §9.1).
@@ -150,7 +161,13 @@ class AppButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final DsColors c = context.colors;
-    final BorderRadius radius = BorderRadius.all(size.roundedMd ? context.radii.md : context.radii.sm);
+    final BorderRadius radius = BorderRadius.all(
+      size.roundedControl
+          ? context.radii.control
+          : size.roundedMd
+          ? context.radii.md
+          : context.radii.sm,
+    );
     final TextStyle baseText = _textStyle(context, size, variant);
     final Duration fast = context.motion.of(context.motion.fast);
 
@@ -177,7 +194,15 @@ class AppButton extends StatelessWidget {
               decoration: BoxDecoration(
                 color: bc.background,
                 borderRadius: radius,
-                border: bc.border == null ? null : Border.all(color: bc.border!, width: bc.borderWidth),
+                border: bc.border == null
+                    ? null
+                    : Border.all(
+                        color: bc.border!,
+                        // Тинт и нейтральная — рамки прототипа в CSS-px (чёткие при любом масштабе Windows).
+                        width: variant == AppButtonVariant.tint || variant == AppButtonVariant.neutral
+                            ? DsHairline.of(context, bc.borderWidth)
+                            : bc.borderWidth,
+                      ),
               ),
               child: Center(widthFactor: expand ? null : 1, child: content),
             ),
@@ -201,12 +226,14 @@ class AppButton extends StatelessWidget {
       AppButtonSize.s => context.text.label.copyWith(fontWeight: FontWeight.w600),
       AppButtonSize.m => context.text.body.copyWith(fontWeight: FontWeight.w600),
       AppButtonSize.l => context.text.bodyLg.copyWith(fontWeight: FontWeight.w600),
-      AppButtonSize.card => context.text.body.copyWith(fontWeight: FontWeight.w700),
-      AppButtonSize.cardCompact => context.text.label.copyWith(fontWeight: FontWeight.w700),
+      AppButtonSize.card || AppButtonSize.cardCompact => context.text.chip.copyWith(fontWeight: FontWeight.w700),
+      // Прототип: «Создать заказ · F9» — 15/700.
+      AppButtonSize.drawer => context.text.listName.copyWith(fontWeight: FontWeight.w700),
       AppButtonSize.cta => context.text.body.copyWith(fontWeight: FontWeight.w700),
     };
     return switch (variant) {
       // Прототип: «Отложить · F8» — 14/600.
+      AppButtonVariant.neutral when size == AppButtonSize.drawer => context.text.chip,
       AppButtonVariant.neutral => base.copyWith(fontWeight: FontWeight.w600),
       _ => base,
     };
@@ -291,8 +318,8 @@ class AppButton extends StatelessWidget {
     };
   }
 
-  /// Обводка варианта `neutral`: `border`, затемнённый на 12 % к `borderStrong` (≈ #D5DEEA прототипа).
-  static Color neutralBorder(DsColors c) => Color.lerp(c.border, c.borderStrong, .12)!;
+  /// Обводка варианта `neutral`: `neutralButtonBorder` (#D5DEEA прототипа, ADR-114).
+  static Color neutralBorder(DsColors c) => c.neutralButtonBorder;
 }
 
 @immutable

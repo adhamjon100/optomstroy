@@ -153,8 +153,8 @@ export async function walkCatalog(w) {
   ctx.check('выгрузка каталога /catalog/sync/{entity} до hasMore=false', syncCounts.products > 0 && syncCounts.prices > 0 && syncCounts.barcodes > 0, syncCounts);
   const bc = await C.call('GET /search/barcode/{value}', 'GET', `/search/barcode/${enc(barcode ?? '0')}`);
   ctx.check('поиск по штрихкоду → товар и вариант', bc.status === 200 && !!bc.json?.product?.id && !!bc.json?.variant?.id, { status: bc.status, type: bc.json?.barcodeType });
-  const fts = await S.call('GET /search/products (слово)', 'GET', `/search/products?q=${enc('смеситель')}&limit=10`);
-  ctx.check('полнотекстовый поиск «смеситель»', fts.status === 200 && (fts.json?.items ?? []).length > 0, { n: fts.json?.items?.length, matchType: fts.json?.items?.[0]?.matchType });
+  const fts = await S.call('GET /search/products (слово)', 'GET', `/search/products?q=${enc('унитаз')}&limit=10`);
+  ctx.check('полнотекстовый поиск «унитаз»', fts.status === 200 && (fts.json?.items ?? []).length > 0, { n: fts.json?.items?.length, matchType: fts.json?.items?.[0]?.matchType });
   await S.call('GET /search/products (без остатка, фильтр цены)', 'GET', `/search/products?q=${enc('кран')}&inStock=false&priceMin=10.00&priceMax=99999.00&limit=10`);
   // недавние
   await S.call('просмотр карточки (для «Недавних»)', 'GET', `/catalog/products/${w.p(14).id}`);

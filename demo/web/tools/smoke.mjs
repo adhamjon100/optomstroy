@@ -4,6 +4,15 @@
 // Node 24 (без puppeteer). Порт статики 8095–8099 (первый свободный), CDP — первый свободный от 9491.
 //
 //   node demo/web/tools/smoke.mjs [--storage opfs|idb] [--only boot,ui,f5,frozen] [--out <каталог>] [--keep-profile] [--port 8095–8099] [--cdp <порт>]
+//                                 [--url <https-адрес>] [--browser chrome|edge]
+//
+// --url — удалённый режим (превью или основной адрес Netlify, например https://<id>--optomstroy-demo-4fhvb.netlify.app):
+//   свой сервер не запускается (--port не нужен), браузер открывает этот адрес. Заголовки — запросами Node к адресу;
+//   журнал запросов (к /api/, 404, чужие хосты) — из событий CDP Network страниц и воркеров (requestWillBeSent /
+//   responseReceived / loadingFailed) вместо журнала serve-site. Браузер резолвит только хост адреса
+//   (--host-resolver-rules): попытка запроса на чужой хост видна в журнале, но наружу не уходит. Шаги те же.
+// --browser — chrome (по умолчанию, C:/Program Files/Google/Chrome) или edge (C:/Program Files (x86)/Microsoft/Edge);
+//   у edge имена резолвятся только для адреса --url (локально — никакие: 127.0.0.1 — адрес, не имя).
 //
 // Шаги:
 //   boot   — загрузка: ready, первый кадр Flutter, кнопка «ДЕМО»; заголовки ответа (CSP, X-Robots-Tag, типы .wasm/.gz),
@@ -19,6 +28,7 @@
 //            B работает (IndexedDB) или честно сообщает «данные заняты» (OPFS: дескрипторы замороженной вкладки);
 //            A после разморозки уходит на demo-closed.html и НЕ пишет (заказ B на месте после перезагрузки B).
 // Итог — <out>/smoke.json и снимки <out>/NN-*.png. Свои сервер и браузер — по PID, профиль удаляется.
+// В удалённом режиме по умолчанию <out> = .tmp/web_demo/smoke/remote-[edge-]<storage>-<время>.
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
@@ -32,16 +42,22 @@ const argv = process.argv.slice(2);
 const arg = (k, d) => (argv.includes(k) ? argv[argv.indexOf(k) + 1] : d);
 const STORAGE = arg('--storage', 'opfs');
 const ONLY = new Set(String(arg('--only', 'boot,ui,f5,frozen')).split(','));
-const OUT = resolve(arg('--out', `${ROOT}/.tmp/web_demo/smoke/${STORAGE}-${new Date().toISOString().replace(/[:.]/g, '-')}`)).replace(/\\/g, '/');
-const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const PROFILE = `${ROOT}/.tmp/web_demo/chrome-smoke-${STORAGE}-${Date.now()}`;
+// удалённый режим: origin без пути и без «/» в конце
+const REMOTE = argv.includes('--url') ? String(arg('--url', '')).replace(/\/+$/, '') : null;
+if (REMOTE !== null && !/^https?:\/\/[^/?#\s]+$/.test(REMOTE)) throw new Error(`--url: нужен адрес вида https://<хост> без пути, получено «${REMOTE}»`);
+const BROWSERS = { chrome: 'C:/Program Files/Google/Chrome/Application/chrome.exe', edge: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' };
+const BROWSER = arg('--browser', 'chrome');
+if (!BROWSERS[BROWSER]) throw new Error(`--browser: chrome или edge, получено «${BROWSER}»`);
+const OUT = resolve(arg('--out', `${ROOT}/.tmp/web_demo/smoke/${REMOTE ? 'remote-' : ''}${BROWSER === 'chrome' ? '' : `${BROWSER}-`}${STORAGE}-${new Date().toISOString().replace(/[:.]/g, '-')}`)).replace(/\\/g, '/');
+const CHROME = BROWSERS[BROWSER];
+const PROFILE = `${ROOT}/.tmp/web_demo/${BROWSER}-smoke-${STORAGE}-${Date.now()}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const t0 = Date.now();
 const log = (...a) => console.log(`${((Date.now() - t0) / 1000).toFixed(1).padStart(6)}s`, ...a);
 mkdirSync(OUT, { recursive: true });
 process.env.TEMP ||= `${ROOT}/.tmp`;
 
-const R = { storage: STORAGE, startedAt: new Date().toISOString(), checks: [], exceptions: [], consoleErrors: [], csp: [], foreign: [], failedLoads: [], pids: {}, shots: [], steps: [] };
+const R = { storage: STORAGE, mode: REMOTE ? 'remote' : 'local', browser: BROWSER, startedAt: new Date().toISOString(), checks: [], exceptions: [], consoleErrors: [], csp: [], foreign: [], failedLoads: [], pids: {}, shots: [], steps: [] };
 const check = (name, ok, evidence) => {
   R.checks.push({ name, ok: !!ok, evidence: evidence === undefined ? null : evidence });
   log(`${ok ? 'OK  ' : 'FAIL'} ${name}${evidence !== undefined ? ` — ${JSON.stringify(evidence).slice(0, 400)}` : ''}`);
@@ -62,24 +78,55 @@ const killTree = (pid) => {
 
 // ---------------------------------------------------------------- сервер и браузер
 // --port / --cdp — заданные порты (параллельные прогоны других задач); без них — первый свободный.
+// Удалённый режим (--url): свой сервер не нужен, порт статики не занимается.
 let port = null;
-for (const p of argv.includes('--port') ? [Number(arg('--port'))] : [8095, 8096, 8097, 8098, 8099]) if (await portFree(p)) {
-  port = p;
-  break;
+if (!REMOTE) {
+  for (const p of argv.includes('--port') ? [Number(arg('--port'))] : [8095, 8096, 8097, 8098, 8099]) if (await portFree(p)) {
+    port = p;
+    break;
+  }
+  if (!port) throw new Error(`нет свободного порта ${argv.includes('--port') ? arg('--port') : '8095–8099'}`);
 }
-if (!port) throw new Error(`нет свободного порта ${argv.includes('--port') ? arg('--port') : '8095–8099'}`);
 let cdpPort = null;
 for (let p = Number(arg('--cdp', 9491)); p < (argv.includes('--cdp') ? Number(arg('--cdp')) + 1 : 9520); p++) if (await portFree(p)) {
   cdpPort = p;
   break;
 }
 if (!cdpPort) throw new Error(`нет свободного порта CDP ${arg('--cdp', '9491–9519')}`);
-const ORIGIN = `http://127.0.0.1:${port}`;
-const server = spawn(process.execPath, [`${HERE}/serve-site.mjs`, '--port', String(port), '--quiet'], { stdio: ['ignore', 'pipe', 'pipe'] });
-R.pids.server = server.pid;
+const ORIGIN = REMOTE ?? `http://127.0.0.1:${port}`;
+R.origin = ORIGIN;
+// запрос того же origin (а не «https://хост.чужой» с тем же началом)
+const onOrigin = (u) => u.startsWith(ORIGIN) && (u.length === ORIGIN.length || /^[/?#]/.test(u[ORIGIN.length]));
+const server = REMOTE ? null : spawn(process.execPath, [`${HERE}/serve-site.mjs`, '--port', String(port), '--quiet'], { stdio: ['ignore', 'pipe', 'pipe'] });
+R.pids.server = server ? server.pid : null;
 mkdirSync(PROFILE, { recursive: true });
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${PROFILE}`, '--window-size=1280,800', '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-background-networking', '--disable-component-update', '--disable-sync', '--disable-default-apps', '--lang=ru', 'about:blank'], { stdio: 'ignore' });
+// Удалённый режим и edge: имена резолвятся только для хоста --url — служебные запросы браузера (обновления, телеметрия,
+// SmartScreen) и чужие хосты страницы наружу не уходят; запросы страницы всё равно видны в журнале CDP (foreign).
+const resolverRules = REMOTE ? `MAP * ~NOTFOUND, EXCLUDE ${new URL(REMOTE).hostname}` : BROWSER === 'edge' ? 'MAP * ~NOTFOUND' : null;
+const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${PROFILE}`, '--window-size=1280,800', '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-background-networking', '--disable-component-update', '--disable-sync', '--disable-default-apps', '--lang=ru', ...(resolverRules ? [`--host-resolver-rules=${resolverRules}`] : []), 'about:blank'], { stdio: 'ignore' });
 R.pids.browser = chrome.pid;
+// Удалённый режим: журнал запросов страниц и воркеров к ORIGIN из CDP Network (вместо журнала serve-site /__site/log):
+// { p: путь, m: метод, s: статус (последний; у перенаправления — его статус, затем новый адрес), err: ошибка загрузки }.
+const netLog = [];
+const netById = new Map();
+const netRequest = (p, s) => {
+  const prev = netById.get(p.requestId);
+  if (prev && p.redirectResponse) prev.s = p.redirectResponse.status;
+  else if (prev) return; // тот же запрос в другой сессии CDP
+  netById.delete(p.requestId);
+  if (!onOrigin(p.request.url)) return;
+  const r = { p: new URL(p.request.url).pathname, m: p.request.method, s: null, type: s?.type };
+  netLog.push(r);
+  netById.set(p.requestId, r);
+};
+const netResponse = (p) => {
+  const r = netById.get(p.requestId);
+  if (r) r.s = p.response.status;
+};
+const netFailed = (p) => {
+  const r = netById.get(p.requestId);
+  if (r && !p.canceled) r.err = p.errorText;
+};
 
 let ws;
 const pending = new Map();
@@ -124,9 +171,13 @@ async function connect() {
       void initSession(m.params.sessionId, info.type);
     } else if (m.method === 'Network.requestWillBeSent') {
       const u = m.params.request.url;
-      if (!u.startsWith(ORIGIN) && !/^(data|blob|chrome|about|devtools|chrome-extension):/.test(u)) R.foreign.push({ tab: s?.tab, type: s?.type, url: u.slice(0, 160) });
+      if (!onOrigin(u) && !/^(data|blob|chrome|about|devtools|chrome-extension):/.test(u)) R.foreign.push({ tab: s?.tab, type: s?.type, url: u.slice(0, 160) });
+      if (REMOTE) netRequest(m.params, s);
+    } else if (m.method === 'Network.responseReceived') {
+      if (REMOTE) netResponse(m.params);
     } else if (m.method === 'Network.loadingFailed') {
       if (!m.params.canceled) R.failedLoads.push({ type: s?.type, error: m.params.errorText });
+      if (REMOTE) netFailed(m.params);
     } else if (m.method === 'Runtime.exceptionThrown') {
       R.exceptions.push({ type: s?.type, text: `${m.params.exceptionDetails.text} ${m.params.exceptionDetails.exception?.description ?? ''}`.slice(0, 600) });
     } else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') {
@@ -256,13 +307,21 @@ const texts = (tab) => ev(tab, `[...document.querySelectorAll('flt-semantics')].
 try {
   await connect();
   await sleep(600);
-  // заголовки ответа сервера (как на Netlify)
+  // заголовки ответа сервера (как на Netlify); в удалённом режиме — те же запросы Node к адресу --url
   const hIndex = await fetch(`${ORIGIN}/`);
   const hWasm = await fetch(`${ORIGIN}/backend/pglite/pglite.wasm`, { method: 'HEAD' });
   const hGz = await fetch(`${ORIGIN}/demo/snapshot/data.copy.gz`, { method: 'HEAD' });
   const hApi = await fetch(`${ORIGIN}/api/v1/__smoke_probe`); // проверка правила /api/* (из Node, не из браузера)
   const hImg = await fetch(`${ORIGIN}/images/${JSON.parse(readFileSync(`${WEB}/.build/snapshot/images.json`, 'utf8'))?.files?.[0]?.sha ?? 'x'}/card`, { method: 'HEAD' }).catch(() => null);
   R.headers = { index: Object.fromEntries(hIndex.headers), wasm: hWasm.headers.get('content-type'), gz: [hGz.headers.get('content-type'), hGz.headers.get('content-encoding')], api: hApi.status, image: hImg ? [hImg.status, hImg.headers.get('content-type')] : null };
+  if (REMOTE) {
+    // для сведения (README «Как проверить превью»): сжатие больших файлов на CDN — в итог не входит
+    R.headers.encoding = {};
+    for (const p of ['/main.dart.js', '/backend/backend.js', '/backend/pglite/pglite.wasm', '/backend/pglite/pglite.data', '/canvaskit/canvaskit.wasm']) {
+      const h = await fetch(`${ORIGIN}${p}`, { method: 'HEAD', headers: { 'accept-encoding': 'br, gzip' } }).catch((e) => ({ status: String(e?.message ?? e), headers: new Headers() }));
+      R.headers.encoding[p] = [h.status, h.headers.get('content-type'), h.headers.get('content-encoding')];
+    }
+  }
   check('заголовки как на Netlify: CSP и X-Robots-Tag на странице, .wasm — application/wasm, снимок .gz — application/gzip без Content-Encoding, /api/* → 404', /default-src 'self'/.test(R.headers.index['content-security-policy'] ?? '') && /noindex/.test(R.headers.index['x-robots-tag'] ?? '') && R.headers.wasm === 'application/wasm' && R.headers.gz[0] === 'application/gzip' && !R.headers.gz[1] && R.headers.api === 404, R.headers);
 
   const A = await openTab('A');
@@ -446,9 +505,19 @@ try {
   const csp = [];
   for (const [sid, s] of sessions) if (s.type === 'page') csp.push(...((await ev({ sid }, `window.__cspViolations || []`, 5000).catch(() => [])) ?? []));
   R.cspPage = csp;
-  const log0 = await (await fetch(`${ORIGIN}/__site/log`)).json();
-  const fromBrowser = log0.filter((r) => r.p !== '/api/v1/__smoke_probe');
-  R.server = { requests: fromBrowser.length, api: fromBrowser.filter((r) => /^\/api\//.test(r.p)).length, notFound: [...new Set(fromBrowser.filter((r) => r.s === 404).map((r) => r.p))].slice(0, 20) };
+  if (REMOTE) {
+    // журнал из CDP Network (запросы Node к адресу сюда не попадают — фильтр пробы /api/ не нужен)
+    R.server = { source: 'cdp', requests: netLog.length, api: netLog.filter((r) => /^\/api\//.test(r.p)).length, notFound: [...new Set(netLog.filter((r) => r.s === 404).map((r) => r.p))].slice(0, 20) };
+    // для сведения: прочие 4xx/5xx, ошибки загрузки и перенаправления того же origin, запросы без ответа
+    R.server.otherErrors = netLog.filter((r) => (r.s >= 400 && r.s !== 404) || r.err).map((r) => `${r.m} ${r.p} ${r.s ?? ''} ${r.err ?? ''}`.trim()).slice(0, 20);
+    R.server.redirects = netLog.filter((r) => r.s >= 300 && r.s < 400).map((r) => `${r.m} ${r.p} ${r.s}`).slice(0, 20);
+    R.server.noResponse = netLog.filter((r) => r.s === null && !r.err).length;
+    R.server.byType = netLog.reduce((a, r) => ((a[r.type ?? '?'] = (a[r.type ?? '?'] || 0) + 1), a), {});
+  } else {
+    const log0 = await (await fetch(`${ORIGIN}/__site/log`)).json();
+    const fromBrowser = log0.filter((r) => r.p !== '/api/v1/__smoke_probe');
+    R.server = { requests: fromBrowser.length, api: fromBrowser.filter((r) => /^\/api\//.test(r.p)).length, notFound: [...new Set(fromBrowser.filter((r) => r.s === 404).map((r) => r.p))].slice(0, 20) };
+  }
   check('0 нарушений Content-Security-Policy (страница, воркеры)', csp.length === 0 && R.csp.length === 0, { page: csp.slice(0, 5), log: R.csp.slice(0, 5) });
   check('0 запросов на чужие хосты; 0 запросов к /api/ сайта; 0 ответов 404', R.foreign.length === 0 && R.server.api === 0 && R.server.notFound.length === 0, { foreign: R.foreign.slice(0, 5), server: R.server });
   const exc = R.exceptions.filter((e) => !/frozen|Демо перенесено|fenced/i.test(e.text));
@@ -468,7 +537,7 @@ try {
     /* ignore */
   }
   killTree(chrome.pid);
-  killTree(server.pid);
+  if (server) killTree(server.pid);
   await sleep(1500);
   if (!argv.includes('--keep-profile')) rmSync(PROFILE, { recursive: true, force: true, maxRetries: 5, retryDelay: 400 });
   R.finishedAt = new Date().toISOString();

@@ -20,6 +20,7 @@ class CatalogWorkspaceScreen extends StatelessWidget {
     this.f,
     this.q,
     this.stackDepth,
+    this.all = false,
     super.key,
   });
 
@@ -47,6 +48,9 @@ class CatalogWorkspaceScreen extends StatelessWidget {
   /// Число записей `push` семейства над записью `go` ([CatalogWorkspace.stackDepth]).
   final int? stackDepth;
 
+  /// SCR-10 `all=1` — весь каталог «Все товары» ([CatalogWorkspace.all], ADR-114).
+  final bool all;
+
   @override
   Widget build(BuildContext context) => CatalogWorkspace(
     key: CatalogWorkspace.stableKey,
@@ -58,5 +62,6 @@ class CatalogWorkspaceScreen extends StatelessWidget {
     f: f,
     q: q,
     stackDepth: stackDepth,
+    all: all,
   );
 }

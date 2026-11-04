@@ -18,6 +18,7 @@ import 'package:optomstroy/design_system/components/empty_state.dart';
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/product_card.dart';
 import 'package:optomstroy/design_system/components/view_mode_segmented.dart';
+import 'package:optomstroy/design_system/layout/row_extent_grid.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -26,6 +27,9 @@ import 'package:optomstroy/features/catalog/presentation/providers/catalog_list_
 import 'package:optomstroy/features/catalog/presentation/providers/catalog_ports.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_card_mapper.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_formats.dart';
+
+/// Геометрия UI в lp (не деньги).
+typedef _Lp = double; // money-double: allow — геометрия UI (lp)
 
 /// Действия карточек.
 final class CatalogProductCallbacks {
@@ -64,6 +68,7 @@ class CatalogProductView extends StatelessWidget {
     this.inert = false,
     this.minCardWidth = DsBreakpoints.cardMinWidth,
     this.gridGap,
+    this.uncappedColumns = false,
   });
 
   final CatalogListState state;
@@ -105,6 +110,10 @@ class CatalogProductView extends StatelessWidget {
   /// Зазор сетки; `null` — 16 на compact/medium, 12 на expanded+ (SCR-50). SCR-10/11/12 — 16.
   final double? gridGap; // money-double: allow — зазор сетки в lp
 
+  /// Сетка без предела колонок (SCR-10/11/12 по прототипу, ADR-114: 9 колонок при 1920); `false` — не больше
+  /// `DsBreakpoints.gridMaxColumns` (SCR-50).
+  final bool uncappedColumns;
+
   bool get _withHeader => headerSlivers.isNotEmpty;
 
   bool get _table => windowClass == WindowClass.expanded || windowClass == WindowClass.large;
@@ -115,9 +124,44 @@ class CatalogProductView extends StatelessWidget {
   double _gap() => // money-double: allow — геометрия UI (lp)
       gridGap ?? (windowClass == WindowClass.compact || windowClass == WindowClass.medium ? 16 : 12);
 
-  /// Высота ячейки сетки (крупный шрифт — выше; поиск — с бейджем совпадения).
-  double _extent(BuildContext context) => // money-double: allow — геометрия UI (lp)
-      kProductCardGridExtent(MediaQuery.textScalerOf(context), matchBadge: cardContext.showMatch);
+  /// Колонки сетки при ширине контента [width] и зазоре [gap].
+  int _columns(double width, double gap) => // money-double: allow — геометрия UI (lp)
+  DsBreakpoints.gridColumns(
+    width,
+    gap,
+    minCardWidth: minCardWidth,
+    maxColumns: uncappedColumns ? null : DsBreakpoints.gridMaxColumns,
+  );
+
+  /// Высота ячейки сетки без переноса «/ шт» (скелетон; крупный шрифт — выше; поиск — с бейджем совпадения).
+  double _extent(BuildContext context, {bool priceWraps = false}) => // money-double: allow — геометрия UI
+  kProductCardGridExtent(
+    MediaQuery.textScalerOf(context),
+    matchBadge: cardContext.showMatch,
+    priceWraps: priceWraps,
+  );
+
+  /// Сетка с высотой ряда по его карточкам (прототип — CSS grid, ряд по самой высокой карточке; ревью V-01): 340, или
+  /// 360 у ряда, где «цена / шт» хотя бы одной карточки не помещается в строку при ширине карточки
+  /// (W − зазор·(cols − 1)) / cols — по показанной цене карточки, а не по образцу (1920 × 1080 — 360, 1366 × 768 — 340).
+  DsRowExtentGridDelegate _gridDelegate(BuildContext context, _Lp width, _Lp gap, int cols) {
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final _Lp card = (width - gap * (cols - 1)) / cols;
+    final _Lp plain = _extent(context);
+    final _Lp wrapped = _extent(context, priceWraps: true);
+    final List<_Lp> rows = List<_Lp>.filled((items.length + cols - 1) ~/ cols, plain);
+    for (int i = 0; i < items.length; i++) {
+      final int row = i ~/ cols;
+      if (rows[row] == wrapped) {
+        continue;
+      }
+      final (String? price, String? unit) = CatalogCardMapper.priceLine(cardContext, items[i]);
+      if (price != null && kProductCardGridPriceWraps(scaler, card, price: price, unit: unit)) {
+        rows[row] = wrapped;
+      }
+    }
+    return DsRowExtentGridDelegate(columns: cols, gap: gap, rowExtents: rows, fallbackExtent: plain);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -183,7 +227,7 @@ class CatalogProductView extends StatelessWidget {
         builder: (BuildContext context, BoxConstraints box) {
           final double gap = _gap(); // money-double: allow — геометрия UI (lp)
           final double width = box.maxWidth - padding.horizontal; // money-double: allow — геометрия UI (lp)
-          final int cols = DsBreakpoints.gridColumns(width, gap, minCardWidth: minCardWidth);
+          final int cols = _columns(width, gap);
           return GridView.builder(
             padding: padding,
             shrinkWrap: _withHeader,
@@ -281,7 +325,7 @@ class CatalogProductView extends StatelessWidget {
       builder: (BuildContext context, BoxConstraints box) {
         final double gap = _gap(); // money-double: allow — геометрия UI (lp)
         final double contentWidth = box.maxWidth - padding.horizontal; // money-double: allow — геометрия UI (lp)
-        final int cols = DsBreakpoints.gridColumns(contentWidth, gap, minCardWidth: minCardWidth);
+        final int cols = _columns(contentWidth, gap);
         final bool compactTable = view == ProductViewMode.compact && table;
         // Карточка ищется по id товара, а не по позиции: при обновлении выборки (кэш → сеть, смена категории)
         // карточка и фото того же товара сохраняются, даже если он сместился в списке.
@@ -355,12 +399,7 @@ class CatalogProductView extends StatelessWidget {
                 ),
                 sliver: view == ProductViewMode.grid
                     ? SliverGrid(
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: cols,
-                          mainAxisSpacing: gap,
-                          crossAxisSpacing: gap,
-                          mainAxisExtent: _extent(context),
-                        ),
+                        gridDelegate: _gridDelegate(context, contentWidth, gap, cols),
                         delegate: SliverChildBuilderDelegate(
                           (BuildContext context, int i) {
                             _maybeLoadMore(i, cols * 2);
@@ -474,10 +513,10 @@ class _CompactHeaderDelegate extends SliverPersistentHeaderDelegate {
   final ProductCompactHeaderLabels labels;
 
   @override
-  double get minExtent => 40; // money-double: allow — геометрия UI (lp)
+  double get minExtent => ProductCardCompactHeader.headerHeight; // money-double: allow — геометрия UI (lp)
 
   @override
-  double get maxExtent => 40; // money-double: allow — геометрия UI (lp)
+  double get maxExtent => ProductCardCompactHeader.headerHeight; // money-double: allow — геометрия UI (lp)
 
   @override
   Widget build(

@@ -2,7 +2,9 @@
 
 Только несекретные значения: `--dart-define-from-file=env/<профиль>.json`. Ключи разбирает
 `lib/core/config/environment.dart` (`API_BASE_URL`, `ENV`, `LOG_LEVEL`, `FEATURE_FLAGS`, `FEATURE_*`, `APP_DATA_DIR`);
-`DEMO_BACKEND` читает только точка входа веб-демо `lib/app/demo/main_web_demo.dart` (15 ADR-113).
+`DEMO_BACKEND` читает только точка входа веб-демо `lib/app/demo/main_web_demo.dart` (15 ADR-113). Она же задаёт
+`ENV_BANNER=false` (`demoAppConfig`): в веб-демо нет полосы «DEV · TEST DATA» (15 ADR-114 п. 9 (5)). Из файлов профилей
+этот ключ не читается — в сборках Windows и Android вне `prod` полоса есть всегда.
 
 `APP_DATA_DIR` (только `dev`/`staging`; в `prod` игнорируется) — абсолютный каталог данных приложения: БД drift
 `pos_<user_id>.db`, файл secure storage и кэш пишутся в его подкаталоги (`support/`, `documents/`, `cache/`, `tmp/`)

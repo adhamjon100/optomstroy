@@ -269,15 +269,15 @@ void main() {
   });
 
   testWidgets(
-    'кнопка шапки без открытия drawer: «Корзина · 6 шт» (единицы, как прежняя подпись CartFab); «5 поз. · 6 шт» '
-    '— в тултипе (строку сворачивает шапка по ширине — header_fit_test); неудачное сохранение — иконка warning и '
-    '«Корзина не сохранена» (паритет функций)',
+    'кнопка шапки без открытия drawer: первая строка — всегда «Корзина» (прототип, ADR-114; RV-10); «5 поз. · 6 шт» '
+    '— в тултипе и Semantics (строку сворачивает шапка по ширине — header_fit_test); неудачное сохранение — иконка '
+    'warning и «Корзина не сохранена» (паритет функций)',
     (tester) async {
       await pump(tester);
       final Text label = tester.widget<Text>(
         find.descendant(of: _button, matching: find.byKey(const ValueKey<String>('top-app-bar-cart-label'))),
       );
-      expect(label.data, startsWith('Корзина · 6'));
+      expect(label.data, 'Корзина', reason: 'единицы — в тултипе и Semantics, не в подписи');
       expect(find.descendant(of: _button, matching: find.byIcon(Icons.warning_amber_rounded)), findsNothing);
       expect(find.byTooltip(RegExp('^5 поз. · 6')), findsOneWidget, reason: 'позиции и единицы — в тултипе');
 
@@ -338,8 +338,10 @@ void main() {
     },
   );
 
-  testWidgets('drawer: «Корзина · N поз.», «Клиент: не выбран», строки со степпером sm, «Товаров (N)», «Итого», '
-      'примечание UI-20-034; кнопки в одну строку 48 — на Windows с клавишами', (tester) async {
+  testWidgets('drawer: «Корзина · N поз.», «Клиент: не выбран», строки со степпером-группой, «Товаров (N)», «Итого», '
+      'примечание UI-20-034; кнопки 46 (цель 48) в одну строку, flex 1 : 1,4 — на Windows с клавишами (ADR-114)', (
+    tester,
+  ) async {
     await pump(tester);
     await openByTap(tester);
     expect(find.text('Корзина · 5 поз.', findRichText: true), findsOneWidget);
@@ -358,10 +360,14 @@ void main() {
     final Rect park = tester.getRect(find.byKey(CartKeys.park));
     final Rect create = tester.getRect(find.byKey(CartKeys.createOrder));
     expect(park.top, create.top, reason: 'в одну строку');
-    expect(park.height, 48);
-    expect(create.left, greaterThan(park.right));
-    expect(create.width / park.width, closeTo(1.4, 0.05), reason: 'flex 1 : 1,4');
-    expect(tester.widget<AppButton>(find.byKey(CartKeys.createOrder)).size, AppButtonSize.cta);
+    expect(park.height, AppButtonSize.drawer.target, reason: 'цель 48');
+    expect(AppButtonSize.drawer.height, 46, reason: 'видимая высота прототипа');
+    expect(create.left - park.right, CartPanel.drawerButtonGap);
+    // CSS `flex: 1` и `flex: 1.4` с основой 0 (после собственных полей): при строке 380 — 157,3 и 212,7.
+    expect(park.width, closeTo(CartPanel.drawerParkWidth(park.width + create.width + CartPanel.drawerButtonGap), 0.01));
+    expect(create.width / park.width, closeTo(212.7 / 157.3, 0.02), reason: 'flex 1 : 1,4');
+    expect(tester.widget<AppButton>(find.byKey(CartKeys.createOrder)).size, AppButtonSize.drawer);
+    expect(tester.widget<AppButton>(find.byKey(CartKeys.park)).size, AppButtonSize.drawer);
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('снекбар «Позиция удалена · Отменить» в drawer — слева от drawer над затемнением и нажимается', (
@@ -369,7 +375,7 @@ void main() {
   ) async {
     await pump(tester);
     await openByTap(tester);
-    await tester.tap(inLine(frap, find.byIcon(Icons.close_rounded)));
+    await tester.tap(inLine(frap, find.byKey(const ValueKey<String>('cart-line-remove'))));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byKey(CartKeys.line(frap)), findsNothing);
@@ -392,7 +398,7 @@ void main() {
       QuantityStepperSize.md,
       reason: 'medium — степпер md',
     );
-    await tester.tap(inLine(frap, find.byIcon(Icons.close_rounded)));
+    await tester.tap(inLine(frap, find.byKey(const ValueKey<String>('cart-line-remove'))));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     final Rect bar = tester.getRect(find.byType(AppSnackbar));

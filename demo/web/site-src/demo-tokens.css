@@ -1,6 +1,6 @@
 /*
  * СГЕНЕРИРОВАНО demo/web/site-src/build-site.mjs — не править вручную.
- * Источник: contracts/design-tokens/tokens.json v1.1.0 (палитра B), sha256 1df33ae3b024212469b41f111edbfa73a256cb498b97ae0ef2246662b7c2baeb.
+ * Источник: contracts/design-tokens/tokens.json v1.2.0 (палитра B), sha256 83d918d7ec4f438054a498d28e8992cc86148bf7e90a0ce13ecedada781821f3.
  */
 :root {
   --pd-color-background: #F1F6FC;
@@ -61,6 +61,14 @@
   --pd-radius-lg: 16px;
   --pd-radius-xl: 20px;
   --pd-radius-full: 999px;
+  --pd-radius-segment: 7px;
+  --pd-radius-badge: 9px;
+  --pd-radius-control: 10px;
+  --pd-radius-catalog-card: 14px;
+  --pd-radius-star: 17px;
+  --pd-radius-arrow: 19px;
+  --pd-radius-avatar: 19px;
+  --pd-radius-circle: 28px;
   --pd-font-family: 'Inter', 'Segoe UI', Roboto, Arial, sans-serif;
   --pd-text-display-size: 32px;
   --pd-text-display-line: 40px;
@@ -96,6 +104,10 @@
   --pd-shadow-1: 0px 1px 2px 0px rgba(27, 31, 42, 0.06);
   --pd-shadow-2: 0px 2px 8px 0px rgba(27, 31, 42, 0.08);
   --pd-shadow-3: 0px 8px 24px 0px rgba(27, 31, 42, 0.12);
+  --pd-shadow-cardHover: 0px 6px 18px 0px rgba(14, 20, 86, 0.1);
+  --pd-shadow-ribbonArrow: 0px 4px 12px 0px rgba(14, 20, 86, 0.14);
+  --pd-shadow-drawer: -12px 0px 40px 0px rgba(14, 20, 86, 0.18);
+  --pd-shadow-toast: 0px 10px 30px 0px rgba(14, 20, 86, 0.3);
   --pd-motion-fast: 150ms;
   --pd-motion-base: 200ms;
   --pd-motion-slow: 300ms;

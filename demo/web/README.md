@@ -10,11 +10,33 @@
 |---|---|
 | `backend/` | сборка браузерного бэкенда (`build-backend.mjs`), шимы, подмены, тесты — см. `backend/README.md` |
 | `site-src/` | страница: загрузка, мост `__posDemo`, панель «ДЕМО», одна вкладка, сброс (`build-site.mjs`, `dev/`) |
-| `tools/` | сборка сайта (`assemble-site.mjs`), проверки (`check-site.mjs`), статика как на Netlify (`serve-site.mjs`), headless-проверка собранного сайта (`smoke.mjs`), заголовки и перенаправления (`site-headers.mjs`) |
+| `tools/` | сборка сайта (`assemble-site.mjs`), проверки (`check-site.mjs`), статика как на Netlify (`serve-site.mjs`), headless-проверка собранного сайта (`smoke.mjs`), сверка с прототипом (`design-compare.mjs`), заголовки и перенаправления (`site-headers.mjs`) |
 | `build-web-demo.ps1` | всё по порядку (PowerShell) |
 | `netlify.toml` | каталог публикации `site` (правила — в `site/_headers`, `site/_redirects`) |
 | `site/` | собранный сайт (в git не попадает) |
 | `.build/` | промежуточные результаты: pos-api dist, сборка Flutter, снимок, отчёты (в git не попадает) |
+
+## Данные демо: каталог по макету (WP-DATA-WEB, 2026-10-31; ADR-114)
+
+Каталог собран по прототипу экрана выбора товаров (`docs/specification/visual/prototype/Main.dc.html`). Источник —
+спецификация `demo/catalog/design-catalog.json`, она правится вручную. Сборку делает
+`pos-api/scripts/design_catalog.ts` через публичный API `SyntheticCatalog`, исходники pos-api не меняются.
+
+- **Дерево.** 8 корней и 33 подкатегории в порядке макета; порядок хранится в `categories.sort_order`.
+- **Товары.** 78 тестовых товаров: 26 товаров макета без изменений и 52 наполнителя без марок. В «Сантехнике»
+  ровно 12 товаров макета. У неё больше всех товаров среди корней, поэтому каталог сотрудника при первом входе
+  открывается на ней: правило «корень с наибольшим productCount».
+- **Фото.** 29 PNG макета как есть (`demo/catalog/photos`, происхождение — `demo/catalog/PHOTOS.md`): 8 картинок
+  корней, 9 подкатегорий «Сантехники» (`categories.image_id`) и 12 фото её товаров. На сайте это 87 файлов WebP,
+  около 0,08 МБ. У остальных товаров фото нет — как в макете.
+- **Остальное.** Порог «мало» в демо — 4: в макете 4 шт — «В наличии», 3 — «Мало». «Унитаз-компакт Sanita Luxe
+  Classic» (SL1001) в избранном у сотрудников стенда, как `favs` макета. Есть 5 товаров с характеристиками,
+  10 с упаковками и 5 в «м»/«м2». 5 товаров «нет в наличии», два из них есть на другом складе. Один товар —
+  «Остаток неизвестен» (KT2).
+- **Эпоха.** Любая правка спецификации, фото или `design_catalog.ts` меняет ключ эпохи. Браузеры начнут демо
+  заново (WEB-KI-06).
+- **Проверка.** `node --test demo/web/backend/test/design-catalog.test.mjs` сверяет спецификацию с данными
+  прототипа (`CATS`, `P`, `IMG`, `favs`) и ассетами макета. После сборки сайта тест проверяет и ответы воркера.
 
 ## Сборка
 
@@ -46,6 +68,7 @@ node demo/web/site-src/dev/cdp-test.mjs                        # страниц�
 node demo/web/tools/smoke.mjs --storage opfs                   # собранный сайт: загрузка, вход 906 в интерфейсе, F5 (экран PIN), замороженная вкладка
 node demo/web/tools/smoke.mjs --storage idb                    # [--port 8095…8099] [--cdp N] [--only boot,ui,f5,frozen]
 node demo/web/tools/pdf-smoke.mjs --storage idb                # предпросмотр и печать PDF под CSP, pdf.js с сайта [--port 8097] [--cdp 9417]
+node demo/web/tools/design-compare.mjs                         # сверка с прототипом (T-UI-116): вход 907, 10 состояний × 1440/1280/1920 + 1024; [--port] [--cdp] [--vp] [--states] [--out] [--app-png <golden.png>]
 node demo/web/tools/serve-site.mjs --port 8095                 # открыть сайт локально: http://127.0.0.1:8095/
 ```
 

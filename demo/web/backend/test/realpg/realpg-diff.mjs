@@ -37,7 +37,7 @@ const diffKey = (d) => `${d.key}|${d.kind}|${String(d.path).replace(/\[\d+\]/g, 
 async function runOn(label, start) {
   const t = Date.now();
   const errors = [];
-  const be = await start({ sku: 500, strict: false, initOpts: { seed: false }, onLog: (lv, m) => lv === 'error' && errors.push(String(m).slice(0, 800)) });
+  const be = await start({ strict: false, initOpts: { seed: false }, onLog: (lv, m) => lv === 'error' && errors.push(String(m).slice(0, 800)) });
   let ctx;
   let snap = null;
   let stats = null;

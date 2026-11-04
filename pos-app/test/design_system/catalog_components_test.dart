@@ -1,10 +1,11 @@
-// Компоненты каталога RM-E-007 (03 §9.8–§9.13, §9.16, §9.17, §9.23–§9.26, §9.51): формат цены (U+202F,
-// запятая, U+2212), StockBadge (цвет + иконка + текст), FavoriteToggle (только звезда, toggled),
-// ViewModeSegmented (повторный выбор — без события, ←/→), SortMenu (тот же пункт — без события),
-// CategorySidebarItem (selected — без действия, счётчик «0»), CategoryChip (check у выбранного),
+// Компоненты каталога RM-E-007 (03 §9.8–§9.13, §9.16, §9.17, §9.23–§9.26, §9.51): формат цены (ADR-114: всегда
+// 2 знака, U+00A0, запятая, U+2212; диктор — spoken()), StockBadge (цвет + глиф прототипа + текст), FavoriteToggle
+// (только звезда, toggled), ViewModeSegmented (повторный выбор — без события, ←/→), SortMenu (тот же пункт — без
+// события), CategorySidebarItem (selected — без действия, счётчик «0»), CategoryChip (check у выбранного),
 // CategoryTile, NotificationBell («99+», точка), FoundCountText (скелетон), FilterSection, ProductCard*;
-// прототип 2026-10-29 (ADR-112): ToolbarToggleButton, стили `toolbar` ViewModeSegmented/SortMenu, CategoryTile
-// sidebar/ribbon 118×148, ProductCardActionKind.inCart, kProductCardGridExtent, таблица «Компакт» 120·flex·150·150·132.
+// прототип 2026-10-29 (ADR-112) и «точь-в-точь» 2026-10-31 (ADR-114): ToolbarToggleButton, стили `toolbar`
+// ViewModeSegmented/SortMenu, CategoryTile sidebar/ribbon 118×148, ProductCardActionKind.inCart,
+// kProductCardGridExtent (340/360), таблица «Компакт» 120·flex·150·150·132. Тест-кейсы: T-DS-103, T-CAT-037.
 import 'package:flutter/material.dart' hide SearchBar;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
@@ -51,13 +52,29 @@ String _fromPrefix(String formatted) => 'от $formatted';
 
 void main() {
   group('PriceText', () {
-    test('формат сом: разряды U+202F, тыйыны при ненулевой дроби, минус U+2212', () {
-      expect(PriceText.formatAmount(const Money(235000)), '2 350');
-      expect(PriceText.formatAmount(const Money(1600750)), '16 007,50');
-      expect(PriceText.formatAmount(const Money(-84250)), '−842,50');
-      expect(PriceText.formatAmount(const Money(100), fixed2: true), '1,00');
-      expect(PriceText.formatAmount(const Money(123456789)), '1 234 567,89');
-      expect(PriceText.format(const Money(235000)), '2 350 сом');
+    // T-DS-103 (ADR-114 п. 4, 03 §16.4, DS-082): как `money()` прототипа — всегда 2 знака, разряды и пробел перед
+    // «сом» — неразрывный U+00A0 (U+202F больше нет), минус U+2212.
+    const String nb = '\u00A0';
+    test('формат сом: всегда 2 знака, разряды U+00A0, минус U+2212 (T-DS-103)', () {
+      expect(PriceText.groupSeparator, nb);
+      expect(PriceText.format(const Money(1045000)), '10${nb}450,00$nbсом');
+      expect(PriceText.format(const Money(18000)), '180,00$nbсом');
+      expect(PriceText.format(Money.zero), '0,00$nbсом');
+      expect(PriceText.format(const Money(-84250)), '−842,50$nbсом');
+      expect(PriceText.format(const Money(1600750)), '16${nb}007,50$nbсом');
+      expect(PriceText.formatAmount(const Money(235000)), '2${nb}350,00');
+      expect(PriceText.formatAmount(const Money(123456789)), '1${nb}234${nb}567,89');
+      expect(PriceText.format(const Money(123456789)), isNot(contains('\u202F')));
+      // Без двух знаков — только для чтения вслух ([PriceText.spoken], [PriceText.readable]).
+      expect(PriceText.formatAmount(const Money(235000), fixed2: false), '2${nb}350');
+      expect(PriceText.formatAmount(const Money(1600750), fixed2: false), '16${nb}007,50');
+      // Диктор: без «запятой» и нулевых тыйынов, обычные пробелы.
+      expect(PriceText.spoken(const Money(1045000)), '10 450 сом');
+      expect(PriceText.spoken(const Money(1600750)), '16 007 сом 50 тыйын');
+      expect(PriceText.spoken(const Money(-84250)), '−842 сом 50 тыйын');
+      expect(PriceText.spoken(Money.zero), '0 сом');
+      expect(PriceText.readable(const Money(235000)), '2350 сом');
+      expect(PriceText.readable(const Money(1600750)), '16007,50 сом');
     });
 
     testWidgets('нет цены — подпись; «от» — префикс', (tester) async {
@@ -71,7 +88,106 @@ void main() {
         ),
       );
       expect(find.text('Цена не указана'), findsOneWidget);
-      expect(find.bySemanticsLabel('от 2350 сом / шт'), findsOneWidget);
+      expect(find.textContaining('от 2${nb}350,00$nbсом', findRichText: true), findsOneWidget, reason: '2 знака');
+      expect(find.bySemanticsLabel('от 2 350 сом / шт'), findsOneWidget, reason: 'диктор — spoken() без «,00»');
+    });
+
+    testWidgets('T-DS-103: стили сетка 18/800 −0.2, «Список» 17/800, «Компакт» 14/800, «/ шт» 13 catalogMeta; '
+        'Semantics — spoken()', (tester) async {
+      await tester.runAsync(loadInterFont);
+      await pumpDs(
+        tester,
+        const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            PriceText(key: ValueKey<String>('grid'), amount: Money(1045000), unit: '/ шт'),
+            PriceText(key: ValueKey<String>('list'), amount: Money(1600750), variant: PriceTextVariant.list),
+            PriceText(key: ValueKey<String>('compact'), amount: Money(32000), variant: PriceTextVariant.compact),
+          ],
+        ),
+      );
+      const DsColors c = DsColors.lightB;
+      TextSpan spanOf(String key) {
+        final RichText rich = tester.widget<RichText>(
+          find.descendant(of: find.byKey(ValueKey<String>(key)), matching: find.byType(RichText)),
+        );
+        // Text.rich: корневой span со стилем по умолчанию → span цены (сумма, единица).
+        return (rich.text as TextSpan).children!.first as TextSpan;
+      }
+
+      final TextSpan grid = spanOf('grid');
+      final TextSpan gridAmount = grid.children!.first as TextSpan;
+      expect(gridAmount.text, '10${nb}450,00$nbсом');
+      expect(gridAmount.style?.fontSize, 18);
+      expect(gridAmount.style?.fontWeight, FontWeight.w800);
+      expect(gridAmount.style?.letterSpacing, -0.2);
+      expect(gridAmount.style?.color, c.primaryText);
+      final TextSpan unit = grid.children![1] as TextSpan;
+      expect(unit.text, ' / шт');
+      expect(unit.style?.fontSize, 13);
+      expect(unit.style?.color, c.catalogMeta);
+      final TextStyle list = (spanOf('list').children!.first as TextSpan).style!;
+      expect((list.fontSize, list.fontWeight), (17, FontWeight.w800));
+      final TextStyle compact = (spanOf('compact').children!.first as TextSpan).style!;
+      expect((compact.fontSize, compact.fontWeight), (14, FontWeight.w800));
+      expect(find.bySemanticsLabel('10 450 сом / шт'), findsOneWidget);
+      expect(find.bySemanticsLabel('16 007 сом 50 тыйын'), findsOneWidget);
+      expect(find.bySemanticsLabel('320 сом'), findsOneWidget);
+    });
+
+    testWidgets('wrapUnit: «/ шт» блоком через 4; не помещается — второй строкой; alignEnd — у конца; без '
+        'allowUnitLine — одна строка уменьшается (RC-09, RC-11)', (tester) async {
+      await tester.runAsync(loadInterFont);
+      Widget price(String key, double width, {bool alignEnd = false, bool allowUnitLine = true}) => SizedBox(
+        key: ValueKey<String>(key),
+        width: width,
+        child: Align(
+          alignment: alignEnd ? AlignmentDirectional.centerEnd : AlignmentDirectional.centerStart,
+          child: PriceText(
+            amount: const Money(1045000),
+            unit: '/ шт',
+            wrapUnit: true,
+            alignEnd: alignEnd,
+            allowUnitLine: allowUnitLine,
+          ),
+        ),
+      );
+      await pumpDs(
+        tester,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            price('wide', 300),
+            price('narrow', 130),
+            price('end', 130, alignEnd: true),
+            price('one', 130, allowUnitLine: false),
+          ],
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      Rect rectOf(String key, String text) =>
+          tester.getRect(find.descendant(of: find.byKey(ValueKey<String>(key)), matching: find.text(text)));
+      const String amount = '10${nb}450,00$nbсом';
+      // Широко: одна строка, «/ шт» справа от суммы через зазор 4, по базовой линии.
+      final Rect wideAmount = rectOf('wide', amount);
+      final Rect wideUnit = rectOf('wide', '/ шт');
+      expect(wideUnit.left - wideAmount.right, closeTo(4, 0.01));
+      expect(wideUnit.top, greaterThan(wideAmount.top), reason: 'по базовой линии — меньший кегль ниже верха');
+      expect(wideUnit.bottom, lessThanOrEqualTo(wideAmount.bottom));
+      // Узко: «/ шт» под суммой через 4, у начала.
+      final Rect narrowAmount = rectOf('narrow', amount);
+      final Rect narrowUnit = rectOf('narrow', '/ шт');
+      expect(narrowUnit.top - narrowAmount.bottom, closeTo(4, 0.5));
+      expect(narrowUnit.left, closeTo(narrowAmount.left, 0.5));
+      // alignEnd: обе строки у конца.
+      final Rect endBox = tester.getRect(find.byKey(const ValueKey<String>('end')));
+      expect(rectOf('end', '/ шт').right, closeTo(endBox.right, 0.5));
+      expect(rectOf('end', amount).right, closeTo(endBox.right, 0.5));
+      // Без второй строки: строка «сумма / шт» уменьшается целиком (FittedBox), без второй строки.
+      final Finder one = find.byKey(const ValueKey<String>('one'));
+      expect(find.descendant(of: one, matching: find.byType(FittedBox)), findsOneWidget);
+      expect(find.descendant(of: one, matching: find.byType(Column)), findsNothing);
+      expect(tester.getSize(one).height, lessThan(tester.getSize(find.byKey(const ValueKey<String>('narrow'))).height));
     });
   });
 
@@ -86,11 +202,95 @@ void main() {
         ],
       ),
     );
+    // Пилюли (`pill`, `compact`) — прежние иконки Material; строка карточки (`inline`) — глиф прототипа (ADR-114).
     expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.cancel_rounded), findsOneWidget);
     expect(find.byIcon(Icons.help_rounded), findsOneWidget);
     expect(find.byIcon(Icons.schedule_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.cancel_rounded), findsNothing);
+    const DsColors c = DsColors.lightB;
+    final DsGlyph cross = tester.widget<DsGlyph>(
+      find.byWidgetPredicate((Widget w) => w is DsGlyph && w.kind == DsGlyphKind.crossCircle),
+    );
+    expect(cross.size, StockBadge.glyphSize);
+    expect(cross.color, c.stockOutIcon, reason: '«Нет в наличии» — серый крест #8A93A3, не error');
+    expect(tester.widget<Text>(find.text('Нет в наличии')).style?.color, c.stockOutText);
     expect(find.bySemanticsLabel('В наличии · 24 шт, данные от 09:41'), findsOneWidget);
+  });
+
+  testWidgets('StockBadge.inline и .text по прототипу: глифы и цвета уровней; text — без глифа 13/500 (ADR-114)', (
+    tester,
+  ) async {
+    await pumpDs(
+      tester,
+      const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          StockBadge(
+            key: ValueKey<String>('in'),
+            level: StockBadgeLevel.inStock,
+            label: 'В наличии',
+            variant: StockBadgeVariant.inline,
+          ),
+          StockBadge(
+            key: ValueKey<String>('low'),
+            level: StockBadgeLevel.low,
+            label: 'Мало',
+            variant: StockBadgeVariant.inline,
+          ),
+          StockBadge(
+            key: ValueKey<String>('out'),
+            level: StockBadgeLevel.out,
+            label: 'Нет',
+            variant: StockBadgeVariant.inline,
+          ),
+          StockBadge(
+            key: ValueKey<String>('unk'),
+            level: StockBadgeLevel.unknown,
+            label: 'Неизвестно',
+            variant: StockBadgeVariant.inline,
+          ),
+          StockBadge(
+            key: ValueKey<String>('text'),
+            level: StockBadgeLevel.low,
+            label: 'Мало · 3 шт',
+            variant: StockBadgeVariant.text,
+          ),
+        ],
+      ),
+    );
+    const DsColors c = DsColors.lightB;
+    DsGlyph glyph(String key) =>
+        tester.widget<DsGlyph>(find.descendant(of: find.byKey(ValueKey<String>(key)), matching: find.byType(DsGlyph)));
+    Text label(String key) =>
+        tester.widget<Text>(find.descendant(of: find.byKey(ValueKey<String>(key)), matching: find.byType(Text)));
+    for (final (String key, DsGlyphKind kind, Color icon, Color text) in <(String, DsGlyphKind, Color, Color)>[
+      ('in', DsGlyphKind.checkCircle, c.stockIn, c.stockIn),
+      ('low', DsGlyphKind.warningTriangle, c.stockLowIcon, c.stockLowText),
+      ('out', DsGlyphKind.crossCircle, c.stockOutIcon, c.stockOutText),
+      ('unk', DsGlyphKind.questionCircle, c.stockOutIcon, c.stockOutText),
+    ]) {
+      expect(glyph(key).kind, kind, reason: key);
+      expect(glyph(key).color, icon, reason: key);
+      expect(label(key).style?.color, text, reason: key);
+      expect(label(key).style?.fontSize, 12.5, reason: '$key: stock 12.5/500');
+      expect(label(key).style?.fontWeight, FontWeight.w500);
+      // Прототип: глиф 14 + зазор 6.
+      expect(
+        tester.getTopLeft(find.descendant(of: find.byKey(ValueKey<String>(key)), matching: find.byType(Text))).dx -
+            tester
+                .getTopRight(find.descendant(of: find.byKey(ValueKey<String>(key)), matching: find.byType(DsGlyph)))
+                .dx,
+        6,
+      );
+    }
+    expect(StockBadge.lineStyleOf(c, StockBadgeLevel.low).$3, c.stockLowIcon);
+    expect(
+      find.descendant(of: find.byKey(const ValueKey<String>('text')), matching: find.byType(DsGlyph)),
+      findsNothing,
+    );
+    expect(label('text').style?.fontSize, 13, reason: 'text — meta 13/500');
+    expect(label('text').style?.fontWeight, FontWeight.w500);
+    expect(label('text').style?.color, c.stockLowText);
   });
 
   testWidgets('FavoriteToggle: только звезда; тап сообщает новое значение; цель 48', (tester) async {
@@ -126,10 +326,14 @@ void main() {
     expect(changes, <ProductViewMode>[ProductViewMode.compact]);
     expect(ProductViewMode.tryParse('list'), ProductViewMode.list);
     expect(ProductViewMode.tryParse('table'), isNull);
+    // ←/→ (A11Y, 03 §9.26): фокус на сегменте, стрелка выбирает соседний; на краю — без события.
+    changes.clear();
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-    expect(changes.length, greaterThanOrEqualTo(1));
+    expect(changes, <ProductViewMode>[ProductViewMode.list], reason: '«Сетка» → → «Список»');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    expect(changes, <ProductViewMode>[ProductViewMode.list], reason: '«Сетка» — первый, ← без события');
   });
 
   testWidgets('SortMenu: меню с check у текущего; тот же пункт — без события; другой — событие', (tester) async {
@@ -455,60 +659,71 @@ void main() {
   });
 
   group('прототип 2026-10-29 (ADR-112)', () {
-    testWidgets('ToolbarToggleButton: 40 в цели 48, радиус md; выбранная — тинт, залитая иконка и вес 700; бейдж', (
-      tester,
-    ) async {
+    testWidgets('ToolbarToggleButton: 40 в цели 48, радиус control 10; выбранная — тинт, вес 600 как у прототипа; '
+        'высокий контраст — 700 и обводка 2 той же ширины; бейдж; подсказка', (tester) async {
       int taps = 0;
-      await pumpDs(
-        tester,
-        Column(
-          children: <Widget>[
-            ToolbarToggleButton(
-              key: const ValueKey<String>('off'),
-              label: 'Избранные',
-              icon: Icons.star_outline_rounded,
-              selectedIcon: Icons.star_rounded,
-              onTap: () => taps++,
-            ),
-            ToolbarToggleButton(
-              key: const ValueKey<String>('on'),
-              label: 'Фильтры',
-              icon: Icons.filter_alt_outlined,
-              selectedIcon: Icons.filter_alt_rounded,
-              selected: true,
-              badgeCount: 2,
-              onTap: () => taps++,
-            ),
-            const ToolbarToggleButton(
-              key: ValueKey<String>('disabled'),
-              label: 'Новые',
-              icon: Icons.schedule_rounded,
-              enabled: false,
-              onTap: null,
-            ),
-          ],
-        ),
+      Widget buttons() => Column(
+        children: <Widget>[
+          ToolbarToggleButton(
+            key: const ValueKey<String>('off'),
+            label: 'Избранные',
+            glyph: DsGlyphKind.star,
+            tooltip: 'Избранные, 2 товара',
+            onTap: () => taps++,
+          ),
+          ToolbarToggleButton(
+            key: const ValueKey<String>('on'),
+            label: 'Фильтры',
+            glyph: DsGlyphKind.filter,
+            selected: true,
+            badgeCount: 2,
+            onTap: () => taps++,
+          ),
+          const ToolbarToggleButton(
+            key: ValueKey<String>('disabled'),
+            label: 'Новые',
+            glyph: DsGlyphKind.clock,
+            enabled: false,
+            onTap: null,
+          ),
+        ],
       );
+      await pumpDs(tester, buttons());
       const DsColors c = DsColors.lightB;
       expect(tester.getSize(find.byKey(const ValueKey<String>('off'))).height, ToolbarToggleButton.target);
-      final Finder box = find.descendant(
-        of: find.byKey(const ValueKey<String>('on')),
-        matching: find.byType(AnimatedContainer),
-      );
-      expect(tester.getSize(box).height, ToolbarToggleButton.height);
-      final BoxDecoration on = tester.widget<AnimatedContainer>(box).decoration! as BoxDecoration;
+      Finder boxOf(String key) =>
+          find.descendant(of: find.byKey(ValueKey<String>(key)), matching: find.byType(AnimatedContainer));
+      expect(tester.getSize(boxOf('on')).height, ToolbarToggleButton.height);
+      final BoxDecoration on = tester.widget<AnimatedContainer>(boxOf('on')).decoration! as BoxDecoration;
       expect(on.color, c.primaryContainer);
       expect((on.border! as Border).top.color, c.primaryContainerBorder);
-      expect(on.borderRadius, const BorderRadius.all(Radius.circular(12)));
+      expect((on.border! as Border).top.width, 1);
+      expect(on.borderRadius, const BorderRadius.all(Radius.circular(10)), reason: 'прототип: radius 10');
+      // Глиф прототипа 17 с линией 2, контурный и у выбранной (ADR-114: вид не меняется).
+      final DsGlyph filter = tester.widget<DsGlyph>(
+        find.descendant(of: find.byKey(const ValueKey<String>('on')), matching: find.byType(DsGlyph)),
+      );
       expect(
-        find.descendant(of: find.byKey(const ValueKey<String>('on')), matching: find.byIcon(Icons.filter_alt_rounded)),
-        findsOneWidget,
+        (filter.kind, filter.size, filter.strokeWidth, filter.color),
+        (DsGlyphKind.filter, ToolbarToggleButton.iconSize, 2.0, c.onPrimaryContainer),
       );
       final Text onLabel = tester.widget<Text>(find.text('Фильтры'));
-      expect(onLabel.style?.fontWeight, FontWeight.w700);
+      expect(onLabel.style?.fontWeight, FontWeight.w600, reason: 'прототип: вес одинаков в обоих состояниях');
       expect(onLabel.style?.color, c.onPrimaryContainer);
       expect(tester.widget<Text>(find.text('Избранные')).style?.fontWeight, FontWeight.w600);
       expect(find.byType(AppBadge), findsOneWidget);
+      // Семантика: кнопка с toggled; подпись с числом бейджа; подсказка «Избранные, 2 товара».
+      expect(
+        tester.getSemantics(find.byKey(const ValueKey<String>('on'))),
+        containsSemantics(
+          label: 'Фильтры, 2',
+          isButton: true,
+          hasToggledState: true,
+          isToggled: true,
+          hasTapAction: true,
+        ),
+      );
+      expect(find.byTooltip('Избранные, 2 товара'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey<String>('off')));
       await tester.tap(find.byKey(const ValueKey<String>('disabled')));
       expect(taps, 1, reason: 'недоступная не нажимается');
@@ -517,6 +732,18 @@ void main() {
         ToolbarToggleButton.estimateWidth(ctx, 'Избранные'),
         closeTo(tester.getSize(find.byKey(const ValueKey<String>('off'))).width, 24),
       );
+      final double widthBefore = tester.getSize(boxOf('on')).width;
+
+      // Высокий контраст (A11Y-004, DS-036; RC-05): выбранная — подпись 700 и обводка 2, ширина та же.
+      tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(highContrast: true);
+      addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+      await pumpDs(tester, buttons());
+      final BoxDecoration strong = tester.widget<AnimatedContainer>(boxOf('on')).decoration! as BoxDecoration;
+      expect((strong.border! as Border).top.width, ToolbarToggleButton.highContrastBorder);
+      expect((strong.border! as Border).top.color, c.onPrimaryContainer);
+      expect(tester.widget<Text>(find.text('Фильтры')).style?.fontWeight, FontWeight.w700);
+      expect(tester.widget<Text>(find.text('Избранные')).style?.fontWeight, isNot(FontWeight.w700));
+      expect(tester.getSize(boxOf('on')).width, closeTo(widthBefore, 3), reason: 'обводка — за счёт поля');
     });
 
     testWidgets('ViewModeSegmented.toolbar и SortMenu.toolbar: трек surface с обводкой, сегмент 32; кнопка 40 в 48', (
@@ -560,8 +787,20 @@ void main() {
       expect(tester.getSize(segmentBox.first).height, 32);
       final Text selected = tester.widget<Text>(find.text('Список'));
       expect(selected.style?.color, c.onPrimaryContainer);
-      expect(selected.style?.fontWeight, FontWeight.w700);
+      expect(selected.style?.fontWeight, FontWeight.w600, reason: 'прототип: вес одинаков (ADR-114)');
       expect(tester.widget<Text>(find.text('Сетка')).style?.color, ViewModeSegmented.toolbarIdle(c));
+      expect(ViewModeSegmented.toolbarIdle(c), c.segmentIdleText);
+      final BoxDecoration seg = tester.widget<AnimatedContainer>(segmentBox.first).decoration! as BoxDecoration;
+      expect(seg.color, c.primaryContainer);
+      expect(seg.borderRadius, const BorderRadius.all(Radius.circular(7)), reason: 'сегмент — radius 7');
+      final DecoratedBox track = tester.widget<DecoratedBox>(
+        find.descendant(of: find.byType(ViewModeSegmented), matching: find.byType(DecoratedBox)).first,
+      );
+      expect(
+        (track.decoration as BoxDecoration).borderRadius,
+        const BorderRadius.all(Radius.circular(10)),
+        reason: 'трек — radius 10',
+      );
       expect(tester.getSize(find.byType(SortMenu<String>)).height, 48);
       expect(
         find.byWidgetPredicate((Widget w) => w is DsGlyph && w.kind == DsGlyphKind.sortArrows),
@@ -618,80 +857,89 @@ void main() {
       expect(label.maxLines, 2);
     });
 
-    testWidgets('ProductCardGrid: «В корзине · N — ещё +1» — тинт; нет в наличии — серая недоступная; owner — место', (
-      tester,
-    ) async {
-      int actions = 0;
-      ProductCardData data(ProductCardActionKind kind, String? label) => ProductCardData(
-        id: 'p-$kind',
-        name: 'Смеситель',
-        skuLabel: 'Арт. F1',
-        price: const Money(235000),
-        priceUnit: '/ шт',
-        stockLevel: StockBadgeLevel.inStock,
-        stockLabel: 'В наличии · 24 шт',
-        favoriteLabel: 'Избранное',
-        action: kind,
-        actionLabel: label,
-      );
-      final double extent = kProductCardGridExtent(TextScaler.noScaling);
-      await pumpDs(
-        tester,
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            for (final (ProductCardActionKind kind, String? label) in <(ProductCardActionKind, String?)>[
-              (ProductCardActionKind.inCart, 'В корзине · 3 — ещё +1'),
-              (ProductCardActionKind.unavailable, 'Нет в наличии'),
-              (ProductCardActionKind.hidden, null),
-            ])
-              SizedBox(
-                key: ValueKey<ProductCardActionKind>(kind),
-                width: 176,
-                height: extent,
-                child: ProductCardGrid(
-                  data: data(kind, label),
-                  callbacks: ProductCardCallbacks(onAction: () => actions++),
+    testWidgets(
+      'ProductCardGrid: «В корзине · N — ещё +1» — тинт; нет в наличии — серая недоступная (T-CAT-037); owner '
+      '— место',
+      (tester) async {
+        int actions = 0;
+        ProductCardData data(ProductCardActionKind kind, String? label) => ProductCardData(
+          id: 'p-$kind',
+          name: 'Смеситель',
+          skuLabel: 'Арт. F1',
+          price: const Money(235000),
+          priceUnit: '/ шт',
+          stockLevel: StockBadgeLevel.inStock,
+          stockLabel: 'В наличии · 24 шт',
+          favoriteLabel: 'Избранное',
+          action: kind,
+          actionLabel: label,
+        );
+        final double extent = kProductCardGridExtent(TextScaler.noScaling);
+        await pumpDs(
+          tester,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              for (final (ProductCardActionKind kind, String? label) in <(ProductCardActionKind, String?)>[
+                (ProductCardActionKind.inCart, 'В корзине · 3 — ещё +1'),
+                (ProductCardActionKind.unavailable, 'Нет в наличии'),
+                (ProductCardActionKind.hidden, null),
+              ])
+                SizedBox(
+                  key: ValueKey<ProductCardActionKind>(kind),
+                  width: 176,
+                  height: extent,
+                  child: ProductCardGrid(
+                    data: data(kind, label),
+                    callbacks: ProductCardCallbacks(onAction: () => actions++),
+                  ),
                 ),
+            ],
+          ),
+          size: const Size(800, 700),
+        );
+        expect(tester.takeException(), isNull);
+        expect(extent, 340, reason: 'прототип: ячейка 340 при масштабе 1.0');
+        final AppButton inCart = tester.widget<AppButton>(find.byType(AppButton));
+        expect(inCart.variant, AppButtonVariant.tint);
+        expect(inCart.label, 'В корзине · 3 — ещё +1');
+        expect(inCart.fitLabel, isTrue, reason: 'одна строка с уменьшением');
+        await tester.tap(find.byType(AppButton));
+        expect(actions, 1);
+        expect(find.byKey(const ValueKey<String>('product-card-unavailable')), findsOneWidget);
+        final Text reason = tester.widget<Text>(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('product-card-unavailable')),
+            matching: find.text('Нет в наличии'),
+          ),
+        );
+        // ADR-114: плашка `disabledBg` радиус 10, подпись `catalogMeta` 14/700 (прототип `.btn:disabled`).
+        expect(reason.style?.color, DsColors.lightB.catalogMeta);
+        expect(reason.style?.fontWeight, FontWeight.w700);
+        final BoxDecoration plate =
+            tester.widget<Container>(find.byKey(const ValueKey<String>('product-card-unavailable'))).decoration!
+                as BoxDecoration;
+        expect(plate.color, DsColors.lightB.disabledBg);
+        expect(plate.borderRadius, const BorderRadius.all(Radius.circular(10)));
+        // Кнопки ряда на одной линии: у owner на месте кнопки — пустое место той же высоты.
+        final double ownerPrice = tester
+            .getTopLeft(
+              find.descendant(
+                of: find.byKey(const ValueKey<ProductCardActionKind>(ProductCardActionKind.hidden)),
+                matching: find.byType(PriceText),
               ),
-          ],
-        ),
-        size: const Size(800, 700),
-      );
-      expect(tester.takeException(), isNull);
-      expect(extent, closeTo(346, 8), reason: '≈ 340 при масштабе 1.0');
-      final AppButton inCart = tester.widget<AppButton>(find.byType(AppButton));
-      expect(inCart.variant, AppButtonVariant.tint);
-      expect(inCart.label, 'В корзине · 3 — ещё +1');
-      expect(inCart.fitLabel, isTrue, reason: 'одна строка с уменьшением');
-      await tester.tap(find.byType(AppButton));
-      expect(actions, 1);
-      expect(find.byKey(const ValueKey<String>('product-card-unavailable')), findsOneWidget);
-      final Text reason = tester.widget<Text>(
-        find.descendant(
-          of: find.byKey(const ValueKey<String>('product-card-unavailable')),
-          matching: find.text('Нет в наличии'),
-        ),
-      );
-      expect(reason.style?.color, DsColors.lightB.textTertiary);
-      // Кнопки ряда на одной линии: у owner на месте кнопки — пустое место той же высоты.
-      final double ownerPrice = tester
-          .getTopLeft(
-            find.descendant(
-              of: find.byKey(const ValueKey<ProductCardActionKind>(ProductCardActionKind.hidden)),
-              matching: find.byType(PriceText),
-            ),
-          )
-          .dy;
-      final double inCartPrice = tester
-          .getTopLeft(
-            find.descendant(
-              of: find.byKey(const ValueKey<ProductCardActionKind>(ProductCardActionKind.inCart)),
-              matching: find.byType(PriceText),
-            ),
-          )
-          .dy;
-      expect(ownerPrice, inCartPrice);
-    });
+            )
+            .dy;
+        final double inCartPrice = tester
+            .getTopLeft(
+              find.descendant(
+                of: find.byKey(const ValueKey<ProductCardActionKind>(ProductCardActionKind.inCart)),
+                matching: find.byType(PriceText),
+              ),
+            )
+            .dy;
+        expect(ownerPrice, inCartPrice);
+      },
+    );
   });
 }

@@ -305,12 +305,20 @@ class _PriceBlockState extends State<_PriceBlock> {
     final List<Widget> packPrices = <Widget>[
       for (final Packaging pk in s.packagings)
         if (s.packPriceOf(pk) case final Price pp)
-          Text(
-            l10n.product_price_per_pack(
+          Semantics(
+            // Диктор: сумма без «запятой» и нулевых тыйынов (ADR-114 п. 4, ревью R2C-04).
+            label: l10n.product_price_per_pack(
               '${ProductUnits(s).packLabel(pk)} (${ProductFormat.qty(pk.factor)} $unit)',
-              PriceText.format(pp.amount),
+              PriceText.spoken(pp.amount),
             ),
-            style: context.text.caption.copyWith(color: c.textSecondary, fontFeatures: _tnum),
+            excludeSemantics: true,
+            child: Text(
+              l10n.product_price_per_pack(
+                '${ProductUnits(s).packLabel(pk)} (${ProductFormat.qty(pk.factor)} $unit)',
+                PriceText.format(pp.amount),
+              ),
+              style: context.text.caption.copyWith(color: c.textSecondary, fontFeatures: _tnum),
+            ),
           ),
     ];
     final List<Price> allPrices = <Price>[
@@ -365,9 +373,13 @@ class _PriceBlockState extends State<_PriceBlock> {
                         style: context.text.body.copyWith(color: c.textPrimary),
                       ),
                     ),
-                    Text(
-                      PriceText.format(pr.amount),
-                      style: context.text.body.copyWith(color: c.textPrimary, fontFeatures: _tnum),
+                    Semantics(
+                      label: PriceText.spoken(pr.amount),
+                      excludeSemantics: true,
+                      child: Text(
+                        PriceText.format(pr.amount),
+                        style: context.text.body.copyWith(color: c.textPrimary, fontFeatures: _tnum),
+                      ),
                     ),
                   ],
                 ),
@@ -560,9 +572,11 @@ class _Variants extends StatelessWidget {
 // Количество и «В корзину»
 
 /// Подпись CTA (UI-14-011/020).
-String ctaLabelOf(AppLocalizations l10n, ProductDetailsState s) => switch (s.cta) {
+String ctaLabelOf(AppLocalizations l10n, ProductDetailsState s, {bool spoken = false}) => switch (s.cta) {
   ProductCta.add || ProductCta.invalidQuantity =>
-    s.ctaSum == null ? l10n.product_cta_unavailable : l10n.product_cta_add(PriceText.format(s.ctaSum!)),
+    s.ctaSum == null
+        ? l10n.product_cta_unavailable
+        : l10n.product_cta_add(spoken ? PriceText.spoken(s.ctaSum!) : PriceText.format(s.ctaSum!)),
   ProductCta.addMore => l10n.product_cta_add_more,
   ProductCta.outOfStock => l10n.product_cta_out_of_stock,
   ProductCta.unavailable || ProductCta.hidden => l10n.product_cta_unavailable,
@@ -604,8 +618,9 @@ class ProductQuantityBar extends StatelessWidget {
     final String fullLabel = ctaLabelOf(l10n, s);
     final Widget cta = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints box) {
-        // Узкое окно (compact 360–412 lp): если «В корзину · 2 850 сом» не помещается в CTA L
-        // рядом со степпером md, сумма показывается без «сом» (EQ-PD-04); screen reader читает полный текст.
+        // Узкое окно (compact 360–412 lp): если «В корзину · 2 850,00 сом» не помещается в CTA L
+        // рядом со степпером md, сумма показывается без «сом» (EQ-PD-04) и при нехватке места уменьшается, а не
+        // обрезается многоточием (деньги всегда с 2 знаками — ADR-114); screen reader читает полный текст.
         String label = fullLabel;
         final Money? sum = s.ctaSum;
         if (box.hasBoundedWidth && sum != null && (s.cta == ProductCta.add || s.cta == ProductCta.invalidQuantity)) {
@@ -623,11 +638,14 @@ class ProductQuantityBar extends StatelessWidget {
         return AppButton(
           key: const ValueKey<String>('product-cta'),
           label: label,
-          semanticLabel: fullLabel,
+          // Диктор — полный текст с суммой в форме `PriceText.spoken` («В корзину · 2 850 сом»; ADR-114 п. 4, ревью
+          // R2C-04).
+          semanticLabel: ctaLabelOf(l10n, s, spoken: true),
           onPressed: enabled ? notifier.add : null,
           loading: s.adding,
           size: AppButtonSize.l,
           expand: true,
+          fitLabel: label != fullLabel,
         );
       },
     );

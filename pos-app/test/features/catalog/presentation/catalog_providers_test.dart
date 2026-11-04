@@ -12,6 +12,7 @@ import 'package:optomstroy/core/error/screen_state.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/core/utils/qty.dart';
+import 'package:optomstroy/design_system/components/price_text.dart';
 import 'package:optomstroy/design_system/components/product_card.dart';
 import 'package:optomstroy/design_system/components/stock_badge.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
@@ -311,6 +312,27 @@ void main() {
       expect(v.priceUnit, '/ шт');
       expect(v.variantsLabel, '3 варианта');
       expect(CatalogCardMapper.map(ctx, product(2, noSku: true)).skuLabel, 'Артикул не указан');
+    });
+
+    test('подпись карточки для диктора: цена — PriceText.spoken без «,00» и «запятой», у вариантов — «от»; '
+        '«Компакт» — «Нет» (ADR-114, RC-01, RP-01)', () async {
+      final AppLocalizations l10n = await _l10n();
+      final CatalogCardContext ctx = CatalogCardContext(l10n: l10n, now: kNow, role: RoleCode.seller);
+      final ProductCardData plain = CatalogCardMapper.map(ctx, product(1, priceSom: 2350));
+      expect(
+        plain.semanticLabel,
+        'Смеситель для кухни Frap F4201, 2 350 сом за шт, В наличии · 24 шт, артикул F4201-CR',
+      );
+      expect(plain.semanticLabel, isNot(contains(',00')));
+      final ProductCardData from = CatalogCardMapper.map(ctx, product(2, hasVariants: true, priceSom: 16007));
+      expect(from.semanticLabel, contains('от 16 007 сом за шт,'));
+      final ProductCardData noPrice = CatalogCardMapper.map(ctx, product(3, noPrice: true));
+      expect(noPrice.semanticLabel, contains('Цена не указана'));
+      // На экране — всегда 2 знака: «2 350,00 сом» (PriceText.format, T-DS-103).
+      expect(PriceText.format(plain.price!), '2\u00A0350,00\u00A0сом');
+      final ProductCardData out = CatalogCardMapper.map(ctx, product(4, level: StockLevel.out));
+      expect(out.actionLabel, 'Нет в наличии');
+      expect(out.actionShortLabel, 'Нет', reason: 'прототип «Компакта»: «Нет»; полное — в тултипе и Semantics');
     });
   });
 

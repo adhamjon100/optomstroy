@@ -1,9 +1,12 @@
 // Локальные настройки экранов каталога (02 SCR-10.4.C, SCR-10.11): вид по классу окна, сортировка,
-// свёрнутый сайдбар. ПДн нет. EQ-CAT-05 (перенос этапа E): значения — «на пользователя», только drift `settings`
-// БД пользователя через порт domain `CatalogUserSettingsStore`, область `scope=user` — очищаются при выходе,
-// `SESSION_REVOKED` и смене пользователя (`SessionLocalData.clearOnSessionEnd`, 07 §11.4). `shared_preferences`
-// (настройка «на устройство») не используется; без БД (до входа, тесты без привязок) — только память процесса.
-// Ошибки хранилища не ломают экран: значение по умолчанию.
+// свёрнутый сайдбар, последняя открытая корневая категория (стартовая категория сотрудника, ADR-114 решение 4 —
+// правило выбора [catalogStartRoot]). ПДн нет. EQ-CAT-05 (перенос этапа E): значения — «на пользователя», только drift `settings`
+// БД пользователя через порт domain `CatalogUserSettingsStore`; вид, сортировка и сайдбар — область `scope=user`,
+// очищаются при выходе, `SESSION_REVOKED` и смене пользователя (`SessionLocalData.clearOnSessionEnd`, 07 §11.4).
+// Последний корень — `scope=device` в файле БД этого пользователя (`pos_<user_id>.db`): переживает «Выйти» и следующий
+// вход того же пользователя, другому пользователю не виден (ответ владельца «запоминается по пользователю», ревью
+// PAR-01). `shared_preferences` (настройка «на устройство») не используется; без БД (до входа, тесты без привязок) —
+// только память процесса. Ошибки хранилища не ломают экран: значение по умолчанию.
 import 'dart:async';
 import 'dart:convert';
 
@@ -12,6 +15,7 @@ import 'package:optomstroy/design_system/components/view_mode_segmented.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/features/catalog/catalog_providers.dart';
 import 'package:optomstroy/features/catalog/domain/entities/catalog_query.dart';
+import 'package:optomstroy/features/catalog/domain/entities/category.dart';
 import 'package:optomstroy/features/catalog/domain/repositories/catalog_user_settings_store.dart';
 import 'package:optomstroy/features/catalog/presentation/providers/catalog_ports.dart';
 
@@ -28,6 +32,36 @@ abstract interface class CatalogPrefs {
   Future<bool?> sidebarCollapsed();
 
   Future<void> setSidebarCollapsed(bool value);
+
+  /// Последняя открытая корневая категория (id; ADR-114 решение 4) — стартовая категория каталога сотрудника на
+  /// medium+; `null` — не открывалась (первый вход).
+  Future<String?> lastRoot();
+
+  Future<void> setLastRoot(String categoryId);
+}
+
+/// Стартовая корневая категория каталога сотрудника на medium+ (ADR-114 решение 4; голый `/catalog`): последняя
+/// открытая пользователем [lastRootId], если она ещё есть среди [roots]; иначе (первый вход, корень удалён) — корень с
+/// наибольшим числом товаров (`productCount`), при равенстве — первый по `sortOrder` (при равном `sortOrder` — первый в
+/// порядке дерева). `null` — корней нет (откат к «Все товары»).
+Category? catalogStartRoot(List<Category> roots, {String? lastRootId}) {
+  if (roots.isEmpty) {
+    return null;
+  }
+  if (lastRootId != null) {
+    for (final Category r in roots) {
+      if (r.id == lastRootId) {
+        return r;
+      }
+    }
+  }
+  Category best = roots.first;
+  for (final Category r in roots.skip(1)) {
+    if (r.productCount > best.productCount || (r.productCount == best.productCount && r.sortOrder < best.sortOrder)) {
+      best = r;
+    }
+  }
+  return best;
 }
 
 /// Значения по умолчанию (02 SCR-10.4.C, SCR-11 UI-11-008; 03 §9.26).
@@ -68,9 +102,16 @@ final class InMemoryCatalogPrefs implements CatalogPrefs {
 
   @override
   Future<void> setSidebarCollapsed(bool value) async => _values['sidebar.collapsed'] = value;
+
+  @override
+  Future<String?> lastRoot() async => _values['catalog.lastRoot'] as String?;
+
+  @override
+  Future<void> setLastRoot(String categoryId) async => _values['catalog.lastRoot'] = categoryId;
 }
 
-/// Настройки в drift `settings` БД пользователя, `scope=user` (EQ-CAT-05: на пользователя, очистка при выходе).
+/// Настройки в drift `settings` БД пользователя, `scope=user` (EQ-CAT-05: на пользователя, очистка при выходе); последний
+/// корень — [lastRootScope].
 final class UserCatalogPrefs implements CatalogPrefs {
   UserCatalogPrefs(this._store);
 
@@ -78,6 +119,10 @@ final class UserCatalogPrefs implements CatalogPrefs {
 
   /// Область строк вида, сортировки и сайдбара (07 §11.2 `settings.scope`).
   static const CatalogSettingScope scope = CatalogSettingScope.user;
+
+  /// Область строки последнего корня (`catalog_last_root`): `device` — не удаляется при выходе; файл БД принадлежит
+  /// пользователю, поэтому значение остаётся «на пользователя» (ответ владельца ADR-114 решение 4, ревью PAR-01).
+  static const CatalogSettingScope lastRootScope = CatalogSettingScope.device;
 
   Future<void> _write(String key, String value) => _store.write(key, value, scope: scope);
 
@@ -106,6 +151,16 @@ final class UserCatalogPrefs implements CatalogPrefs {
 
   @override
   Future<void> setSidebarCollapsed(bool value) => _write(CatalogSettingKeys.sidebarCollapsed, '$value');
+
+  @override
+  Future<String?> lastRoot() async {
+    final String? v = await _store.read(CatalogSettingKeys.lastRoot);
+    return v == null || v.isEmpty ? null : v;
+  }
+
+  @override
+  Future<void> setLastRoot(String categoryId) =>
+      _store.write(CatalogSettingKeys.lastRoot, categoryId, scope: lastRootScope);
 }
 
 /// Настройки экранов каталога: после входа — БД пользователя ([catalogUserSettingsStoreProvider], `scope=user`),

@@ -27,7 +27,10 @@ class CartSummaryRow {
 /// Итоги корзины/заказа `CartSummary` (03 §9.29): строки `body textSecondary` слева / `bodyLg 16/500 tnum`
 /// справа → разделитель `border` → «Итого» `title 18/600` + сумма `display 32/700 primaryText` ([large], expanded)
 /// или `h2 24/700` (compact). Фон `background`, паддинг 16, строки 28, итог 48. [drawer] — подвал drawer корзины
-/// по прототипу: без своего фона и разделителя, строки `body textSecondary` 24, «Итого» `title 700`, итог 40.
+/// по прототипу без округления (ADR-114 п. 6, design-spec §13): без своего фона и разделителя, строки подряд с
+/// зазором 12 — «Товаров (N)» и сумма 14/400 `textSecondary` #5B6478 (высота 17), «Итого» `totalLabel` 18/800
+/// `textPrimary` и сумма `cartTotal` 24/800 `primaryText` по базовой линии (высота 29), примечание 12/400
+/// `catalogMeta` #6B7487 (CP-094); цифры без `tnum`.
 ///
 /// Все суммы — с сервера (D-19, D-23): компонент только форматирует целые тыйыны. [preliminaryLabel] — метка
 /// «предварительно» (UI-20-030) рядом с «Итого», пока изменения не подтверждены сервером или нет сети.
@@ -80,9 +83,13 @@ class CartSummary extends StatelessWidget {
   /// Поля блока; `null` — 16 со всех сторон (drawer корзины — 20 по бокам, как зона G).
   final EdgeInsetsGeometry? padding;
 
-  /// Подвал drawer корзины (прототип 2026-10-29): фон и верхнюю границу задаёт `CartPanel`; строки — подпись и сумма
-  /// `body textSecondary` высотой 24, без разделителя; «Итого» `title 700 textPrimary`, сумма `h2 700 primaryText`.
+  /// Подвал drawer корзины (прототип): фон и верхнюю границу задаёт `CartPanel`; строки с зазором [drawerGap] —
+  /// подпись и сумма 14/400 `textSecondary`, без разделителя; «Итого» 18/800 `textPrimary`, сумма 24/800
+  /// `primaryText`; примечание 12 `catalogMeta`.
   final bool drawer;
+
+  /// Зазор строк подвала drawer (прототип: `gap: 12px`).
+  static const double drawerGap = 12;
 
   /// Ключ суммы «Итого» (тесты).
   static const Key totalKey = ValueKey<String>('cart-summary-total');
@@ -93,22 +100,23 @@ class CartSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final DsColors c = context.colors;
+    // Drawer (прототип): 14/400, строка `normal` (17) — `chip` с весом 400.
+    final TextStyle rowStyle = drawer
+        ? context.text.chip.copyWith(fontWeight: FontWeight.w400, color: c.textSecondary)
+        : context.text.body.copyWith(color: c.textSecondary);
     final TextStyle valueStyle = drawer
-        ? context.text.body.copyWith(
-            color: c.textSecondary,
-            fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-          )
+        ? rowStyle
         : context.text.bodyLg.copyWith(
             fontWeight: FontWeight.w500,
             color: c.textPrimary,
             fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
           );
-    final TextStyle totalStyle = context.text
-        .priceOf(large ? context.text.display : context.text.h2)
-        .copyWith(color: c.primaryText);
+    final TextStyle totalStyle = drawer
+        ? context.text.cartTotal.copyWith(color: c.primaryText)
+        : context.text.priceOf(large ? context.text.display : context.text.h2).copyWith(color: c.primaryText);
     final Money? t = total;
     Widget totalValue = loading
-        ? const SkeletonBox(width: 120, height: 32)
+        ? SkeletonBox(width: 120, height: drawer ? 29 : 32)
         : t == null
         ? Text(
             '—',
@@ -138,9 +146,9 @@ class CartSummary extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          for (final CartSummaryRow r in rows)
+          for (final CartSummaryRow r in rows) ...<Widget>[
             SizedBox(
-              height: drawer ? 24 : 28,
+              height: drawer ? null : 28,
               child: Row(
                 children: <Widget>[
                   // Подпись и пометка — во всё свободное место, сумма прижата к правому краю (как «Итого»).
@@ -148,12 +156,7 @@ class CartSummary extends StatelessWidget {
                     child: Row(
                       children: <Widget>[
                         Flexible(
-                          child: Text(
-                            r.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: context.text.body.copyWith(color: c.textSecondary),
-                          ),
+                          child: Text(r.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: rowStyle),
                         ),
                         if (r.trailing != null) ...<Widget>[SizedBox(width: context.space.s2), r.trailing!],
                       ],
@@ -168,20 +171,21 @@ class CartSummary extends StatelessWidget {
                 ],
               ),
             ),
-          if (rows.isNotEmpty)
-            drawer
-                ? SizedBox(height: context.space.s1)
-                : Divider(height: context.space.s4, thickness: 1, color: c.border),
+            if (drawer) const SizedBox(height: drawerGap),
+          ],
+          if (rows.isNotEmpty && !drawer) Divider(height: context.space.s4, thickness: 1, color: c.border),
           ConstrainedBox(
-            constraints: BoxConstraints(minHeight: drawer ? 40 : 48),
+            constraints: BoxConstraints(minHeight: drawer ? 0 : 48),
             child: Row(
+              // Drawer (прототип): «Итого» и сумма — по базовой линии (`align-items: baseline`).
+              crossAxisAlignment: drawer ? CrossAxisAlignment.baseline : CrossAxisAlignment.center,
+              textBaseline: TextBaseline.alphabetic,
               children: <Widget>[
                 Text(
                   totalLabel,
-                  style: context.text.title.copyWith(
-                    fontWeight: drawer ? FontWeight.w700 : FontWeight.w600,
-                    color: c.textPrimary,
-                  ),
+                  style: drawer
+                      ? context.text.totalLabel.copyWith(color: c.textPrimary)
+                      : context.text.title.copyWith(fontWeight: FontWeight.w600, color: c.textPrimary),
                 ),
                 if (preliminaryLabel != null) ...<Widget>[
                   SizedBox(width: context.space.s2),
@@ -205,11 +209,14 @@ class CartSummary extends StatelessWidget {
           ),
           if (note != null)
             Padding(
-              padding: EdgeInsets.only(top: context.space.s1),
+              padding: EdgeInsets.only(top: drawer ? drawerGap : context.space.s1),
               child: Text(
                 note!,
                 key: noteKey,
-                style: context.text.caption.copyWith(color: c.textSecondary),
+                // Drawer (прототип): 12/400 #6B7487 на #FBFCFE — 4,57:1 (CP-094); иначе `caption textSecondary`.
+                style: drawer
+                    ? context.text.sku.copyWith(color: c.catalogMeta)
+                    : context.text.caption.copyWith(color: c.textSecondary),
               ),
             ),
         ],

@@ -14,10 +14,24 @@
  * Параметры: `--sku` (500), `--seed` (1), `--images` (фото у первых K товаров; по умолчанию min(товаров, 300)),
  * `--media-dir` (иначе `MEDIA_DIR`; при `--embedded` — временный каталог), `--report <файл JSON>`, `--embedded`,
  * `--no-fixtures` (только синтетика).
+ *
+ * Каталог по макету (демо Windows, 15 ADR-114; local-stack `--catalog-spec`): `--spec <design-catalog.json>` вместо
+ * синтетики и фикстур 1С (несовместим с `--sku`, `--seed`, `--images`, `--no-fixtures`). Каталог строит
+ * `scripts/design_catalog.ts` (`buildDesignCatalog`, тот же модуль, что у веб-демо) и загружает тот же конвейер;
+ * затем: порядок категорий макета, порог «мало» и избранное (`applyDesignCatalogSettings`), фото товаров макета —
+ * `ImageDirectoryImporter` (`<onec_ref>.png`, by-name), картинки категорий — `processImage` → `ImageStore` →
+ * `registerCategoryImage` (`categories.image_id`). sha256 каждого фото сверяется со спецификацией.
+ * `--photos-dir` — каталог, от которого отсчитываются `photos[].file` (по умолчанию — каталог спецификации);
+ * `--staff-phones +996…,+996…` — сотрудники, которым ставится избранное `favorites` (пользователи уже созданы).
+ *
+ *   APP_ENV=dev DATABASE_URL_FILE=… MEDIA_DIR=… npx tsx scripts/load_catalog_fixtures.ts \
+ *     --spec ../demo/catalog/design-catalog.json --staff-phones +996777000901,+996777000906
+ *
  * Код выхода: 0 — 0 ошибок маппинга и $count сошёлся по всем сущностям; 1 — есть ошибки/расхождения; 2 — параметры.
  * Предупреждения `DUPLICATE_SUSPECTED` уровня warning (отчёт о дублях `onec_code`, SYNC-004) выводятся отдельной
  * строкой и на код выхода не влияют.
  */
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -27,16 +41,29 @@ import pg from 'pg';
 import pino from 'pino';
 import sharp from 'sharp';
 import { FakeOnecGateway } from '../src/integrations/onec/fake-onec.gateway.js';
+import { ean13, SyntheticCatalog } from '../src/integrations/onec/synthetic-catalog.js';
 import { CatalogApplier } from '../src/sync/apply/catalog-applier.js';
 import { type CatalogLoadResult, CatalogFullLoadService } from '../src/sync/apply/catalog-full-load.service.js';
 import { type CatalogReadKind, SyntheticCatalogSource } from '../src/sync/apply/catalog-source.js';
 import { createRunTracker, DEFAULT_STATE_DEFAULTS } from '../src/sync/apply/run-tracker.js';
 import { ImageDirectoryImporter } from '../src/sync/images/image-directory-import.js';
+import { processImage } from '../src/sync/images/image-processor.js';
 import { ImageStore } from '../src/sync/images/image-store.js';
 import { type CountCheckReport, CountCheckService } from '../src/sync/reconcile/count-check.service.js';
 import { SyncRunRegistry } from '../src/sync/scheduler/sync-run.registry.js';
 import { allMigrations } from '../test/support/catalog-fixture.js';
 import { EmbeddedPg } from '../test/support/embedded-pg.js';
+import {
+  applyDesignCatalogSettings,
+  buildDesignCatalog,
+  categoryOrder,
+  checkGeneratorMirror,
+  type DesignCatalogSpec,
+  type DesignPhotoPlanItem,
+  photoPlan,
+  registerCategoryImage,
+  validateDesignSpec,
+} from './design_catalog.js';
 
 /** Сверка «1С ↔ БД» по одной сущности/таблице (живые объекты). */
 export interface ImportCountRow {
@@ -96,7 +123,49 @@ export interface CatalogImportReport {
     readonly status: string;
     readonly ms: number;
   };
+  /** Каталог по макету (`--spec`, ADR-114); нет — синтетика `sku`/`seed` и фикстуры 1С. */
+  readonly design?: DesignLoadReport;
   readonly ok: boolean;
+}
+
+/** Каталог по макету: что загружено и что проверено после загрузки (тестовые данные демо). */
+export interface DesignLoadReport {
+  readonly profile: string;
+  readonly refSeed: number;
+  /** sha256 файла спецификации. */
+  readonly specSha256: string;
+  readonly products: number;
+  readonly categories: number;
+  readonly productPhotos: number;
+  readonly categoryImages: { readonly requested: number; readonly registered: number; readonly ms: number };
+  /** Изменено строк `applyDesignCatalogSettings` (повтор — нули). */
+  readonly settings: { readonly sortOrder: number; readonly lowStockThreshold: number; readonly favorites: number };
+  /** Состояние БД после загрузки. */
+  readonly checks: {
+    /** Категорий с `sort_order` макета / всего папок спецификации. */
+    readonly sortOrder: string;
+    readonly lowStockThreshold: number | null;
+    /** Категорий с готовой картинкой (`categories.image_id` → `ready`) / по плану. */
+    readonly categoryImages: string;
+    /** Строк избранного `favorites` у `staffPhones`. */
+    readonly favorites: number;
+  };
+  readonly problems: readonly string[];
+  /** Замечания, не влияющие на итог (например, нет строки настроек без seed). */
+  readonly notes: readonly string[];
+  readonly ok: boolean;
+}
+
+/** Каталог по макету для `loadCatalogFixtures` (`--spec`). */
+export interface DesignCatalogLoad {
+  /** Разобранная спецификация `demo/catalog/design-catalog.json`. */
+  readonly spec: DesignCatalogSpec;
+  /** sha256 файла спецификации (в отчёт). */
+  readonly specSha256: string;
+  /** Каталог, от которого отсчитываются `photos[].file` (обычно каталог спецификации). */
+  readonly photosDir: string;
+  /** Сотрудники стенда для избранного `spec.favorites` (пользователи уже созданы; нет — избранное не ставится). */
+  readonly staffPhones?: readonly string[];
 }
 
 const out = (line: string): boolean => process.stdout.write(`${line}\n`);
@@ -157,22 +226,157 @@ async function scalar(pool: pg.Pool, sql: string): Promise<number> {
 
 const LIVE = 'NOT deletion_mark AND onec_ref IS NOT NULL';
 
+const sha256Hex = (b: Uint8Array): string => createHash('sha256').update(b).digest('hex');
+
+/** Разбор и проверка файла спецификации каталога по макету → спецификация и sha256 файла (ошибки — исключением). */
+export function readDesignSpec(file: string): { spec: DesignCatalogSpec; specSha256: string } {
+  const buf = readFileSync(file);
+  const spec = JSON.parse(buf.toString('utf8')) as DesignCatalogSpec;
+  const errs = validateDesignSpec(spec);
+  if (errs.length) throw new Error(`спецификация ${file}: ${errs.slice(0, 8).join('; ')}`);
+  return { spec, specSha256: sha256Hex(buf) };
+}
+
+/**
+ * Каталог по макету: зеркальные константы `design_catalog.ts` сверяются с генератором (расхождение — исключение,
+ * как у сборки снимка веб-демо), затем `buildDesignCatalog`. Товары кассира строит так же `designCatalogFromFile`
+ * (`pos_fake_onec.ts`; загрузчик с pg/sharp фейк не импортирует).
+ */
+export function designCatalogOf(spec: DesignCatalogSpec): SyntheticCatalog {
+  const deps = { SyntheticCatalog, ean13 };
+  const problems = checkGeneratorMirror(deps, spec);
+  if (problems.length) throw new Error(`design_catalog ≠ генератор: ${problems.slice(0, 8).join('; ')}`);
+  return buildDesignCatalog(spec, deps);
+}
+
+/** Байты фото спецификации; sha256 файла ≠ спецификации — исключение (фото не подменяются молча). */
+function designPhotoBytes(photosDir: string, p: DesignPhotoPlanItem): Buffer {
+  const file = path.join(photosDir, p.file);
+  const bytes = readFileSync(file);
+  const sha = sha256Hex(bytes);
+  if (sha !== p.sha256) {
+    throw new Error(`фото ${p.photo} (${file}): sha256 ${sha.slice(0, 12)}… ≠ спецификации ${p.sha256.slice(0, 12)}…`);
+  }
+  return bytes;
+}
+
+/**
+ * Каталог по макету после полной загрузки и фото товаров: порядок категорий, порог «мало», избранное
+ * (`applyDesignCatalogSettings` — одно соединение: в нём BEGIN / SET LOCAL), картинки категорий и проверка состояния БД.
+ */
+async function applyDesignCatalog(
+  pool: pg.Pool,
+  d: DesignCatalogLoad,
+  catalog: SyntheticCatalog,
+  plan: ReturnType<typeof photoPlan>,
+  mediaDir: string,
+): Promise<DesignLoadReport> {
+  const problems: string[] = [];
+  const notes: string[] = [];
+  const staffPhones = d.staffPhones ?? [];
+  const client = await pool.connect();
+  let settings;
+  try {
+    settings = await applyDesignCatalogSettings(client, d.spec, catalog, { staffPhones });
+  } finally {
+    client.release();
+  }
+  // Картинки категорий: PNG макета → WebP thumb/card/full (без увеличения) → MEDIA_DIR/images/{sha}/ → строка
+  // product_images с category_id и categories.image_id (как category-images.mjs построителя снимка веб-демо).
+  const t = performance.now();
+  const store = new ImageStore(mediaDir);
+  let registered = 0;
+  for (const c of plan.categories) {
+    const img = await processImage(designPhotoBytes(d.photosDir, c));
+    if (!(await store.has(img.sha256))) await store.write(img.sha256, img.renders);
+    const r = await registerCategoryImage(pool, {
+      categoryRef: c.onecRef,
+      fileName: path.basename(c.file),
+      image: {
+        sha256: img.sha256,
+        originalMime: img.originalMime,
+        originalBytes: img.originalBytes,
+        width: img.width,
+        height: img.height,
+        sizes: img.sizes,
+      },
+    });
+    if (r) registered += 1;
+    else problems.push(`картинка категории ${c.owner}: категории ${c.onecRef} нет в БД`);
+  }
+  const imagesMs = Math.round(performance.now() - t);
+
+  const order = categoryOrder(d.spec, catalog);
+  const so = await pool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM categories c JOIN unnest($1::uuid[], $2::int[]) AS v(ref, sort_order)
+         ON c.onec_ref = v.ref
+      WHERE c.sort_order = v.sort_order AND NOT c.deletion_mark`,
+    [order.map((x) => x.onecRef), order.map((x) => x.sortOrder)],
+  );
+  const sortOk = so.rows[0]?.n ?? 0;
+  if (sortOk !== order.length) problems.push(`порядок макета у ${sortOk} из ${order.length} категорий`);
+  const th = await pool.query<{ value: unknown }>(`SELECT value FROM app_settings WHERE key = 'low_stock_threshold'`);
+  const threshold = th.rows[0] === undefined ? null : Number(th.rows[0].value);
+  // Строку настроек создаёт seed (`migrate --seed`, local-stack); без seed (`--embedded`) её нет — это не расхождение.
+  if (threshold === null) notes.push('порог «мало»: строки app_settings нет (seed не применён)');
+  else if (threshold !== d.spec.lowStockThreshold) {
+    problems.push(`порог «мало» ${threshold} ≠ ${d.spec.lowStockThreshold}`);
+  }
+  const ci = await pool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM categories c JOIN product_images i ON i.id = c.image_id
+      WHERE c.onec_ref = ANY($1::uuid[]) AND i.category_id = c.id AND i.status = 'ready' AND i.deleted_at IS NULL`,
+    [plan.categories.map((c) => c.onecRef)],
+  );
+  const catImages = ci.rows[0]?.n ?? 0;
+  if (catImages !== plan.categories.length) {
+    problems.push(`картинки у ${catImages} из ${plan.categories.length} категорий`);
+  }
+  const fav = await pool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM favorites_products f JOIN users u ON u.id = f.user_id JOIN products p ON p.id = f.product_id
+      WHERE u.phone_e164 = ANY($1::text[]) AND p.sku = ANY($2::text[])`,
+    [[...staffPhones], [...d.spec.favorites]],
+  );
+  const favorites = fav.rows[0]?.n ?? 0;
+  return {
+    profile: d.spec.profile,
+    refSeed: d.spec.refSeed,
+    specSha256: d.specSha256,
+    products: d.spec.products.length,
+    categories: order.length,
+    productPhotos: plan.products.length,
+    categoryImages: { requested: plan.categories.length, registered, ms: imagesMs },
+    settings,
+    checks: {
+      sortOrder: `${sortOk}/${order.length}`,
+      lowStockThreshold: threshold,
+      categoryImages: `${catImages}/${plan.categories.length}`,
+      favorites,
+    },
+    problems,
+    notes,
+    ok: problems.length === 0,
+  };
+}
+
 export interface LoadCatalogFixturesOptions {
   readonly sku: number;
   readonly seed?: number;
   readonly images?: number;
   readonly includeFixtures?: boolean;
   readonly mediaDir: string;
+  /** Каталог по макету (ADR-114) вместо синтетики `sku`/`seed` и фикстур 1С (`sku`, `seed`, `images` не читаются). */
+  readonly design?: DesignCatalogLoad;
 }
 
 /** Загрузка каталога и фото в БД `pool` (миграции применены) и отчёт сверки. */
 export async function loadCatalogFixtures(pool: pg.Pool, o: LoadCatalogFixturesOptions): Promise<CatalogImportReport> {
   const startedAt = new Date().toISOString();
   const log = pino({ level: process.env['LOAD_CATALOG_LOG'] ?? 'silent' });
-  const seed = o.seed ?? 1;
-  const includeFixtures = o.includeFixtures !== false;
+  const design = o.design;
+  const seed = design ? design.spec.refSeed : (o.seed ?? 1);
+  const includeFixtures = design ? false : o.includeFixtures !== false;
   const gateway = new FakeOnecGateway({
-    catalog: { skuCount: o.sku, seed },
+    catalog: design ? designCatalogOf(design.spec) : { skuCount: o.sku, seed },
     includeFixtureCatalog: includeFixtures,
     registerAll: false,
   });
@@ -265,10 +469,14 @@ export async function loadCatalogFixtures(pool: pg.Pool, o: LoadCatalogFixturesO
   );
 
   // 4. Синтетические фото: раскладка by-name `<onec_ref>.jpg` (05 SYNC-036), один файл — у двух товаров (sha256 → 1 раз).
-  const photoProducts = catalog
-    .productItems()
-    .filter((p) => !p.deletionMark)
-    .slice(0, o.images ?? Math.min(300, stats.products));
+  //    Каталог по макету: фото товаров макета как есть, `<onec_ref>.png` по плану спецификации.
+  const plan = design ? photoPlan(design.spec, catalog) : undefined;
+  const photoProducts = plan
+    ? []
+    : catalog
+        .productItems()
+        .filter((p) => !p.deletionMark)
+        .slice(0, o.images ?? Math.min(300, stats.products));
   const dir = mkdtempSync(path.join(process.env['TEMP'] ?? tmpdir(), 'pos-e011-photos-'));
   const t1 = performance.now();
   let imageResult;
@@ -281,6 +489,11 @@ export async function loadCatalogFixtures(pool: pg.Pool, o: LoadCatalogFixturesO
       writeFileSync(path.join(dir, `${p.ref}.jpg`), bytes);
       prev = bytes;
     }
+    if (design && plan) {
+      for (const p of plan.products) {
+        writeFileSync(path.join(dir, `${p.onecRef}.png`), designPhotoBytes(design.photosDir, p));
+      }
+    }
     imageResult = await new ImageDirectoryImporter(
       pool,
       new ImageStore(o.mediaDir),
@@ -291,6 +504,8 @@ export async function loadCatalogFixtures(pool: pg.Pool, o: LoadCatalogFixturesO
     rmSync(dir, { recursive: true, force: true });
   }
   const imagesMs = Math.round(performance.now() - t1);
+  // 5. Каталог по макету: порядок категорий, порог «мало», избранное, картинки категорий и проверка БД.
+  const designReport = design && plan ? await applyDesignCatalog(pool, design, catalog, plan, o.mediaDir) : undefined;
   const errorsByCode = await pool.query<{ code: string; severity: string; n: string }>(
     `SELECT error_code::text AS code, severity::text AS severity, count(*)::text AS n
        FROM sync_errors GROUP BY 1, 2 ORDER BY 1, 2`,
@@ -299,7 +514,7 @@ export async function loadCatalogFixtures(pool: pg.Pool, o: LoadCatalogFixturesO
     errorsByCode.rows.map((r) => ({ code: r.code, severity: r.severity, n: Number(r.n) })),
   );
   const images = {
-    requested: photoProducts.length,
+    requested: plan ? plan.products.length : photoProducts.length,
     files: imageResult.counts.files,
     imported: imageResult.counts.ready,
     deduplicated: imageResult.counts.deduplicated,
@@ -345,12 +560,13 @@ export async function loadCatalogFixtures(pool: pg.Pool, o: LoadCatalogFixturesO
     unexplained === 0 &&
     countCheck.mismatches === 0 &&
     runsOut.every((r) => r.status === 'success') &&
-    images.errors === 0;
+    images.errors === 0 &&
+    (designReport === undefined || (designReport.ok && images.productsWithPhoto === designReport.productPhotos));
   return {
     marker: 'на фикстурах, не реальная интеграция',
     startedAt,
     finishedAt: new Date().toISOString(),
-    sku: o.sku,
+    sku: design ? 0 : o.sku,
     seed,
     includeFixtures,
     gateway: { mode: 'fixtures', calls: gateway.calls.length },
@@ -363,12 +579,19 @@ export async function loadCatalogFixtures(pool: pg.Pool, o: LoadCatalogFixturesO
     syncWarnings,
     mappingErrors,
     images,
+    ...(designReport ? { design: designReport } : {}),
     ok,
   };
 }
 
 function print(r: CatalogImportReport): void {
-  out(`[load-catalog] ${r.marker}: ${r.sku} синтетических SKU${r.includeFixtures ? ' + фикстуры 1С' : ''}`);
+  const d = r.design;
+  out(
+    d
+      ? `[load-catalog] ${r.marker}: каталог по макету ${d.profile} (${d.products} товаров, ${d.categories} категорий; ` +
+          `спецификация sha256 ${d.specSha256.slice(0, 12)}…) — тестовые данные демо`
+      : `[load-catalog] ${r.marker}: ${r.sku} синтетических SKU${r.includeFixtures ? ' + фикстуры 1С' : ''}`,
+  );
   out(`[load-catalog] полная загрузка: ${r.loadMs} мс`);
   for (const x of r.runs) {
     out(
@@ -398,6 +621,15 @@ function print(r: CatalogImportReport): void {
       `товаров с фото ${r.images.productsWithPhoto}, уникальных sha256 ${r.images.distinctFiles}, каталогов в хранилище ` +
       `${r.images.storedFiles}, ${r.images.ms} мс`,
   );
+  if (d) {
+    out(
+      `[load-catalog] по макету: порядок категорий ${d.checks.sortOrder}, порог «мало» ${String(d.checks.lowStockThreshold)}, ` +
+        `картинки категорий ${d.checks.categoryImages} (${d.categoryImages.ms} мс), фото товаров ${r.images.productsWithPhoto}/` +
+        `${d.productPhotos}, избранное сотрудников ${d.checks.favorites}` +
+        `${d.notes.length ? `; замечания: ${d.notes.join('; ')}` : ''}` +
+        `${d.problems.length ? `; ПРОБЛЕМЫ: ${d.problems.join('; ')}` : ''}`,
+    );
+  }
   out(`[load-catalog] ИТОГ: ${r.ok ? 'OK' : 'ЕСТЬ РАСХОЖДЕНИЯ'}`);
 }
 
@@ -414,6 +646,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         report: { type: 'string' },
         embedded: { type: 'boolean', default: false },
         'no-fixtures': { type: 'boolean', default: false },
+        spec: { type: 'string' },
+        'photos-dir': { type: 'string' },
+        'staff-phones': { type: 'string' },
       },
       strict: true,
     }));
@@ -424,6 +659,35 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   const sku = int(values.sku, 500, 'sku');
   const seed = int(values.seed, 1, 'seed');
   const images = values.images === undefined ? undefined : int(values.images, 0, 'images');
+  let design: DesignCatalogLoad | undefined;
+  if (values.spec !== undefined) {
+    const clash = (['sku', 'seed', 'images', 'no-fixtures'] as const).filter((k) =>
+      k === 'no-fixtures' ? values[k] : values[k] !== undefined,
+    );
+    if (clash.length) {
+      process.stderr.write(
+        `--spec несовместим с ${clash.map((k) => `--${k}`).join(', ')} (каталог — из спецификации)\n`,
+      );
+      return 2;
+    }
+    const file = path.resolve(values.spec);
+    try {
+      design = {
+        ...readDesignSpec(file),
+        photosDir: path.resolve(values['photos-dir'] ?? path.dirname(file)),
+        staffPhones: (values['staff-phones'] ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s !== ''),
+      };
+    } catch (e) {
+      process.stderr.write(`--spec: ${e instanceof Error ? e.message : String(e)}\n`);
+      return 2;
+    }
+  } else if (values['photos-dir'] !== undefined || values['staff-phones'] !== undefined) {
+    process.stderr.write('--photos-dir и --staff-phones — только вместе с --spec\n');
+    return 2;
+  }
   let embedded: EmbeddedPg | undefined;
   let ownMedia: string | undefined;
   let url = process.env['DATABASE_URL'];
@@ -459,6 +723,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       ...(images !== undefined ? { images } : {}),
       includeFixtures: !values['no-fixtures'],
       mediaDir,
+      ...(design ? { design } : {}),
     });
     print(report);
     if (values.report) writeFileSync(values.report, `${JSON.stringify(report, null, 2)}\n`);

@@ -34,6 +34,7 @@ import { buildVfs } from './vfs/build-vfs.mjs';
 import { computeEpoch, readAppVersion } from './lib/epoch.mjs';
 import { DEMO_DATA, EPOCH_MIGRATION_BASE } from './demo-config.mjs';
 import { buildSnapshot, SNAPSHOT_DIR } from './snapshot/build-snapshot.mjs';
+import { readCatalogSpec } from './snapshot/photos.mjs';
 
 const argv = new Set(process.argv.slice(2));
 const minify = !argv.has('--no-minify');
@@ -76,14 +77,14 @@ let snapshotManifest = null;
 if (!argv.has('--skip-snapshot')) {
   log('снимок БД и фото (snapshot/build-snapshot.mjs)…');
   const r = await buildSnapshot({ quiet: true });
-  report.snapshot = { problems: r.report.problems, totalMs: r.report.totalMs, size: r.report.size, images: { products: r.report.images.products, files: r.report.images.files, bytes: r.report.images.bytes }, tables: r.report.tables.inSnapshot, dataSha256: r.report.dataSha256 };
+  report.snapshot = { problems: r.report.problems, totalMs: r.report.totalMs, size: r.report.size, catalog: r.report.catalog, images: { products: r.report.images.products, categories: r.report.images.categories, distinct: r.report.images.distinct, files: r.report.images.files, bytes: r.report.images.bytes }, tables: r.report.tables.inSnapshot, dataSha256: r.report.dataSha256 };
   if (r.report.problems.length) {
     writeFileSync(`${BUILD}/backend-report.json`, JSON.stringify(report, null, 2));
     for (const p of r.report.problems) console.error('  FAIL снимок:', p);
     throw new Error(`снимок: ${r.report.problems.length} ошибок (см. .build/snapshot/report.json)`);
   }
   snapshotManifest = r.manifest;
-  log(`снимок: ${r.manifest.tables.length} таблиц, data.copy ${(r.report.size.dataBytes / 1e6).toFixed(2)} МБ (gzip ${(r.report.size.dataGzip / 1e6).toFixed(2)}), фото ${r.report.images.products} товаров`);
+  log(`снимок: ${r.manifest.tables.length} таблиц, data.copy ${(r.report.size.dataBytes / 1e6).toFixed(2)} МБ (gzip ${(r.report.size.dataGzip / 1e6).toFixed(2)}), фото ${r.report.images.products} товаров и ${r.report.images.categories} категорий (${r.report.images.files} файлов)`);
 } else if (existsSync(`${SNAPSHOT_DIR}/manifest.json`)) {
   snapshotManifest = JSON.parse(readFileSync(`${SNAPSHOT_DIR}/manifest.json`, 'utf8'));
   report.snapshot = 'skipped (взят собранный)';
@@ -115,8 +116,14 @@ build.epochKey = epoch.key;
 build.epoch = epoch.inputs;
 build.appVersion = readAppVersion(`${ROOT}/pos-app/pubspec.yaml`);
 const demoBuildInfo = { appVersion: build.appVersion, epochKey: epoch.key, migrationBase: EPOCH_MIGRATION_BASE, stateFormat: DEMO_DATA.stateFormat };
+// WP-DATA-WEB: каталог по макету, встроенный в backend.js (demo/catalog/design-catalog.json): снимок берётся, только
+// если он собран из этой же спецификации (demo-init.mjs сверяет профиль и sha256 — например, после --skip-snapshot).
+const catalogSpec = readCatalogSpec();
+demoBuildInfo.catalog = { profile: catalogSpec.spec.profile, specSha256: catalogSpec.sha256 };
+build.catalog = { ...demoBuildInfo.catalog, products: catalogSpec.spec.products?.length ?? null, photos: catalogSpec.spec.photos?.length ?? null };
 if (snapshotManifest) {
-  demoBuildInfo.snapshot = { format: snapshotManifest.format, dataSha256: snapshotManifest.data.sha256, skuCount: snapshotManifest.source?.catalog?.skuCount ?? null };
+  const sc = snapshotManifest.source?.catalog ?? {};
+  demoBuildInfo.snapshot = { format: snapshotManifest.format, dataSha256: snapshotManifest.data.sha256, skuCount: sc.skuCount ?? null, profile: sc.profile ?? null, specSha256: sc.specSha256 ?? null };
   build.snapshot = { ...demoBuildInfo.snapshot, bytes: snapshotManifest.data.bytes, tables: snapshotManifest.tables.length, rows: snapshotManifest.tables.reduce((a, t) => a + t.rows, 0), images: snapshotManifest.images ?? null, files: ['demo/snapshot/manifest.json', `demo/snapshot/${snapshotManifest.data.gzipFile}`] };
 }
 report.epoch = { key: epoch.key, appVersion: build.appVersion, laterMigrations: epoch.inputs.laterMigrations, snapshot: epoch.inputs.snapshot };

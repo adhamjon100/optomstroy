@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:optomstroy/design_system/components/app_icon_button.dart';
 import 'package:optomstroy/design_system/components/app_tooltip.dart';
+import 'package:optomstroy/design_system/components/ds_glyph.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
@@ -73,7 +74,8 @@ class TopAppBarFit {
   /// Ничего не свёрнуто.
   static const TopAppBarFit full = TopAppBarFit();
 
-  /// Строка «Корзина · 6 шт» над итогом кнопки-итога (свёрнута — единицы в тултипе).
+  /// Строка «Корзина» над итогом кнопки-итога (свёрнута — итог одной строкой; число позиций и единицы — в тултипе и
+  /// `Semantics` всегда).
   final bool cartLabel;
 
   /// Имя и роль у аватара.
@@ -85,7 +87,7 @@ class TopAppBarFit {
   /// Дата под временем.
   final TopAppBarDateFit date;
 
-  /// Узкие зазоры: 12 вместо 24 у поля поиска, 8 вместо 12 в правой группе.
+  /// Узкие зазоры: 12 вместо 24 у поля поиска, 8 вместо 14 в правой группе.
   final bool tight;
 
   /// Поле поиска — второй строкой шапки (на всю ширину, до 680): в одной строке ему не хватает
@@ -95,14 +97,17 @@ class TopAppBarFit {
   /// Знак логотипа (последняя ступень: главный экран — и в drawer навигации по «бургеру»).
   final bool logo;
 
-  /// Сворачивание сведений по порядку: строка «Корзина · N шт» → роль (сокращённое имя) → имя (только аватар) →
-  /// «Оптомстрой» (только знак) → полная дата «Касса» → короткая → дата (только время). Дата — последней: часы и дата
-  /// — требования UI-10-005, UI-10-032, UI-30-013; имя и роль есть в заголовке меню аватара и в `Semantics`.
+  /// Сворачивание сведений по порядку: роль (сокращённое имя) → имя (только аватар) → «Оптомстрой» (только знак) →
+  /// строка «Корзина» кнопки-итога → полная дата «Касса» → короткая → дата (только время). Дата — последней: часы и
+  /// дата — требования UI-10-005, UI-10-032, UI-30-013; имя и роль есть в заголовке меню аватара и в `Semantics`.
+  /// Строка «Корзина» (ADR-114: всегда «Корзина», как в прототипе; единицы — в тултипе) почти не шире итога
+  /// («0,00 сом»), поэтому сворачивается после «Оптомстрой»: в окне 1024 кнопка-итог остаётся как в прототипе
+  /// (ревью RV-10).
   static const List<TopAppBarFit> _info = <TopAppBarFit>[
     TopAppBarFit(),
-    TopAppBarFit(cartLabel: false),
-    TopAppBarFit(cartLabel: false, user: TopAppBarUserFit.short),
-    TopAppBarFit(cartLabel: false, user: TopAppBarUserFit.none),
+    TopAppBarFit(user: TopAppBarUserFit.short),
+    TopAppBarFit(user: TopAppBarUserFit.none),
+    TopAppBarFit(user: TopAppBarUserFit.none, wordmark: false),
     TopAppBarFit(cartLabel: false, user: TopAppBarUserFit.none, wordmark: false),
     TopAppBarFit(cartLabel: false, user: TopAppBarUserFit.none, wordmark: false, date: TopAppBarDateFit.short),
     TopAppBarFit(cartLabel: false, user: TopAppBarUserFit.none, wordmark: false, date: TopAppBarDateFit.none),
@@ -170,17 +175,17 @@ class _TopAppBarFitScope extends InheritedWidget {
 
 /// Шапка рабочего пространства `TopAppBarPos` (03 §9.57; прототип 2026-10-29, ADR-112).
 ///
-/// `full` (medium+): высота [DsBreakpoints.topBarHeight] 68, фон `surface`, нижняя граница 1 px `border`,
-/// без тени; поля по горизонтали 24 (16 на medium); элементы 44 стоят по центру строки (по 12 сверху и
-/// снизу), их цели касания 48 помещаются в высоту шапки. Слева — «бургер» [onMenu] (drawer навигации
+/// `full` (medium+): высота [fullHeight] 69 — 12 + 44 + 12 и нижняя граница 1 px `border` (прототип без округления,
+/// ADR-114 п. 6), фон `surface`, без тени; поля по горизонтали 24 (16 на medium); элементы 44 стоят по центру
+/// строки, их цели касания 48 помещаются в высоту шапки. Слева — «бургер» [onMenu] (drawer навигации
 /// оболочки), логотип [logo] (знак 38 + «Оптомстрой» — у вызывающего), зазор 24, поле поиска [search] — от
-/// логотипа, растёт до [searchMaxWidth] 680; справа группа с зазором 12: [actions] (`SyncIndicator`,
+/// логотипа, растёт до [searchMaxWidth] 680; справа группа с зазором 14: [actions] (`SyncIndicator`,
 /// `TopAppBarCartButton`, часы [TopAppBarClock] — у сотрудника) → [bell] → [user].
 /// Сжатие по доступной ширине ([TopAppBarFit], ADR-112 «паритет функций, раунд 2»): полю поиска — не меньше
 /// [searchMinWidth] 240 (пока видны имя или роль у аватара — [searchComfortWidth] 320); если не хватает, по очереди
-/// сворачиваются строка «Корзина · N шт», роль, имя, «Оптомстрой»,
-/// дата (на «Кассе» — сначала до короткой), затем зазоры 24/12 → 12/8; если и так не помещается — поле поиска
-/// уходит второй строкой ([searchRowHeight] 56, шапка 124) и сведения в первой строке снова показываются, сколько
+/// сворачиваются роль, имя, «Оптомстрой», строка «Корзина»,
+/// дата (на «Кассе» — сначала до короткой), затем зазоры 24/14 → 12/8; если и так не помещается — поле поиска
+/// уходит второй строкой ([searchRowHeight] 56, шапка 125) и сведения в первой строке снова показываются, сколько
 /// помещается. Строка шапки не переполняется.
 /// `compact` 56 (тень `elevation.1`), `modal` 56 и `auth` 64 — без изменений. `Semantics(container)`.
 class TopAppBarPos extends StatelessWidget implements PreferredSizeWidget {
@@ -257,11 +262,22 @@ class TopAppBarPos extends StatelessWidget implements PreferredSizeWidget {
   /// Высота второй строки шапки с полем поиска ([TopAppBarFit.searchBelow]).
   static const double searchRowHeight = 56;
 
+  /// Высота `full` на medium и шире: 12 + 44 + 12 и нижняя граница 1 (прототип `header`, ADR-114 п. 6). Токен
+  /// раскладки [DsBreakpoints.topBarHeight] (68, кратен 4 — 03 §7.1) остаётся у шапки drawer навигации.
+  static const double fullHeight = 69;
+
+  /// Зазор правой группы `full` (прототип: `gap: 14px`); на узкой ступени ([TopAppBarFit.tight]) — 8.
+  static const double rightGroupGap = 14;
+
+  /// Невидимое поле цели касания 48 вокруг видимого квадрата 44 колокольчика ([TopAppBarIconButton]) — вычитается из
+  /// зазоров рядом с ним.
+  static const double _bellInset = (48 - TopAppBarIconButton.size) / 2;
+
   /// Высота по варианту и классу окна.
   static double heightFor(TopAppBarVariant v, WindowClass wc) => switch (v) {
     TopAppBarVariant.compact || TopAppBarVariant.modal => 56,
     TopAppBarVariant.auth => 64,
-    TopAppBarVariant.full => wc == WindowClass.compact ? 56 : DsBreakpoints.topBarHeight,
+    TopAppBarVariant.full => wc == WindowClass.compact ? 56 : fullHeight,
   };
 
   @override
@@ -399,7 +415,7 @@ class TopAppBarPos extends StatelessWidget implements PreferredSizeWidget {
   List<Widget> _full(BuildContext context, TopAppBarFit fit, _FitProbe probe, Widget? searchSlot) {
     final List<Widget> right = <Widget>[...actions, ?bell, ?user];
     final double gap = fit.tight ? context.space.s3 : context.space.s6;
-    final double rightGap = fit.tight ? context.space.s2 : context.space.s3;
+    final double rightGap = fit.tight ? context.space.s2 : rightGroupGap;
     final bool inline = searchSlot != null && !fit.searchBelow;
     return <Widget>[
       if (onMenu != null) ...<Widget>[
@@ -434,7 +450,10 @@ class TopAppBarPos extends StatelessWidget implements PreferredSizeWidget {
           child: _FitProbeBox(probe: probe, minWidth: right.isEmpty ? 0 : gap, child: const SizedBox.shrink()),
         ),
       for (int i = 0; i < right.length; i++) ...<Widget>[
-        if (i > 0) SizedBox(width: rightGap),
+        // Колокольчик занимает цель 48 при видимом квадрате 44: зазоры у него — на 2 меньше, чтобы видимые промежутки
+        // были 14, как в прототипе.
+        if (i > 0)
+          SizedBox(width: rightGap - (identical(right[i], bell) || identical(right[i - 1], bell) ? _bellInset : 0)),
         KeyedSubtree(key: ValueKey<int>(i), child: right[i]),
       ],
     ];
@@ -609,10 +628,11 @@ class _RenderFitProbe extends RenderProxyBox {
   }
 }
 
-/// Кнопка-иконка шапки `full` (прототип 2026-10-29: «бургер», колокольчик): квадрат 44 с радиусом `md`,
-/// иконка 22 `textPrimary` (выбранная — `primaryText`), hover — `surfaceHover`, pressed — `iconButtonPressed`,
-/// фокус — кольцо `focus` (синее); цель касания 48 (03 §7.4). [badge] — в правом верхнем углу квадрата
-/// (`top 6 / right 6`). Тултип — [tooltip] или [semanticLabel].
+/// Кнопка-иконка шапки `full` (прототип: «бургер», колокольчик): квадрат 44 с радиусом `control` 10 (ADR-114),
+/// прозрачная; иконка 22 `textPrimary` (выбранная — `primaryText`) — [glyph] прототипа (колокол — линия 1,8) или
+/// Material [icon]; hover — `surfaceHover` (`.ghost:hover` прототипа), pressed — `iconButtonPressed`, фокус — кольцо
+/// `focus` (синее); цель касания 48 (03 §7.4). [badge] — в правом верхнем углу квадрата (`top 6 / right 6`).
+/// Тултип — [tooltip] или [semanticLabel].
 class TopAppBarIconButton extends StatelessWidget {
   /// Создаёт кнопку.
   const TopAppBarIconButton({
@@ -620,13 +640,17 @@ class TopAppBarIconButton extends StatelessWidget {
     required this.icon,
     required this.semanticLabel,
     required this.onPressed,
+    this.glyph,
     this.badge,
     this.selected = false,
     this.tooltip,
   });
 
-  /// Иконка.
+  /// Иконка (Material); при [glyph] не рисуется.
   final IconData icon;
+
+  /// Контурный глиф прототипа вместо [icon] (колокол уведомлений).
+  final DsGlyphKind? glyph;
 
   /// Подпись для screen reader (из ARB).
   final String semanticLabel;
@@ -649,8 +673,9 @@ class TopAppBarIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final DsColors c = context.colors;
-    final BorderRadius radius = BorderRadius.all(context.radii.md);
+    final BorderRadius radius = BorderRadius.all(context.radii.control);
     final bool enabled = onPressed != null;
+    final DsGlyphKind? glyph = this.glyph;
     final Widget button = Semantics(
       button: true,
       enabled: enabled,
@@ -678,7 +703,7 @@ class TopAppBarIconButton extends StatelessWidget {
                   clipBehavior: Clip.none,
                   alignment: Alignment.center,
                   children: <Widget>[
-                    Icon(icon, size: 22, color: fg),
+                    if (glyph == null) Icon(icon, size: 22, color: fg) else DsGlyph(kind: glyph, size: 22, color: fg),
                     if (badge != null) Positioned(top: 6, right: 6, child: badge!),
                   ],
                 ),
@@ -753,9 +778,10 @@ class TopAppBarClock extends StatelessWidget {
   }
 }
 
-/// Блок пользователя шапки (прототип 2026-10-29): аватар 38 — круг `primaryContainer` с инициалом
-/// `primaryText` `body 700`; имя `body 600 textPrimary` + роль `caption textSecondary` — при [showText], не шире
-/// [textMaxWidth] с многоточием: длинное ФИО не сжимает поиск. В шапке `full` подпись сворачивается по ширине
+/// Блок пользователя шапки (прототип, ADR-114 п. 6): аватар 38 — круг `primaryContainer` с инициалом `primaryText`
+/// `avatarInitial` 15/700; через 10 — имя 14/600 `textPrimary` и роль 12/400 `catalogMeta` (строка 1,2) — при
+/// [showText], не шире [textMaxWidth] с многоточием: длинное ФИО не сжимает поиск. Без своих полей: текст кончается у
+/// края шапки, как в прототипе; цель касания — не ниже 48. В шапке `full` подпись сворачивается по ширине
 /// ([TopAppBarFit.user], паритет функций ADR-112): сначала остаётся только имя не шире [nameShortMaxWidth] (роль — в
 /// меню и `Semantics`), затем — только аватар. Тап → меню аватара (Профиль · Настройки · Синхронизация · Заблокировать
 /// · Выйти — у вызывающего; первым — заголовок с именем и ролью). Читается [semanticLabel] («Профиль: Абдулла,
@@ -797,6 +823,9 @@ class TopAppBarUser extends StatelessWidget {
   /// Диаметр аватара.
   static const double avatarSize = 38;
 
+  /// Зазор между аватаром и подписью (прототип: `gap: 10px`).
+  static const double textGap = 10;
+
   /// Наибольшая ширина имени и роли.
   static const double textMaxWidth = 160;
 
@@ -813,7 +842,7 @@ class TopAppBarUser extends StatelessWidget {
         : (this.maxTextWidth < nameShortMaxWidth ? this.maxTextWidth : nameShortMaxWidth);
     final DsColors c = context.colors;
     final String initials = name.trim().isEmpty ? '?' : name.trim().characters.first.toUpperCase();
-    final BorderRadius radius = BorderRadius.all(context.radii.md);
+    final BorderRadius radius = BorderRadius.all(context.radii.control);
     return Semantics(
       button: onTap != null,
       label: semanticLabel ?? (role.isEmpty ? name : '$name, $role'),
@@ -826,7 +855,6 @@ class TopAppBarUser extends StatelessWidget {
           borderRadius: radius,
           child: Container(
             constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
-            padding: EdgeInsets.symmetric(horizontal: context.space.s1),
             decoration: BoxDecoration(color: s.hovered ? c.surfaceHover : Colors.transparent, borderRadius: radius),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -836,15 +864,18 @@ class TopAppBarUser extends StatelessWidget {
                   width: avatarSize,
                   height: avatarSize,
                   alignment: Alignment.center,
-                  decoration: BoxDecoration(color: c.primaryContainer, shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                    color: c.primaryContainer,
+                    borderRadius: BorderRadius.all(context.radii.avatar),
+                  ),
                   child: Text(
                     initials,
                     textScaler: TextScaler.noScaling,
-                    style: context.text.body.copyWith(fontWeight: FontWeight.w700, color: c.primaryText),
+                    style: context.text.avatarInitial.copyWith(color: c.primaryText),
                   ),
                 ),
                 if (showText) ...<Widget>[
-                  SizedBox(width: context.space.s3),
+                  const SizedBox(width: textGap),
                   ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: maxTextWidth),
                     child: Column(
@@ -855,19 +886,27 @@ class TopAppBarUser extends StatelessWidget {
                           name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: context.text.body.copyWith(fontWeight: FontWeight.w600, color: c.textPrimary),
+                          style: context.text.body.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: c.textPrimary,
+                            height: 1.2,
+                          ),
                         ),
                         if (showRole && role.isNotEmpty)
                           Text(
                             role,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: context.text.caption.copyWith(color: c.textSecondary),
+                            // 12 #6B7487 на `surface` — 4,69:1 (CP-093, DS-007 ред. 1.18); на фоне наведения
+                            // `catalogMeta` запрещён (CP-124, 4,45:1) — `textSecondary` (CP-013).
+                            style: context.text.caption.copyWith(
+                              color: s.hovered ? c.textSecondary : c.catalogMeta,
+                              height: 1.2,
+                            ),
                           ),
                       ],
                     ),
                   ),
-                  SizedBox(width: context.space.s2),
                 ],
               ],
             ),

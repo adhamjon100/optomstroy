@@ -43,12 +43,13 @@ const JOURNALED = ['createCustomer', 'createReturnRequest', 'setReturnStatus', '
 
 /**
  * Синтетика кассира и план обмена (как createCashierState pos_fake_onec.ts) + журнал изменений.
- * deps: { SyntheticCashier, SyntheticCatalog, FakeExchangePlan, catalogProducts }.
+ * deps: { SyntheticCashier, FakeExchangePlan, catalogProducts }; catalog — экземпляр каталога, загруженного в БД
+ * (каталог по макету, demo-init.mjs): товары строк реализаций берутся из него (WP-DATA-WEB).
  * Возвращает { cashier, exchange, journal: { ops, muted, skipKeys }, addShipment(s) }.
  */
-export function createDemoCashierState(deps, { catalogSku = 0, extraCustomers = 20 } = {}) {
-  const { SyntheticCashier, SyntheticCatalog, FakeExchangePlan, catalogProducts } = deps;
-  const products = catalogSku > 0 ? catalogProducts(new SyntheticCatalog({ skuCount: catalogSku, seed: 1 })) : [];
+export function createDemoCashierState(deps, { catalog = null, extraCustomers = 20 } = {}) {
+  const { SyntheticCashier, FakeExchangePlan, catalogProducts } = deps;
+  const products = catalog ? catalogProducts(catalog) : [];
   const cashier = new SyntheticCashier({ ...(products.length > 0 ? { products } : {}), extraCustomers });
   const exchange = new FakeExchangePlan(null).addSource(cashier);
   const journal = { ops: [], muted: false, replaying: false, skipKeys: new Set() };

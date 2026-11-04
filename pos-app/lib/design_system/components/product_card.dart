@@ -5,12 +5,14 @@ import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/app_icon_button.dart';
 import 'package:optomstroy/design_system/components/app_tooltip.dart';
+import 'package:optomstroy/design_system/components/ds_hairline.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/components/favorite_toggle.dart';
 import 'package:optomstroy/design_system/components/price_text.dart';
 import 'package:optomstroy/design_system/components/product_image.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/stock_badge.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -139,7 +141,8 @@ class ProductCardData {
   /// (мгновенная обратная связь без лишних запросов и количеств).
   final bool actionBusy;
 
-  /// Товар недоступен (нет в наличии): фото 60 %, текст `textSecondary`.
+  /// Товар недоступен (нет в наличии): в строках compact — фото 60 %, текст `textSecondary`. Сетка, список medium+ и
+  /// таблица «Компакт» не приглушаются (прототип, ADR-114): состояние видно в строке наличия и по серой кнопке.
   final bool dimmed;
 
   /// Метка карточки целиком («Смеситель…, 2 350 сом за штуку, в наличии 24 шт, артикул F4252»).
@@ -162,24 +165,96 @@ class ProductCardCallbacks {
   final VoidCallback? onAction;
 }
 
-/// Высота поля фото карточки сетки (прототип 2026-10-29).
+/// Высота поля фото карточки сетки (прототип: блок 150, отступ снизу 10).
 const double kProductCardGridImageHeight = 150;
 
-/// Высота ячейки карточки сетки (`SliverGridDelegate.mainAxisExtent`, 03 §9.11): поле 12 · фото 150 · 8 · текст
-/// (название 2 строки · 4 · «Арт.» · 8 · остаток · 6 · цена) · 4 · кнопка 40 в цели 48 · 8. Текстовая часть
-/// масштабируется [scaler] (крупный шрифт — без переполнения), ≈ 346 при масштабе 1.0; [matchBadge] — бейдж типа
-/// совпадения (SCR-11) над названием.
-double kProductCardGridExtent(TextScaler scaler, {bool matchBadge = false}) {
-  double s(double v) => scaler.scale(v);
-  final double text = 2 * s(20) + 4 + s(16) + 8 + math.max(14, s(16)) + 6 + s(26);
-  return 12 + kProductCardGridImageHeight + 8 + (matchBadge ? 24 : 0) + text + 4 + 48 + 8;
+/// Наибольшая высота фото и плашки «Фото появится из 1С» в поле [kProductCardGridImageHeight] (прототип: 146).
+const double kProductCardGridPhotoHeight = 146;
+
+/// Наименьшая высота названия карточки сетки (прототип: `min-height: 37px`, 2 строки по 18,48).
+const double kProductCardGridNameMinHeight = 37;
+
+/// Высота строки CSS `line-height: normal` у Inter так, как её считает Chrome (восхождение 0,96875 и нисхождение
+/// 0,2412 кегля, каждое округлено до пикселя): 12 → 15, 12,5 → 15, 13 → 16, 14 → 17, 18 → 21 (снимки прототипа).
+double _cssLine(double fontSize) => (fontSize * 0.96875).roundToDouble() + (fontSize * 0.2412).roundToDouble();
+
+/// Ширина строки «[price] · 4 · [unit]» карточки сетки при масштабе шрифта [scaler]: сумма как показана
+/// («от 10 450,00 сом») стилем `catalogPrice`, зазор 4, единица («/ шт») стилем `meta` — как у `PriceText` с
+/// `wrapUnit`.
+double kProductCardGridPriceLineWidth(TextScaler scaler, String price, String unit) {
+  const DsTypography t = DsTypography.inter;
+  return dsTextWidthWith(price, t.catalogPrice, scaler: scaler) + 4 + dsTextWidthWith(unit, t.meta, scaler: scaler);
 }
 
-/// Карточка товара в сетке `ProductCardGrid` (03 §9.11; 02 SCR-10 D′; прототип 2026-10-29): белая карточка с
-/// обводкой `border`, радиус `md`, поле 12, тень `elevation.2` при наведении. Фото — поле 150 `contain` на `surface`
-/// (без фото — плашка «Нет фото»), звезда в белом круге 34 сверху справа (8/8). Ниже: бейдж совпадения, название
-/// `body 600` в 2 строки, «Арт. …» `caption textSecondary`, строка остатка `StockBadge.inline`, цена `title 700`
-/// `primaryText` с «/ шт», кнопка во всю ширину по [ProductCardActionKind].
+/// «[price] / [unit]» не помещается в одну строку карточки сетки шириной [cardWidth] (с обводками) при масштабе
+/// [scaler] — единица уходит на вторую строку (прототип: `flex-wrap`, `gap: 4px`). Решается по цене самой карточки,
+/// а не по образцу: при 1366 × 768 (карточка 186,7) «10 450,00 сом / шт» помещается — ячейка 340, как в прототипе
+/// (ревью V-01). Без единицы — не переносится.
+bool kProductCardGridPriceWraps(TextScaler scaler, double cardWidth, {required String price, String? unit}) {
+  if (unit == null || unit.isEmpty) {
+    return false;
+  }
+  return kProductCardGridPriceLineWidth(scaler, price, unit) > cardWidth - 2 - _gridCardPadding.horizontal;
+}
+
+/// Строка цены карточки сетки [data] как она показана («от 10 450,00 сом») — для [kProductCardGridPriceWraps];
+/// `null` — цены нет.
+String? kProductCardGridPriceText(ProductCardData data) {
+  final Money? price = data.price;
+  if (price == null) {
+    return null;
+  }
+  final String formatted = PriceText.format(price);
+  return data.pricePrefix?.call(formatted) ?? formatted;
+}
+
+/// Поля карточки сетки внутри обводки (прототип: `padding: 10px 12px 12px`).
+const EdgeInsets _gridCardPadding = EdgeInsets.fromLTRB(12, 10, 12, 12);
+
+/// Высота бейджа типа совпадения над названием карточки сетки (20 + зазор 4).
+const double _gridMatchBadgeHeight = 24;
+
+/// Текстовая часть карточки сетки: [название ≥ 37] · 4 · «Арт.» · 8 · наличие · 6 · цена (· 4 · «/ шт», если [wraps])
+/// — строки по правилу Chrome ([_cssLine]; у `catalogPrice` та же строка 21 задана токеном `lineHeight`, RV-15).
+double _gridTextHeight(TextScaler scaler, {required bool wraps}) {
+  double s(double v) => scaler.scale(v);
+  final double name = math.max(kProductCardGridNameMinHeight, 2 * s(14) * 1.32);
+  return name +
+      4 +
+      _cssLine(s(12)) +
+      8 +
+      math.max(StockBadge.glyphSize, _cssLine(s(12.5))) +
+      6 +
+      _cssLine(s(18)) +
+      (wraps ? 4 + _cssLine(s(13)) : 0);
+}
+
+/// Высота ячейки карточки сетки (высота ряда сетки, 03 §9.11; прототип, ADR-114): обводка 1 · поле 10 · фото 150 ·
+/// 10 · [название ≥ 37] · 4 · «Арт.» · 8 · наличие · 6 · цена · 10 · кнопка 40 · 12 · обводка 1 — 340 при масштабе
+/// 1.0, как в прототипе (строки текста — по правилу Chrome, [_cssLine]); 360, если в ряду есть карточка, у которой
+/// «цена / шт» не помещается в строку ([priceWraps] — [kProductCardGridPriceWraps] по ценам карточек ряда; единица —
+/// второй строкой через зазор 4; ряд CSS-сетки прототипа растягивается по самой высокой карточке, 1920 × 1080).
+/// Текстовая часть масштабируется [scaler] (крупный шрифт — без переполнения: название сжимается первым);
+/// [matchBadge] — бейдж типа совпадения (SCR-11) над названием. В ячейке 340 карточка с более длинной ценой не
+/// переносит «/ шт», а уменьшает строку цены (ревью RC-11).
+double kProductCardGridExtent(TextScaler scaler, {bool matchBadge = false, bool priceWraps = false}) =>
+    2 +
+    _gridCardPadding.vertical +
+    kProductCardGridImageHeight +
+    10 +
+    (matchBadge ? _gridMatchBadgeHeight : 0) +
+    _gridTextHeight(scaler, wraps: priceWraps) +
+    10 +
+    AppButtonSize.card.height;
+
+/// Карточка товара в сетке `ProductCardGrid` (03 §9.11; 02 SCR-10 D′; прототип, ADR-114): белая карточка с обводкой
+/// `border` 1, радиус `catalogCard` 14, поля 10/12/12, тень `elevation.cardHover` при наведении (120 мс). Звезда —
+/// белый круг 34 сверху справа (8/8 от обводки). Поле фото 150: фото ≤ 146 `scaleDown` (не увеличивается), без фона;
+/// без фото — плашка «Фото появится из 1С». Ниже, через 10: бейдж совпадения (SCR-11), название
+/// `cardName 14/600 catalogName` в 2 строки (не ниже 37), «Арт. …» `sku catalogMeta` (через 4), строка наличия
+/// `StockBadge.inline` (через 8), цена `catalogPrice` с «/ шт» (через 6; не помещается — единица второй строкой),
+/// кнопка 40 у низа карточки (через ≥ 10).
+/// Нет в наличии — без приглушения фото и названия (состояние — в строке наличия и на кнопке).
 class ProductCardGrid extends StatelessWidget {
   /// Создаёт карточку.
   const ProductCardGrid({super.key, required this.data, this.callbacks = const ProductCardCallbacks()});
@@ -193,83 +268,98 @@ class ProductCardGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final DsColors c = context.colors;
-    final double pad = context.space.s3;
     final TextScaler scaler = MediaQuery.textScalerOf(context);
+    // Кнопка 40 — в цели 48 (по 4 сверху и снизу): поле снизу 12 − 4, отступ над кнопкой 10 − 4.
+    final double targetInset = (AppButtonSize.card.target - AppButtonSize.card.height) / 2;
     return _CardShell(
       data: data,
       onOpen: callbacks.onOpen,
-      radius: BorderRadius.all(context.radii.md),
+      radius: BorderRadius.all(context.radii.catalogCard),
       bordered: true,
       hoverElevation: true,
       background: c.surface,
       builder: (BuildContext context, DsInteractionState s) => Stack(
         children: <Widget>[
           Padding(
-            padding: EdgeInsets.fromLTRB(pad, pad, pad, context.space.s2),
+            padding: _gridCardPadding.copyWith(bottom: _gridCardPadding.bottom - targetInset),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Opacity(
-                  opacity: data.dimmed ? 0.6 : 1,
-                  child: ProductImage(
-                    url: data.imageUrl,
-                    size: ProductImageSize.card,
-                    height: kProductCardGridImageHeight,
-                    fit: BoxFit.contain,
-                    background: c.surface,
-                    semanticLabel: data.name,
+                SizedBox(
+                  height: kProductCardGridImageHeight,
+                  child: Center(
+                    child: ProductImage(
+                      url: data.imageUrl,
+                      size: ProductImageSize.card,
+                      height: kProductCardGridPhotoHeight,
+                      fit: BoxFit.scaleDown,
+                      background: Colors.transparent,
+                      borderRadius: BorderRadius.zero,
+                      semanticLabel: data.name,
+                    ),
                   ),
                 ),
-                SizedBox(height: context.space.s2),
+                const SizedBox(height: 10),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      if (data.matchLabel != null) _MatchBadge(label: data.matchLabel!),
-                      // Название не короче 2 строк (строки ряда на одной линии); при нехватке места сжимается первым —
-                      // остаток, цена и кнопка видны всегда.
-                      Flexible(
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(minHeight: scaler.scale(20) * 2),
-                          child: _Name(data: data, maxLines: 2, weight: FontWeight.w600),
-                        ),
-                      ),
-                      SizedBox(height: context.space.s1),
-                      _SkuLine(data: data, withVariants: true, maxLines: 1, color: c.textSecondary),
-                      if (data.stockLevel != null) ...<Widget>[
-                        SizedBox(height: context.space.s2),
-                        StockBadge(
-                          level: data.stockLevel!,
-                          label: data.stockLabel,
-                          asOf: data.stockAsOf,
-                          variant: StockBadgeVariant.inline,
-                          scaleToFit: true,
-                        ),
-                      ],
-                      const SizedBox(height: 6),
-                      // «от 1 650 сом / шт» в карточке 176 lp: масштаб вниз вместо обрезки единицы (AC-UI-10-005).
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: AlignmentDirectional.centerStart,
-                        child: PriceText(
-                          amount: data.price,
-                          unit: data.priceUnit,
-                          prefix: data.pricePrefix,
-                          missingLabel: data.priceMissingLabel,
-                          disabled: data.dimmed,
-                          unitStyle: context.text.label.copyWith(color: c.textSecondary),
-                        ),
-                      ),
-                    ],
+                  child: LayoutBuilder(
+                    builder: (BuildContext context, BoxConstraints box) {
+                      // Вторая строка «/ шт» — только если ячейка ряда под неё рассчитана (kProductCardGridExtent 360);
+                      // в ячейке 340 длинная цена уменьшается в одну строку, а название не сжимается (ревью RC-11).
+                      final double unitLineNeed =
+                          (data.matchLabel != null ? _gridMatchBadgeHeight : 0) + _gridTextHeight(scaler, wraps: true);
+                      final bool unitLine = !box.hasBoundedHeight || box.maxHeight + 0.5 >= unitLineNeed;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          if (data.matchLabel != null) _MatchBadge(label: data.matchLabel!),
+                          // Название не короче 2 строк (строки ряда на одной линии); при нехватке места сжимается
+                          // первым — наличие, цена и кнопка видны всегда.
+                          Flexible(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                minHeight: math.max(kProductCardGridNameMinHeight, 2 * scaler.scale(14) * 1.32),
+                              ),
+                              child: _Name(
+                                data: data,
+                                maxLines: 2,
+                                style: context.text.cardName.copyWith(color: c.catalogName),
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: context.space.s1),
+                          _SkuLine(data: data, withVariants: true, maxLines: 1, style: context.text.sku),
+                          if (data.stockLevel != null) ...<Widget>[
+                            SizedBox(height: context.space.s2),
+                            StockBadge(
+                              level: data.stockLevel!,
+                              label: data.stockLabel,
+                              asOf: data.stockAsOf,
+                              variant: StockBadgeVariant.inline,
+                              scaleToFit: true,
+                            ),
+                          ],
+                          const SizedBox(height: 6),
+                          // «Цена / шт»: не помещается — «/ шт» второй строкой (прототип: flex-wrap, gap 4).
+                          PriceText(
+                            amount: data.price,
+                            unit: data.priceUnit,
+                            prefix: data.pricePrefix,
+                            missingLabel: data.priceMissingLabel,
+                            wrapUnit: true,
+                            allowUnitLine: unitLine,
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
-                SizedBox(height: context.space.s1),
+                SizedBox(height: 10 - targetInset),
                 _GridAction(data: data, onAction: callbacks.onAction),
               ],
             ),
           ),
           if (data.showFavorite)
-            // Круг 34 — на 8 от краёв карточки (цель 48 вокруг него).
+            // Круг 34 — на 8 от обводки карточки (цель 48 вокруг него).
             PositionedDirectional(
               top: 8 - (48 - FavoriteToggle.onImageSize) / 2,
               end: 8 - (48 - FavoriteToggle.onImageSize) / 2,
@@ -286,11 +376,13 @@ class ProductCardGrid extends StatelessWidget {
   }
 }
 
-/// Строка товара `ProductCardList` (03 §9.12; прототип 2026-10-29). medium и шире — отдельная карточка: обводка
-/// `border`, радиус `md`, поля 10/16 (зазор 8 между карточками даёт список); фото 72×60 `contain`, название
-/// `body 600` и «Арт.», звезда после названия, остаток `StockBadge.inline` колонкой 150, цена `bodyLg 700`
-/// `primaryText` с «/ шт» справа колонкой 150, кнопка 168×40 с полной подписью. Узкая строка (< 860) — остаток под
-/// артикулом, цена 120, кнопка 140. compact — прежняя строка 72 с разделителем, ценой и «+» справа.
+/// Строка товара `ProductCardList` (03 §9.12; прототип, ADR-114). medium и шире — отдельная карточка: обводка `border`
+/// 1, радиус `md`, поля 10/14, зазор колонок 18 (между карточками 8 даёт список), тень `cardHover` при наведении; фото
+/// в поле 72×60 `scaleDown` (без фото — плашка 60×52 `photoPlaceholderBg`), название `listName 15/600 catalogName` и
+/// «Арт.» `sku catalogMeta` (зазор 3), звезда после названия (паритет функций), наличие текстом 13/500 колонкой 150,
+/// цена `listPrice 17/800` с «/ шт» справа колонкой 150 (не помещается — «/ шт» второй строкой), кнопка 168×40.
+/// Узкая строка (< 860) — наличие под артикулом, цена 120, кнопка 140. compact — прежняя строка 72 с разделителем,
+/// ценой и «+» справа.
 class ProductCardList extends StatelessWidget {
   /// Создаёт строку.
   const ProductCardList({super.key, required this.data, this.callbacks = const ProductCardCallbacks()});
@@ -303,6 +395,12 @@ class ProductCardList extends StatelessWidget {
 
   /// Ширина строки, от которой остаток — отдельной колонкой.
   static const double wideFrom = 860;
+
+  /// Зазор между колонками строки (прототип: `gap: 12px 18px`).
+  static const double columnGap = 18;
+
+  /// Поля строки внутри обводки (прототип: `padding: 10px 14px`).
+  static const EdgeInsets padding = EdgeInsets.symmetric(horizontal: 14, vertical: 10);
 
   @override
   Widget build(BuildContext context) {
@@ -320,79 +418,81 @@ class ProductCardList extends StatelessWidget {
       builder: (BuildContext context, DsInteractionState s) => LayoutBuilder(
         builder: (BuildContext context, BoxConstraints box) {
           final bool wide = box.maxWidth >= wideFrom;
-          final double gap = context.space.s4;
+          const SizedBox gap = SizedBox(width: columnGap);
           final Widget stock = data.stockLevel == null
               ? const SizedBox.shrink()
               : StockBadge(
                   level: data.stockLevel!,
                   label: data.stockLabel,
                   asOf: data.stockAsOf,
-                  variant: StockBadgeVariant.inline,
+                  variant: StockBadgeVariant.text,
                 );
           // Высота строки — как в прототипе: поля 10 + фото 60 + 10 (с обводкой 82).
           return ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 80),
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: context.space.s4, vertical: context.space.s2 + 2),
+              padding: padding,
               child: Row(
                 children: <Widget>[
-                  Opacity(
-                    opacity: data.dimmed ? 0.6 : 1,
-                    child: ProductImage(
-                      url: data.thumbUrl ?? data.imageUrl,
-                      size: ProductImageSize.thumb,
-                      dimension: 72,
-                      height: 60,
-                      fit: BoxFit.contain,
-                      background: c.surface,
-                      showPlaceholderLabel: false,
-                      borderRadius: BorderRadius.all(context.radii.sm),
-                      semanticLabel: data.name,
-                    ),
+                  ProductImage(
+                    url: data.thumbUrl ?? data.imageUrl,
+                    size: ProductImageSize.thumb,
+                    dimension: 72,
+                    height: 60,
+                    fit: BoxFit.scaleDown,
+                    background: Colors.transparent,
+                    showPlaceholderLabel: false,
+                    borderRadius: BorderRadius.zero,
+                    plateSize: const Size(60, 52),
+                    plateRadius: BorderRadius.all(context.radii.sm),
+                    semanticLabel: data.name,
                   ),
-                  SizedBox(width: gap),
+                  gap,
                   Expanded(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         if (data.matchLabel != null) _MatchBadge(label: data.matchLabel!),
-                        _Name(data: data, maxLines: 2, weight: FontWeight.w600),
-                        const SizedBox(height: 2),
-                        _SkuLine(data: data, withVariants: true, maxLines: 1, color: c.textSecondary),
-                        if (!wide && data.stockLevel != null) ...<Widget>[const SizedBox(height: 2), stock],
+                        _Name(
+                          data: data,
+                          maxLines: 2,
+                          style: context.text.listName.copyWith(color: c.catalogName),
+                        ),
+                        const SizedBox(height: 3),
+                        _SkuLine(data: data, withVariants: true, maxLines: 1, style: context.text.sku),
+                        if (!wide && data.stockLevel != null) ...<Widget>[const SizedBox(height: 3), stock],
                       ],
                     ),
                   ),
-                  // Звезда — небольшая, после названия (02: избранное доступно и в «Списке»; ADR-112).
+                  // Звезда — небольшая, после названия (02: избранное доступно и в «Списке»; ADR-112), цвета звезды
+                  // сетки (03 §9.23 ред. 1.18, ревью RV-17).
                   if (data.showFavorite)
                     FavoriteToggle(
                       selected: data.isFavorite,
                       onChanged: callbacks.onFavorite,
                       semanticLabel: data.favoriteLabel,
+                      variant: FavoriteToggleVariant.catalogInline,
                     ),
-                  if (wide) ...<Widget>[SizedBox(width: gap), SizedBox(width: 150, child: stock)],
-                  SizedBox(width: gap),
+                  if (wide) ...<Widget>[gap, SizedBox(width: 150, child: stock)],
+                  gap,
                   SizedBox(
                     width: wide ? 150 : 120,
                     child: Align(
                       alignment: AlignmentDirectional.centerEnd,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: AlignmentDirectional.centerEnd,
-                        child: PriceText(
-                          amount: data.price,
-                          unit: data.priceUnit,
-                          prefix: data.pricePrefix,
-                          missingLabel: data.priceMissingLabel,
-                          variant: PriceTextVariant.list,
-                          disabled: data.dimmed,
-                          unitStyle: context.text.label.copyWith(color: c.textSecondary),
-                        ),
+                      // Прототип: «цена / шт» справа; шестизначная цена — «/ шт» второй строкой.
+                      child: PriceText(
+                        amount: data.price,
+                        unit: data.priceUnit,
+                        prefix: data.pricePrefix,
+                        missingLabel: data.priceMissingLabel,
+                        variant: PriceTextVariant.list,
+                        wrapUnit: true,
+                        alignEnd: true,
                       ),
                     ),
                   ),
-                  SizedBox(width: gap),
+                  gap,
                   SizedBox(
                     width: wide ? 168 : 140,
                     child: _CardAction(data: data, onAction: callbacks.onAction),
@@ -420,74 +520,98 @@ class ProductCardList extends StatelessWidget {
         constraints: const BoxConstraints(minHeight: 72),
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: context.space.s3, vertical: context.space.s2),
-          child: Row(
-            children: <Widget>[
-              Opacity(
-                opacity: data.dimmed ? 0.6 : 1,
-                child: ProductImage(
-                  url: data.thumbUrl ?? data.imageUrl,
-                  size: ProductImageSize.thumb,
-                  dimension: 56,
-                  fit: BoxFit.cover,
-                  showPlaceholderLabel: false,
-                  borderRadius: BorderRadius.all(context.radii.sm),
-                  semanticLabel: data.name,
-                ),
-              ),
-              SizedBox(width: context.space.s3),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    if (data.matchLabel != null) _MatchBadge(label: data.matchLabel!),
-                    _Name(data: data, maxLines: 2),
-                    SizedBox(height: context.space.s1 / 2),
-                    _SkuLine(data: data, withVariants: true, withUnit: true),
-                    if (data.stockLevel != null) ...<Widget>[
-                      SizedBox(height: context.space.s1 / 2),
-                      StockBadge(
-                        level: data.stockLevel!,
-                        label: data.stockLabel,
-                        asOf: data.stockAsOf,
-                        variant: StockBadgeVariant.inline,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              SizedBox(width: context.space.s2),
-              // compact: цена и кнопки — в правом столбце (03 §9.12).
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: <Widget>[
-                  PriceText(
-                    amount: data.price,
-                    unit: data.priceUnit,
-                    prefix: data.pricePrefix,
-                    missingLabel: data.priceMissingLabel,
-                    variant: PriceTextVariant.list,
-                    disabled: data.dimmed,
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      if (data.showFavorite)
-                        FavoriteToggle(
-                          selected: data.isFavorite,
-                          onChanged: callbacks.onFavorite,
-                          semanticLabel: data.favoriteLabel,
-                        ),
-                      _InlineAction(data: data, onAction: callbacks.onAction),
-                    ],
-                  ),
-                ],
-              ),
-            ],
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints box) => _compactRow(
+              context,
+              // Цена — не шире половины места после фото 56 и зазоров.
+              sideMax: math.max(0, (box.maxWidth - 56 - context.space.s3 - context.space.s2) / 2),
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  /// Строка compact: фото 56 · название, «Арт. · шт», остаток · цена (не шире [sideMax], длинная уменьшается),
+  /// звезда и «+».
+  Widget _compactRow(BuildContext context, {required double sideMax}) {
+    return Row(
+      children: <Widget>[
+        Opacity(
+          opacity: data.dimmed ? 0.6 : 1,
+          child: ProductImage(
+            url: data.thumbUrl ?? data.imageUrl,
+            size: ProductImageSize.thumb,
+            dimension: 56,
+            fit: BoxFit.cover,
+            showPlaceholderLabel: false,
+            borderRadius: BorderRadius.all(context.radii.sm),
+            semanticLabel: data.name,
+          ),
+        ),
+        SizedBox(width: context.space.s3),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (data.matchLabel != null) _MatchBadge(label: data.matchLabel!),
+              _Name(data: data, maxLines: 2),
+              SizedBox(height: context.space.s1 / 2),
+              _SkuLine(data: data, withVariants: true, withUnit: true),
+              if (data.stockLevel != null) ...<Widget>[
+                SizedBox(height: context.space.s1 / 2),
+                StockBadge(
+                  level: data.stockLevel!,
+                  label: data.stockLabel,
+                  asOf: data.stockAsOf,
+                  variant: StockBadgeVariant.inline,
+                ),
+              ],
+            ],
+          ),
+        ),
+        SizedBox(width: context.space.s2),
+        // compact: цена и кнопки — в правом столбце (03 §9.12). Цена всегда с копейками (ADR-114): длинная
+        // («от 1 234 567,00 сом / шт») уменьшается до половины строки, название не сжимается в ноль.
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: <Widget>[
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: sideMax),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: AlignmentDirectional.centerEnd,
+                child: PriceText(
+                  amount: data.price,
+                  unit: data.priceUnit,
+                  prefix: data.pricePrefix,
+                  missingLabel: data.priceMissingLabel,
+                  variant: PriceTextVariant.list,
+                  disabled: data.dimmed,
+                  // Строка красит фон при наведении и нажатии: «/ шт» — `textSecondary` (CP-013, CP-014), `catalogMeta`
+                  // на этих фонах ниже 4.5:1 (CP-124, CP-125; ревью RC-07).
+                  unitStyle: context.text.meta.copyWith(color: context.colors.textSecondary),
+                ),
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (data.showFavorite)
+                  FavoriteToggle(
+                    selected: data.isFavorite,
+                    onChanged: callbacks.onFavorite,
+                    semanticLabel: data.favoriteLabel,
+                    variant: FavoriteToggleVariant.catalogInline,
+                  ),
+                _InlineAction(data: data, onAction: callbacks.onAction),
+              ],
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -623,8 +747,8 @@ class ProductCompactHeaderLabels {
   int get hashCode => Object.hash(sku, name, stock, price, action);
 }
 
-/// Заголовок таблицы «Компакт» 40 lp (UI-10-118; прототип 2026-10-29): `caption 600 textSecondary`, поля 16, нижняя
-/// линия `border`; закрепляется вызывающим. Колонки — как у строк ([ProductCompactLayout]).
+/// Заголовок таблицы «Компакт» 36 lp (UI-10-118; прототип, ADR-114): `sku 12/600 catalogMeta`, поля 10/16, нижняя
+/// линия `border` 1; закрепляется вызывающим. Колонки — как у строк ([ProductCompactLayout]).
 class ProductCardCompactHeader extends StatelessWidget {
   /// Создаёт заголовок.
   const ProductCardCompactHeader({super.key, required this.labels});
@@ -632,10 +756,13 @@ class ProductCardCompactHeader extends StatelessWidget {
   /// Подписи.
   final ProductCompactHeaderLabels labels;
 
+  /// Высота заголовка с нижней линией (прототип: поля 10 + строка 15 + 10 + линия 1).
+  static const double headerHeight = 36;
+
   @override
   Widget build(BuildContext context) {
     final DsColors c = context.colors;
-    final TextStyle style = context.text.caption.copyWith(fontWeight: FontWeight.w600, color: c.textSecondary);
+    final TextStyle style = context.text.sku.copyWith(fontWeight: FontWeight.w600, color: c.catalogMeta);
     Widget cell(String text, double? width, {TextAlign align = TextAlign.start, bool visible = true}) {
       final Widget t = Semantics(
         header: true,
@@ -648,11 +775,11 @@ class ProductCardCompactHeader extends StatelessWidget {
 
     const SizedBox gap = SizedBox(width: ProductCompactLayout.gap);
     return Container(
-      height: 40,
+      height: headerHeight,
       padding: const EdgeInsets.symmetric(horizontal: ProductCompactLayout.sidePadding),
       decoration: BoxDecoration(
         color: c.surface,
-        border: Border(bottom: BorderSide(color: c.border)),
+        border: Border(bottom: DsHairline.side(context, c.border)),
       ),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints box) {
@@ -787,14 +914,17 @@ class ProductCardCompact extends StatelessWidget {
     );
   }
 
-  /// Таблица (прототип 2026-10-29): Артикул 120 · Наименование flex (миниатюра 40, название с числом вариантов, звезда
-  /// избранного — паритет функций ADR-112) · Наличие 150 (статус с количеством, одна строка) · Цена 150 справа с
-  /// единицей «/ шт» · кнопка 132 высотой 34 (цель 44). Поля 8/16, нижняя линия `border`, при наведении —
-  /// `surfaceHover`. Узкая строка — без колонки «Артикул» (артикул — под названием), «Наличие» 120, «Цена» 130.
+  /// Таблица (прототип, ADR-114): Артикул 120 (`body 14` `textSecondary`) · Наименование flex (`chip 14/600`
+  /// `catalogName`, одна строка; миниатюра 40, число вариантов и звезда избранного — паритет функций) · Наличие 150
+  /// (текст 13/500 цвета уровня) · Цена 150 справа (`compactPrice 14/800`, с единицей «/ шт» — паритет) · кнопка 132
+  /// высотой 34 (цель 44). Поля 8/16, строка 50 + линия `rowDivider` 1, при наведении — `surfaceHover`. Узкая строка —
+  /// без колонки «Артикул» (артикул — под названием), «Наличие» 120, «Цена» 130. Подписи строки, которых нет в
+  /// прототипе («N вариантов», артикул узкой строки, «/ шт»), — `sku 12` `textSecondary` (цвет артикула прототипа):
+  /// `catalogMeta` на фонах hover и pressed ниже 4.5:1 (CP-124, CP-125; ревью RC-07).
   Widget _table(BuildContext context) {
     final DsColors c = context.colors;
-    final TextStyle skuStyle = context.text.body.copyWith(color: c.textSecondary, fontFeatures: DsTypography.numeric);
-    final TextStyle caption = context.text.caption.copyWith(color: c.textSecondary, fontFeatures: DsTypography.numeric);
+    final TextStyle skuStyle = context.text.body.copyWith(color: c.textSecondary);
+    final TextStyle caption = context.text.sku.copyWith(color: c.textSecondary);
     return _CardShell(
       data: data,
       onOpen: callbacks.onOpen,
@@ -803,6 +933,7 @@ class ProductCardCompact extends StatelessWidget {
       // Фон строки — у контейнера таблицы (скругление `md`); строка красит только hover/pressed.
       background: Colors.transparent,
       divider: true,
+      dividerColor: c.rowDivider,
       builder: (BuildContext context, DsInteractionState s) => SizedBox(
         height: tableRowHeight,
         child: Padding(
@@ -815,7 +946,11 @@ class ProductCardCompact extends StatelessWidget {
               final Widget name = Row(
                 children: <Widget>[
                   Expanded(
-                    child: _Name(data: data, maxLines: 1, weight: FontWeight.w600),
+                    child: _Name(
+                      data: data,
+                      maxLines: 1,
+                      style: context.text.chip.copyWith(color: c.catalogName),
+                    ),
                   ),
                   if (variants != null) ...<Widget>[
                     SizedBox(width: context.space.s2),
@@ -837,18 +972,16 @@ class ProductCardCompact extends StatelessWidget {
                     ),
                     gap,
                   ],
-                  Opacity(
-                    opacity: data.dimmed ? 0.6 : 1,
-                    child: ProductImage(
-                      url: data.thumbUrl ?? data.imageUrl,
-                      size: ProductImageSize.thumb,
-                      dimension: ProductCompactLayout.thumb,
-                      fit: BoxFit.contain,
-                      background: c.surface,
-                      showPlaceholderLabel: false,
-                      borderRadius: BorderRadius.all(context.radii.sm),
-                      semanticLabel: data.name,
-                    ),
+                  ProductImage(
+                    url: data.thumbUrl ?? data.imageUrl,
+                    size: ProductImageSize.thumb,
+                    dimension: ProductCompactLayout.thumb,
+                    fit: BoxFit.scaleDown,
+                    background: Colors.transparent,
+                    showPlaceholderLabel: false,
+                    borderRadius: BorderRadius.zero,
+                    plateRadius: BorderRadius.all(context.radii.sm),
+                    semanticLabel: data.name,
                   ),
                   const SizedBox(width: ProductCompactLayout.thumbGap),
                   Expanded(
@@ -869,12 +1002,14 @@ class ProductCardCompact extends StatelessWidget {
                             ],
                           ),
                   ),
-                  // Звезда избранного — в строке таблицы (паритет функций ADR-112: прежняя колонка ☆).
+                  // Звезда избранного — в строке таблицы (паритет функций ADR-112: прежняя колонка ☆), цвета звезды
+                  // сетки (03 §9.23 ред. 1.18, ревью RV-17).
                   if (data.showFavorite)
                     FavoriteToggle(
                       selected: data.isFavorite,
                       onChanged: callbacks.onFavorite,
                       semanticLabel: data.favoriteLabel,
+                      variant: FavoriteToggleVariant.catalogInline,
                     ),
                   gap,
                   SizedBox(
@@ -886,7 +1021,7 @@ class ProductCardCompact extends StatelessWidget {
                             child: StockBadge(
                               level: data.stockLevel!,
                               label: data.stockLabel,
-                              variant: StockBadgeVariant.inline,
+                              variant: StockBadgeVariant.text,
                               scaleToFit: true,
                               semanticLabel: <String>[data.stockLabel, ?data.stockAsOf].join(', '),
                             ),
@@ -902,13 +1037,12 @@ class ProductCardCompact extends StatelessWidget {
                         alignment: AlignmentDirectional.centerEnd,
                         child: PriceText(
                           amount: data.price,
-                          // Единица «/ шт» (паритет функций ADR-112: прежняя колонка «Ед.»).
+                          // Единица «/ шт» (паритет функций ADR-112: прежняя колонка «Ед.») — `textSecondary` (RC-07).
                           unit: data.priceUnit,
                           prefix: data.pricePrefix,
                           missingLabel: data.priceMissingLabel,
                           variant: PriceTextVariant.compact,
-                          disabled: data.dimmed,
-                          unitStyle: context.text.caption.copyWith(color: c.textSecondary),
+                          unitStyle: caption,
                         ),
                       ),
                     ),
@@ -998,8 +1132,8 @@ class ProductCardCompact extends StatelessWidget {
   }
 }
 
-/// Скелетон карточки текущего вида (UI-10-117, ANIM-013): геометрия — как у карточек (сетка — фото 150 и кнопка
-/// внизу ячейки; список medium+ — карточка 84; таблица — строка 50).
+/// Скелетон карточки текущего вида (UI-10-117, ANIM-013): геометрия — как у карточек (сетка — радиус 14, поля 10/12/12,
+/// фото 150 и кнопка внизу ячейки; список medium+ — карточка 82; таблица — строка 50 + линия).
 class ProductCardSkeleton extends StatelessWidget {
   /// Сетка.
   const ProductCardSkeleton.grid({super.key}) : _kind = 0;
@@ -1019,17 +1153,17 @@ class ProductCardSkeleton extends StatelessWidget {
     switch (_kind) {
       case 0:
         return Container(
-          padding: EdgeInsets.fromLTRB(context.space.s3, context.space.s3, context.space.s3, context.space.s3),
+          padding: _gridCardPadding,
           decoration: BoxDecoration(
             color: c.surface,
-            border: Border.all(color: c.border),
-            borderRadius: BorderRadius.all(context.radii.md),
+            border: DsHairline.all(context, c.border),
+            borderRadius: BorderRadius.all(context.radii.catalogCard),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               const SkeletonBox(height: kProductCardGridImageHeight),
-              SizedBox(height: context.space.s3),
+              const SizedBox(height: 10),
               const SkeletonBox.text(),
               SizedBox(height: context.space.s2),
               const SkeletonBox.text(width: 96),
@@ -1061,22 +1195,22 @@ class ProductCardSkeleton extends StatelessWidget {
           );
         }
         return Container(
-          height: 84,
-          padding: EdgeInsets.symmetric(horizontal: context.space.s4),
+          height: 82,
+          padding: EdgeInsets.symmetric(horizontal: ProductCardList.padding.left),
           decoration: BoxDecoration(
             color: c.surface,
-            border: Border.all(color: c.border),
+            border: DsHairline.all(context, c.border),
             borderRadius: BorderRadius.all(context.radii.md),
           ),
-          child: Row(
+          child: const Row(
             children: <Widget>[
-              const SkeletonBox(width: 72, height: 60),
-              SizedBox(width: context.space.s4),
-              const Expanded(child: SkeletonBox.text()),
-              SizedBox(width: context.space.s4),
-              const SkeletonBox(width: 96, height: 18),
-              SizedBox(width: context.space.s4),
-              const SkeletonBox(width: 140, height: 40),
+              SkeletonBox(width: 72, height: 60),
+              SizedBox(width: ProductCardList.columnGap),
+              Expanded(child: SkeletonBox.text()),
+              SizedBox(width: ProductCardList.columnGap),
+              SkeletonBox(width: 96, height: 18),
+              SizedBox(width: ProductCardList.columnGap),
+              SkeletonBox(width: 168, height: 40),
             ],
           ),
         );
@@ -1088,7 +1222,7 @@ class ProductCardSkeleton extends StatelessWidget {
           ),
           decoration: BoxDecoration(
             color: c.surface,
-            border: Border(bottom: BorderSide(color: c.border)),
+            border: Border(bottom: DsHairline.side(context, compactWindow ? c.border : c.rowDivider)),
           ),
           child: Row(
             children: <Widget>[
@@ -1116,6 +1250,9 @@ String _bareNumber(String label) {
   return m == null ? label : m.group(0)!.trim();
 }
 
+/// Смена тени и фона карточки при наведении (прототип: 120 мс).
+const Duration _hoverTransition = Duration(milliseconds: 120);
+
 class _CardShell extends StatelessWidget {
   const _CardShell({
     required this.data,
@@ -1126,6 +1263,7 @@ class _CardShell extends StatelessWidget {
     required this.background,
     this.onLongPress,
     this.divider = false,
+    this.dividerColor,
     this.hoverElevation = false,
   });
 
@@ -1136,6 +1274,13 @@ class _CardShell extends StatelessWidget {
   final BorderRadius radius;
   final bool bordered;
   final bool divider;
+
+  /// Цвет нижней линии ([divider]); `null` — `border`.
+  final Color? dividerColor;
+
+  /// Тень `elevation.cardHover` при наведении и нажатии (прототип: `.card:hover`, отдельного `:active` нет) вместо фона
+  /// `surfaceHover` / `surfacePressed`: фон карточки не меняется, и «Арт.», «/ шт» `catalogMeta` остаются на `surface`
+  /// (CP-093; на фонах hover и pressed — ниже 4.5:1, CP-124, CP-125; ревью RC-07).
   final bool hoverElevation;
   final Color background;
 
@@ -1149,16 +1294,21 @@ class _CardShell extends StatelessWidget {
         onTap: onOpen,
         onLongPress: onLongPress,
         builder: (BuildContext context, DsInteractionState s) {
-          final Color bg = s.pressed ? c.surfacePressed : (s.hovered && !hoverElevation ? c.surfaceHover : background);
+          final Color bg = hoverElevation
+              ? background
+              : (s.pressed ? c.surfacePressed : (s.hovered ? c.surfaceHover : background));
+          final bool lifted = hoverElevation && (s.hovered || s.pressed);
           final Widget box = AnimatedContainer(
-            duration: context.motion.of(context.motion.fast),
+            // Прототип: `transition: box-shadow 120ms ease`.
+            duration: context.motion.of(_hoverTransition),
+            curve: Curves.ease,
             decoration: BoxDecoration(
               color: bg,
               borderRadius: radius,
               border: bordered
-                  ? Border.all(color: c.border)
-                  : (divider ? Border(bottom: BorderSide(color: c.border)) : null),
-              boxShadow: hoverElevation && s.hovered ? context.elevation.e2 : context.elevation.e0,
+                  ? DsHairline.all(context, c.border)
+                  : (divider ? Border(bottom: DsHairline.side(context, dividerColor ?? c.border)) : null),
+              boxShadow: lifted ? context.elevation.cardHover : context.elevation.e0,
             ),
             child: builder(context, s),
           );
@@ -1169,12 +1319,14 @@ class _CardShell extends StatelessWidget {
   }
 }
 
+/// Название с полным текстом в подсказке (INV-053): [style] (карточки каталога по прототипу — `catalogName`), иначе
+/// `body 500` `textPrimary` (приглушённое — `textSecondary`, строки compact).
 class _Name extends StatelessWidget {
-  const _Name({required this.data, required this.maxLines, this.weight = FontWeight.w500});
+  const _Name({required this.data, required this.maxLines, this.style});
 
   final ProductCardData data;
   final int maxLines;
-  final FontWeight weight;
+  final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
@@ -1186,22 +1338,23 @@ class _Name extends StatelessWidget {
         data.name,
         maxLines: maxLines,
         overflow: TextOverflow.ellipsis,
-        style: context.text.body.copyWith(fontWeight: weight, color: data.dimmed ? c.textSecondary : c.textPrimary),
+        style: style ?? context.text.bodyMedium.copyWith(color: data.dimmed ? c.textSecondary : c.textPrimary),
       ),
     );
   }
 }
 
 class _SkuLine extends StatelessWidget {
-  const _SkuLine({required this.data, this.withVariants = false, this.withUnit = false, this.maxLines = 2, this.color});
+  const _SkuLine({required this.data, this.withVariants = false, this.withUnit = false, this.maxLines = 2, this.style});
 
   final ProductCardData data;
   final bool withVariants;
   final bool withUnit;
   final int maxLines;
 
-  /// Цвет подписи; по умолчанию `textSecondary` (кегль 12 — не `textTertiary`, DS-007).
-  final Color? color;
+  /// Стиль карточек каталога по прототипу (`sku 12/400` `catalogMeta`, без tnum); `null` — `caption textSecondary`
+  /// tnum (строки compact; кегль 12 — не `textTertiary`, DS-007).
+  final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
@@ -1214,10 +1367,9 @@ class _SkuLine extends StatelessWidget {
       parts.join(' · '),
       maxLines: maxLines,
       overflow: TextOverflow.ellipsis,
-      style: context.text.caption.copyWith(
-        color: color ?? context.colors.textSecondary,
-        fontFeatures: DsTypography.numeric,
-      ),
+      style:
+          style?.copyWith(color: context.colors.catalogMeta) ??
+          context.text.caption.copyWith(color: context.colors.textSecondary, fontFeatures: DsTypography.numeric),
     );
   }
 }
@@ -1257,7 +1409,7 @@ class _GridAction extends StatelessWidget {
 /// - `add` — `AppButton.primary` «+ Добавить»;
 /// - `inCart` — `AppButton.tint` «В корзине · N — ещё +1» (таблица — «Ещё · N»), одна строка с уменьшением;
 /// - `chooseVariant` — `AppButton.tonal` «Выбрать вариант ›» (шеврон — при ширине ≥ [narrowWidth]);
-/// - `unavailable` — серая недоступная кнопка `disabledBg` с причиной `textTertiary` (4.53:1);
+/// - `unavailable` — серая недоступная кнопка `disabledBg` с причиной `catalogMeta` (прототип, ADR-114);
 /// - `hidden` — пустое место той же высоты (кнопки ряда на одной линии).
 class _CardAction extends StatelessWidget {
   const _CardAction({required this.data, required this.onAction, this.compact = false});
@@ -1265,7 +1417,7 @@ class _CardAction extends StatelessWidget {
   final ProductCardData data;
   final VoidCallback? onAction;
 
-  /// Строка таблицы «Компакт»: 34 (цель 44), `label 700`, короткая подпись.
+  /// Строка таблицы «Компакт»: 34 (цель 44), `chip 14` вес 700, короткая подпись.
   final bool compact;
 
   /// Уже этого кнопка «Выбрать вариант ›» без шеврона (карточка 176 lp; FIX-EF-13).
@@ -1321,9 +1473,10 @@ class _CardAction extends StatelessWidget {
   }
 }
 
-/// Недоступное действие карточки (нет в наличии, нет цены, остаток неизвестен): серая кнопка `disabledBg` радиус
-/// `md`, причина `textTertiary` 700 — не нажимается, для screen reader — недоступная кнопка с причиной. Короткая
-/// подпись «Компакта» («Нет данных») — с полной причиной [fullLabel] в тултипе и для экранного диктора.
+/// Недоступное действие карточки (нет в наличии, нет цены, остаток неизвестен; прототип, ADR-114): серая кнопка
+/// `disabledBg` радиус `control` 10, причина `chip 14` вес 700 `catalogMeta` (4,14:1 — недоступный элемент, WCAG 1.4.3)
+/// — не нажимается, для screen reader — недоступная кнопка с причиной. Короткая подпись «Компакта» («Нет») — с полной
+/// причиной [fullLabel] в тултипе и для экранного диктора.
 class _UnavailableAction extends StatelessWidget {
   const _UnavailableAction({required this.label, required this.size, this.fullLabel});
 
@@ -1336,10 +1489,7 @@ class _UnavailableAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final DsColors c = context.colors;
-    final TextStyle style = (size == AppButtonSize.cardCompact ? context.text.label : context.text.body).copyWith(
-      fontWeight: FontWeight.w700,
-      color: c.textTertiary,
-    );
+    final TextStyle style = context.text.chip.copyWith(fontWeight: FontWeight.w700, color: c.catalogMeta);
     final String full = fullLabel ?? label;
     final Widget button = Semantics(
       button: true,
@@ -1354,7 +1504,7 @@ class _UnavailableAction extends StatelessWidget {
             key: const ValueKey<String>('product-card-unavailable'),
             height: size.height,
             padding: EdgeInsets.symmetric(horizontal: size.padding),
-            decoration: BoxDecoration(color: c.disabledBg, borderRadius: BorderRadius.all(context.radii.md)),
+            decoration: BoxDecoration(color: c.disabledBg, borderRadius: BorderRadius.all(context.radii.control)),
             alignment: Alignment.center,
             child: FittedBox(
               fit: BoxFit.scaleDown,

@@ -28,6 +28,18 @@
  *                                                   # этап G (Flutter): как --pos-fixtures + фейк 1С в режиме кассира
  *                                                   # и загруженный мир кассира (клиенты с долгами/просрочкой/лимитом,
  *                                                   # история, скидки, возвраты)
+ *   node scripts/local-stack.mjs serve --cashier-fixtures --catalog-spec=../demo/catalog/design-catalog.json
+ *                                                   # демо Windows (ADR-114): каталог по макету вместо синтетики
+ *
+ * `--catalog-spec=<файл>` (только `serve`, только dev; вместо `--catalog-fixtures`, вместе — ошибка): каталог по
+ * прототипу экрана выбора товаров из спецификации `demo/catalog/design-catalog.json` (**тестовые данные**: 8 корней и
+ * подкатегории в порядке макета, товары макета и наполнители; фото — `demo/catalog/photos`). Отдельный процесс
+ * `scripts/load_catalog_fixtures.ts --spec` загружает его тем же конвейером, ставит порядок категорий макета, порог
+ * «мало» спецификации и избранное сотрудникам стенда (admin, кассир, старший продавец, руководитель — поэтому
+ * сотрудники создаются до каталога), импортирует фото товаров и картинки категорий (`categories.image_id`) в
+ * `MEDIA_DIR`; их отдаёт мини-прокси :8080, как при `--catalog-fixtures`. С `--cashier-fixtures` фейк 1С берёт товары
+ * строк реализаций из того же каталога (`pos_fake_onec.ts --catalog-spec`). Путь — от текущего каталога. Без флага
+ * всё как раньше: синтетика seed 1 и фикстуры 1С (тесты pos-api и pos-app, F4252).
  *
  * `--cashier-fixtures` (только dev, этап G; включает `--pos-fixtures`): фейк HTTP-сервиса 1С запускается с `--cashier`
  * (синтетика кассира `SyntheticCashier`: 10 сценарных клиентов + 20 обычных, реализации за `SALES_HISTORY_MONTHS`,
@@ -98,7 +110,7 @@ import {
 import { createServer as createHttpServer, request as httpRequest } from 'node:http';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
@@ -425,6 +437,26 @@ class Stack {
     log(`catalog-fixtures: каталог (${sku} SKU + фикстуры 1С) и фото загружены — на фикстурах, не реальная интеграция`);
   }
 
+  /**
+   * Демо Windows (ADR-114, `--catalog-spec`): каталог по макету из спецификации `specFile` тем же процессом
+   * `scripts/load_catalog_fixtures.ts --spec` — загрузка, порядок категорий, порог «мало», избранное `staffPhones`
+   * (пользователи уже созданы), фото товаров и картинки категорий в MEDIA_DIR.
+   */
+  async loadDesignCatalog(specFile, staffPhones) {
+    mkdirSync(this.mediaDir, { recursive: true });
+    const r = await this.runNode('--import', [
+      'tsx',
+      'scripts/load_catalog_fixtures.ts',
+      '--spec',
+      specFile,
+      '--staff-phones',
+      staffPhones.join(','),
+    ]);
+    for (const line of r.out.split('\n').filter((l) => l.trim() !== '')) log(`catalog: ${line.trim()}`);
+    if (r.code !== 0) throw new Error(`load_catalog_fixtures --spec завершился с кодом ${r.code}`);
+    log(`catalog-spec: каталог по макету (${specFile}), фото товаров и картинки категорий загружены — тестовые данные`);
+  }
+
   /** Мини-прокси «как Caddy» (infra/caddy/Caddyfile, блок `@image`): фото из MEDIA_DIR, остальное — в pos-api. */
   async startMediaProxy() {
     if (!(await portIsFree(PROXY_PORT))) throw new Error(`порт ${PROXY_PORT} занят (LOCAL_STACK_PROXY_PORT)`);
@@ -518,7 +550,12 @@ class Stack {
         ready,
         '--qr-paid-after-polls',
         String(qrPaidAfterPolls),
-        ...(cashier ? ['--cashier', '--catalog-sku', String(cashier.sku ?? 0)] : []),
+        ...(cashier
+          ? [
+              '--cashier',
+              ...(cashier.spec ? ['--catalog-spec', cashier.spec] : ['--catalog-sku', String(cashier.sku ?? 0)]),
+            ]
+          : []),
       ],
       { cwd: API_DIR, env: { ...process.env, APP_ENV: 'dev' }, stdio: ['pipe', fd, fd] },
     );
@@ -2343,16 +2380,35 @@ function catalogFixturesArg() {
   return v;
 }
 
+/** `--catalog-spec=<файл>` или `--catalog-spec <файл>` → абсолютный путь (от текущего каталога); нет флага → undefined. */
+function catalogSpecArg() {
+  const a = args.find((x) => x === '--catalog-spec' || x.startsWith('--catalog-spec='));
+  if (!a) return undefined;
+  const v = a.includes('=') ? a.slice(a.indexOf('=') + 1) : opt('--catalog-spec');
+  if (!v || v.startsWith('--')) throw new Error('--catalog-spec=<файл спецификации каталога по макету>');
+  const file = resolve(process.cwd(), v);
+  try {
+    statSync(file);
+  } catch {
+    throw new Error(`--catalog-spec: нет файла ${file}`);
+  }
+  if (mode !== 'serve') throw new Error(`--catalog-spec — только для serve (${mode} проверяет синтетический каталог)`);
+  if (catalogFixturesArg() !== undefined) throw new Error('--catalog-spec несовместим с --catalog-fixtures');
+  return file;
+}
+
 async function main() {
   if (!['smoke', 'serve', 'auth-smoke', 'catalog-smoke', 'pos-smoke', 'cashier-smoke'].includes(mode)) {
     process.stderr.write(
-      'usage: node scripts/local-stack.mjs smoke | auth-smoke | catalog-smoke [--catalog-fixtures=N] | pos-smoke [--catalog-fixtures=N] | cashier-smoke [--catalog-fixtures=N] | serve [--ready-file <path>] [--ttl <sec>] [--auth-fixtures] [--catalog-fixtures[=N]] [--pos-fixtures | --cashier-fixtures [--qr-provider onec|none] [--qr-paid-after-polls N]]\n',
+      'usage: node scripts/local-stack.mjs smoke | auth-smoke | catalog-smoke [--catalog-fixtures=N] | pos-smoke [--catalog-fixtures=N] | cashier-smoke [--catalog-fixtures=N] | serve [--ready-file <path>] [--ttl <sec>] [--auth-fixtures] [--catalog-fixtures[=N] | --catalog-spec=<file>] [--pos-fixtures | --cashier-fixtures [--qr-provider onec|none] [--qr-paid-after-polls N]]\n',
     );
     process.exit(2);
   }
   let catalogSku;
+  let catalogSpec;
   try {
     catalogSku = catalogFixturesArg();
+    catalogSpec = catalogSpecArg();
   } catch (e) {
     process.stderr.write(`${e.message}\n`);
     process.exit(2);
@@ -2420,16 +2476,25 @@ async function main() {
     }
     const cashierFixtures = args.includes('--cashier-fixtures');
     const posFixtures = args.includes('--pos-fixtures') || cashierFixtures;
-    const serveSku = catalogSku ?? (posFixtures ? CATALOG_SKU_DEFAULT : undefined);
+    const serveSku = catalogSpec ? undefined : (catalogSku ?? (posFixtures ? CATALOG_SKU_DEFAULT : undefined));
     if (serveSku !== undefined) await stack.loadCatalog(serveSku);
     if (args.includes('--auth-fixtures') || posFixtures) await stack.insertAuthFixtures();
     if (cashierFixtures) await stack.insertCashierFixtures();
+    // Каталог по макету — после сотрудников: избранное спецификации ставится существующим пользователям.
+    if (catalogSpec) {
+      await stack.loadDesignCatalog(catalogSpec, [
+        AUTH_FIXTURES.admin,
+        AUTH_FIXTURES.cashier,
+        AUTH_FIXTURES.seniorSeller,
+        AUTH_FIXTURES.owner,
+      ]);
+    }
     if (posFixtures) {
       const qrProvider = opt('--qr-provider') ?? 'onec';
       if (!['onec', 'none'].includes(qrProvider)) throw new Error('--qr-provider: onec | none');
       await stack.startFakeOnec(
         Number(opt('--qr-paid-after-polls') ?? '2'),
-        cashierFixtures ? { sku: serveSku ?? CATALOG_SKU_DEFAULT } : null,
+        cashierFixtures ? (catalogSpec ? { spec: catalogSpec } : { sku: serveSku ?? CATALOG_SKU_DEFAULT }) : null,
       );
       stack.posEnv = { ...stack.posEnv, QR_PROVIDER: qrProvider };
       await stack.startApi(stack.posEnv);
@@ -2441,7 +2506,7 @@ async function main() {
     } else {
       await stack.startApi();
     }
-    if (serveSku !== undefined) await stack.startMediaProxy();
+    if (serveSku !== undefined || catalogSpec) await stack.startMediaProxy();
     const readyFile = opt('--ready-file');
     if (readyFile) writeFileSync(readyFile, `${BASE_URL}\n`);
     log(

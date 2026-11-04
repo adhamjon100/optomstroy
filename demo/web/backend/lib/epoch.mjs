@@ -8,13 +8,17 @@
 //  - dev-миграции и seeds целиком (меняются редко; их изменение без новой эпохи сломало бы мигратор);
 //  - генераторы данных, которые воркер пересоздаёт на каждом холодном старте и которые должны совпасть с уже
 //    сохранёнными данными: синтетический каталог, синтетика кассира (с заменой ПДн pii-map.json), план обмена,
-//    имитатор 1С (scripts/pos_fake_onec.ts), параметры DEMO_DATA (число SKU, seed, клиенты);
+//    имитатор 1С (scripts/pos_fake_onec.ts), параметры DEMO_DATA (профиль каталога, seed, клиенты);
+//  - каталог по макету (WP-DATA-WEB 2026-10-31, ADR-114): scripts/design_catalog.ts, спецификация
+//    demo/catalog/design-catalog.json и отсортированный список sha256 фото demo/catalog/photos;
 //  - из манифеста снимка БД (WP-B4, .build/snapshot/manifest.json), если он есть, — блок `epoch`: привязка фото
-//    «товар → sha», параметры каталога, сотрудники, формат (не схема и не строки: их меняют и поздние миграции);
+//    «товар/категория → sha», параметры каталога, сотрудники, формат (не схема и не строки: их меняют и поздние
+//    миграции);
 //  - версия формата demo_meta (DEMO_DATA.stateFormat).
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { DEMO_DATA, EPOCH_MIGRATION_BASE } from '../demo-config.mjs';
+import { CATALOG_SPEC, catalogPhotoShas, readCatalogSpec } from '../snapshot/photos.mjs';
 import { API, BACKEND, BUILD, DIST, SCRIPTS } from './paths.mjs';
 
 const sha256 = (b) => createHash('sha256').update(b).digest('hex');
@@ -43,7 +47,11 @@ export function computeEpoch() {
     inputs.generators[rel] = sha256(readFileSync(p));
   }
   inputs.generators['scripts/pos_fake_onec.ts'] = sha256(readFileSync(`${SCRIPTS}/pos_fake_onec.ts`));
+  inputs.generators['scripts/design_catalog.ts'] = sha256(readFileSync(`${SCRIPTS}/design_catalog.ts`));
   inputs.generators['backend/pii-map.json'] = sha256(readFileSync(`${BACKEND}/pii-map.json`));
+  const cs = readCatalogSpec(CATALOG_SPEC);
+  inputs.generators['demo/catalog/design-catalog.json'] = cs.sha256;
+  inputs.generators['demo/catalog/photos'] = catalogPhotoShas(cs.spec);
   const manifest = `${BUILD}/snapshot/manifest.json`;
   if (existsSync(manifest)) {
     const m = JSON.parse(readFileSync(manifest, 'utf8'));

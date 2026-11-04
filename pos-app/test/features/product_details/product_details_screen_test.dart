@@ -102,7 +102,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey<String>('variant-option-Цвет-Белый')));
       await tester.pump();
       expect(find.text('Арт. варианта: F4252-WH'), findsOneWidget);
-      expect(find.textContaining('2 950'), findsWidgets);
+      expect(find.textContaining('2\u00A0950,00\u00A0сом', findRichText: true), findsWidgets);
       expect(catalog.productCalls.length, calls, reason: 'AC-UI-14-004: выбор варианта без сетевого запроса');
       // Вариант без остатка выбирается (INV-012), CTA — «Нет в наличии» (INV-023).
       await tester.ensureVisible(find.byKey(const ValueKey<String>('variant-option-Цвет-Чёрный матовый')));
@@ -150,13 +150,27 @@ void main() {
       expect(find.text('5'), findsWidgets);
       expect(
         tester.widget<AppButton>(find.byKey(const ValueKey<String>('product-cta'))).label,
-        contains('14 250'),
+        contains('14\u00A0250,00'),
         reason: 'сумма CTA = 5 × 2 850',
       );
       await openNumpad(tester);
       await enterOnNumpad(tester, '3');
       expect(find.text('Минимальная партия — 5 шт'), findsOneWidget);
       expect(tester.widget<AppButton>(find.byKey(const ValueKey<String>('quantity-numpad-done'))).onPressed, isNull);
+    });
+
+    testWidgets('диктор: CTA и «За упаковку» — сумма без «запятой» и нулевых тыйынов (ADR-114 п. 4, ревью R2C-04)', (
+      WidgetTester tester,
+    ) async {
+      final SemanticsHandle semantics = tester.ensureSemantics();
+      await pumpProduct(
+        tester,
+        overrides: productOverrides(catalog: catalogOf(singleVariantProduct(minQuantity: Qty.units(5)))),
+      );
+      expect(ctaButton(tester).label, contains('14\u00A0250,00'), reason: 'на экране — «,00»');
+      expect(ctaButton(tester).semanticLabel, 'В корзину · 14 250 сом');
+      expect(find.bySemanticsLabel(RegExp(r'^В корзину · 14 250 сом$')), findsOneWidget);
+      semantics.dispose();
     });
 
     testWidgets('qty_precision = 0: клавиша «,» недоступна; больше доступного — ошибка', (WidgetTester tester) async {
@@ -295,7 +309,11 @@ void main() {
         tester,
         overrides: productOverrides(catalog: catalogOf(singleVariantProduct()), cart: cart),
       );
-      expect(ctaButton(tester).label, startsWith('В корзину · 2 850'));
+      expect(ctaButton(tester).label, startsWith('В корзину · 2\u00A0850,00'));
+      // Узкое окно: короткая подпись (без «сом», EQ-PD-04) уменьшается, а не обрезается многоточием — сумма с 2
+      // знаками (ADR-114) видна целиком; диктор читает полную.
+      final AppButton cta = ctaButton(tester);
+      expect(cta.label == cta.semanticLabel || cta.fitLabel, isTrue, reason: '«${cta.label}»');
       await tester.tap(find.byKey(const ValueKey<String>('product-cta')));
       await tester.pump(const Duration(milliseconds: 50));
       await tester.tap(find.byKey(const ValueKey<String>('product-cta')), warnIfMissed: false);

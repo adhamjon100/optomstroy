@@ -4,12 +4,15 @@
  *   шапка сотрудника medium+ — ds.layout.topBarHeight (68 lp, --pd-layout-top-bar-height);
  *   нижняя навигация compact — BottomNavBar.height (80 lp, pos-app design_system/components/bottom_nav_bar.dart).
  * Кнопка «ДЕМО» — узкая вкладка у правого края над нижней навигацией (правый нижний угол), не над FAB экранов.
+ * Ширина 20 — в правом поле drawer корзины (20 lp) и сетки каталога (24 lp): вкладка не закрывает суммы «Товаров (N)» и
+ * «Итого» drawer и последнюю колонку сетки (ревью V-05, 1440 × 900); на сенсорных экранах — 24 (цель касания WCAG 2.5.8).
  */
 .pd-root {
   --pd-app-top: var(--pd-layout-top-bar-height, 68px);
   --pd-app-bottom-nav: 80px;
   /* Низ вкладки «ДЕМО»: medium+ — выше FAB экранов (16 + 56 lp); compact — выше нижней навигации и FAB над ней. */
   --pd-fab-bottom: 96px;
+  --pd-fab-width: 20px;
   position: fixed; left: 0; top: 0; width: 0; height: 0; z-index: 2147483000;
   font-family: var(--pd-font-family); font-size: var(--pd-text-body-size); line-height: var(--pd-text-body-line);
   color: var(--pd-color-text-primary);
@@ -18,7 +21,7 @@
 
 .pd-fab {
   position: fixed; right: 0; bottom: var(--pd-fab-bottom);
-  width: 28px; height: 76px; padding: 0; margin: 0;
+  width: var(--pd-fab-width); height: 76px; padding: 0; margin: 0;
   display: flex; align-items: center; justify-content: center;
   border: 0; border-radius: var(--pd-radius-sm) 0 0 var(--pd-radius-sm);
   background: var(--pd-color-inverse-surface); color: var(--pd-color-on-inverse-surface);
@@ -28,12 +31,13 @@
 .pd-fab-label { writing-mode: vertical-rl; transform: rotate(180deg); }
 .pd-fab:hover { background: var(--pd-color-primary); color: var(--pd-color-on-primary); }
 .pd-fab:focus-visible { outline: 2px solid var(--pd-color-focus); outline-offset: 2px; }
-.pd-fab-dot { display: none; position: absolute; top: 6px; left: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--pd-color-error); }
+.pd-fab-dot { display: none; position: absolute; top: 6px; left: 50%; margin-left: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--pd-color-error); }
 .pd-fab[data-offline="1"] .pd-fab-dot { display: block; }
 .pd-root.is-open .pd-fab { display: none; }
+@media (pointer: coarse) { .pd-root { --pd-fab-width: 24px; } }
 
 .pd-hint {
-  position: fixed; right: 36px; bottom: calc(var(--pd-fab-bottom) + 14px); max-width: 220px;
+  position: fixed; right: calc(var(--pd-fab-width) + 8px); bottom: calc(var(--pd-fab-bottom) + 14px); max-width: 220px;
   padding: var(--pd-space-2) var(--pd-space-3); border-radius: var(--pd-radius-md);
   background: var(--pd-color-inverse-surface); color: var(--pd-color-on-inverse-surface); box-shadow: var(--pd-shadow-2);
   font-size: var(--pd-text-label-size); line-height: var(--pd-text-label-line); cursor: pointer;

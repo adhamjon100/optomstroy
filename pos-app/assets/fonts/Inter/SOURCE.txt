@@ -20,4 +20,20 @@ sha256:
 
 Проверка глифов (fontTools, cmap) во всех пяти файлах: Ң ң Ө ө Ү ү (U+04A2/04A3/04E8/04E9/04AE/04AF),
 Ё ё, U+202F, U+2026 — есть (T-DS-024, 03 §6.4); признак tnum в GSUB — есть.
+
+Inter-ExtraBold.ttf (800) — 2026-10-31, ADR-114 (начертание 800 прототипа: H1 30/800, цены 18/17/15/14/800,
+суммы корзины 24/800, «Итого» 18/800, заголовок drawer 20/800). Без загрузок: статический экземпляр из уже
+лежащего здесь Inter-Variable.ttf (sha256 выше), fontTools 4.60.0, ось wght=800, opsz=14 (как у статических
+400–700 пакета inter-ui); метка времени head.modified = head.modified исходного файла (SOURCE_DATE_EPOCH),
+поэтому сборка воспроизводима побайтно:
+
+  SOURCE_DATE_EPOCH=1792606046 PYTHONIOENCODING=utf-8 python -I -X utf8 -m fontTools.varLib.instancer \
+      Inter-Variable.ttf wght=800 opsz=14 --update-name-table -o Inter-ExtraBold.ttf
+
+  2d0c0a848cc8d2f9e642fe5b84c051be0c57dee47a451948fc27b66ea3a37c15  Inter-ExtraBold.ttf
+
+Результат: без fvar/gvar, OS/2.usWeightClass = 800, имя «Inter Variable Text ExtraBold» (name ID 1/4;
+семейство во Flutter задаёт pubspec — Inter, weight 800); метрики hhea 1984/−494/0 — как у 400–700.
+Глифы Ң ң Ө ө Ү ү, Ё ё, U+202F, U+2026, U+00A0, U+2212, U+00D7 — есть; признак tnum в GSUB — есть.
+Контроль экземпляра: wght=700 opsz=14 совпадает с Inter-Bold.ttf по ширинам 157 из 159 глифов ASCII и кириллицы.
 Лицензия — OFL.txt (показывается на экране «О приложении», SCR-42).

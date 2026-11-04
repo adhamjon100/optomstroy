@@ -143,6 +143,9 @@ final class CatalogFamilyStack {
         view: qp['view'],
         sort: qp['sort'],
         stackDepth: depth,
+        // `all=1` — весь каталог «Все товары»; без него голый `/catalog` сотрудника открывает корневую категорию
+        // (ADR-114 решение 4).
+        all: qp['all'] == '1',
       ),
     };
   }

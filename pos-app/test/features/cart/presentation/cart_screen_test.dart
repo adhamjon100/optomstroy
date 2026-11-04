@@ -705,9 +705,10 @@ void main() {
       find.bySemanticsLabel(RegExp(r'^Открыть корзину, 5 позиций, 6\s?шт, 16\s007 сом 50 тыйын$')),
       findsOneWidget,
     );
-    // medium: только иконка с бейджем (02 SCR-10.1 строка 19), CartFab у сотрудника на medium нет.
+    // Кнопка сама по себе — первая строка «Корзина» (ADR-114, RV-10); сворачивает её шапка по ширине
+    // (header_fit_test). CartFab у сотрудника на medium нет.
     final Finder button = find.byKey(CartHeaderButtonView.buttonKey);
-    expect(find.descendant(of: button, matching: find.text('Корзина')), findsNothing);
+    expect(find.descendant(of: button, matching: find.text('Корзина')), findsOneWidget);
     expect(find.byType(CartFabView), findsNothing);
     await tester.sendKeyEvent(LogicalKeyboardKey.f4);
     await tester.pumpAndSettle();

@@ -2,7 +2,8 @@
 """WCAG 2.x contrast check of the design-token pairs (RM-B-006).
 
 Reads contracts/design-tokens/tokens.json -> contrast.pairs (03 §5.4.2, §5.4.3, §5.4.5,
-§5.8 for palette B) and the colour tokens of the main palette (`color`, palette B).
+§5.8 for palette B) and the colour tokens of the main palette (`color`, palette B) together with the
+component colours (`componentColor`, ADR-114; a pair may name either).
 
 For each pair it computes the WCAG 2.x contrast ratio
 (relative luminance of sRGB, (L1 + 0.05) / (L2 + 0.05)) and:
@@ -10,7 +11,8 @@ For each pair it computes the WCAG 2.x contrast ratio
                           text 4.5, large-text 3.0, non-text 3.0 -> otherwise VIOLATION;
   * status "forbidden" - a pair the design system forbids (e.g. `primary` as text, white on
                           `brandAccent`); reported as FORBIDDEN, never as a violation;
-  * status "exception" / "decorative" / "reference" - reported, not checked;
+  * status "exception" / "decorative" / "reference" - reported, not checked against the threshold
+                          ("exception" only for the pairs of the explicit list below);
   * "documented"        - when set, the ratio published in 03 must match the computed one
                           (rounded to 2 decimals) -> otherwise MISMATCH.
 Policy checks (03 §5.3 restriction 1, §5.8, DS-098 in the wording of ADR-111):
@@ -20,6 +22,16 @@ Policy checks (03 §5.3 restriction 1, §5.8, DS-098 in the wording of ADR-111):
   * a "forbidden" pair with white text (#FFFFFF, use text / large-text) that reaches its
     threshold is an ERROR - its status must be updated (ADR-111);
   * CP-087 «#FFFFFF on brandAccent» (text) must be present with status "forbidden".
+Explicit exception list (ADR-114, owner decision 1 of 2026-10-31 «exact prototype colours»):
+  * a pair with status "exception" must be in WCAG_EXCEPTIONS (WCAG's own exceptions: inactive
+    controls, logotypes) or in ADR114_EXCEPTIONS (the 4 recorded deviations from A11Y-002 / NFR-A11Y-001);
+    any other exception is an ERROR, so nothing else may fail its threshold;
+  * every ADR114_EXCEPTIONS pair must be present with status "exception" and "decision": "ADR-114", must
+    still be below its threshold (otherwise its status must become "allowed"), and no other pair may name
+    "decision": "ADR-114";
+  * alternatives.AA_2026_10_31 (status "aa-variant") must swap exactly the foreground tokens of the ADR-114
+    exceptions, and with it every ADR-114 exception and every "allowed" pair must reach its threshold - the
+    AA shades stay a one-line switch (DsColors.lightAA20261031).
 Rollback report (ADR-111 п. 7): the "allowed" pairs are also computed against every `alternatives.*`
 palette with status "rollback" (`B_2026_10_21`) and the pairs below their threshold are listed as
 ROLLBACK-WARN. The report is informational - the rollback palette is not active in the app, and
@@ -41,6 +53,23 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_TOKENS = ROOT / "contracts" / "design-tokens" / "tokens.json"
 HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 DOC_TOLERANCE = 0.005 + 1e-9  # documented values are rounded to 2 decimals
+
+# The only pairs allowed to have status "exception": (fg, bg, use) -> reason. Adding a pair here is a
+# reviewed code change, not a tokens.json edit.
+WCAG_EXCEPTIONS = {
+    ("disabledText", "disabledBg", "text"): "WCAG 1.4.3: inactive control (CP-062)",
+    ("brandAccent", "surface", "non-text"): "WCAG 1.4.11: logotype (CP-079)",
+    ("catalogMeta", "disabledBg", "text"): "WCAG 1.4.3: inactive control «Нет в наличии» (CP-095, ADR-114)",
+}
+# ADR-114: exact prototype colours below the contrast norm, recorded deviation from A11Y-002 / NFR-A11Y-001.
+ADR114_DECISION = "ADR-114"
+ADR114_EXCEPTIONS = {
+    ("catalogMetaOnPage", "background", "text"): "«Найдено: N товаров» (CP-096)",
+    ("searchPlaceholder", "surfaceVariant", "text"): "search placeholder (CP-097)",
+    ("photoPlaceholderText", "photoPlaceholderBg", "text"): "«Фото появится из 1С» (CP-106)",
+    ("favoriteOutline", "surface", "non-text"): "favourite star outline (CP-120)",
+}
+AA_ALTERNATIVE = "AA_2026_10_31"
 
 
 def _linear(c8: int) -> float:
@@ -84,12 +113,17 @@ def main(argv: list[str]) -> int:
     args = ap.parse_args(argv)
     try:
         tokens = json.loads(args.tokens.read_text(encoding="utf-8"))
-        colors = tokens["color"]
+        component = {n: v["value"] for n, v in (tokens.get("componentColor") or {}).items()}
+        colors = {**tokens["color"], **component}
         contrast = tokens["contrast"]
         thresholds = contrast["thresholds"]
         pairs = contrast["pairs"]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         print(f"error: cannot read {args.tokens}: {exc}", file=sys.stderr)
+        return 2
+    clash = sorted(set(component) & set(tokens["color"]))
+    if clash:
+        print(f"error: componentColor repeats palette tokens {clash}", file=sys.stderr)
         return 2
 
     palette = tokens.get("meta", {}).get("palette", "?")
@@ -180,12 +214,65 @@ def main(argv: list[str]) -> int:
               and cp087[0]["use"] == "text" and cp087[0]["status"] == "forbidden"):
         errors.append("CP-087 must be «#FFFFFF on brandAccent» (text) with status 'forbidden' (ADR-111)")
 
+    # Explicit exception list (ADR-114): only WCAG's own exceptions and the 4 recorded deviations.
+    adr114_found: dict[tuple[str, str, str], dict] = {}
+    for p in sorted(pairs, key=lambda x: x["id"]):
+        key = (p["fg"], p["bg"], p["use"])
+        decision = p.get("decision")
+        if key in ADR114_EXCEPTIONS:
+            adr114_found[key] = p
+            if p["status"] != "exception" or decision != ADR114_DECISION:
+                errors.append(f"{p['id']}: {key} is an ADR-114 exception - status must be 'exception' "
+                              f"with decision '{ADR114_DECISION}'")
+            r = ratio_of(p)
+            if r is not None and p["use"] in thresholds and r >= float(thresholds[p["use"]]):
+                errors.append(f"{p['id']}: ADR-114 exception reaches {r:.2f}:1 (>= {thresholds[p['use']]}) - "
+                              "make it 'allowed' and drop it from ADR114_EXCEPTIONS")
+            continue
+        if decision is not None:
+            errors.append(f"{p['id']}: decision '{decision}' is allowed only on the ADR114_EXCEPTIONS pairs")
+        if p["status"] == "exception" and key not in WCAG_EXCEPTIONS:
+            errors.append(f"{p['id']}: status 'exception' for {key} is not in the explicit list "
+                          "(WCAG_EXCEPTIONS / ADR114_EXCEPTIONS of check_contrast.py)")
+    for key, what in sorted(ADR114_EXCEPTIONS.items()):
+        if key not in adr114_found:
+            errors.append(f"required ADR-114 exception {key} ({what}) is missing")
+
+    # AA alternative (ADR-114): the AA shades of exactly those foregrounds must make every pair pass.
+    aa_rows: list[str] = []
+    aa = (tokens.get("alternatives") or {}).get(AA_ALTERNATIVE)
+    if not isinstance(aa, dict) or aa.get("status") != "aa-variant":
+        errors.append(f"alternatives.{AA_ALTERNATIVE} with status 'aa-variant' is missing (ADR-114)")
+    else:
+        swaps = aa.get("componentColor") or {}
+        expected = sorted({fg for fg, _, _ in ADR114_EXCEPTIONS})
+        if sorted(swaps) != expected:
+            errors.append(f"alternatives.{AA_ALTERNATIVE}.componentColor must swap exactly {expected}, "
+                          f"not {sorted(swaps)}")
+        aa_colors = {**colors, **swaps}
+        for p in sorted(pairs, key=lambda x: x["id"]):
+            key = (p["fg"], p["bg"], p["use"])
+            if p["use"] not in thresholds or not (p["status"] == "allowed" or key in ADR114_EXCEPTIONS):
+                continue
+            fg_hex, e1 = resolve(p["fg"], aa_colors)
+            bg_hex, e2 = resolve(p["bg"], aa_colors)
+            if e1 or e2:
+                continue  # reported above for the main palette
+            r = contrast_ratio(fg_hex, bg_hex)
+            need = float(thresholds[p["use"]])
+            if key in ADR114_EXCEPTIONS:
+                aa_rows.append(f"{p['id']} {'PASS' if r >= need else 'FAIL'} {r:.2f} >= {need}: "
+                               f"{p['fg']} {fg_hex} on {p['bg']} {bg_hex} ({ADR114_EXCEPTIONS[key]})")
+            if r < need:
+                errors.append(f"{AA_ALTERNATIVE} {p['id']}: {p['fg']} {fg_hex} on {p['bg']} {bg_hex} ({p['use']}) "
+                              f"{r:.2f} < {need}")
+
     # Rollback palettes (ADR-111 п. 7): informational report, never fails the gate.
     rollback_warns: list[str] = []
     for name, alt in sorted((tokens.get("alternatives") or {}).items()):
         if not isinstance(alt, dict) or alt.get("status") != "rollback":
             continue
-        alt_colors = alt.get("color") or {}
+        alt_colors = {**component, **(alt.get("color") or {})}
         for p in sorted(pairs, key=lambda x: x["id"]):
             if p["status"] != "allowed" or p["use"] not in thresholds:
                 continue
@@ -207,6 +294,16 @@ def main(argv: list[str]) -> int:
     print(f"mismatches with documented ratios: {len(mismatches)}")
     for m in mismatches:
         print(f"  MISMATCH {m}")
+    print(f"exceptions (explicit list): WCAG {len(WCAG_EXCEPTIONS)}, ADR-114 {len(adr114_found)} "
+          f"of {len(ADR114_EXCEPTIONS)}")
+    for key, p in sorted(adr114_found.items(), key=lambda kv: kv[1]["id"]):
+        r = ratio_of(p)
+        rs = "-" if r is None else f"{r:.2f}"
+        print(f"  EXCEPTION ADR-114 {p['id']} {rs} < {thresholds.get(p['use'], '?')}: {p['fg']} on {p['bg']} "
+              f"({p['use']}) - {ADR114_EXCEPTIONS[key]}")
+    print(f"AA alternative {AA_ALTERNATIVE} (DsColors.lightAA20261031):")
+    for row in aa_rows:
+        print(f"  AA {row}")
     print(f"errors: {len(errors)}")
     for e in errors:
         print(f"  ERROR {e}")

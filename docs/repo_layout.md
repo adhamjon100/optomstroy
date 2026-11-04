@@ -59,6 +59,7 @@ IDE-кеш `.idea/` (игнорируется git) перенесён в `pos-ap
 ├── demo/                           # ADR-109 — демо-пакет на тестовых данных (app/, data/, logs/, .tmp/, demo_env.json — вне git); ADR-113 — веб-демо в web/
 │   ├── README.md                   # ADR-109 — инструкция демо для заказчика; раздел «Веб-демо» (ADR-113)
 │   ├── build-demo.ps1              # ADR-109 — сборка pos-api/dist и приложения Windows
+│   ├── catalog/                    # ADR-114 — тестовый каталог по макету: design-catalog.json, photos/ (фото макета), PHOTOS.md (§3.4)
 │   ├── demo-common.ps1             # ADR-109 — общие функции скриптов демо
 │   ├── start-demo.cmd              # ADR-109 — запуск демо двойным щелчком
 │   ├── start-demo.ps1              # ADR-109 — запуск стека и приложения, режим -Smoke
@@ -211,11 +212,18 @@ pos-api/src/
 | `new_feature.sh` | 13 §5.4 п. 2 |
 | `check_no_double_money.sh` | 13 §6.1 п. 7 (12 C-08, T-MNY-030); CI — job app-analyze-test, Makefile check-contracts |
 
-### 3.4. Веб-демо: `demo/web/` и `pos-app/lib/app/demo/` (ADR-113)
+### 3.4. Веб-демо: `demo/web/`, `demo/catalog/` и `pos-app/lib/app/demo/` (ADR-113, ADR-114)
 
 Веб-демо — только показ продукта заказчику (15 ADR-113), не платформа R1 (ADR-039). Каталоги и файлы создают пакеты веб-демо; помеченные «создаёт WP-…» ещё не существуют — пока их нет, это не ошибка.
 
 ```
+demo/catalog/                 # ADR-114 (WP-DATA-WEB) — тестовый каталог демо по макету экрана выбора товаров
+├── design-catalog.json       # спецификация: 8 корней и 33 подкатегории в порядке макета, товары макета и наполнители, фото (sha256); правится вручную
+├── PHOTOS.md                 # происхождение фото (ассет макета → файл → sha256) и условия публикации
+└── photos/                   # PNG из docs/specification/visual/prototype/assets/ как есть (cat-*, sub-*, p-*)
+
+pos-api/scripts/design_catalog.ts   # сборка каталога из спецификации публичным API SyntheticCatalog (веб-демо и демо Windows); pos-api/src не меняется
+
 demo/web/
 ├── README.md                 # создаёт WP-N1 — для программиста: сборка, проверка, выкладка
 ├── build-web-demo.ps1        # создаёт WP-N1 — сборка сайта: backend.js, flutter build web (-t lib/app/demo/main_web_demo.dart), site/

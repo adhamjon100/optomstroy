@@ -7,7 +7,8 @@ import 'package:optomstroy/design_system/tokens/ds_typography.dart';
 /// `caption textSecondary tnum`; смена значения — crossfade 200 мс (ANIM-010; reduce-motion —
 /// мгновенно); `liveRegion` (polite). [text] `null` — скелетон 120×16.
 ///
-/// [toolbar] — строка управления каталога medium+ (прототип 2026-10-29): `label 13 textTertiary`, одна строка.
+/// [toolbar] — строка управления каталога medium+ (прототип, ADR-114): `meta 13/400 catalogMetaOnPage` (на фоне
+/// страницы; решение владельца 1 — #6B7487, 4,32:1 — исключение CP-096), поле слева 4, одна строка, цифры без tnum.
 class FoundCountText extends StatelessWidget {
   /// Создаёт счётчик.
   const FoundCountText({super.key, required this.text, this.toolbar = false});
@@ -15,8 +16,11 @@ class FoundCountText extends StatelessWidget {
   /// Локализованный текст («Найдено: 124 товара»); `null` — загрузка.
   final String? text;
 
-  /// Вид строки управления (одна строка, `label textTertiary`).
+  /// Вид строки управления (одна строка, `meta catalogMetaOnPage`, поле слева 4).
   final bool toolbar;
+
+  /// Поле слева в строке управления (прототип: `padding-left: 4px`).
+  static const double toolbarStartPadding = 4;
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +28,7 @@ class FoundCountText extends StatelessWidget {
     if (t == null) {
       return const SkeletonBox(width: 120, height: 16);
     }
-    return Semantics(
+    final Widget counter = Semantics(
       liveRegion: true,
       child: AnimatedSwitcher(
         duration: context.motion.of(context.motion.base),
@@ -37,10 +41,16 @@ class FoundCountText extends StatelessWidget {
           maxLines: toolbar ? 1 : 2,
           overflow: TextOverflow.ellipsis,
           style: toolbar
-              ? context.text.label.copyWith(color: context.colors.textTertiary, fontFeatures: DsTypography.numeric)
+              ? context.text.meta.copyWith(color: context.colors.catalogMetaOnPage)
               : context.text.caption.copyWith(color: context.colors.textSecondary, fontFeatures: DsTypography.numeric),
         ),
       ),
     );
+    return toolbar
+        ? Padding(
+            padding: const EdgeInsetsDirectional.only(start: toolbarStartPadding),
+            child: counter,
+          )
+        : counter;
   }
 }

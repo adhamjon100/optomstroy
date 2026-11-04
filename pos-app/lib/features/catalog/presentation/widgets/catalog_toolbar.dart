@@ -1,14 +1,16 @@
 // Зона C SCR-10/11/12 (02 SCR-10.3 C1–C7, SCR-11 UI-11-003/004, SCR-12 UI-12-001…003): заголовок и
 // «Найдено: N», `ViewModeSegmented`, `SortMenu`, «Фильтры» с бейджем, полоса чипов (подкатегории,
 // подборки «Недавние»/«Избранное», «Все категории ›» на compact), активные фильтры; строка управления
-// medium и шире по прототипу 2026-10-29 (ADR-112) — [CatalogToolbarRow]: «Новые», «Избранные», «Недавние»,
-// «Найдено: N» | вид, сортировка, «Фильтры» — кнопки `ToolbarToggleButton` и стиль `toolbar`.
+// medium и шире по прототипу (ADR-112, ADR-114) — [CatalogToolbarRow]: «Новые», «Избранные», «Недавние»,
+// «Найдено: N» | вид, сортировка, «Фильтры» — кнопки `ToolbarToggleButton` (глифы прототипа) и стиль `toolbar`;
+// заголовок раздела — `catalogTitle 30/800`, крошки — только при глубине ≥ 3.
 import 'package:flutter/material.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/app_badge.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/app_icon_button.dart';
 import 'package:optomstroy/design_system/components/category_chip.dart';
+import 'package:optomstroy/design_system/components/ds_glyph.dart';
 import 'package:optomstroy/design_system/components/found_count_text.dart';
 import 'package:optomstroy/design_system/components/price_text.dart';
 import 'package:optomstroy/design_system/components/sort_menu.dart';
@@ -20,6 +22,7 @@ import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/features/catalog/domain/entities/catalog_query.dart';
 import 'package:optomstroy/features/catalog/domain/entities/category.dart';
 import 'package:optomstroy/features/catalog/presentation/state/catalog_filter_codec.dart';
+import 'package:optomstroy/features/catalog/presentation/widgets/catalog_filter_form.dart';
 
 /// Геометрия UI в lp (не деньги).
 typedef _Lp = double; // money-double: allow — геометрия UI (lp)
@@ -50,8 +53,8 @@ String catalogSortLabel(AppLocalizations l10n, CatalogSort sort, {required bool 
   return options.firstWhere((SortMenuOption<CatalogSort> o) => o.value == sort, orElse: () => options.first).label;
 }
 
-/// Заголовок контента: [крошки] → название раздела `h1 700` (прототип 2026-10-29). «Найдено: N» на medium+ — в
-/// строке управления ([CatalogToolbarRow]); на compact — здесь ([showFound]).
+/// Заголовок контента: [крошки] → название раздела `catalogTitle 30/800 −0,4` (прототип, ADR-114: строка 36).
+/// «Найдено: N» на medium+ — в строке управления ([CatalogToolbarRow]); на compact — здесь ([showFound]).
 class CatalogTitleBlock extends StatelessWidget {
   const CatalogTitleBlock({
     super.key,
@@ -87,7 +90,7 @@ class CatalogTitleBlock extends StatelessWidget {
               key: const ValueKey<String>('catalog-title'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: context.text.h1.copyWith(fontWeight: FontWeight.w700, color: c.textPrimary),
+              style: context.text.catalogTitle.copyWith(color: c.textPrimary),
             ),
           ),
         if (showFound) ...<Widget>[
@@ -99,7 +102,8 @@ class CatalogTitleBlock extends StatelessWidget {
   }
 }
 
-/// Хлебные крошки SCR-12 (UI-12-001): при глубине ≥ 2.
+/// Хлебные крошки SCR-12 (UI-12-001): при глубине ≥ 3 (ADR-114: в дереве из 2 уровней путь видят плитка корня,
+/// карточка «Все товары» ленты и заголовок «Каталог» колонки); корень крошек — весь каталог «Все товары».
 class CatalogBreadcrumbs extends StatelessWidget {
   const CatalogBreadcrumbs({super.key, required this.path, required this.onRoot, required this.onCategory});
 
@@ -149,9 +153,9 @@ class CatalogBreadcrumbs extends StatelessWidget {
   }
 }
 
-/// Вид, сортировка, «Фильтры». [toolbarStyle] — строка управления SCR-10/11/12 на medium+ (прототип 2026-10-29):
-/// `ViewModeSegmented` и `SortMenu` в стиле `toolbar`, «Фильтры» — `ToolbarToggleButton` с бейджем (подсвечена при
-/// открытой панели или активных фильтрах). SCR-50 и compact — прежний стиль.
+/// Вид, сортировка, «Фильтры». [toolbarStyle] — строка управления SCR-10/11/12 на medium+ (прототип, ADR-114):
+/// `ViewModeSegmented` и `SortMenu` в стиле `toolbar`, «Фильтры» — `ToolbarToggleButton` с воронкой прототипа и
+/// бейджем (подсвечена при открытой панели или активных фильтрах). SCR-50 и compact — прежний стиль.
 class CatalogToolbarControls extends StatelessWidget {
   const CatalogToolbarControls({
     super.key,
@@ -184,8 +188,8 @@ class CatalogToolbarControls extends StatelessWidget {
   /// Стиль строки управления medium+.
   final bool toolbarStyle;
 
-  /// Зазор между видом, сортировкой и «Фильтрами» в стиле строки управления (прототип 10).
-  static double gap(BuildContext context) => context.space.s2; // money-double: allow — геометрия UI (lp)
+  /// Зазор между видом, сортировкой и «Фильтрами» в стиле строки управления (прототип: `gap: 10px`).
+  static double gap(BuildContext context) => CatalogToolbarRow.itemGap(context); // money-double: allow — UI lp
 
   @override
   Widget build(BuildContext context) {
@@ -198,7 +202,7 @@ class CatalogToolbarControls extends StatelessWidget {
       return Wrap(
         crossAxisAlignment: WrapCrossAlignment.center,
         spacing: gap(context),
-        runSpacing: context.space.s1,
+        runSpacing: CatalogToolbarRow.runGap,
         children: <Widget>[
           ViewModeSegmented(
             value: view,
@@ -228,6 +232,7 @@ class CatalogToolbarControls extends StatelessWidget {
               label: l10n.catalog_filters_button,
               icon: Icons.filter_alt_outlined,
               selectedIcon: Icons.filter_alt_rounded,
+              glyph: DsGlyphKind.filter,
               selected: filtersOpen || filterCount > 0,
               badgeCount: filterCount,
               onTap: onFilters,
@@ -311,6 +316,9 @@ final class CatalogStripChip {
     required this.onTap,
     this.icon,
     this.selectedIcon,
+    this.glyph,
+    this.tooltip,
+    this.semanticLabel,
     this.count,
     this.selected = false,
     this.chevron = false,
@@ -324,8 +332,18 @@ final class CatalogStripChip {
   final VoidCallback onTap;
   final IconData? icon;
 
-  /// Иконка выбранного (залитая) — для кнопок строки управления (`ToolbarToggleButton`).
+  /// Иконка выбранного — для совместимости (`ToolbarToggleButton` прототипа рисует контур в обоих состояниях).
   final IconData? selectedIcon;
+
+  /// Глиф прототипа у кнопки строки управления (часы «Новые», звезда «Избранные»); важнее [icon].
+  final DsGlyphKind? glyph;
+
+  /// Подсказка кнопки строки управления («Избранные, 12 товаров» — число, которое прежде показывала плитка колонки;
+  /// паритет функций ADR-114); `null` — без подсказки (у кнопки без подписи — подпись).
+  final String? tooltip;
+
+  /// Подпись для screen reader у кнопки строки управления; `null` — [label].
+  final String? semanticLabel;
   final int? count;
   final bool selected;
   final bool chevron;
@@ -434,13 +452,12 @@ class CatalogActiveFilters extends StatelessWidget {
             SizedBox(width: context.space.s2),
           ],
           Center(
-            child: AppButton(
+            // «Сбросить все» — ссылка 14/500 `link` в цели 48, как «Сбросить фильтры» панели (02 П.3 п. 4, ADR-114 п. 5;
+            // ревью V-03).
+            child: CatalogFilterResetLink(
               key: const ValueKey<String>('active-filters-reset'),
               label: l10n.filters_reset_all,
-              onPressed: () => onChanged(CatalogFilterCodec.cleared(f)),
-              // Сброс — текстовая кнопка `primaryText` (ссылки — `primaryText`, ядро §24.1, DS-098).
-              variant: AppButtonVariant.text,
-              size: AppButtonSize.s,
+              onTap: () => onChanged(CatalogFilterCodec.cleared(f)),
             ),
           ),
         ],
@@ -462,13 +479,14 @@ final class CatalogPresetBarData {
   final VoidCallback? onClearRecent;
 }
 
-/// Строка управления над списком (прототип 2026-10-29, ADR-112) — один `Wrap` (`spaceBetween`, между группами 16):
-/// слева кнопки-переключатели «Новые», «Избранные», «Недавние» (+ «Очистить») и «Найдено: N» ([found]); справа вид
-/// «Сетка / Список / Компакт», сортировка и «Фильтры» ([controls]); внутри групп — зазор 8. Раскладка по ширине, от
-/// полной к узкой: все подписи в одну линию; «Недавние» ([CatalogStripChip.collapsible]) — иконкой с тултипом, подписи
-/// вида остаются (окно 1280); вид — иконками; не помещается и так — правая группа переносится на вторую линию с
-/// подписями (без обрезки и горизонтальной прокрутки). Ширина оценивается до раскладки (`estimateWidth`
-/// компонентов), без лишнего кадра.
+/// Строка управления над списком (прототип, ADR-112, ADR-114) — один `Wrap` (`spaceBetween`; между группами 16 по
+/// горизонтали и 10 по вертикали): слева кнопки-переключатели «Новые», «Избранные», «Недавние» (+ «Очистить») и
+/// «Найдено: N» ([found]); справа вид «Сетка / Список / Компакт», сортировка и «Фильтры» ([controls]); внутри групп —
+/// зазор 10. Раскладка по ширине, от полной к узкой: все подписи в одну линию; «Недавние»
+/// ([CatalogStripChip.collapsible]; подборка приложения, в прототипе её нет) — иконкой с тултипом (окно 1280: линия
+/// остаётся одна, как в прототипе); не помещается и так — правая группа переносится на свою линию от левого края с
+/// подписями (прототип: ширина контента < 1033, окно 1024); и на своей линии не помещается — вид иконками (без обрезки
+/// и горизонтальной прокрутки). Ширина оценивается до раскладки (`estimateWidth` компонентов), без лишнего кадра.
 class CatalogToolbarRow extends StatelessWidget {
   const CatalogToolbarRow({
     super.key,
@@ -499,25 +517,29 @@ class CatalogToolbarRow extends StatelessWidget {
   /// Число активных фильтров (бейдж «Фильтры» — для оценки ширины).
   final int filterCount;
 
-  /// Зазор внутри группы (прототип 10).
-  static double itemGap(BuildContext context) => context.space.s2; // money-double: allow — геометрия UI (lp)
+  /// Зазор внутри группы (прототип: `gap: 10px`).
+  static double itemGap(BuildContext context) => _itemGap; // money-double: allow — геометрия UI (lp)
 
-  /// Зазор между группами (прототип 16).
+  static const double _itemGap = 10; // money-double: allow — геометрия UI (lp)
+
+  /// Зазор между группами (прототип: `gap: 10px 16px` — 16 по горизонтали).
   static double groupGap(BuildContext context) => context.space.s4; // money-double: allow — геометрия UI (lp)
+
+  /// Зазор между линиями: прототип `gap: 10px 16px` — 10 по вертикали между видимыми кнопками; у нас кнопки 40 и
+  /// сегмент 42 стоят в целях 48 (поля 4 и 3), поэтому между линиями 3 — видимый зазор 10.
+  static const double runGap = 3; // money-double: allow — геометрия UI (lp)
 
   @override
   Widget build(BuildContext context) {
     final CatalogPresetBarData? p = presets;
     final double gap = itemGap(context); // money-double: allow — геометрия UI (lp)
+    // «Найдено: N» — `meta 13/400`, поле слева 4 (у [FoundCountText] стиля `toolbar`), по центру линии.
     final Widget? foundText = showFound
         ? ConstrainedBox(
             constraints: const BoxConstraints(minHeight: ToolbarToggleButton.target),
-            child: Padding(
-              padding: EdgeInsetsDirectional.only(start: context.space.s1),
-              child: Align(
-                widthFactor: 1,
-                child: FoundCountText(key: const ValueKey<String>('catalog-found'), text: found, toolbar: true),
-              ),
+            child: Align(
+              widthFactor: 1,
+              child: FoundCountText(key: const ValueKey<String>('catalog-found'), text: found, toolbar: true),
             ),
           )
         : null;
@@ -528,7 +550,7 @@ class CatalogToolbarRow extends StatelessWidget {
             key: const ValueKey<String>('catalog-presets'),
             crossAxisAlignment: WrapCrossAlignment.center,
             spacing: gap,
-            runSpacing: context.space.s1,
+            runSpacing: runGap,
             children: <Widget>[
               if (p != null)
                 for (final CatalogStripChip ch in p.chips)
@@ -537,18 +559,20 @@ class CatalogToolbarRow extends StatelessWidget {
                     label: ch.label,
                     icon: ch.icon,
                     selectedIcon: ch.selectedIcon,
+                    glyph: ch.glyph,
+                    tooltip: ch.tooltip,
+                    semanticLabel: ch.semanticLabel,
                     selected: ch.selected,
                     enabled: ch.enabled,
                     showLabel: !iconOnly(ch, collapse),
                     onTap: ch.selected && !ch.reselect ? null : ch.onTap,
                   ),
               if (p != null && p.clearRecentLabel != null)
-                AppButton(
+                // «Очистить» — ссылка `link`, как «Сбросить все» (ADR-114 п. 5; ревью V-03).
+                CatalogFilterResetLink(
                   key: const ValueKey<String>('catalog-recent-clear'),
                   label: p.clearRecentLabel!,
-                  onPressed: p.onClearRecent,
-                  variant: AppButtonVariant.text,
-                  size: AppButtonSize.s,
+                  onTap: p.onClearRecent,
                 ),
               ?foundText,
             ],
@@ -563,19 +587,21 @@ class CatalogToolbarRow extends StatelessWidget {
                   ToolbarToggleButton.estimateWidth(
                     context,
                     ch.label,
-                    withIcon: ch.icon != null,
+                    withIcon: ch.icon != null || ch.glyph != null,
                     showLabel: !iconOnly(ch, collapse),
                   ) +
                   gap;
             }
             if (p.clearRecentLabel != null) {
-              width += AppButton.estimateWidth(context, p.clearRecentLabel!, size: AppButtonSize.s) + gap;
+              width += CatalogFilterResetLink.estimateWidth(context, p.clearRecentLabel!) + gap;
             }
           }
           if (showFound) {
-            width += _foundWidth(context) + context.space.s1;
+            width += _foundWidth(context);
+          } else if (width > 0) {
+            width -= gap;
           }
-          return width + groupGap(context);
+          return width;
         }
 
         double controlsWidth(bool text) => // money-double: allow — геометрия UI (lp)
@@ -589,35 +615,37 @@ class CatalogToolbarRow extends StatelessWidget {
             SortMenu.estimateWidth(context, sortLabel, style: SortMenuStyle.toolbar) +
             ToolbarToggleButton.estimateWidth(context, filtersLabel, withBadge: filterCount > 0);
         final double width = box.maxWidth; // money-double: allow — геометрия UI (lp)
+        final double between = groupGap(context); // money-double: allow — геометрия UI (lp)
         final bool collapsible = p?.chips.any((CatalogStripChip ch) => iconOnly(ch, true)) ?? false;
         bool collapse = false;
         final bool showText;
-        if (presetsWidth(false) + controlsWidth(true) <= width) {
+        if (presetsWidth(false) + between + controlsWidth(true) <= width) {
           showText = true;
-        } else if (collapsible && presetsWidth(true) + controlsWidth(true) <= width) {
-          // Окно 1280: «Недавние» — иконкой, подписи вида видны.
+        } else if (collapsible && presetsWidth(true) + between + controlsWidth(true) <= width) {
+          // Окно 1280: «Недавние» — иконкой, подписи вида видны, линия одна (как в прототипе).
           collapse = true;
           showText = true;
-        } else if (presetsWidth(collapsible) + controlsWidth(false) <= width) {
-          collapse = collapsible;
-          showText = false;
         } else {
-          // Перенос правой группы: подписи, пока она с ними не шире области.
+          // Перенос правой группы на свою линию от левого края (прототип, окно 1024) — с подписями, пока она с ними
+          // помещается; левая группа на своей линии — «Недавние» иконкой, только если иначе не помещается.
+          collapse = collapsible && presetsWidth(false) > width;
           showText = controlsWidth(true) <= width;
         }
         return Wrap(
           key: const ValueKey<String>('catalog-toolbar'),
           alignment: WrapAlignment.spaceBetween,
           crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: groupGap(context),
-          runSpacing: context.space.s3,
+          spacing: between,
+          runSpacing: runGap,
           children: <Widget>[?presetGroup(collapse), controls(showText)],
         );
       },
     );
   }
 
-  /// Ширина «Найдено: N» (до раскладки; без числа — по скелетону 120).
+  /// Ширина «Найдено: N» с полем слева 4 (до раскладки; без числа — по скелетону 120).
   double _foundWidth(BuildContext context) => // money-double: allow — геометрия UI (lp)
-      found == null || found!.isEmpty ? 120 : dsTextWidth(context, found!, context.text.label);
+  found == null || found!.isEmpty
+      ? 120
+      : FoundCountText.toolbarStartPadding + dsTextWidth(context, found!, context.text.meta);
 }

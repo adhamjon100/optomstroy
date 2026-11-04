@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/app_progress.dart';
+import 'package:optomstroy/design_system/components/ds_glyph.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -62,7 +64,13 @@ class AppSnackbarRegion extends InheritedWidget {
 /// паддинг 12/16, мин. высота 48; текст `body 14/400 onInverseSurface` (≤ 2 строки);
 /// действие — `primaryContainer` на `inverseSurface` (14.58:1). Показ — [show]: 4 с
 /// (8 с с действием или при screen reader), один на экране (новый заменяет старый). Тост ([show] с `brief`) —
-/// 2 с (8 с при screen reader), обычно [AppSnackbarPlacement.bottomEnd].
+/// 1,8 с (8 с при screen reader или с действием), обычно [AppSnackbarPlacement.bottomEnd].
+///
+/// Тост успеха ([brief] и [AppSnackbarVariant.success], «Добавлено: …» каталога) — точно по прототипу (ADR-114): фон
+/// `toastBg`, поля 12/16, радиус `md` 12, тень `elevation.toast`, круг 18 `toastCheck` с белой галочкой, зазор 10,
+/// текст 14/400 белый (высота 42 при одной строке); ширина — по содержимому ([toastWidthFor]), не шире 360, у правого
+/// края (прототип: `position: fixed; right: 24px; bottom: 24px; max-width: 360px` — «Добавлено: Биде напольное Sanita»
+/// 300,9 × 42; ревью RV-19); действие «Открыть» (`customer`) сохраняется.
 class AppSnackbar extends StatelessWidget {
   /// Создаёт содержимое снекбара.
   const AppSnackbar({
@@ -73,6 +81,7 @@ class AppSnackbar extends StatelessWidget {
     this.onAction,
     this.actionLoading = false,
     this.onClose,
+    this.brief = false,
   });
 
   /// Текст.
@@ -93,13 +102,20 @@ class AppSnackbar extends StatelessWidget {
   /// Крестик (для ошибок).
   final VoidCallback? onClose;
 
-  /// Длительность показа (03 §9.48 [ТИПОВО]); [brief] — тост «Добавлено: …» (2 с; 8 с при screen reader).
+  /// Короткий тост ([show] с `brief`): успех рисуется в стиле тоста прототипа.
+  final bool brief;
+
+  /// Длительность показа (03 §9.48 [ТИПОВО]); [brief] — тост «Добавлено: …» (1,8 с, как в прототипе; 8 с при
+  /// screen reader или с действием).
   static Duration durationFor({required bool hasAction, required bool accessibleNavigation, bool brief = false}) {
     if (hasAction || accessibleNavigation) {
       return const Duration(seconds: 8);
     }
-    return brief ? const Duration(seconds: 2) : const Duration(seconds: 4);
+    return brief ? toastDuration : const Duration(seconds: 4);
   }
+
+  /// Показ тоста (прототип: скрывается через 1800 мс после последнего добавления).
+  static const Duration toastDuration = Duration(milliseconds: 1800);
 
   /// Ширина снекбара на medium и шире.
   static const double width = 480;
@@ -113,18 +129,36 @@ class AppSnackbar extends StatelessWidget {
   /// Ключ значка успеха (зелёный круг с галочкой; тесты).
   static const Key successIconKey = ValueKey<String>('app-snackbar-success-icon');
 
-  /// Круг значка успеха: `success`, осветлённый на 30 % к `successContainer` (≈ #529B76, 5.0:1 к `inverseSurface`).
-  static Color successCircle(DsColors c) => Color.lerp(c.success, c.successContainer, .3)!;
+  /// Ключ плашки тоста успеха прототипа (тесты).
+  static const Key toastKey = ValueKey<String>('app-snackbar-toast');
+
+  /// Круг значка успеха: `toastCheck` #2FB36A прототипа (ADR-114).
+  static Color successCircle(DsColors c) => c.toastCheck;
+
+  /// Ширина тоста успеха по содержимому: поля 16 + 16, круг 18, зазор 10 и текст `chip` 400 одной строкой; с действием —
+  /// поле справа 8 и кнопка действия (поля 12 + 12, не уже 48). Длинный текст ограничивает [toastMaxWidth] (2 строки).
+  static double toastWidthFor(BuildContext context, String message, {String? actionLabel}) {
+    final double text = dsTextWidth(context, message, context.text.chip.copyWith(fontWeight: FontWeight.w400));
+    final double lead = 16 + 18 + 10 + text.ceilToDouble();
+    if (actionLabel == null) {
+      return lead + 16;
+    }
+    final double label = dsTextWidth(context, actionLabel, context.text.label.copyWith(fontWeight: FontWeight.w600));
+    return lead + math.max(48, 24 + label.ceilToDouble()) + 8;
+  }
 
   /// Поля снекбара: compact — во всю ширину; [AppSnackbarRegion] — по свободной части окна; тост — внизу справа;
-  /// иначе — `null` (по центру, ширина [width]).
+  /// иначе — `null` (по центру, ширина [width]). [contentWidth] — ширина тоста по содержимому ([toastWidthFor]): тост
+  /// не шире её, у правого края.
   static EdgeInsets? marginFor({
     required double windowWidth,
     required WindowClass windowClass,
     required AppSnackbarPlacement placement,
     AppSnackbarRegion? region,
+    double? contentWidth,
   }) {
-    final double maxWidth = placement == AppSnackbarPlacement.bottomEnd ? toastMaxWidth : width;
+    final double placementMax = placement == AppSnackbarPlacement.bottomEnd ? toastMaxWidth : width;
+    final double maxWidth = contentWidth == null ? placementMax : math.min(placementMax, contentWidth);
     if (region != null) {
       final double free = math.max(0, windowWidth - region.endInset);
       if (free >= AppSnackbarRegion.minSideWidth) {
@@ -139,7 +173,7 @@ class AppSnackbar extends StatelessWidget {
       return const EdgeInsets.fromLTRB(16, 0, 16, 8);
     }
     if (placement == AppSnackbarPlacement.bottomEnd) {
-      final double w = math.min(toastMaxWidth, windowWidth - 2 * toastInset);
+      final double w = math.min(maxWidth, windowWidth - 2 * toastInset);
       return EdgeInsets.fromLTRB(math.max(toastInset, windowWidth - toastInset - w), 0, toastInset, toastInset);
     }
     return null;
@@ -147,8 +181,9 @@ class AppSnackbar extends StatelessWidget {
 
   /// Показывает снекбар через `ScaffoldMessenger` (заменяя текущий).
   ///
-  /// [brief] — короткий тост (2 с; 8 с при screen reader); [placement] — размещение на medium и шире. Внутри
-  /// [AppSnackbarRegion] поля считаются по свободной части окна (drawer корзины).
+  /// [brief] — короткий тост (1,8 с; 8 с при screen reader или с действием); [placement] — размещение на medium и
+  /// шире (тост успеха у правого края — по ширине содержимого, [toastWidthFor]). Внутри [AppSnackbarRegion] поля
+  /// считаются по свободной части окна (drawer корзины).
   static ScaffoldFeatureController<SnackBar, SnackBarClosedReason> show(
     BuildContext context, {
     required String message,
@@ -161,11 +196,14 @@ class AppSnackbar extends StatelessWidget {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
     final bool a11y = MediaQuery.maybeAccessibleNavigationOf(context) ?? false;
     final bool persistent = variant == AppSnackbarVariant.error && actionLabel != null;
+    // Тост успеха внизу справа — по ширине содержимого (прототип; ревью RV-19).
+    final bool toast = brief && variant == AppSnackbarVariant.success && placement == AppSnackbarPlacement.bottomEnd;
     final EdgeInsets? margin = marginFor(
       windowWidth: MediaQuery.sizeOf(context).width,
       windowClass: context.windowClass,
       placement: placement,
       region: AppSnackbarRegion.maybeOf(context),
+      contentWidth: toast ? toastWidthFor(context, message, actionLabel: actionLabel) : null,
     );
     return messenger.showSnackBar(
       SnackBar(
@@ -190,6 +228,7 @@ class AppSnackbar extends StatelessWidget {
                   onAction();
                 },
           onClose: variant == AppSnackbarVariant.error ? messenger.hideCurrentSnackBar : null,
+          brief: brief,
         ),
       ),
     );
@@ -203,20 +242,21 @@ class AppSnackbar extends StatelessWidget {
       AppSnackbarVariant.success => (Icons.check_rounded, c.onSuccess),
       AppSnackbarVariant.error => (Icons.error_rounded, c.errorContainer),
     };
-    // Успех (прототип 2026-10-29, тост «Добавлено»): зелёный круг 18 с белой галочкой. Круг — `success`, осветлённый
-    // на 30 % к `successContainer` (≈ 5:1 к `inverseSurface`; белая галочка на нём ≥ 3:1).
+    // Успех (прототип, тост «Добавлено»): круг 18 `toastCheck` с белой галочкой (глиф прототипа).
     final Widget? glyph = switch (variant) {
-      AppSnackbarVariant.success => Container(
+      AppSnackbarVariant.success => DsGlyph(
         key: successIconKey,
-        width: 18,
-        height: 18,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(color: successCircle(c), shape: BoxShape.circle),
-        child: Icon(icon.$1, size: 14, color: icon.$2),
+        kind: DsGlyphKind.checkCircle,
+        size: 18,
+        color: successCircle(c),
+        markColor: icon.$2,
       ),
       _ when icon.$1 != null => Icon(icon.$1, size: 20, color: icon.$2),
       _ => null,
     };
+    if (brief && variant == AppSnackbarVariant.success && glyph != null) {
+      return _toast(context, c, glyph);
+    }
     return Semantics(
       liveRegion: true,
       container: true,
@@ -249,6 +289,40 @@ class AppSnackbar extends StatelessWidget {
       ),
     );
   }
+
+  /// Тост успеха прототипа: `toastBg`, поля 12/16, радиус `md`, `elevation.toast`, глиф 18 + зазор 10 + текст 14/400.
+  Widget _toast(BuildContext context, DsColors c, Widget glyph) => Semantics(
+    liveRegion: true,
+    container: true,
+    child: Container(
+      key: toastKey,
+      // С действием «Открыть» (цель 44) — поля 4 сверху и снизу, 8 справа, как у снекбара.
+      padding: actionLabel == null
+          ? const EdgeInsets.symmetric(horizontal: 16, vertical: 12)
+          : const EdgeInsetsDirectional.only(start: 16, end: 8, top: 4, bottom: 4),
+      decoration: BoxDecoration(
+        color: c.toastBg,
+        borderRadius: BorderRadius.all(context.radii.md),
+        boxShadow: context.elevation.toast,
+      ),
+      child: Row(
+        children: <Widget>[
+          glyph,
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              // Прототип: 14px, `line-height: normal` (1,21) — стиль `chip` с весом 400.
+              style: context.text.chip.copyWith(fontWeight: FontWeight.w400, color: c.onInverseSurface),
+            ),
+          ),
+          if (actionLabel != null) _Action(label: actionLabel!, onTap: onAction, loading: actionLoading),
+        ],
+      ),
+    ),
+  );
 }
 
 class _Action extends StatelessWidget {

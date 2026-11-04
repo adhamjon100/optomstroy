@@ -65,11 +65,12 @@ export async function negatives(w) {
   ctx.check('скидка сверх лимита старшего: ветка override / DISCOUNT_LIMIT_EXCEEDED обработана', [200, 422].includes(over.final.status), { first: over.first.status, firstCode: over.first.json?.code, final: over.final.status, applied: over.final.json?.appliedDiscountPercent, code: over.final.json?.code });
 
   // CREDIT_LIMIT_EXCEEDED: «Лимит превышен» + дорогой товар
-  const k = (await C.call('поиск K5383', 'GET', '/search/products?q=K5383&limit=5')).json?.items?.find((x) => x.sku === 'K5383');
+  // «Унитаз-компакт Sanita Luxe Classic» 8 450 сом: долг 49 000 + заказ > лимита 50 000.
+  const k = (await C.call('поиск SL1001', 'GET', '/search/products?q=SL1001&limit=5')).json?.items?.find((x) => x.sku === 'SL1001');
   if (k) {
     const lim = await placeOrder(C, { ...k, baseUnit: k.baseUnit, defaultVariantId: k.defaultVariantId }, 'credit', { customerId: w.limitEx.id, expect: 422, label: 'в долг сверх лимита' });
     ctx.check('«ОсОО Лимит превышен (тест)» в долг → 422 CREDIT_LIMIT_EXCEEDED', lim.order.json?.code === 'CREDIT_LIMIT_EXCEEDED', { code: lim.order.json?.code, creditReason: lim.order.json?.creditReason });
-  } else ctx.check('товар K5383 найден для CREDIT_LIMIT_EXCEEDED', false, 'нет K5383');
+  } else ctx.check('товар SL1001 найден для CREDIT_LIMIT_EXCEEDED', false, 'нет SL1001');
 
   // RETURN_QTY_EXCEEDED: отгруженный заказ, возврат больше отгруженного
   const ro = await placeOrder(C, w.p(13), 'cash', { label: 'заказ под возврат (лимит)' });

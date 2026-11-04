@@ -2,7 +2,8 @@
 //   flutter build web -t lib/app/demo/main_web_demo.dart --dart-define-from-file=env/web_demo.json
 // Страница сайта (demo/web/site-src) до загрузки Flutter создаёт мост `globalThis.__posDemo` и запускает сервер —
 // скомпилированный pos-api — в module Web Worker. Приложение то же, что `lib/main.dart`: тот же `bootstrap`, а
-// `demoOverrides` меняют только транспорт Dio, `/health` и `API_BASE_URL`.
+// `demoOverrides` меняют только транспорт Dio, `/health` и `API_BASE_URL`; полосы «DEV · TEST DATA» в веб-демо нет
+// (`ENV_BANNER=false` в `demoAppConfig`, 15 ADR-114 п. 9 (5)).
 //
 // `lib/main.dart` этот файл не импортирует (DM-01, scripts/check_layers.py), поэтому в сборки Windows и Android демо-код
 // не попадает.

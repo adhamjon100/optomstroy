@@ -1,5 +1,6 @@
 import 'dart:collection';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 /// Ширина строки текста в lp с учётом масштаба шрифта и направления текста контекста — для оценки ширины
@@ -7,9 +8,25 @@ import 'package:flutter/widgets.dart';
 ///
 /// Результат запоминается (последние [_cacheLimit] пар «текст, стиль, масштаб, направление»): строка управления
 /// каталога оценивает одни и те же подписи на каждой перестройке экрана — при вводе в поиск и при «+ Добавить».
-double dsTextWidth(BuildContext context, String text, TextStyle style) {
-  final TextDirection direction = Directionality.maybeOf(context) ?? TextDirection.ltr;
-  final TextScaler scaler = MediaQuery.textScalerOf(context);
+/// Смена набора шрифтов (`PaintingBinding.systemFonts`: шрифт загружен позже первого измерения — запасной шрифт веба,
+/// `FontLoader`) очищает запомненное — иначе ширина колонки и порядок сворачивания строки управления считались бы по
+/// прежнему шрифту.
+double dsTextWidth(BuildContext context, String text, TextStyle style) => dsTextWidthWith(
+  text,
+  style,
+  scaler: MediaQuery.textScalerOf(context),
+  direction: Directionality.maybeOf(context) ?? TextDirection.ltr,
+);
+
+/// [dsTextWidth] без `BuildContext`: масштаб [scaler] и направление [direction] заданы явно (высота ряда сетки
+/// каталога по ценам карточек — `kProductCardGridPriceWraps`, ревью V-01). Тот же кэш.
+double dsTextWidthWith(
+  String text,
+  TextStyle style, {
+  TextScaler scaler = TextScaler.noScaling,
+  TextDirection direction = TextDirection.ltr,
+}) {
+  _listenFontChanges();
   final _MeasureKey key = _MeasureKey(text, style, scaler, direction);
   final double? cached = _cache.remove(key);
   if (cached != null) {
@@ -29,10 +46,36 @@ double dsTextWidth(BuildContext context, String text, TextStyle style) {
   return width;
 }
 
+/// Номер набора шрифтов измерений [dsTextWidth]: растёт при смене шрифтов (`PaintingBinding.systemFonts`). Экран,
+/// который считает ширины в `build` (колонка и лента каталога, строка управления), подписывается и перестраивается —
+/// иначе после поздней загрузки шрифта ширины оставались бы прежними до случайной перестройки (ревью R2C-14).
+ValueListenable<int> get dsTextMeasureEpoch {
+  _listenFontChanges();
+  return _epoch;
+}
+
+final ValueNotifier<int> _epoch = ValueNotifier<int>(0);
+
 /// Наибольшее число запомненных измерений.
-const int _cacheLimit = 256;
+const int _cacheLimit = 1024;
 
 final LinkedHashMap<_MeasureKey, double> _cache = LinkedHashMap<_MeasureKey, double>();
+
+bool _fontListener = false;
+
+/// Один раз подписывает очистку [_cache] и шаг [dsTextMeasureEpoch] на смену шрифтов.
+void _listenFontChanges() {
+  if (_fontListener) {
+    return;
+  }
+  _fontListener = true;
+  PaintingBinding.instance.systemFonts.addListener(_onFontsChanged);
+}
+
+void _onFontsChanged() {
+  _cache.clear();
+  _epoch.value++;
+}
 
 @immutable
 class _MeasureKey {

@@ -2,7 +2,10 @@
 // §2.2): вместо rail и сайдбара разделы открываются «бургером» шапки. Сверху — 5 вкладок режима (`shellTabsFor`,
 // выделена активная ветка, переход `goBranch`), ниже — «Другие разделы» (ссылки режима, фильтр
 // `isPathAllowedForRole`, переход `go`). Пункт «Корзина» на medium+ открывает drawer корзины (D5), если оболочка
-// его подключила, иначе — экран `/cart`. Esc и тап по затемнению закрывают drawer.
+// его подключила, иначе — экран `/cart`. Пункт «Избранное» (вкладка продавца, ссылка кассира и администратора)
+// показывает справа число избранных товаров пользователя — сюда перенесено видимое «★ Избранное N» колонки каталога
+// (ADR-114 п. 1, паритет функций); `Semantics` — «Избранное, N товаров» (`category_tile_a11y`). Esc и тап по
+// затемнению закрывают drawer.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,10 +17,14 @@ import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/navigation_drawer_app.dart';
 import 'package:optomstroy/features/catalog/catalog_providers.dart' show catalogViewerRoleProvider;
+import 'package:optomstroy/features/catalog/presentation/providers/catalog_ports.dart' show catalogFavoriteIdsProvider;
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_logo.dart';
 
 /// Путь корзины: ссылка «Корзина» открывает drawer корзины (D5), а не экран, если оболочка его подключила.
 const String kShellCartPath = '/cart';
+
+/// Путь избранного: у пункта — число избранных товаров (ADR-114 п. 1).
+const String kShellFavoritesPath = '/favorites';
 
 const ShellLink _parked = ShellLink(
   path: '/cart/parked',
@@ -28,7 +35,7 @@ const ShellLink _parked = ShellLink(
 const ShellLink _orders = ShellLink(path: '/orders', icon: Icons.receipt_outlined, label: _ordersLabel);
 const ShellLink _transactions = ShellLink(path: '/transactions', icon: Icons.swap_horiz, label: _transactionsLabel);
 const ShellLink _favorites = ShellLink(
-  path: '/favorites',
+  path: kShellFavoritesPath,
   icon: Icons.star_border_rounded,
   selectedIcon: Icons.star_rounded,
   label: _favoritesLabel,
@@ -138,6 +145,11 @@ class StaffNavigationDrawer extends ConsumerWidget {
     final GoRouter? router = GoRouter.maybeOf(context);
     final String path = router?.routerDelegate.currentConfiguration.uri.path ?? '';
     final ShellLink? current = shellLinkForPath(links, path);
+    // Число избранных товаров (тот же источник, что у фильтра «Избранные» каталога); пока не загружено — без числа.
+    final int? favorites = ref.watch(catalogFavoriteIdsProvider).value?.length;
+    String? trailingOf(bool isFavorites) => isFavorites && favorites != null ? '$favorites' : null;
+    String? semanticsOf(bool isFavorites, String label) =>
+        isFavorites && favorites != null ? l10n.category_tile_a11y(favorites, label) : null;
 
     void openLink(ShellLink link) {
       onClose();
@@ -162,6 +174,8 @@ class StaffNavigationDrawer extends ConsumerWidget {
                 icon: tabs[i].icon,
                 selectedIcon: tabs[i].selectedIcon,
                 label: tabs[i].label(l10n),
+                trailing: trailingOf(tabs[i].branch == ShellBranch.favorites),
+                semanticLabel: semanticsOf(tabs[i].branch == ShellBranch.favorites, tabs[i].label(l10n)),
                 // Ссылка «Другие разделы» на ту же ветку (Журнал аудита в ветке «Админ») выделяется вместо вкладки.
                 selected: current == null && tabs[i].branch.index == currentBranch,
                 onTap: () {
@@ -180,6 +194,8 @@ class StaffNavigationDrawer extends ConsumerWidget {
                 icon: l.icon,
                 selectedIcon: l.selectedIcon,
                 label: l.label(l10n),
+                trailing: trailingOf(l.path == kShellFavoritesPath),
+                semanticLabel: semanticsOf(l.path == kShellFavoritesPath, l.label(l10n)),
                 selected: identical(l, current),
                 onTap: () => openLink(l),
               ),

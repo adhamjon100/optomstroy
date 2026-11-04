@@ -199,13 +199,26 @@ final class MeCustomerHomePort implements CustomerHomePort {
 
 /// `CatalogShelfPort` (и `ProductFavoritePort` SCR-14) над фичей favorites и outbox core/sync (D-32):
 /// звезда и «Очистить» — сразу локально + запись `favorite.add|remove` / `recent.clear`; список недавних — `GET /catalog/products/recent`.
-final class FavoritesCatalogShelf implements CatalogShelfPort, product_details.ProductFavoritePort {
+/// Кэш избранного обновляется с сервера при входе ([refreshFavorites] — `GET /favorites/products?limit=200`; ревью RP-02).
+final class FavoritesCatalogShelf
+    implements CatalogShelfPort, CatalogFavoritesRefresh, product_details.ProductFavoritePort {
   FavoritesCatalogShelf(this._ref);
 
   final Ref _ref;
 
   @override
   Stream<Set<String>> watchFavoriteIds() => _ref.read(favoritesRepositoryProvider).watchCachedIds();
+
+  /// Кэш избранного — по ответу сервера (неподтверждённые действия сохраняются, `replaceFavoritesFromServer`); офлайн
+  /// и ошибки — прежний кэш (результат не бросает).
+  @override
+  Future<void> refreshFavorites() async {
+    try {
+      await _ref.read(favoritesRepositoryProvider).list(limit: 200);
+    } on Object {
+      // Нет привязки репозитория или БД пользователя закрыта (смена пользователя) — прежний кэш.
+    }
+  }
 
   @override
   Future<Result<void>> setFavorite(String productId, {required bool favorite}) =>

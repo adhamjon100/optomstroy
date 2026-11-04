@@ -2,10 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://optomstroy.local/contracts/design-tokens/tokens.schema.json",
   "title": "Optomstroy POS design tokens (RM-B-006)",
-  "description": "Схема contracts/design-tokens/tokens.json. Источник: 03_UX_UI_DESIGN_SYSTEM.md §5–§8, §11, §17; ядро R0 v1.9 §8, §17.5, §18.2 п.15, §24.1.",
+  "description": "Схема contracts/design-tokens/tokens.json. Источник: 03_UX_UI_DESIGN_SYSTEM.md §5–§8, §11, §17; ядро R0 v1.9 §8, §17.5, §18.2 п.15, §24.1; с 1.2.0 — ADR-114 (componentColor, text.component, радиусы и тени прототипа, catalog).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["meta", "color", "alternatives", "text", "space", "radius", "elevation", "breakpoint", "layout", "density", "motion", "contrast"],
+  "required": ["meta", "color", "componentColor", "alternatives", "text", "space", "radius", "elevation", "breakpoint", "layout", "catalog", "density", "motion", "contrast"],
   "properties": {
     "$schema": { "type": "string" },
     "meta": {
@@ -33,10 +33,31 @@
       }
     },
     "color": { "$ref": "#/$defs/colorSet" },
+    "componentColor": {
+      "type": "object",
+      "description": "Компонентные цвета прототипа (ADR-114): точные HEX экрана выбора товаров, шапки сотрудника и drawer корзины. Не зависят от палитры: те же значения входят во все DsColors (кроме замен alternatives.AA_2026_10_31).",
+      "propertyNames": { "$ref": "#/$defs/componentColorName" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["value", "use"],
+        "properties": {
+          "value": { "$ref": "#/$defs/hex" },
+          "use": { "type": "string", "minLength": 1 }
+        }
+      },
+      "required": [
+        "catalogName", "catalogMeta", "catalogMetaOnPage", "searchPlaceholder",
+        "stockIn", "stockLowText", "stockLowIcon", "stockOutText", "stockOutIcon",
+        "photoPlaceholderBg", "photoPlaceholderIcon", "photoPlaceholderText",
+        "ribbonPlaceholderBg", "ribbonGlyph", "rowDivider", "segmentIdleText",
+        "neutralButtonBorder", "drawerFooterBg", "link", "favoriteOutline", "toastBg", "toastCheck"
+      ]
+    },
     "alternatives": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["A", "B_2026_10_21"],
+      "required": ["A", "B_2026_10_21", "AA_2026_10_31"],
       "properties": {
         "A": {
           "type": "object",
@@ -62,13 +83,31 @@
             "source": { "type": "string" },
             "color": { "$ref": "#/$defs/colorSet" }
           }
+        },
+        "AA_2026_10_31": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "name", "note", "source", "componentColor"],
+          "description": "AA-оттенки 4 исключений ADR-114 (решение владельца 1, 2026-10-31): палитра color + замена этих componentColor. Генератор всегда выводит DsColors.lightAA20261031; check_contrast.py требует, чтобы с ними все пары проходили порог.",
+          "properties": {
+            "status": { "const": "aa-variant" },
+            "name": { "type": "string" },
+            "note": { "type": "string" },
+            "source": { "type": "string" },
+            "componentColor": {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": { "$ref": "#/$defs/componentColorName" },
+              "additionalProperties": { "$ref": "#/$defs/hex" }
+            }
+          }
         }
       }
     },
     "text": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fontFamily", "numericFontFeatures", "styles", "price"],
+      "required": ["fontFamily", "numericFontFeatures", "styles", "price", "component"],
       "properties": {
         "fontFamily": { "const": "Inter" },
         "numericFontFeatures": { "type": "array", "items": { "enum": ["tnum"] }, "minItems": 1, "uniqueItems": true },
@@ -98,6 +137,13 @@
             "fontWeight": { "$ref": "#/$defs/fontWeight" },
             "tabularFigures": { "const": true }
           }
+        },
+        "component": {
+          "type": "object",
+          "description": "Стили прототипа без округления до шкалы 03 §6.2 (ADR-114): экран выбора товаров, шапка сотрудника, drawer корзины. Поля DsTypography с теми же именами.",
+          "minProperties": 1,
+          "propertyNames": { "pattern": "^[a-z][A-Za-z0-9]*$", "description": "Имя поля Dart; совпадение с членами DsTypography проверяет генератор." },
+          "additionalProperties": { "$ref": "#/$defs/componentTextStyle" }
         }
       }
     },
@@ -121,25 +167,37 @@
     "radius": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["xs", "sm", "md", "lg", "xl", "full"],
+      "required": ["xs", "sm", "md", "lg", "xl", "full", "segment", "badge", "control", "catalogCard", "star", "arrow", "avatar", "circle"],
       "properties": {
         "xs": { "$ref": "#/$defs/gridSize" },
         "sm": { "$ref": "#/$defs/gridSize" },
         "md": { "$ref": "#/$defs/gridSize" },
         "lg": { "$ref": "#/$defs/gridSize" },
         "xl": { "$ref": "#/$defs/gridSize" },
-        "full": { "type": "integer", "minimum": 0 }
+        "full": { "type": "integer", "minimum": 0 },
+        "segment": { "$ref": "#/$defs/componentSize", "description": "ADR-114: кнопка сегмента вида (7)." },
+        "badge": { "$ref": "#/$defs/componentSize", "description": "ADR-114: бейджи 17–18, степпер корзины (9)." },
+        "control": { "$ref": "#/$defs/componentSize", "description": "ADR-114: поиск, чипы, сортировка, сегмент-группа, кнопки карточки и drawer, чип корзины, колокол, заглушка фото (10)." },
+        "catalogCard": { "$ref": "#/$defs/componentSize", "description": "ADR-114: карточка товара сетки и пустое состояние каталога (14); имя `card` занято геттером BorderRadius DsRadii.card (03 §17.4)." },
+        "star": { "$ref": "#/$defs/componentSize", "description": "ADR-114: кнопка-звезда 34 (17)." },
+        "arrow": { "$ref": "#/$defs/componentSize", "description": "ADR-114: стрелки ленты 38 (19)." },
+        "avatar": { "$ref": "#/$defs/componentSize", "description": "ADR-114: аватар шапки 38 (19)." },
+        "circle": { "$ref": "#/$defs/componentSize", "description": "ADR-114: круг-подложка 56 ленты (28)." }
       }
     },
     "elevation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["0", "1", "2", "3"],
+      "required": ["0", "1", "2", "3", "cardHover", "ribbonArrow", "drawer", "toast"],
       "properties": {
         "0": { "$ref": "#/$defs/elevationLevel" },
         "1": { "$ref": "#/$defs/elevationLevel" },
         "2": { "$ref": "#/$defs/elevationLevel" },
-        "3": { "$ref": "#/$defs/elevationLevel" }
+        "3": { "$ref": "#/$defs/elevationLevel" },
+        "cardHover": { "$ref": "#/$defs/elevationLevel", "description": "ADR-114: наведение на карточку и строку списка." },
+        "ribbonArrow": { "$ref": "#/$defs/elevationLevel", "description": "ADR-114: стрелки ленты подкатегорий." },
+        "drawer": { "$ref": "#/$defs/elevationLevel", "description": "ADR-114: drawer корзины." },
+        "toast": { "$ref": "#/$defs/elevationLevel", "description": "ADR-114: тост каталога." }
       }
     },
     "breakpoint": {
@@ -174,6 +232,32 @@
         "catalogCardMinWidth": { "$ref": "#/$defs/gridSize", "description": "Минимальная ширина карточки сетки каталога SCR-10/11/12 (cardMinWidth 160 остаётся для SCR-40/50)." },
         "gridMinColumns": { "type": "integer", "minimum": 1 },
         "gridMaxColumns": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Геометрия каталога сотрудника SCR-10/11/12 на medium+ по прототипу без округления (ADR-114) → DsCatalogMetrics.",
+      "required": ["columnMinWidth", "columnPadding", "tileGap", "tileMinHeight", "tilePadding", "tileArt", "ribbonCard", "ribbonGap", "ribbonPad", "ribbonArrowStepCards", "mainPadding", "gridMinCard", "gridGap", "gridCardHeight", "gridCardHeightWrapped", "toolbarHeight", "chipHeight", "segmentHeight"],
+      "properties": {
+        "columnMinWidth": { "$ref": "#/$defs/componentSize", "description": "= layout.catalogColumn; фактическая ширина — max(132, самое длинное слово + 46)." },
+        "columnPadding": { "$ref": "#/$defs/insets" },
+        "tileGap": { "$ref": "#/$defs/componentSize" },
+        "tileMinHeight": { "$ref": "#/$defs/componentSize" },
+        "tilePadding": { "$ref": "#/$defs/insets" },
+        "tileArt": { "$ref": "#/$defs/size2d" },
+        "ribbonCard": { "$ref": "#/$defs/size2d" },
+        "ribbonGap": { "$ref": "#/$defs/componentSize" },
+        "ribbonPad": { "$ref": "#/$defs/componentSize" },
+        "ribbonArrowStepCards": { "type": "integer", "minimum": 1 },
+        "mainPadding": { "$ref": "#/$defs/insets" },
+        "gridMinCard": { "$ref": "#/$defs/componentSize", "description": "= layout.catalogCardMinWidth." },
+        "gridGap": { "$ref": "#/$defs/componentSize" },
+        "gridCardHeight": { "$ref": "#/$defs/componentSize" },
+        "gridCardHeightWrapped": { "$ref": "#/$defs/componentSize", "description": "Высота карточки, когда «цена + / шт» не помещается в одну строку." },
+        "toolbarHeight": { "$ref": "#/$defs/componentSize" },
+        "chipHeight": { "$ref": "#/$defs/componentSize" },
+        "segmentHeight": { "$ref": "#/$defs/componentSize" }
       }
     },
     "density": {
@@ -258,6 +342,15 @@
         "inverseSurface", "onInverseSurface"
       ]
     },
+    "componentColorName": {
+      "enum": [
+        "catalogName", "catalogMeta", "catalogMetaOnPage", "searchPlaceholder",
+        "stockIn", "stockLowText", "stockLowIcon", "stockOutText", "stockOutIcon",
+        "photoPlaceholderBg", "photoPlaceholderIcon", "photoPlaceholderText",
+        "ribbonPlaceholderBg", "ribbonGlyph", "rowDivider", "segmentIdleText",
+        "neutralButtonBorder", "drawerFooterBg", "link", "favoriteOutline", "toastBg", "toastCheck"
+      ]
+    },
     "hex": { "type": "string", "pattern": "^#[0-9A-F]{6}$" },
     "alphaColor": {
       "type": "object",
@@ -303,6 +396,43 @@
         "contrastClass": { "enum": ["normal", "large"] }
       }
     },
+    "componentTextStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fontSize", "fontWeight", "letterSpacing", "tabularFigures", "use"],
+      "oneOf": [{ "required": ["height"] }, { "required": ["lineHeight"] }],
+      "properties": {
+        "fontSize": { "type": "number", "minimum": 10, "description": "Значение прототипа без округления (ADR-114); < 11 — только цифры бейджа, отклонение от A11Y-008 записывается в ADR-114." },
+        "height": { "type": "number", "minimum": 1, "maximum": 2, "description": "Межстрочный множитель (CSS line-height: normal у Inter ≈ 1.21)." },
+        "lineHeight": { "type": "number", "minimum": 1, "description": "Межстрочный интервал в lp (бейджи: высота круга)." },
+        "fontWeight": { "$ref": "#/$defs/fontWeight" },
+        "fontWeightSelected": { "$ref": "#/$defs/fontWeight", "description": "Вес выбранного состояния → геттер <имя>Selected." },
+        "letterSpacing": { "type": "number" },
+        "tabularFigures": { "type": "boolean", "description": "true — fontFeatures: DsTypography.numeric; в прототипе цифры пропорциональные." },
+        "use": { "type": "string", "minLength": 1 }
+      }
+    },
+    "componentSize": { "type": "integer", "minimum": 0, "description": "Размер прототипа без округления до 4 lp (ADR-114)." },
+    "insets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["top", "right", "bottom", "left"],
+      "properties": {
+        "top": { "$ref": "#/$defs/componentSize" },
+        "right": { "$ref": "#/$defs/componentSize" },
+        "bottom": { "$ref": "#/$defs/componentSize" },
+        "left": { "$ref": "#/$defs/componentSize" }
+      }
+    },
+    "size2d": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "$ref": "#/$defs/componentSize" },
+        "height": { "$ref": "#/$defs/componentSize" }
+      }
+    },
     "gridSize": { "type": "integer", "minimum": 0, "multipleOf": 4, "description": "Все размеры кратны 4 lp (03 §7.1)." },
     "durationMs": { "type": "integer", "minimum": 0 },
     "cubicBezier": {
@@ -337,7 +467,8 @@
         "shadows": { "type": "array", "items": { "$ref": "#/$defs/shadow" } },
         "borderColor": { "oneOf": [{ "$ref": "#/$defs/colorName" }, { "type": "null" }] },
         "borderWidth": { "type": "number", "minimum": 0 },
-        "scrim": { "oneOf": [{ "const": "overlay" }, { "type": "null" }] }
+        "scrim": { "oneOf": [{ "const": "overlay" }, { "type": "null" }] },
+        "baseColor": { "$ref": "#/$defs/colorName", "description": "Цвет-основа теней из палитры (ADR-114): rgb каждой тени обязан совпадать с color.<baseColor> (инвариант генератора)." }
       }
     },
     "windowClass": {
@@ -376,13 +507,14 @@
       "required": ["id", "fg", "bg", "use", "status", "documented", "source"],
       "properties": {
         "id": { "type": "string", "pattern": "^CP-[0-9]{3}$" },
-        "fg": { "oneOf": [{ "$ref": "#/$defs/colorName" }, { "$ref": "#/$defs/hex" }] },
-        "bg": { "oneOf": [{ "$ref": "#/$defs/colorName" }, { "$ref": "#/$defs/hex" }] },
+        "fg": { "oneOf": [{ "$ref": "#/$defs/colorName" }, { "$ref": "#/$defs/componentColorName" }, { "$ref": "#/$defs/hex" }] },
+        "bg": { "oneOf": [{ "$ref": "#/$defs/colorName" }, { "$ref": "#/$defs/componentColorName" }, { "$ref": "#/$defs/hex" }] },
         "use": { "enum": ["text", "large-text", "non-text"] },
         "status": {
           "enum": ["allowed", "forbidden", "exception", "decorative", "reference"],
-          "description": "allowed — проверяется порогом; forbidden — запрещённое сочетание (не нарушение); exception — исключение WCAG; decorative — декоративный элемент; reference — справочно, не применяется."
+          "description": "allowed — проверяется порогом; forbidden — запрещённое сочетание (не нарушение); exception — исключение WCAG или записанное отклонение (decision); decorative — декоративный элемент; reference — справочно, не применяется. Перечень допустимых исключений зашит в check_contrast.py."
         },
+        "decision": { "const": "ADR-114", "description": "Решение, которым записано отклонение от A11Y-002 / NFR-A11Y-001 (только пары из явного перечня check_contrast.py)." },
         "documented": { "oneOf": [{ "type": "number", "minimum": 1, "maximum": 21 }, { "type": "null" }] },
         "source": { "type": "string", "minLength": 1 },
         "note": { "type": "string" }

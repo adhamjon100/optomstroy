@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
+import 'package:optomstroy/design_system/components/ds_glyph.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -68,7 +69,7 @@ class ProductImageBase extends InheritedWidget {
 /// Фото товара `ProductImage` (03 §9.14, D-30, INV-050…052).
 ///
 /// Квадрат `surfaceVariant`, радиус по умолчанию `md`; загрузка — скелетон (ANIM-013), появление —
-/// fade 200 мс (ANIM-014); нет фото или ошибка загрузки — заглушка «Нет фото» (иконка + подпись),
+/// fade 200 мс (ANIM-014); нет фото или ошибка загрузки — заглушка `ds_no_photo` (иконка + подпись),
 /// никогда не показывается фото другого товара: URL строит вызывающий по `sha256` своего товара
 /// ([pathFor]). Файлы неизменяемы (`/images/{sha256}/{size}.webp`, `Cache-Control: immutable`).
 ///
@@ -76,9 +77,12 @@ class ProductImageBase extends InheritedWidget {
 /// (ANIM-014) — только у первого кадра экземпляра; смена URL у того же экземпляра (обновление выборки кэш → сеть)
 /// держит прежний кадр до нового (`gaplessPlayback`, аналог `useOldImageOnUrlChange`) — без затухания в 0.
 ///
-/// Неквадратное поле ([height], ширина — по родителю) и свой фон ([background]) — карточка сетки каталога по
-/// прототипу 2026-10-29 (поле 150, `contain` на `surface`); с [background] заглушка — плашка `surfaceVariant` с
-/// радиусом `md`, иконкой `image` 34 и подписью «Нет фото».
+/// Неквадратное поле ([height], ширина — по родителю) и свой фон ([background]) — карточки каталога по прототипу
+/// (ADR-114): карточка сетки — поле 146 без фона и скругления, фото `scaleDown` (не увеличивается), строка списка —
+/// поле 72×60. С [background] заглушка — плашка `photoPlaceholderBg` ([ProductImagePlaceholder.plate]): во всё поле
+/// или размера [plateSize], радиус [plateRadius] (по умолчанию `control` 10), значок-картинка 34 и подпись
+/// «Фото появится из 1С» (у плашки меньше 64 — пустая, как в строке списка прототипа). Масштабирование —
+/// [filterQuality] (по умолчанию `high`: мелкие фото 1С уменьшаются без «лесенки»).
 class ProductImage extends StatefulWidget {
   /// Создаёт фото.
   const ProductImage({
@@ -92,6 +96,9 @@ class ProductImage extends StatefulWidget {
     this.showPlaceholderLabel = true,
     this.height,
     this.background,
+    this.filterQuality = FilterQuality.high,
+    this.plateSize,
+    this.plateRadius,
   });
 
   /// URL файла — абсолютный или путь от адреса API (`/images/{sha256}/card`, разрешается [ProductImageBase]);
@@ -113,14 +120,24 @@ class ProductImage extends StatefulWidget {
   /// Вписывание.
   final BoxFit fit;
 
-  /// Подпись «Нет фото» под иконкой (у миниатюр < 64 скрывается автоматически).
+  /// Подпись `ds_no_photo` под иконкой (у миниатюр < 64 скрывается автоматически).
   final bool showPlaceholderLabel;
 
   /// Высота неквадратного поля (ширина — [dimension] или по родителю); `null` — квадрат.
   final double? height;
 
-  /// Фон поля; `null` — `surfaceVariant` (квадрат с фото «в рамке»). С фоном заглушка рисуется плашкой.
+  /// Фон поля; `null` — `surfaceVariant` (квадрат с фото «в рамке»). С фоном (в том числе прозрачным) заглушка
+  /// рисуется плашкой.
   final Color? background;
+
+  /// Качество масштабирования фото.
+  final FilterQuality filterQuality;
+
+  /// Размер плашки-заглушки по центру поля (строка списка прототипа — 60×52); `null` — во всё поле.
+  final Size? plateSize;
+
+  /// Скругление плашки-заглушки; `null` — `control` (10).
+  final BorderRadius? plateRadius;
 
   /// Относительный путь файла: `/images/{sha256}/{thumb|card|full}.webp` (RM-E-003).
   static String pathFor(String sha256, ProductImageSize size) => '/images/$sha256/${size.name}.webp';
@@ -174,11 +191,22 @@ class _ProductImageState extends State<ProductImage> {
     return Semantics(image: true, label: semanticLabel, excludeSemantics: true, child: body);
   }
 
-  Widget _placeholder(double width, double height) => ProductImagePlaceholder(
-    side: width < height ? width : height,
-    showLabel: showPlaceholderLabel,
-    plate: widget.background != null,
-  );
+  Widget _placeholder(double width, double height) {
+    final Size? plate = widget.background == null ? null : widget.plateSize;
+    final double w = plate?.width ?? width;
+    final double h = plate?.height ?? height;
+    final Widget placeholder = ProductImagePlaceholder(
+      side: w < h ? w : h,
+      showLabel: showPlaceholderLabel,
+      plate: widget.background != null,
+      radius: widget.plateRadius,
+    );
+    return plate == null
+        ? placeholder
+        : Center(
+            child: SizedBox(width: w, height: h, child: placeholder),
+          );
+  }
 
   Widget _content(BuildContext context, double side, double height) {
     final String? raw = url;
@@ -193,6 +221,7 @@ class _ProductImageState extends State<ProductImage> {
       fit: fit,
       width: side,
       height: height,
+      filterQuality: widget.filterQuality,
       gaplessPlayback: true,
       frameBuilder: (BuildContext context, Widget child, int? frame, bool sync) {
         if (sync && !_faded) {
@@ -216,12 +245,13 @@ class _ProductImageState extends State<ProductImage> {
   }
 }
 
-/// Заглушка «Нет фото» (INV-050): иконка `image_not_supported` `textTertiary` + подпись `caption textSecondary`.
+/// Заглушка фото (INV-050): иконка `image_not_supported` `textTertiary` + подпись `ds_no_photo`
+/// `caption textSecondary`.
 ///
-/// [plate] — плашка `surfaceVariant` с радиусом [radius] (по умолчанию `md`) во всё поле: иконка `image` 34
-/// `borderStrong` (3.18:1) и подпись [label] (по умолчанию `ds_no_photo`) `caption textSecondary` (кегль 12 — не
-/// `textTertiary`, DS-007) — карточка
-/// сетки каталога по прототипу 2026-10-29 (без обещания «Фото появится из 1С»).
+/// [plate] — плашка прототипа (ADR-114) во всё поле: `photoPlaceholderBg`, радиус [radius] (по умолчанию `control` 10),
+/// по центру столбиком с зазором 6 значок-картинка 34 (`DsGlyphKind.photo`, `photoPlaceholderIcon`, декоративный) и
+/// подпись [label] (по умолчанию `ds_no_photo` «Фото появится из 1С») `sku 12/400 photoPlaceholderText` (решение
+/// владельца 1: 3,37:1 — исключение CP-106). Плашка меньше 64 — пустая (строка списка прототипа).
 class ProductImagePlaceholder extends StatelessWidget {
   /// Создаёт заглушку.
   const ProductImagePlaceholder({
@@ -242,10 +272,10 @@ class ProductImagePlaceholder extends StatelessWidget {
   /// Плашка во всё поле (карточка сетки).
   final bool plate;
 
-  /// Подпись; по умолчанию «Нет фото» (`ds_no_photo`).
+  /// Подпись; по умолчанию `ds_no_photo` («Фото появится из 1С»).
   final String? label;
 
-  /// Скругление плашки; по умолчанию `md`.
+  /// Скругление плашки; по умолчанию `control` (10).
   final BorderRadius? radius;
 
   @override
@@ -253,25 +283,32 @@ class ProductImagePlaceholder extends StatelessWidget {
     final DsColors c = context.colors;
     final String text = label ?? AppLocalizations.of(context).ds_no_photo;
     if (plate) {
+      final bool big = side >= 64;
       return Container(
         key: const ValueKey<String>('product-image-placeholder'),
-        decoration: BoxDecoration(color: c.surfaceVariant, borderRadius: radius ?? BorderRadius.all(context.radii.md)),
-        alignment: Alignment.center,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(Icons.image_outlined, size: 34, color: c.borderStrong),
-            if (showLabel && side >= 64) ...<Widget>[
-              SizedBox(height: context.space.s1),
-              Text(
-                text,
-                style: context.text.caption.copyWith(color: c.textSecondary),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ],
+        decoration: BoxDecoration(
+          color: c.photoPlaceholderBg,
+          borderRadius: radius ?? BorderRadius.all(context.radii.control),
         ),
+        alignment: Alignment.center,
+        child: big
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  DsGlyph(kind: DsGlyphKind.photo, size: 34, color: c.photoPlaceholderIcon),
+                  if (showLabel) ...<Widget>[
+                    // Прототип: gap 6.
+                    SizedBox(height: context.space.s1 + 2),
+                    Text(
+                      text,
+                      style: context.text.sku.copyWith(color: c.photoPlaceholderText),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              )
+            : null,
       );
     }
     final bool showText = showLabel && side >= 64;

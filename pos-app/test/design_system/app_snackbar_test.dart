@@ -1,6 +1,6 @@
-// AppSnackbar (03 §9.48, редакция 1.10; ADR-112): тост «Добавлено: {name}» внизу справа (≤ 360, поля 24, 2 с;
-// 8 с при screen reader), поля внутри drawer корзины по свободной ширине окна (AppSnackbarRegion), прежние
-// варианты compact (во всю ширину) и medium+ (по центру, 480).
+// AppSnackbar (03 §9.48, редакция 1.10; ADR-112, ADR-114): тост «Добавлено: {name}» внизу справа (≤ 360, поля 24,
+// 1,8 с как в прототипе; 8 с при screen reader), поля внутри drawer корзины по свободной ширине окна
+// (AppSnackbarRegion), прежние варианты compact (во всю ширину) и medium+ (по центру, 480).
 // Тест-кейсы 12_TEST_PLAN: T-CART-038 (длительность и поля тоста).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,13 +11,15 @@ AppSnackbarRegion _region(double endInset, {double bottom = 0}) =>
     AppSnackbarRegion(endInset: endInset, bottomInset: ValueNotifier<double>(bottom), child: const SizedBox.shrink());
 
 void main() {
-  test('длительность: 4 с; с действием или при screen reader — 8 с; тост — 2 с (8 с при screen reader)', () {
+  test('длительность: 4 с; с действием или при screen reader — 8 с; тост — 1,8 с (8 с при screen reader)', () {
     expect(AppSnackbar.durationFor(hasAction: false, accessibleNavigation: false), const Duration(seconds: 4));
     expect(AppSnackbar.durationFor(hasAction: true, accessibleNavigation: false), const Duration(seconds: 8));
     expect(
       AppSnackbar.durationFor(hasAction: false, accessibleNavigation: false, brief: true),
-      const Duration(seconds: 2),
+      const Duration(milliseconds: 1800),
+      reason: 'прототип: setTimeout 1800 (ADR-114)',
     );
+    expect(AppSnackbar.toastDuration, const Duration(milliseconds: 1800));
     expect(
       AppSnackbar.durationFor(hasAction: false, accessibleNavigation: true, brief: true),
       const Duration(seconds: 8),

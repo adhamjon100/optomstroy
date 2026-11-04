@@ -1,19 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:optomstroy/design_system/components/app_badge.dart';
 import 'package:optomstroy/design_system/components/app_tooltip.dart';
+import 'package:optomstroy/design_system/components/ds_glyph.dart';
+import 'package:optomstroy/design_system/components/ds_hairline.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 
-/// Кнопка-переключатель строки управления каталога `ToolbarToggleButton` (03 §9.72; прототип 2026-10-29, ADR-112):
+/// Кнопка-переключатель строки управления каталога `ToolbarToggleButton` (03 §9.72; прототип, ADR-112, ADR-114):
 /// «Новые», «Избранные», «Недавние», «Фильтры» SCR-10/11/12 на medium и шире.
 ///
-/// 40 визуально (цель 48), радиус `md`, поля 12 (прототип 14), иконка 18 + подпись `body 600`:
-/// - невыбранная — `surface`, обводка `border`, текст и иконка `textPrimary`;
-/// - выбранная — `primaryContainer`, обводка `primaryContainerBorder` (декоративная), текст и иконка
-///   `onPrimaryContainer` 700; иконка залитая ([selectedIcon]) и вес подписи — выбранное состояние передаётся не только
-///   цветом (A11Y-004);
+/// Значения прототипа: 40 визуально (цель 48), поля 0 14, радиус `control` 10, обводка 1, контурный глиф 17 (линия 2;
+/// [glyph] — часы, звезда, воронка прототипа, иначе [icon]) + зазор 8 + подпись `chip 14/600`:
+/// - невыбранная — `surface`, обводка `border`, текст и глиф `textPrimary`;
+/// - выбранная — `primaryContainer`, обводка `primaryContainerBorder` (декоративная), текст и глиф
+///   `onPrimaryContainer`; вес подписи и контур глифа не меняются (как в прототипе; [selectedIcon] не используется) —
+///   выбранное состояние дают заливка, цвет и `Semantics.toggled` (ADR-114). Признак не только цветом (A11Y-004,
+///   DS-036) — при системном «высоком контрасте» (`MediaQuery.highContrastOf`): подпись 700 и обводка 2
+///   `onPrimaryContainer` (без него вид прототипа не меняется; ревью RC-05, RP-06);
 /// - недоступная — `disabledBg` / `disabledText`;
 /// - hover — `surfaceHover` (выбранная — `primaryContainerPressed`), фокус — кольцо.
 ///
@@ -26,11 +31,13 @@ class ToolbarToggleButton extends StatelessWidget {
     required this.onTap,
     this.icon,
     this.selectedIcon,
+    this.glyph,
     this.selected = false,
     this.enabled = true,
     this.badgeCount,
     this.showLabel = true,
     this.semanticLabel,
+    this.tooltip,
   });
 
   /// Визуальная высота.
@@ -39,8 +46,14 @@ class ToolbarToggleButton extends StatelessWidget {
   /// Высота тач-цели.
   static const double target = 48;
 
-  /// Размер иконки.
-  static const double iconSize = 18;
+  /// Размер иконки (прототип: SVG 17 × 17).
+  static const double iconSize = 17;
+
+  /// Поля по горизонтали (прототип: `padding: 0 14px`).
+  static const double horizontalPadding = 14;
+
+  /// Зазор иконка — подпись (прототип: `gap: 8px`).
+  static const double iconGap = 8;
 
   /// Подпись.
   final String label;
@@ -48,11 +61,14 @@ class ToolbarToggleButton extends StatelessWidget {
   /// Нажатие; `null` — кнопка без действия (например, выбранная, повтор которой ничего не меняет).
   final VoidCallback? onTap;
 
-  /// Иконка слева (контурная).
+  /// Иконка слева (контурная), если нет [glyph].
   final IconData? icon;
 
-  /// Иконка выбранной (залитая); по умолчанию — [icon].
+  /// Не используется (ADR-114: иконка контурная в обоих состояниях, как в прототипе); оставлен для совместимости.
   final IconData? selectedIcon;
+
+  /// Глиф прототипа слева (`DsGlyphKind.clock`, `star`, `filter`); важнее [icon].
+  final DsGlyphKind? glyph;
 
   /// Выбрана (включена).
   final bool selected;
@@ -69,8 +85,19 @@ class ToolbarToggleButton extends StatelessWidget {
   /// Подпись для screen reader (по умолчанию — [label] и число бейджа).
   final String? semanticLabel;
 
-  /// Оценка ширины кнопки (до раскладки): поля 12 + 12, иконка 18 с зазором 8, подпись `body 700` (ширина выбранной),
-  /// бейдж, обводка.
+  /// Подсказка при наведении («Избранные, 12 товаров» — число, которое прежде показывала плитка колонки; паритет
+  /// функций ADR-114); `null` — только у кнопки без подписи ([showLabel] `false`) — [label].
+  final String? tooltip;
+
+  /// Обводка выбранной при высоком контрасте (DS-036: «обводка 2 px» — признак формы).
+  static const double highContrastBorder = 2;
+
+  /// Выбранное показывается не только цветом: системный высокий контраст (A11Y-004; ревью RC-05, RP-06).
+  static bool strongSelectionCue(BuildContext context) => MediaQuery.maybeHighContrastOf(context) ?? false;
+
+  /// Оценка ширины кнопки (до раскладки): поля 14 + 14, иконка 17 с зазором 8, подпись `chip 14/600` (вес одинаков в
+  /// обоих состояниях; при высоком контрасте — по весу 700), бейдж, обводка — «Новые» 101,2, «Избранные» 134,5,
+  /// «Фильтры» 118,1 (прототип).
   static double estimateWidth(
     BuildContext context,
     String label, {
@@ -78,12 +105,13 @@ class ToolbarToggleButton extends StatelessWidget {
     bool withBadge = false,
     bool showLabel = true,
   }) {
-    final double text = showLabel
-        ? dsTextWidth(context, label, context.text.body.copyWith(fontWeight: FontWeight.w700))
-        : 0;
-    final double iconPart = withIcon ? iconSize + (showLabel ? context.space.s2 : 0) : 0;
+    final TextStyle style = strongSelectionCue(context)
+        ? context.text.chip.copyWith(fontWeight: FontWeight.w700)
+        : context.text.chip;
+    final double text = showLabel ? dsTextWidth(context, label, style) : 0;
+    final double iconPart = withIcon ? iconSize + (showLabel ? iconGap : 0) : 0;
     final double badge = withBadge ? context.space.s2 + 22 : 0;
-    final double width = context.space.s3 * 2 + iconPart + text + badge + 2;
+    final double width = horizontalPadding * 2 + iconPart + text + badge + 2 * DsHairline.of(context);
     return width < target ? target : width;
   }
 
@@ -94,6 +122,7 @@ class ToolbarToggleButton extends StatelessWidget {
     final DsColors c = context.colors;
     final bool active = enabled && onTap != null;
     final String a11y = semanticLabel ?? (_badge > 0 ? '$label, $_badge' : label);
+    final bool strong = selected && enabled && strongSelectionCue(context);
     final Widget button = Semantics(
       button: true,
       toggled: selected,
@@ -112,9 +141,14 @@ class ToolbarToggleButton extends StatelessWidget {
               : selected
               ? (s.pressed || s.hovered ? c.primaryContainerPressed : c.primaryContainer)
               : (s.pressed ? c.surfacePressed : (s.hovered ? c.surfaceHover : c.surface));
-          final Color border = !enabled ? c.disabledBg : (selected ? c.primaryContainerBorder : c.border);
-          final BorderRadius radius = BorderRadius.all(context.radii.md);
-          final IconData? glyph = selected ? (selectedIcon ?? icon) : icon;
+          final Color border = !enabled
+              ? c.disabledBg
+              : (strong ? c.onPrimaryContainer : (selected ? c.primaryContainerBorder : c.border));
+          final BorderRadius radius = BorderRadius.all(context.radii.control);
+          final DsGlyphKind? kind = glyph;
+          final Widget? art = kind != null
+              ? DsGlyph(kind: kind, size: iconSize, color: fg, strokeWidth: 2)
+              : (icon == null ? null : Icon(icon, size: iconSize, color: fg));
           return SizedBox(
             height: target,
             child: Center(
@@ -126,28 +160,32 @@ class ToolbarToggleButton extends StatelessWidget {
                   duration: context.motion.of(context.motion.fast),
                   height: height,
                   constraints: const BoxConstraints(minWidth: target),
-                  padding: EdgeInsets.symmetric(horizontal: context.space.s3),
+                  // Обводка 2 при высоком контрасте — за счёт поля, ширина кнопки та же.
+                  padding: EdgeInsets.symmetric(
+                    horizontal: strong
+                        ? horizontalPadding - (highContrastBorder - DsHairline.of(context))
+                        : horizontalPadding,
+                  ),
                   decoration: BoxDecoration(
                     color: bg,
                     borderRadius: radius,
-                    border: Border.all(color: border),
+                    border: strong
+                        ? Border.all(color: border, width: highContrastBorder)
+                        : DsHairline.all(context, border),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: <Widget>[
-                      if (glyph != null) Icon(glyph, size: iconSize, color: fg),
-                      if (glyph != null && showLabel) SizedBox(width: context.space.s2),
+                      ?art,
+                      if (art != null && showLabel) const SizedBox(width: iconGap),
                       if (showLabel)
                         Flexible(
                           child: Text(
                             label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: context.text.body.copyWith(
-                              fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                              color: fg,
-                            ),
+                            style: context.text.chip.copyWith(color: fg, fontWeight: strong ? FontWeight.w700 : null),
                           ),
                         ),
                       if (_badge > 0) ...<Widget>[
@@ -163,6 +201,7 @@ class ToolbarToggleButton extends StatelessWidget {
         },
       ),
     );
-    return showLabel ? button : AppTooltip(message: label, child: button);
+    final String? hint = tooltip ?? (showLabel ? null : label);
+    return hint == null ? button : AppTooltip(message: hint, child: button);
   }
 }

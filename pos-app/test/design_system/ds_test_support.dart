@@ -7,12 +7,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/theme/app_theme.dart';
 
-/// Файлы Inter, которые регистрирует семейство `Inter` (статические веса 400/500/600/700).
+/// Файлы Inter, которые регистрирует семейство `Inter` (статические веса 400/500/600/700/800;
+/// 800 — экземпляр из Inter-Variable.ttf для стилей прототипа, ADR-114). Порядок = секция `fonts:` pubspec.
 const List<String> interStaticFiles = <String>[
   'assets/fonts/Inter/Inter-Regular.ttf',
   'assets/fonts/Inter/Inter-Medium.ttf',
   'assets/fonts/Inter/Inter-SemiBold.ttf',
   'assets/fonts/Inter/Inter-Bold.ttf',
+  'assets/fonts/Inter/Inter-ExtraBold.ttf',
 ];
 
 bool _interLoaded = false;

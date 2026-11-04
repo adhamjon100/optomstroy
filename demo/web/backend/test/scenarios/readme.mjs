@@ -65,8 +65,8 @@ export async function readme1(w) {
   const S = (w.S = ctx.dev('windows', { name: 'продавец 902' }));
   const v = await S.login('+996777000902');
   ctx.check('вход 902 → сотрудник «Продавец» по приглашению, первый PIN', v.json?.status === 'authenticated' && (v.json?.user?.roles ?? []).includes('seller') && v.json?.roleSource === 'invitation', { roles: v.json?.user?.roles, roleSource: v.json?.roleSource, nextStep: v.json?.nextStep });
-  const sr = await S.call('поиск F4252', 'GET', `/search/products?q=F4252&limit=10`);
-  ctx.check('поиск по артикулу F4252 → matchType sku', sr.json?.items?.[0]?.sku === 'F4252' && sr.json?.items?.[0]?.matchType === 'sku', sr.json?.items?.[0] && { sku: sr.json.items[0].sku, matchType: sr.json.items[0].matchType });
+  const sr = await S.call('поиск SL1001', 'GET', `/search/products?q=SL1001&limit=10`);
+  ctx.check('поиск по артикулу SL1001 → matchType sku', sr.json?.items?.[0]?.sku === 'SL1001' && sr.json?.items?.[0]?.matchType === 'sku', sr.json?.items?.[0] && { sku: sr.json.items[0].sku, matchType: sr.json.items[0].matchType });
   const card = await S.call('карточка товара', 'GET', `/catalog/products/${w.p(0).id}?include=variants,prices,stockByWarehouse,images`);
   ctx.check('карточка товара: цена и остаток', !!card.json?.price && !!card.json?.stock, { sku: card.json?.sku });
   let cart = await fillCart(S, [{ p: w.p(0), q: '2' }, { p: w.p(1), q: '1' }, { p: w.p(2), q: '3' }], { label: 'корзина продавца' });

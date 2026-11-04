@@ -4,6 +4,10 @@ import 'package:flutter/scheduler.dart';
 import 'package:optomstroy/design_system/components/app_badge.dart';
 import 'package:optomstroy/design_system/components/app_icon_button.dart';
 import 'package:optomstroy/design_system/components/app_snackbar.dart';
+import 'package:optomstroy/design_system/components/app_tooltip.dart';
+import 'package:optomstroy/design_system/components/ds_glyph.dart';
+import 'package:optomstroy/design_system/components/ds_hairline.dart';
+import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -13,9 +17,10 @@ enum CartPanelVariant {
   /// expanded/large: постоянная третья колонка 320/340, `elevation.1`, граница слева.
   panel,
 
-  /// medium и шире (редакция 1.10, ADR-112): drawer 420 справа на всю высоту окна (`DsBreakpoints.cartDrawer`),
-  /// `elevation.3`, без радиуса, крестик закрытия; заголовок «Корзина · N поз.» ([CartPanel.titleSuffix]), низ
-  /// (итоги и кнопки) — подвал [CartPanel.footerColor] с верхней границей. До редакции 1.10 — side sheet 320 на medium.
+  /// medium и шире (редакция 1.10, ADR-112; вид — прототип без округления, ADR-114 п. 6): drawer 420 справа на всю
+  /// высоту окна (`DsBreakpoints.cartDrawer`), тень `elevation.drawer` (−12 0 40 rgba(14,20,86,.18)), без радиуса,
+  /// крестик закрытия 40; заголовок «Корзина · N поз.» ([CartPanel.titleSuffix]), низ (итоги и кнопки) — подвал
+  /// `drawerFooterBg` #FBFCFE с верхней границей. До редакции 1.10 — side sheet 320 на medium.
   overlay,
 
   /// compact: полноэкранный маршрут `/cart`.
@@ -27,10 +32,12 @@ enum CartPanelVariant {
 /// [body] (список строк, прокрутка внутри) → закреплённые снизу [bottom] (скидка, итоги) и [footer] (подпись
 /// причины, «Отложить заказ», «Создать заказ →») над `SafeArea`. Фон `surface`, разделители `border`.
 ///
-/// `overlay` — drawer корзины (прототип 2026-10-29): шапка с полями 16 / 20 и нижней границей, заголовок
-/// `h3 20/700` и приглушённый [titleSuffix] «· N поз.» (`bodyLg 600 textTertiary`; бейдж при суффиксе скрыт),
-/// закреплённый низ — один подвал [footerColor] с верхней границей `border` и полями зоны G 20; высоту низа панель
-/// сообщает ближайшей [AppSnackbarRegion] — снекбар узкого окна стоит над ним, а не на кнопках.
+/// `overlay` — drawer корзины по прототипу (ADR-114 п. 6, design-spec §13): шапка 77 (поля 18 / 20, нижняя граница
+/// `border`), заголовок `drawerTitle` 20/800 и приглушённый [titleSuffix] «· N поз.» 16/600 `catalogMeta` #6B7487
+/// (бейдж при суффиксе скрыт), крестик — квадрат 40 с радиусом `control` 10 и крестом 20 линией 2,2 (цель 48);
+/// действия [actions] и строка счётчиков — паритет функций (SCR-20 A, 02 П.4); закреплённый низ — один подвал
+/// `drawerFooterBg` с верхней границей `border` и полями 16 / 20 / 20; высоту низа панель сообщает ближайшей
+/// [AppSnackbarRegion] — снекбар узкого окна стоит над ним, а не на кнопках.
 ///
 /// Компонент — только раскладка; данные, действия и тексты передаёт экран.
 class CartPanel extends StatelessWidget {
@@ -119,8 +126,32 @@ class CartPanel extends StatelessWidget {
   /// Ключ подвала drawer (итоги и кнопки; тесты).
   static const Key footerKey = ValueKey<String>('cart-drawer-footer');
 
-  /// Фон подвала drawer: `surface`, смешанный пополам с `surfaceHover` (≈ #FBFCFE прототипа).
-  static Color footerColor(DsColors c) => Color.lerp(c.surface, c.surfaceHover, .5)!;
+  /// Поля зоны G (кнопки) в подвале drawer: прототип — зазор 12 над кнопками и нижнее поле 20; кнопки `drawer`
+  /// видимой высоты 46 стоят в цели 48 (по 1 сверху и снизу), поэтому 11 и 19.
+  static const EdgeInsets drawerFooterPadding = EdgeInsets.fromLTRB(20, 11, 20, 19);
+
+  /// Поля списка строк drawer (прототип: `padding: 6px 20px`; 6 — вне шкалы отступов, значение прототипа без
+  /// округления, ADR-114 п. 6). Поля 20 по бокам у строк — у самих строк (`CartLine.emphasized`).
+  static const EdgeInsets drawerBodyPadding = EdgeInsets.symmetric(horizontal: 20, vertical: 6);
+
+  /// Высота строки «Клиент» drawer с нижней границей (прототип: 14 + 18 + 14 и граница 1).
+  static const double drawerClientRowHeight = 47;
+
+  /// Зазор в строке «Клиент» drawer (прототип: `gap: 10px`).
+  static const double drawerClientGap = 10;
+
+  /// Зазор кнопок зоны G drawer (прототип: `gap: 10px`).
+  static const double drawerButtonGap = 10;
+
+  /// Ширина левой кнопки зоны G drawer («Отложить · F8») в строке шириной [row]: как CSS `flex: 1` против `flex: 1.4`
+  /// с основой 0 — свободное место делится 1 : 1,4 после собственных полей кнопок (у «Отложить» — 6 + рамка 1 с
+  /// каждой стороны, у «Создать заказ» — 6 + 6); при ширине 380 — 157,3 и 212,7.
+  static double drawerParkWidth(double row) {
+    const double parkOwn = 14;
+    const double createOwn = 12;
+    final double free = row - drawerButtonGap - parkOwn - createOwn;
+    return free <= 0 ? 0 : free / 2.4 + parkOwn;
+  }
 
   /// Ширина панели для ширины окна [windowWidth] (02 SCR-20.2: 320 — medium и expanded < 1280, 340 — шире).
   static double widthFor(double windowWidth) => windowWidth >= 1280 ? DsBreakpoints.cartWide : DsBreakpoints.cartNarrow;
@@ -131,7 +162,7 @@ class CartPanel extends StatelessWidget {
     final bool drawer = variant == CartPanelVariant.overlay;
     final String? suffix = titleSuffix;
     final TextStyle titleStyle = drawer
-        ? context.text.h3.copyWith(fontWeight: FontWeight.w700, color: c.textPrimary)
+        ? context.text.drawerTitle.copyWith(color: c.textPrimary)
         : context.text.title.copyWith(fontWeight: FontWeight.w600, color: c.textPrimary);
     final Widget titleText = suffix == null
         ? Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: titleStyle)
@@ -141,7 +172,8 @@ class CartPanel extends StatelessWidget {
                 TextSpan(text: title),
                 TextSpan(
                   text: ' $suffix',
-                  style: context.text.bodyLg.copyWith(fontWeight: FontWeight.w600, color: c.textTertiary),
+                  // 16/600 #6B7487 на `surface` — 4,69:1 (CP-093).
+                  style: context.text.bodyLg.copyWith(fontWeight: FontWeight.w600, color: c.catalogMeta),
                 ),
               ],
             ),
@@ -149,12 +181,16 @@ class CartPanel extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: titleStyle,
           );
+    final bool counterRow = counter != null || counterTrailing != null;
+    // Drawer (прототип): шапка 77 = 18 + крестик 40 + 18 и граница; строка 48 (цели касания) — поля 14. Крестик 40
+    // стоит в цели 48, поэтому правое поле 16 (видимый край — в 20 от края, как в прототипе). Строка счётчиков
+    // (паритет функций) — под заголовком, нижнее поле тогда 8.
     final Widget header = Container(
       padding: EdgeInsetsDirectional.only(
         start: context.space.s5,
-        end: drawer ? context.space.s3 : context.space.s2,
-        top: drawer ? context.space.s4 : context.space.s2,
-        bottom: drawer ? context.space.s3 : context.space.s1,
+        end: drawer ? context.space.s4 : context.space.s2,
+        top: drawer ? 14 : context.space.s2,
+        bottom: drawer ? (counterRow ? context.space.s2 : 14) : context.space.s1,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -179,16 +215,18 @@ class CartPanel extends StatelessWidget {
                 ),
                 ...actions,
                 if (onClose != null)
-                  AppIconButton(
-                    key: closeKey,
-                    icon: Icons.close_rounded,
-                    semanticLabel: closeLabel ?? '',
-                    onPressed: onClose,
-                  ),
+                  drawer
+                      ? _DrawerCloseButton(label: closeLabel ?? '', onPressed: onClose)
+                      : AppIconButton(
+                          key: closeKey,
+                          icon: Icons.close_rounded,
+                          semanticLabel: closeLabel ?? '',
+                          onPressed: onClose,
+                        ),
               ],
             ),
           ),
-          if (counter != null || counterTrailing != null)
+          if (counterRow)
             SizedBox(
               height: 20,
               child: Row(
@@ -235,12 +273,7 @@ class CartPanel extends StatelessWidget {
                             top: false,
                             child: Padding(
                               padding: drawer
-                                  ? EdgeInsets.fromLTRB(
-                                      context.space.s5,
-                                      context.space.s1,
-                                      context.space.s5,
-                                      context.space.s5,
-                                    )
+                                  ? drawerFooterPadding
                                   : EdgeInsets.fromLTRB(
                                       context.space.s5,
                                       context.space.s2,
@@ -250,15 +283,15 @@ class CartPanel extends StatelessWidget {
                               child: footer,
                             ),
                           );
-                    // Drawer (прототип): итоги и кнопки — один подвал [footerColor] с верхней границей `border`.
+                    // Drawer (прототип): итоги и кнопки — один подвал `drawerFooterBg` с верхней границей `border`.
                     final List<Widget> pinned = drawer
                         ? <Widget>[
                             if (bottom != null || footerBox != null)
                               DecoratedBox(
                                 key: footerKey,
                                 decoration: BoxDecoration(
-                                  color: footerColor(c),
-                                  border: Border(top: BorderSide(color: c.border)),
+                                  color: c.drawerFooterBg,
+                                  border: Border(top: DsHairline.side(context, c.border)),
                                 ),
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
@@ -315,7 +348,7 @@ class CartPanel extends StatelessWidget {
         color: c.surface,
         border: Border(left: BorderSide(color: c.border)),
       ),
-      CartPanelVariant.overlay => BoxDecoration(color: c.surface, boxShadow: context.elevation.e3),
+      CartPanelVariant.overlay => BoxDecoration(color: c.surface, boxShadow: context.elevation.drawer),
       CartPanelVariant.screen => BoxDecoration(color: c.surface),
     };
     return Semantics(
@@ -358,5 +391,53 @@ class _RenderHeightReporter extends RenderProxyBox {
       final ValueNotifier<double> target = notifier;
       SchedulerBinding.instance.addPostFrameCallback((_) => target.value = height);
     }
+  }
+}
+
+/// Крестик закрытия drawer корзины (прототип): квадрат 40 с радиусом `control` 10, прозрачный (наведение —
+/// `surfaceHover`, нажатие — `iconButtonPressed`), крест 20 `textPrimary` линией 2,2; цель касания 48, фокус — кольцо
+/// `focus`, тултип — подпись ([CartPanel.closeKey]).
+class _DrawerCloseButton extends StatelessWidget {
+  const _DrawerCloseButton({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  /// Сторона видимого квадрата.
+  static const double size = 40;
+
+  @override
+  Widget build(BuildContext context) {
+    final DsColors c = context.colors;
+    final BorderRadius radius = BorderRadius.all(context.radii.control);
+    final Widget button = Semantics(
+      button: true,
+      enabled: onPressed != null,
+      label: label,
+      excludeSemantics: true,
+      onTap: onPressed,
+      child: DsInteractive(
+        key: CartPanel.closeKey,
+        enabled: onPressed != null,
+        onTap: onPressed,
+        builder: (BuildContext context, DsInteractionState s) => DsTapTarget(
+          child: DsFocusRing(
+            visible: s.focused,
+            borderRadius: radius,
+            child: Container(
+              width: size,
+              height: size,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: s.pressed ? c.iconButtonPressed : (s.hovered ? c.surfaceHover : Colors.transparent),
+                borderRadius: radius,
+              ),
+              child: DsGlyph(kind: DsGlyphKind.cross, size: 20, color: s.enabled ? c.textPrimary : c.disabledText),
+            ),
+          ),
+        ),
+      ),
+    );
+    return label.isEmpty ? button : AppTooltip(message: label, child: button);
   }
 }

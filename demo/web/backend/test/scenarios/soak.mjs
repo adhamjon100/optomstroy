@@ -36,7 +36,7 @@ export function floorSlopePerHour(samples, key) {
 
 export async function runSoak({ minutes = 20, log = console.log, warmupMin = 3 } = {}) {
   const errors = [];
-  const be = await startWorkerBackend({ sku: 500, strict: true, initOpts: { seed: true }, boot: { netRecorder: true, exposeGc: true }, onLog: (lv, m) => lv === 'error' && errors.push(String(m).slice(0, 600)) });
+  const be = await startWorkerBackend({ strict: true, initOpts: { seed: true }, boot: { netRecorder: true, exposeGc: true }, onLog: (lv, m) => lv === 'error' && errors.push(String(m).slice(0, 600)) });
   const ctx = createCtx(be, { log: () => {}, label: 'soak' });
   ctx.begin('soak');
   const t0 = Date.now();

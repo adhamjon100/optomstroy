@@ -69,53 +69,78 @@ void main() {
     expect(await loaded(container(withStore: store)), <String>['смеситель', 'F4252-CR']);
   });
 
-  test('EQ-CAT-05: вид и сортировка — drift scope=user; переживают перезапуск; выход / SESSION_REVOKED / смена '
-      'пользователя — история, вид и сортировка удалены', () async {
-    final ProviderContainer c = container(withStore: store);
-    await loaded(c);
-    c.read(searchHistoryProvider.notifier).add('кран');
-    final CatalogPrefs prefs = c.read(catalogPrefsProvider);
-    expect(prefs, isA<UserCatalogPrefs>());
-    await prefs.setViewMode(WindowClass.expanded, ProductViewMode.compact);
-    await prefs.setViewMode(WindowClass.compact, ProductViewMode.grid);
-    await prefs.setSort(CatalogSort.priceAsc, search: false);
-    await prefs.setSort(CatalogSort.nameAsc, search: true);
-    await prefs.setSidebarCollapsed(true);
-    await Future<void>.delayed(Duration.zero);
+  test(
+    'EQ-CAT-05: вид и сортировка — drift scope=user; переживают перезапуск; выход / SESSION_REVOKED / смена '
+    'пользователя — история, вид и сортировка удалены; последний корень (T-CAT-040) — остаётся у пользователя',
+    () async {
+      final ProviderContainer c = container(withStore: store);
+      await loaded(c);
+      c.read(searchHistoryProvider.notifier).add('кран');
+      final CatalogPrefs prefs = c.read(catalogPrefsProvider);
+      expect(prefs, isA<UserCatalogPrefs>());
+      await prefs.setViewMode(WindowClass.expanded, ProductViewMode.compact);
+      await prefs.setViewMode(WindowClass.compact, ProductViewMode.grid);
+      await prefs.setSort(CatalogSort.priceAsc, search: false);
+      await prefs.setSort(CatalogSort.nameAsc, search: true);
+      await prefs.setSidebarCollapsed(true);
+      // T-CAT-040 (ADR-114): последний открытый корень каталога — тоже на пользователя.
+      await prefs.setLastRoot('c-mix');
+      await Future<void>.delayed(Duration.zero);
 
-    final List<SettingRow> rows = await db.select(db.localSettings).get();
-    expect(
-      rows.map((SettingRow r) => r.key),
-      containsAll(<String>[
-        CatalogSettingKeys.viewMode('expanded'),
-        CatalogSettingKeys.viewMode('compact'),
-        CatalogSettingKeys.sort(search: false),
-        CatalogSettingKeys.sort(search: true),
-        CatalogSettingKeys.sidebarCollapsed,
-      ]),
-    );
-    expect(rows.map((SettingRow r) => r.scope).toSet(), <String>{'user'}, reason: 'на пользователя, не на устройство');
+      final List<SettingRow> rows = await db.select(db.localSettings).get();
+      expect(
+        rows.map((SettingRow r) => r.key),
+        containsAll(<String>[
+          CatalogSettingKeys.viewMode('expanded'),
+          CatalogSettingKeys.viewMode('compact'),
+          CatalogSettingKeys.sort(search: false),
+          CatalogSettingKeys.sort(search: true),
+          CatalogSettingKeys.sidebarCollapsed,
+          CatalogSettingKeys.lastRoot,
+        ]),
+      );
+      final Map<String, String> scopes = <String, String>{for (final SettingRow r in rows) r.key: r.scope};
+      // Последний корень — в файле БД пользователя, но не стирается при выходе (ответ владельца, ревью PAR-01).
+      expect(scopes[CatalogSettingKeys.lastRoot], 'device', reason: 'последний корень переживает «Выйти»');
+      expect(
+        scopes.entries
+            .where((MapEntry<String, String> e) => e.key != CatalogSettingKeys.lastRoot)
+            .map((e) => e.value)
+            .toSet(),
+        <String>{'user'},
+        reason: 'вид, сортировка, сайдбар, история — на пользователя (scope=user), не на устройство',
+      );
 
-    // «Перезапуск» того же пользователя: значения читаются из его файла БД, по классу окна раздельно.
-    final CatalogPrefs restarted = container(withStore: store).read(catalogPrefsProvider);
-    expect(await restarted.viewMode(WindowClass.expanded), ProductViewMode.compact);
-    expect(await restarted.viewMode(WindowClass.compact), ProductViewMode.grid);
-    expect(await restarted.viewMode(WindowClass.medium), isNull);
-    expect(await restarted.sort(search: false), CatalogSort.priceAsc);
-    expect(await restarted.sort(search: true), CatalogSort.nameAsc);
-    expect(await restarted.sidebarCollapsed(), isTrue);
+      // «Перезапуск» того же пользователя: значения читаются из его файла БД, по классу окна раздельно.
+      final CatalogPrefs restarted = container(withStore: store).read(catalogPrefsProvider);
+      expect(await restarted.viewMode(WindowClass.expanded), ProductViewMode.compact);
+      expect(await restarted.viewMode(WindowClass.compact), ProductViewMode.grid);
+      expect(await restarted.viewMode(WindowClass.medium), isNull);
+      expect(await restarted.sort(search: false), CatalogSort.priceAsc);
+      expect(await restarted.sort(search: true), CatalogSort.nameAsc);
+      expect(await restarted.sidebarCollapsed(), isTrue);
+      expect(await restarted.lastRoot(), 'c-mix', reason: 'стартовая категория после перезапуска — последний корень');
 
-    await SessionLocalData(db).clearOnSessionEnd('u-1');
+      await SessionLocalData(db).clearOnSessionEnd('u-1');
 
-    expect(await loaded(container(withStore: store)), isEmpty);
-    final CatalogPrefs again = UserCatalogPrefs(store);
-    expect(await again.viewMode(WindowClass.expanded), isNull, reason: 'после выхода — значение по умолчанию');
-    expect(await again.sort(search: false), isNull);
-    expect(await again.sidebarCollapsed(), isNull);
-    expect(await db.select(db.localSettings).get(), isEmpty);
-  });
+      expect(await loaded(container(withStore: store)), isEmpty);
+      final CatalogPrefs again = UserCatalogPrefs(store);
+      expect(await again.viewMode(WindowClass.expanded), isNull, reason: 'после выхода — значение по умолчанию');
+      expect(await again.sort(search: false), isNull);
+      expect(await again.sidebarCollapsed(), isNull);
+      // Ответ владельца: «дальше — последняя открытая этим пользователем корневая категория (запоминается по
+      // пользователю)» — повторный вход того же пользователя открывает его последний корень (ревью PAR-01).
+      expect(await again.lastRoot(), 'c-mix', reason: 'после выхода и нового входа того же пользователя — его корень');
+      expect(
+        (await db.select(db.localSettings).get()).map((SettingRow r) => r.key),
+        <String>[CatalogSettingKeys.lastRoot],
+        reason: 'остальные настройки каталога — scope=user, удалены',
+      );
+    },
+  );
 
-  test('EQ-CAT-05: настройки одного пользователя не видны другому (файл БД пользователя)', () async {
+  test('EQ-CAT-05: настройки одного пользователя не видны другому (файл БД пользователя), в том числе последний '
+      'корень каталога (T-CAT-040)', () async {
     final AppDatabase other = AppDatabase(NativeDatabase.memory());
     addTearDown(other.close);
     final DriftCatalogUserSettingsStore otherStore = DriftCatalogUserSettingsStore(
@@ -123,8 +148,13 @@ void main() {
       FixedClock(DateTime.utc(2026, 10, 22, 9)),
     );
     await UserCatalogPrefs(store).setViewMode(WindowClass.expanded, ProductViewMode.list);
+    await UserCatalogPrefs(store).setLastRoot('c-mix');
     final CatalogPrefs second = container(withStore: otherStore, user: 'u-2').read(catalogPrefsProvider);
     expect(await second.viewMode(WindowClass.expanded), isNull);
+    // T-CAT-040: у второго пользователя на том же устройстве — свой стартовый корень (первый вход).
+    expect(await second.lastRoot(), isNull);
+    await second.setLastRoot('c-sanitary');
+    expect(await UserCatalogPrefs(store).lastRoot(), 'c-mix');
   });
 
   test('без БД пользователя — только память; удаление и очистка истории', () async {

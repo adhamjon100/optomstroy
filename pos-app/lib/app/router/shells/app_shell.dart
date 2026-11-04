@@ -19,6 +19,7 @@ import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/app_snackbar.dart';
 import 'package:optomstroy/design_system/components/nav_destination.dart';
 import 'package:optomstroy/design_system/layout/adaptive_scaffold.dart';
+import 'package:optomstroy/design_system/layout/route_activity.dart';
 import 'package:optomstroy/design_system/layout/shell_scope.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
@@ -76,6 +77,8 @@ bool shellDrawerNavigationFor(AppMode mode, WindowClass windowClass) =>
 /// фокуса): Ctrl+1…5 — вкладка режима по порядку, как пункт первой группы drawer навигации (вкладка «Корзина» на
 /// medium+ — drawer корзины, [activateShellTab]); в полях ввода не перехватываются (02 §3.8); Ctrl+Shift+N —
 /// уведомления (SCR-44); F2 / Ctrl+F на ветках кроме «Каталога» (medium+) — фокус в поле поиска шапки оболочки.
+/// Фокус не внутри оболочки (веб после входа и разблокировки) — те же сочетания глобальным обработчиком
+/// `HardwareKeyboard` (ревью PAR-03).
 ///
 /// HID-сканер (`HidScanScope`, RM-E-010) подключён к оболочке режимов сотрудников: скан вне полей
 /// ввода на любом экране ветки → поиск по штрихкоду → карточка SCR-14 (или «не найдено» → SCR-11). При открытом и
@@ -104,6 +107,38 @@ class _AppShellState extends ConsumerState<AppShell> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>(debugLabel: 'AppShell.scaffold');
   final FocusNode _headerSearchFocus = FocusNode(debugLabel: 'StaffShellHeader.search');
   final TextEditingController _headerSearchText = TextEditingController();
+
+  /// Узел сочетаний оболочки (без остановки Tab): принимает клавиши, пока фокус не стоит ни на одном элементе экрана;
+  /// [FocusNode.hasFocus] — фокус где-то внутри оболочки.
+  final FocusNode _keysFocus = FocusNode(debugLabel: 'AppShell.keys', skipTraversal: true);
+
+  /// Сочетания оболочки последней сборки ([build]) — и для `CallbackShortcuts`, и для [_onIdleKey].
+  Map<ShortcutActivator, VoidCallback> _keyBindings = const <ShortcutActivator, VoidCallback>{};
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_onIdleKey);
+  }
+
+  /// Сочетания оболочки, когда фокус Flutter не внутри оболочки (веб-демо после входа и разблокировки PIN: фокус у корня
+  /// дерева или у узла снятого слоя блокировки — `CallbackShortcuts` клавиш не получает; ревью PAR-03): те же
+  /// [_keyBindings] глобальным обработчиком, как F4. Фокус внутри оболочки — клавиши у `CallbackShortcuts` (без двойного
+  /// действия); над оболочкой экран, диалог или лист (`PopupRoute`), фокус в поле ввода, оболочка за блокировкой
+  /// (`ExcludeFocus`) — не перехватываются.
+  bool _onIdleKey(KeyEvent e) {
+    if (e is! KeyDownEvent || _keyBindings.isEmpty || !mounted) return false;
+    if (_keysFocus.hasFocus || !_keysFocus.canRequestFocus || !dsRouteIsCurrent(context)) return false;
+    final BuildContext? focus = FocusManager.instance.primaryFocus?.context;
+    if (focus != null && focus.mounted && (ModalRoute.of(focus) is PopupRoute || shellFocusInTextField())) return false;
+    for (final MapEntry<ShortcutActivator, VoidCallback> b in _keyBindings.entries) {
+      if (b.key.accepts(e, HardwareKeyboard.instance)) {
+        b.value();
+        return true;
+      }
+    }
+    return false;
+  }
 
   /// Открыть корзину поверх экрана (drawer 420, D5) — для вкладки «Корзина» drawer навигации и `Ctrl+1…5`; `null` —
   /// роль без корзины (owner, customer) или compact: корзина — маршрут `/cart`.
@@ -214,6 +249,8 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onIdleKey);
+    _keysFocus.dispose();
     _headerSearchFocus.dispose();
     _headerSearchText.dispose();
     super.dispose();
@@ -307,20 +344,24 @@ class _AppShellState extends ConsumerState<AppShell> {
       ),
     );
     final Widget scoped = DsShellScope(openNavigation: drawerNav ? _openNavigation : null, child: scaffold);
+    _keyBindings = staff
+        ? <ShortcutActivator, VoidCallback>{
+            for (int i = 0; i < tabs.length && i < 9; i++)
+              SingleActivator(LogicalKeyboardKey(LogicalKeyboardKey.digit1.keyId + i), control: true): () =>
+                  _tabKey(tabs, i, openCart),
+            const SingleActivator(LogicalKeyboardKey.keyN, control: true, shift: true): () => _openNotifications(wc),
+            if (shellHeader) ...<ShortcutActivator, VoidCallback>{
+              const SingleActivator(LogicalKeyboardKey.f2): _focusHeaderSearch,
+              const SingleActivator(LogicalKeyboardKey.keyF, control: true): _focusHeaderSearch,
+            },
+          }
+        : const <ShortcutActivator, VoidCallback>{};
     final Widget withKeys = staff
         ? CallbackShortcuts(
-            bindings: <ShortcutActivator, VoidCallback>{
-              for (int i = 0; i < tabs.length && i < 9; i++)
-                SingleActivator(LogicalKeyboardKey(LogicalKeyboardKey.digit1.keyId + i), control: true): () =>
-                    _tabKey(tabs, i, openCart),
-              const SingleActivator(LogicalKeyboardKey.keyN, control: true, shift: true): () => _openNotifications(wc),
-              if (shellHeader) ...<ShortcutActivator, VoidCallback>{
-                const SingleActivator(LogicalKeyboardKey.f2): _focusHeaderSearch,
-                const SingleActivator(LogicalKeyboardKey.keyF, control: true): _focusHeaderSearch,
-              },
-            },
-            // Узел без остановки Tab: принимает клавиши, пока фокус не стоит ни на одном элементе экрана.
-            child: Focus(autofocus: true, skipTraversal: true, child: scoped),
+            bindings: _keyBindings,
+            // Узел без остановки Tab: принимает клавиши, пока фокус не стоит ни на одном элементе экрана; фокус вне
+            // оболочки — [_onIdleKey].
+            child: Focus(focusNode: _keysFocus, autofocus: true, child: scoped),
           )
         : scoped;
     return HidScanScope(

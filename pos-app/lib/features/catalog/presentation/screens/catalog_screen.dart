@@ -1,4 +1,4 @@
-// SCR-10 Рабочее пространство продавца / Каталог (`/catalog?preset=&view=&sort=`, staff; 02 ч. B).
+// SCR-10 Рабочее пространство продавца / Каталог (`/catalog?preset=&view=&sort=&all=`, staff; 02 ч. B).
 //
 // Имя класса, путь файла и параметры конструктора фиксированы основой маршрутов (routes.dart).
 // Реализация — общее рабочее пространство каталога [CatalogWorkspace] в режиме `root` (compact; на
@@ -8,7 +8,7 @@ import 'package:optomstroy/features/catalog/presentation/widgets/catalog_workspa
 
 /// SCR-10 — Рабочее пространство продавца / Каталог.
 class CatalogScreen extends StatelessWidget {
-  const CatalogScreen({this.preset, this.view, this.sort, super.key});
+  const CatalogScreen({this.preset, this.view, this.sort, this.all = false, super.key});
 
   /// ID экрана по 02 §4.1.
   static const String screenId = 'SCR-10';
@@ -22,6 +22,9 @@ class CatalogScreen extends StatelessWidget {
   /// Сортировка — значение API (`price:asc` …).
   final String? sort;
 
+  /// `all=1` — весь каталог «Все товары» ([CatalogWorkspace.all], ADR-114).
+  final bool all;
+
   @override
   Widget build(BuildContext context) => CatalogWorkspace(
     key: CatalogWorkspace.stableKey,
@@ -29,5 +32,6 @@ class CatalogScreen extends StatelessWidget {
     preset: preset,
     view: view,
     sort: sort,
+    all: all,
   );
 }

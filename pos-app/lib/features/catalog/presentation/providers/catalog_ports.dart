@@ -3,6 +3,8 @@
 // Провайдеры по умолчанию возвращают `null`/пустое значение: экран прячет соответствующий блок.
 // Реализации подставляет композиционный корень `app/di/overrides.dart` (интегратор, EQ-CAT-02),
 // в тестах — `overrideWithValue(fake)`.
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:optomstroy/core/connectivity/connectivity_watcher.dart';
@@ -108,8 +110,24 @@ final catalogCartFabProvider = Provider<WidgetBuilder?>((ref) => null);
 /// `NetworkFailure` запросов списка; корень подставляет `onlineStatusProvider` (core/di) — EQ-CAT-02.
 final catalogOnlineStatusProvider = Provider<OnlineStatus>((ref) => OnlineStatus.unknown);
 
-/// Избранное (id) из порта; без порта — пусто.
+/// Необязательная возможность [CatalogShelfPort]: обновить локальный кэш избранного с сервера (`GET /favorites/products`
+/// → кэш; неподтверждённые действия сохраняются). Без неё кэш заполняет только SCR-40, и число избранных («Избранное N»
+/// меню ☰, подсказка «Избранные» строки управления) после входа было 0 при избранном на сервере (ревью RP-02).
+abstract interface class CatalogFavoritesRefresh {
+  /// Обновить кэш; ошибки (офлайн, сервер) не бросаются — остаётся прежний кэш.
+  Future<void> refreshFavorites();
+}
+
+/// Избранное (id) из порта; без порта — пусто. На пользователя сессии: при входе (и смене пользователя) кэш один раз
+/// обновляется с сервера ([CatalogFavoritesRefresh]), поток — из кэша с неподтверждёнными действиями.
 final catalogFavoriteIdsProvider = StreamProvider<Set<String>>((ref) {
   final CatalogShelfPort? port = ref.watch(catalogShelfPortProvider);
-  return port == null ? Stream<Set<String>>.value(const <String>{}) : port.watchFavoriteIds();
+  ref.watch(catalogSessionUserProvider);
+  if (port == null) {
+    return Stream<Set<String>>.value(const <String>{});
+  }
+  if (port case final CatalogFavoritesRefresh refresh) {
+    unawaited(refresh.refreshFavorites());
+  }
+  return port.watchFavoriteIds();
 });

@@ -46,6 +46,9 @@ void main() {
       expect(Money.parseInput('16 007,5').tyiyn, 1600750);
       expect(Money.parseInput('0.05').tyiyn, 5);
       expect(Money.parseInput('7.').tyiyn, 700);
+      // Формат экрана (ADR-114: разряды U+00A0, всегда 2 знака) вставляется в поле суммы как есть.
+      expect(Money.parseInput('10\u00A0450,00').tyiyn, 1045000);
+      expect(Money.parseInput('1\u00A0600\u00A0750,50').tyiyn, 160075050);
     });
 
     test('ошибки ввода', () {

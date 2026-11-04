@@ -1,12 +1,15 @@
 // Снимок БД и фото веб-демо, собираемые при сборке (WP-B4; plan §3.5, §4 WP-B4; critic [2], [10], [20]).
 //
-//   node demo/web/backend/snapshot/build-snapshot.mjs [--sku 500] [--photos 300] [--no-site] [--s1] [--out <каталог>]
+//   node demo/web/backend/snapshot/build-snapshot.mjs [--no-site] [--s1] [--out <каталог>]
 //
 // Node, тот же PGlite 0.3.16, без портов. Шаги:
 //  1. построитель (builder-entry.mjs) собирается esbuild для Node теми же подменами, что backend.js (bundle-builder);
 //  2. детерминированная БД: настоящие migrate и seed, сотрудники 901/906/907/909 и служебные учётки сида 981/986/987
-//     «Демо-история …», каталог настоящим конвейером (SyntheticCatalog seed 1, 500 SKU, без фикстур);
-//  3. фото: синтетические JPEG (photos.mjs, sharp) → pos-api ImageDirectoryImporter → product_images и
+//     «Демо-история …», каталог по макету настоящим конвейером (WP-DATA-WEB 2026-10-31, ADR-114:
+//     demo/catalog/design-catalog.json → pos-api/scripts/design_catalog.ts; без фикстур), порядок категорий макета,
+//     порог «мало» 4, избранное сотрудников стенда;
+//  3. фото: PNG макета demo/catalog/photos (sha256 = спецификации; photos.mjs) — товаров через pos-api
+//     ImageDirectoryImporter, категорий через category-images.mjs → product_images, categories.image_id и
 //     .build/images/{sha}/{thumb|card|full}.webp — в одном прогоне с данными;
 //  4. выгрузка S2 (export-copy.mjs): .build/snapshot/{manifest.json, data.copy}, .build/snapshot/images.json;
 //  5. проверки: таблицы со сроком действия пусты и не выгружены, часы сборки не «протекли», sha фото = файлы,
@@ -28,7 +31,7 @@ import { loadPiiMap } from '../pii/pii-transform.mjs';
 import { bundleBuilder } from './bundle-builder.mjs';
 import { exportSnapshot, SNAPSHOT_FORMAT } from './export-copy.mjs';
 import { deriveFromFixtures, forbiddenStrings, scanText } from './forbidden.mjs';
-import { sharpVersion, syntheticPhoto } from './photos.mjs';
+import { CATALOG_DIR, checkCatalogPhotos, readCatalogSpec, sharpVersion } from './photos.mjs';
 
 /** T0 снимка: всё, что при сборке идёт от часов, равно T0 (+ мкс); воркер сдвигает это на момент восстановления. */
 export const SNAPSHOT_T0 = '2000-01-01T00:00:00.000Z';
@@ -85,21 +88,28 @@ function checkPhones(piiMap, extraCustomers) {
   return { groups: kinds, allValid: all.every((x) => x.ok), invalid: all.filter((x) => !x.ok), nonMobileProbes: probes };
 }
 
-/** Проверка фото: строки product_images ↔ файлы images/{sha}/{size}.webp ↔ sha256 исходных JPEG. */
-async function checkImages(db, imagesRoot, sourceShaByRef) {
+/**
+ * Проверка фото: строки product_images (владелец — товар `prod:<ref>` или категория `cat:<ref>`) ↔ файлы
+ * images/{sha}/{size}.webp ↔ sha256 исходных PNG; у каждого владельца плана есть основное фото.
+ */
+async function checkImages(db, imagesRoot, sourceShaByOwner) {
   const r = await db.query(
     `SELECT pi.id::text AS id, encode(pi.checksum_sha256, 'hex') AS sha, pi.status::text AS status, pi.storage_key, pi.sizes, pi.is_primary,
-            p.onec_ref::text AS ref, (p.primary_image_id = pi.id) AS is_product_primary
-       FROM product_images pi JOIN products p ON p.id = pi.product_id WHERE pi.deleted_at IS NULL ORDER BY sha`,
+            CASE WHEN p.id IS NOT NULL THEN 'prod:' || p.onec_ref::text ELSE 'cat:' || c.onec_ref::text END AS ref,
+            CASE WHEN p.id IS NOT NULL THEN p.primary_image_id = pi.id ELSE c.image_id = pi.id END AS is_owner_primary
+       FROM product_images pi LEFT JOIN products p ON p.id = pi.product_id LEFT JOIN categories c ON c.id = pi.category_id
+      WHERE pi.deleted_at IS NULL ORDER BY sha, ref`,
   );
   const problems = [];
   const files = [];
   const shas = new Set();
+  const seen = new Set(r.rows.map((x) => x.ref));
+  for (const owner of sourceShaByOwner.keys()) if (!seen.has(owner)) problems.push(`${owner}: нет строки product_images`);
   for (const row of r.rows) {
     if (row.status !== 'ready') problems.push(`${row.ref}: статус ${row.status}`);
     if (row.storage_key !== `images/${row.sha}`) problems.push(`${row.ref}: storage_key ${row.storage_key}`);
-    if (sourceShaByRef.get(row.ref) !== row.sha) problems.push(`${row.ref}: sha в БД ${row.sha.slice(0, 12)} ≠ sha исходника ${String(sourceShaByRef.get(row.ref)).slice(0, 12)}`);
-    if (!row.is_product_primary) problems.push(`${row.ref}: фото не основное у товара`);
+    if (sourceShaByOwner.get(row.ref) !== row.sha) problems.push(`${row.ref}: sha в БД ${row.sha.slice(0, 12)} ≠ sha исходника ${String(sourceShaByOwner.get(row.ref)).slice(0, 12)}`);
+    if (!row.is_owner_primary) problems.push(`${row.ref}: фото не основное у владельца`);
     if (shas.has(row.sha)) continue;
     shas.add(row.sha);
     const sizes = typeof row.sizes === 'string' ? JSON.parse(row.sizes) : row.sizes;
@@ -127,12 +137,13 @@ async function checkImages(db, imagesRoot, sourceShaByRef) {
   const bytes = files.reduce((a, f) => a + Object.values(f.sizes).reduce((x, s) => x + s.bytes, 0), 0);
   const list = files.map((f) => `${f.sha} ${IMAGE_SIZES.map((s) => `${s}:${f.sizes[s]?.bytes}:${f.sizes[s]?.sha256}`).join(' ')}`).join('\n');
   const owners = [...r.rows.map((x) => `${x.ref} ${x.sha}`)].sort().join('\n');
-  return { rows: r.rows.length, products: new Set(r.rows.map((x) => x.ref)).size, distinct: files.length, files: files.length * IMAGE_SIZES.length, bytes, listSha256: sha256(list), ownersSha256: sha256(owners), problems, list: files };
+  const kinds = (k) => new Set(r.rows.filter((x) => x.ref.startsWith(k)).map((x) => x.ref)).size;
+  return { rows: r.rows.length, products: kinds('prod:'), categories: kinds('cat:'), distinct: files.length, files: files.length * IMAGE_SIZES.length, bytes, listSha256: sha256(list), ownersSha256: sha256(owners), problems, list: files };
 }
 
 /**
- * Собрать снимок. o: { sku, photos, outDir (.build/snapshot), mediaDir (.build: фото в mediaDir/images), site (копия
- * в site/), s1, quiet }. → report.
+ * Собрать снимок. o: { outDir (.build/snapshot), mediaDir (.build: фото в mediaDir/images), site (копия в site/), s1,
+ * quiet }. → report.
  */
 export async function buildSnapshot(o = {}) {
   const t00 = performance.now();
@@ -142,12 +153,17 @@ export async function buildSnapshot(o = {}) {
   const outDir = o.outDir ?? SNAPSHOT_DIR;
   const mediaDir = o.mediaDir ?? BUILD;
   const imagesRoot = `${mediaDir}/images`;
-  const sku = o.sku ?? DEMO_DATA.catalog.skuCount;
-  const photoCount = o.photos ?? 300;
   const free = freeMB(ROOT);
   if (free !== null && free < 300) throw new Error(`мало места на диске сборки: ${free} МБ (нужно ≥ 300 МБ)`);
   if (!existsSync(`${DIST}/db/migrator.js`)) throw new Error(`нет ${DIST} — сначала node demo/web/backend/build-backend.mjs (tsc)`);
-  const report = { startedAt: new Date().toISOString(), format: SNAPSHOT_FORMAT, sku, photos: photoCount, diskFreeMB: free, problems: [] };
+  // Каталог по макету: спецификация, её sha256 и фото (sha256 файлов = спецификации); параметры — DEMO_DATA.catalog.
+  const cs = readCatalogSpec();
+  const spec = cs.spec;
+  const report = { startedAt: new Date().toISOString(), format: SNAPSHOT_FORMAT, catalog: { profile: spec.profile, specSha256: cs.sha256, products: spec.products?.length ?? 0, photos: spec.photos?.length ?? 0 }, diskFreeMB: free, problems: [] };
+  const want = DEMO_DATA.catalog;
+  for (const k of ['profile', 'refSeed', 'lowStockThreshold']) if (spec[k] !== want[k]) report.problems.push(`demo/catalog/design-catalog.json: ${k} = ${spec[k]}, в demo-config.mjs DEMO_DATA.catalog.${k} = ${want[k]}`);
+  const photoFiles = checkCatalogPhotos(spec);
+  report.problems.push(...photoFiles.problems);
   const piiMap = loadPiiMap();
 
   // ---------------------------------------------------------------- 1. построитель и PGlite
@@ -167,43 +183,46 @@ export async function buildSnapshot(o = {}) {
 
   /** Одна сборка БД (+ фото). deterministic=false — для S1 (обычная сборка, как холодный старт воркера). */
   async function makeDb({ deterministic, photosTo }) {
+    // Новый экземпляр каталога на каждую БД: тот же, что воркер строит из спецификации в backend.js.
+    const dc = builder.designCatalog(spec);
+    if (dc.problems.length) throw new Error(`каталог по макету: ${dc.problems.slice(0, 8).join('; ')}`);
     const db = await pgl.PGlite.create('memory://', { extensions: pgl.extensions });
-    const ctx = await builder.buildDb(db, { dirs, sku, catalogSeed: DEMO_DATA.catalog.seed, includeFixtureCatalog: DEMO_DATA.catalog.includeFixtureCatalog, t0: SNAPSHOT_T0, deterministic, seedParams: { receivables_max_age_min: '60' }, log });
-    // Фото: первые photoCount продаваемых товаров по коду 1С.
-    const prods = await db.query(
-      `SELECT p.onec_ref::text AS ref, p.sku, c.name AS category FROM products p LEFT JOIN categories c ON c.id = p.category_id
-        WHERE NOT p.deletion_mark AND p.is_sellable ORDER BY p.onec_code, p.onec_ref LIMIT $1`,
-      [photoCount],
-    );
+    const ctx = await builder.buildDb(db, { dirs, catalog: dc.catalog, spec, includeFixtureCatalog: DEMO_DATA.catalog.includeFixtureCatalog, t0: SNAPSHOT_T0, deterministic, seedParams: { receivables_max_age_min: '60' }, log });
+    // Фото товаров: PNG макета как есть → photos-src/<onec_ref>.png → ImageDirectoryImporter (by-name).
     const src = `${outDir}/photos-src`;
     rmSync(src, { recursive: true, force: true });
     mkdirSync(src, { recursive: true });
-    const shaByRef = new Map();
+    const shaByOwner = new Map();
     const labels = [];
-    let t = performance.now();
-    for (const [i, p] of prods.rows.entries()) {
-      const jpg = await syntheticPhoto({ sku: p.sku, category: p.category, index: i });
-      writeFileSync(`${src}/${p.ref}.jpg`, jpg);
-      shaByRef.set(p.ref, sha256(jpg));
-      labels.push(`${p.sku} ${p.category}`);
+    for (const p of dc.photos.products) {
+      cpSync(`${CATALOG_DIR}/${p.file}`, `${src}/${p.onecRef}.png`);
+      shaByOwner.set(`prod:${p.onecRef}`, p.sha256);
+      labels.push(`${p.owner} ${p.file}`);
     }
-    const genMs = Math.round(performance.now() - t);
     rmSync(`${photosTo}/images`, { recursive: true, force: true });
     const imp = await builder.importPhotos(ctx, { dir: src, mediaDir: photosTo });
     rmSync(src, { recursive: true, force: true });
-    return { db, ctx, prods: prods.rows, shaByRef, labels, photos: { generated: prods.rows.length, genMs, importMs: imp.ms, status: imp.status, counts: imp.counts } };
+    // Картинки категорий (корни и подкатегории «Сантехники», как в макете).
+    for (const c of dc.photos.categories) {
+      shaByOwner.set(`cat:${c.onecRef}`, c.sha256);
+      labels.push(`${c.owner} ${c.file}`);
+    }
+    const cat = await builder.importCategoryImages(ctx, { items: dc.photos.categories.map((c) => ({ onecRef: c.onecRef, owner: c.owner, path: `${CATALOG_DIR}/${c.file}` })), mediaDir: photosTo });
+    return { db, ctx, dc, shaByOwner, labels, photos: { products: dc.photos.products.length, categories: dc.photos.categories.length, importMs: imp.ms, status: imp.status, counts: imp.counts, categoryImages: cat } };
   }
 
   // ---------------------------------------------------------------- 2–3. детерминированная БД и фото
-  say(`БД снимка: ${sku} SKU, ${photoCount} фото…`);
+  say(`БД снимка: каталог ${spec.profile} (${spec.products?.length} товаров), ${spec.photos?.length} фото…`);
   const main = await makeDb({ deterministic: true, photosTo: mediaDir });
   report.build = main.ctx.timings;
+  report.catalog.stats = main.dc.stats;
   report.photosRun = main.photos;
   if (main.photos.status !== 'success' || main.photos.counts.errors) report.problems.push(`импорт фото: ${main.photos.status}, ошибок ${main.photos.counts.errors}`);
-  const images = await checkImages(main.db, imagesRoot, main.shaByRef);
+  if (main.photos.categoryImages.missing.length) report.problems.push(`картинки категорий: нет категорий ${main.photos.categoryImages.missing.join(', ')}`);
+  const images = await checkImages(main.db, imagesRoot, main.shaByOwner);
   report.images = { ...images, list: undefined };
   report.problems.push(...images.problems);
-  say(`фото: ${images.products} товаров, ${images.files} файлов, ${(images.bytes / 1e6).toFixed(2)} МБ`);
+  say(`фото: ${images.products} товаров, ${images.categories} категорий, ${images.distinct} изображений, ${images.files} файлов, ${(images.bytes / 1e6).toFixed(3)} МБ`);
   const audit = (await main.db.query(`SELECT ok, broken_at_chain_seq, gaps FROM audit_verify_chain(0, 9223372036854775807)`)).rows[0];
   report.auditChainAtBuild = audit;
   if (!audit?.ok) report.problems.push('цепочка аудита в БД сборки не сходится');
@@ -218,8 +237,8 @@ export async function buildSnapshot(o = {}) {
   const manifest = {
     ...ex.manifest,
     source: {
-      what: 'Синтетические тестовые данные веб-демо «Оптомстрой POS»: каталог SyntheticCatalog, сотрудники стенда, фото-заглушки. Не реальные данные.',
-      catalog: { skuCount: sku, seed: DEMO_DATA.catalog.seed, includeFixtureCatalog: DEMO_DATA.catalog.includeFixtureCatalog },
+      what: 'Тестовые данные веб-демо «Оптомстрой POS»: каталог по прототипу экрана выбора товаров (demo/catalog/design-catalog.json, ADR-114), фото и картинки категорий из макета, сотрудники стенда. Не реальные данные.',
+      catalog: { profile: spec.profile, refSeed: spec.refSeed, skuCount: spec.products.length, specSha256: cs.sha256, includeFixtureCatalog: DEMO_DATA.catalog.includeFixtureCatalog, lowStockThreshold: spec.lowStockThreshold },
       staff: STAFF.map((s) => s.phone),
       seedAccounts: SEED_ACCOUNTS.map((s) => ({ phone: s.phone, name: s.name })),
       migrations: pkgSha(`${API}/migrations`, /^\d{4}_.*\.sql$/),
@@ -227,11 +246,12 @@ export async function buildSnapshot(o = {}) {
       seeds: pkgSha(`${API}/seeds`, /\.sql$/),
       pglite: pgl.version,
     },
-    images: { products: images.products, distinct: images.distinct, files: images.files, bytes: images.bytes, sizes: IMAGE_SIZES, url: '/images/{sha}/{size}.webp', listSha256: images.listSha256, ownersSha256: images.ownersSha256 },
+    images: { products: images.products, categories: images.categories, distinct: images.distinct, files: images.files, bytes: images.bytes, sizes: IMAGE_SIZES, url: '/images/{sha}/{size}.webp', listSha256: images.listSha256, ownersSha256: images.ownersSha256 },
   };
   // Ключ эпохи (lib/epoch.mjs) берёт из манифеста ТОЛЬКО то, от чего зависят уже сохранённые данные зрителя (тёплый
-  // старт снимок не читает): привязка фото «товар → sha» (файлы /images/{sha}/… на сайте должны совпасть со строками
-  // product_images в его браузере), параметры каталога, сотрудники и служебные учётки, формат и T0. Схема и строки
+  // старт снимок не читает): привязка фото «товар/категория → sha» (файлы /images/{sha}/… на сайте должны совпасть со
+  // строками product_images в его браузере), параметры каталога (профиль и sha256 спецификации), сотрудники и
+  // служебные учётки, формат и T0. Схема и строки
   // снимка сюда не входят: более поздняя миграция меняет снимок, но к данным зрителя её применяет настоящий мигратор,
   // и ключ эпохи от неё не меняется (как в WP-B3).
   manifest.epoch = {
@@ -332,8 +352,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const out = arg('--out', null);
   try {
     const { report } = await buildSnapshot({
-      sku: Number(arg('--sku', DEMO_DATA.catalog.skuCount)),
-      photos: Number(arg('--photos', 300)),
       site: !argv.includes('--no-site') && !out,
       s1: argv.includes('--s1'),
       ...(out ? { outDir: resolve(out).replace(/\\/g, '/'), mediaDir: resolve(out).replace(/\\/g, '/') } : {}),

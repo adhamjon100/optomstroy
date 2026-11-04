@@ -1,7 +1,7 @@
 // Приёмка WP-B3 на собранном site/backend/backend.js в Node (worker_threads, storage 'memory'; «перезагрузка
 // вкладки» — снимок каталога данных PGlite `dump` → новый воркер с loadDataDir, как тёплый старт на том же томе).
 //
-//   node demo/web/backend/test/harness/b3-acceptance.mjs [--sku 500] [--json <файл>] [--quiet]
+//   node demo/web/backend/test/harness/b3-acceptance.mjs [--json <файл>] [--quiet]
 //
 // Фазы:
 //   A. Холодный старт эпохи: ready ≤ 10 с; сид истории в фоне ≤ 60 с (служебные учётки заблокированы);
@@ -23,7 +23,6 @@ const arg = (k, d) => {
   return i >= 0 ? argv[i + 1] : d;
 };
 const QUIET = argv.includes('--quiet');
-const SKU = Number(arg('--sku', 500));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const T0 = Date.now();
 const el = () => `${((Date.now() - T0) / 1000).toFixed(1)}s`.padStart(7);
@@ -123,12 +122,12 @@ async function syncStatus(admin, timeoutMs) {
   return { ...r, ms: Date.now() - t, stale: (r.v?.entities ?? []).filter((e) => e.isStale).map((e) => e.entity), outbox: r.v?.outbox };
 }
 
-const report = { at: new Date().toISOString(), sku: SKU, phases: {} };
+const report = { at: new Date().toISOString(), phases: {} };
 let be = null;
 try {
   // ======================================================================== A. холодный старт эпохи
   say('== A: холодный старт');
-  be = await startWorkerBackend({ sku: SKU, strict: true, initOpts: { generation: 1, buildId: 'b3-acceptance', epochKey: undefined }, onLog: (lv, m) => !QUIET && lv === 'error' && console.log('[worker error]', String(m).slice(0, 300)) });
+  be = await startWorkerBackend({ strict: true, initOpts: { generation: 1, buildId: 'b3-acceptance', epochKey: undefined }, onLog: (lv, m) => !QUIET && lv === 'error' && console.log('[worker error]', String(m).slice(0, 300)) });
   const tReady = Date.now();
   const A = (report.phases.A = { initMs: be.initMs, timings: be.ready.timings, ready: { ...be.ready, timings: undefined, roles: undefined } });
   say('ready', be.initMs, 'ms', JSON.stringify(be.ready.timings));
@@ -310,7 +309,7 @@ try {
 
   // ======================================================================== B. тёплый старт с того же тома
   say('== B: тёплый старт (тот же том)');
-  be = await startWorkerBackend({ sku: SKU, strict: true, initOpts: { generation: 2, buildId: 'b3-acceptance-2', loadDataDir: dump.data } });
+  be = await startWorkerBackend({ strict: true, initOpts: { generation: 2, buildId: 'b3-acceptance-2', loadDataDir: dump.data } });
   const tReadyB = Date.now();
   const B = (report.phases.B = { initMs: be.initMs, timings: be.ready.timings, warm: be.ready.warm });
   say('ready (warm)', be.initMs, 'ms', JSON.stringify(be.ready.timings));
@@ -366,7 +365,7 @@ try {
   // Сверка с PGlite одна (без demo_meta 'fake'): номера 1С продолжаются от orders.onec_number, заказы и ожидающий QR
   // заводятся в имитаторе заново.
   say("== B': тот же том без сохранённого состояния «1С» (только сверка с PGlite)");
-  be = await startWorkerBackend({ sku: SKU, strict: true, initOpts: { generation: 2, buildId: 'b3-acceptance-2b', loadDataDir: dump.data, testDropFakeState: true, seed: false } });
+  be = await startWorkerBackend({ strict: true, initOpts: { generation: 2, buildId: 'b3-acceptance-2b', loadDataDir: dump.data, testDropFakeState: true, seed: false } });
   {
     const rc = be.ready.timings.fakeReconcile ?? {};
     const d2 = new Dev(be, 'android');
@@ -391,7 +390,7 @@ try {
 
   // ======================================================================== C. сброс демо
   say('== C: сброс (новая эпоха, пустой том)');
-  be = await startWorkerBackend({ sku: SKU, strict: true, initOpts: { generation: 3, buildId: 'b3-acceptance-3', seed: false } });
+  be = await startWorkerBackend({ strict: true, initOpts: { generation: 3, buildId: 'b3-acceptance-3', seed: false } });
   report.phases.C = { initMs: be.initMs, warm: be.ready.warm };
   const devC = new Dev(be, 'android', oldDevice);
   const rfC = await devC.call('POST', '/auth/refresh', { body: { refreshToken: dev.refresh ?? oldRefresh } });
