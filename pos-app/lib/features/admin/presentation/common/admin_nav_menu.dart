@@ -1,6 +1,7 @@
-// Переходы между разделами ветки «Админ» (02 SCR-45.6, SCR-46.6, SCR-47.6, SCR-48.6; GQ-FEFND-03): меню шапки
-// «Пользователи · Настройки · Аудит · Отчёты» на SCR-45/46/47. Права проверяют guard маршрутов и сервер (D-15):
-// меню только ведёт по адресам `/admin/*` и `/reports`, текущий раздел в нём отмечен.
+// Переходы между разделами ветки «Админ» (02 SCR-45.6, SCR-46.6, SCR-47.6, SCR-48.6, SCR-54.6; GQ-FEFND-03): меню
+// шапки «Пользователи · Настройки · Аудит · Отчёты · Планшеты магазина» на SCR-45/46/47/54 (пункт «Планшеты магазина» —
+// 02 UI-45-025, ADR-115). Права проверяют guard маршрутов и сервер (D-15): меню только ведёт по адресам `/admin/*` и
+// `/reports`, текущий раздел в нём отмечен.
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
@@ -11,7 +12,10 @@ enum AdminSection {
   users('/admin/users'),
   settings('/admin/settings'),
   audit('/admin/audit'),
-  reports('/reports');
+  reports('/reports'),
+
+  /// SCR-54 «Планшеты магазина» (`kiosk.read` — `admin`, `owner`; ADR-115).
+  tablets('/admin/tablets');
 
   const AdminSection(this.path);
 
@@ -39,6 +43,7 @@ class AdminNavMenu extends StatelessWidget {
     AdminSection.settings => l10n.admin_settings_title,
     AdminSection.audit => l10n.audit_title,
     AdminSection.reports => l10n.reports_title,
+    AdminSection.tablets => l10n.kiosk_admin_title,
   };
 
   static IconData icon(AdminSection s) => switch (s) {
@@ -46,6 +51,7 @@ class AdminNavMenu extends StatelessWidget {
     AdminSection.settings => Icons.settings_outlined,
     AdminSection.audit => Icons.fact_check_outlined,
     AdminSection.reports => Icons.bar_chart_rounded,
+    AdminSection.tablets => Icons.tablet_android_outlined,
   };
 
   void _go(BuildContext context, String location) {

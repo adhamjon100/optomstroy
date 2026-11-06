@@ -9,6 +9,7 @@ import type { SmsDeliveryListener, SmsSendSettledEvent } from '../../notificatio
 import { OtpChallengesRepository } from './otp-challenges.repository.js';
 import { releaseOtpPhoneQuota } from './otp-quota.js';
 import type { OtpDeliveryTarget, OtpProvider, PreparedDelivery } from './otp.provider.js';
+import { textFor } from './sms-texts.js';
 
 /**
  * Вариант `OtpProvider` через очередь pos-worker (RM-D-002, notifications/sms; 09 §6.8 «отправку выполняет
@@ -33,7 +34,8 @@ export class QueuedSmsOtpProvider implements OtpProvider {
         {
           phone: target.phoneE164,
           templateKey: target.templateKey,
-          text: this.config.SMS_OTP_TEMPLATE.replace('{code}', code),
+          // Свой текст кода заявки с планшета (`otp_kiosk_order`, Р-21 (а)), иначе — SMS_OTP_TEMPLATE (09 §6.7).
+          text: textFor(target.templateKey, code, this.config.SMS_OTP_TEMPLATE),
           otpChallengeId: target.challengeId,
           ...(target.requestId ? { requestId: target.requestId } : {}),
         },

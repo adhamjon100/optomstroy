@@ -59,6 +59,9 @@ function row(patch: Partial<OtpChallengeRow>): OtpChallengeRow {
     issuedByUserId: null,
     lockedAt: null,
     issuedJti: null,
+    kioskTabletId: null,
+    cartId: null,
+    noticeVersion: null,
     ...patch,
   };
 }

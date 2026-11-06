@@ -76,14 +76,19 @@ export class AdminUsersRepository {
     return rows[0];
   }
 
-  /** Список (08 §4.18.1): фильтры `q` (ФИО/телефон), `role`, `status`, `kind`; keyset `(created_at, id) DESC`. */
+  /**
+   * Список (08 §4.18.1): фильтры `q` (ФИО/телефон), `role`, `status`, `kind`; keyset `(created_at, id) DESC`.
+   * Технические пользователи планшетов магазина (`kind=kiosk`) не выводятся никогда, в том числе при фильтрах
+   * `kind=kiosk` и `role=kiosk` (08 §4.18, ADR-115 п. 19; 11 SEC-142) — планшеты — `GET /admin/store-tablets`.
+   * Карточка (`findRecord`) их по-прежнему находит: операции над ними отклоняет политика целей (`403 kiosk_target`).
+   */
   async list(
     filter: AdminUserFilter,
     after: KeysetPosition | undefined,
     limit: number,
     ex: DbExecutor = this.db,
   ): Promise<AdminUserRecord[]> {
-    const conds: SQL[] = [];
+    const conds: SQL[] = [sql`u.kind <> 'kiosk'::user_kind`];
     if (filter.role) conds.push(sql`r.code = ${filter.role}::role_code`);
     if (filter.status) conds.push(sql`u.status = ${filter.status}::user_status`);
     if (filter.kind) conds.push(sql`u.kind = ${filter.kind}::user_kind`);
@@ -97,8 +102,7 @@ export class AdminUsersRepository {
           : sql`(p.full_name ILIKE ${like} OR p.display_name ILIKE ${like})`,
       );
     }
-    const where = conds.length > 0 ? sql.join(conds, sql` AND `) : sql`TRUE`;
-    return this.select(where, after, limit, ex);
+    return this.select(sql.join(conds, sql` AND `), after, limit, ex);
   }
 
   private async select(

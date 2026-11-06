@@ -51,7 +51,9 @@ abstract final class UserProfileDto {
     'apiVersion',
     'serverTime',
   };
-  static const Set<String> ignoredKeys = {'settings', 'consents', 'appVersion'};
+
+  /// `tablet` — только `kind=kiosk` (OpenAPI 1.3.0, ADR-115): планшет в SCR-41 не попадает (G-15), профиль его не читает.
+  static const Set<String> ignoredKeys = {'settings', 'consents', 'appVersion', 'tablet'};
   static const Set<String> requiredKeys = {'id', 'kind', 'status', 'roles', 'permissions', 'permissionsVersion'};
 
   static UserProfile fromJson(JsonMap j) {

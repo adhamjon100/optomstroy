@@ -1,6 +1,7 @@
 // Зоны SCR-30 (02 SCR-30.2, SCR-30.3): Z1 баннер ошибок синхронизации (UI-30-001) и незавершённой операции,
 // Z2 поиск клиента и быстрые действия (UI-30-002, UI-30-003, UI-30-011), Z3 избранные клиенты (UI-30-005),
-// Z4 очередь оплаты (UI-30-004, UI-30-012), Z5 сводка смены и недавние операции (UI-30-014, UI-30-006, UI-30-015),
+// Z4 очередь оплаты (UI-30-004, UI-30-012; пометка «С планшета» UI-30-020, ADR-115), Z5 сводка смены и недавние
+// операции (UI-30-014, UI-30-006, UI-30-015),
 // Z6 долги и просрочки (UI-30-007, UI-30-008), Z7 скидки и условия (UI-30-009), Z8 синхронизация (UI-30-010).
 // Источник каждого блока — подпись «данные 1С от HH:MM» у данных 1С (CASH-011, AC-UI-30-002). Только отображение;
 // переходы и действия — колбэки экрана.
@@ -476,7 +477,18 @@ class _FavoriteCard extends StatelessWidget {
   }
 }
 
-/// Строки «Ожидают оплаты» из дашборда: заказы с открытым платежом, таймер QR — по `qrPending`.
+/// Пометка «С планшета» (03 §9.39, DS-104; 02 UI-30-020): `StatusChip` neutral с иконкой `tablet_android` и текстом.
+Widget kioskOrderBadge(AppLocalizations l10n, {Key? key}) => StatusChip(
+  key: key,
+  label: l10n.order_badge_kiosk,
+  variant: StatusChipVariant.neutral,
+  icon: Icons.tablet_android_rounded,
+  dense: true,
+);
+
+/// Строки «Ожидают оплаты» из дашборда: заказы с открытым платежом, таймер QR — по `qrPending`. Заявка с планшета
+/// магазина (`createdVia=kiosk`) — с пометкой «С планшета» рядом со статусом (UI-30-020, AC-UI-30-023); строка, как
+/// прочие, ведёт к приёму оплаты.
 List<AwaitingPaymentEntry> awaitingEntries(
   AppLocalizations l10n,
   PosDashboard d,
@@ -499,7 +511,17 @@ List<AwaitingPaymentEntry> awaitingEntries(
           title: <String>[o.publicNumber, if (customer.isNotEmpty) customer].join(' · '),
           subtitle: o.createdAt == null ? null : DsBishkekTime.stamp(o.createdAt!, nowUtc),
           amountText: CashierFormat.money(due.isNegative ? Money.zero : due),
-          status: OrderStatusChip(status: o.status, dense: true),
+          // В узкой колонке (строка `stacked`) пометка переносится под статус, к началу строки.
+          status: o.createdVia == OrderCreatedVia.kiosk
+              ? Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: <Widget>[
+                    OrderStatusChip(status: o.status, dense: true),
+                    kioskOrderBadge(l10n, key: ValueKey<String>('awaiting-kiosk-${o.id}')),
+                  ],
+                )
+              : OrderStatusChip(status: o.status, dense: true),
           note: until == null ? null : CashierFormat.countdown(until.difference(nowUtc)),
           onTap: onTap == null ? null : () => onTap(o),
         );

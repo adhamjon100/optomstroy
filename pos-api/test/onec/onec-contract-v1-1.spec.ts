@@ -460,7 +460,8 @@ describe('Фикстуры contracts/onec/fixtures 1.1.0 (пп. 2, 12, 13, 43, 6
 });
 
 describe('Версия контракта', () => {
-  it('info.version — 1.1.0 (минорная: изменения аддитивные или ослабляющие, ONEC-033)', () => {
-    expect(doc.info.version).toBe('1.1.0');
+  // 1.2.0 (2026-11-04, ADR-115): только описания заявки с планшета — contracts/onec/CHANGELOG.md.
+  it('info.version — 1.2.0 (минорная: изменения аддитивные или ослабляющие, ONEC-033)', () => {
+    expect(doc.info.version).toBe('1.2.0');
   });
 });

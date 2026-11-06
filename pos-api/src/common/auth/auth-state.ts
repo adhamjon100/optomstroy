@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from './clock.js';
+import type { SubjectKind } from './subject-kind.js';
 
 /**
  * Состояние субъекта для проверки access-токена (09 §8.1 «Проверка на сервере»; 08 §2.2): статус и
@@ -10,17 +11,30 @@ export type UserStatus = 'pending' | 'pending_activation' | 'active' | 'blocked'
 
 export interface AuthUserState {
   readonly status: UserStatus;
-  readonly kind: 'staff' | 'customer';
+  /** `users.kind` — вид субъекта (06 ARCH-065; `kiosk` — ADR-115); AuthGuard сверяет его с claim `kind`. */
+  readonly kind: SubjectKind;
   readonly permissionsVersion: number;
 }
 
 export interface AuthSessionState {
   readonly userId: string;
   readonly revokedAt: Date | null;
+  /**
+   * `sessions.revoke_reason` (CHECK `sessions_revoke_reason_chk`, 07 §5.9); `null` или нет поля — сессия не отозвана
+   * или причина не читалась. По причине `kiosk_revoked` AuthGuard отвечает `401 KIOSK_REVOKED` вместо
+   * `SESSION_REVOKED` (08 §2.2; 09 §8.9 п. 8; 11 SEC-139; ADR-115). `PgAuthStateReader` заполняет поле всегда.
+   */
+  readonly revokeReason?: string | null;
   readonly expiresAt: Date;
   /** `devices.device_key` устройства сессии (= `X-Device-Id`, claim `deviceId`). */
   readonly deviceKey: string | null;
 }
+
+/**
+ * `sessions.revoke_reason` отключения планшета магазина, аварийного выхода со связью и подключения заново (07 §5.9;
+ * 09 §8.9 п. 4): `POST /auth/refresh` и AuthGuard отвечают `401 KIOSK_REVOKED` (08 §2.2, §4.1.3; ADR-115).
+ */
+export const KIOSK_REVOKED_REASON = 'kiosk_revoked';
 
 export interface AuthSnapshot {
   readonly user: AuthUserState | null;

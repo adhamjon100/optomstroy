@@ -4,6 +4,7 @@ import type { DbExecutor } from '../../common/audit/db-executor.js';
 import { APP_CONFIG, type AppConfig } from '../../common/config/app-config.js';
 import { DRIZZLE } from '../../common/db/database.module.js';
 import type { CustomerLinkStatus } from '../../common/enums.js';
+import { customerModeOrDeny } from '../../common/auth/subject-kind.js';
 import type { Principal } from '../../common/http/request-context.js';
 import type { CustomerFieldPolicy, SalesActor } from '../../common/ports/index.js';
 import { PermissionCatalog } from '../../common/rbac/permission-catalog.js';
@@ -48,8 +49,9 @@ export class CustomerAccessService {
 
   viewer(principal: Principal | undefined): CustomerViewer {
     if (!principal) forbidden();
+    // Данные клиентов вне закрытого списка планшета: `kind=kiosk` и вид вне перечня — 403 (06 ARCH-065).
+    const isCustomer = customerModeOrDeny(principal.kind, forbidden) || principal.roles.includes('customer');
     const permissions = this.catalog.effectivePermissions(principal) as ReadonlySet<string>;
-    const isCustomer = principal.kind === 'customer' || principal.roles.includes('customer');
     return {
       userId: principal.userId,
       isCustomer,

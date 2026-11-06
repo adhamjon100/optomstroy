@@ -114,6 +114,14 @@ export const AUDIT_ACTIONS = [
   'audit.partition_dropped',
   'retention.executed',
   'incident.containment',
+  // 11 §7.2.1 — планшет магазина (ADR-115); у всех семи есть писатель в src/** (KIOSK_ACTIONS в audit-coverage)
+  'kiosk.enrolled',
+  'kiosk.reconnected',
+  'kiosk.updated',
+  'kiosk.revoked',
+  'kiosk.exit_code_used',
+  'kiosk.limit_reached',
+  'kiosk.network_denied',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

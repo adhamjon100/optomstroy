@@ -46,9 +46,11 @@ paths:
       - catalog
       summary: Дерево категорий со счётчиками
       description: 'Сайдбар «Категории товаров» (SCR-10, SCR-12): дерево с productCount и iconKey (Q-022). Реплика 1С, только чтение (D-28). ETag
-        = sha256(snapshotVersion), Cache-Control: private, max-age=300 (08 §2.8). Аудит не пишется (08 §4.4.1).'
+        = sha256(snapshotVersion), Cache-Control: private, max-age=300 (08 §2.8). Аудит не пишется (08 §4.4.1).
+        Планшет магазина (kiosk; 08 §4.25, ADR-115): маршрут закрытого списка, ответ — как у customer без привязки.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -132,6 +134,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -147,9 +150,13 @@ paths:
         private, max-age=60 (08 §2.8). Для офлайн-кэша не используется — только GET /catalog/sync/{entity} (ядро §22.7). customer (R1, ядро §24.2):
         цена — по виду цены клиента, остатки — по app_settings.customer_stock_display (status — только stockLevel, quantity — плюс available;
         08 §3.6). x-permissions: catalog.read — обязательный код операции; catalog.prices.read — цена по правилам роли; catalog.prices.read.all
-        — prices[] всех видов и параметр priceListId (08 §3.15, 11 §4.3).'
+        — prices[] всех видов и параметр priceListId (08 §3.15, 11 §4.3).
+        Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): маршрут закрытого списка, как customer без привязки — обычная
+        цена, остатки по customer_stock_display и только по складу планшета (user_profiles.home_warehouse_id; не задан или
+        неактивен → 403 FORBIDDEN reason kiosk_warehouse_unavailable); priceListId, warehouseId → 403 FORBIDDEN.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -244,6 +251,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -254,7 +262,9 @@ paths:
       - catalog
       summary: Недавние товары пользователя
       description: 'Блок «Недавние товары» (SCR-10); только собственный список (recent_products). Cache-Control: no-store. Аудит не пишется (08
-        §4.4.5).'
+        §4.4.5).
+        Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль
+        kiosk держит catalog.read (11 SEC-137; ADR-115).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
       - $ref: '#/components/parameters/AppVersion'
@@ -323,7 +333,9 @@ paths:
       tags:
       - catalog
       summary: Очистить недавние товары
-      description: 'Кнопка «Очистить» (SCR-10; ядро §17.4). Идемпотентен по семантике: повтор → 204. Аудит не пишется (08 §4.4.5).'
+      description: 'Кнопка «Очистить» (SCR-10; ядро §17.4). Идемпотентен по семантике: повтор → 204. Аудит не пишется (08 §4.4.5).
+        Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль
+        kiosk держит catalog.read (11 SEC-137; ADR-115).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
       - $ref: '#/components/parameters/AppVersion'
@@ -379,9 +391,14 @@ paths:
         партия. Для customer товар с deletionMark → 404; staff получает его с deletionMark=true. Побочный эффект — асинхронная запись в recent_products
         (не аудит). ETag, Cache-Control: private, max-age=60 (08 §2.8). customer (R1, ядро §24.2): цена — по виду цены клиента, остатки — по app_settings.customer_stock_display
         (status — только stockLevel, quantity — плюс available; 08 §3.6). x-permissions: catalog.read — обязательный код операции; catalog.prices.read
-        — цена по правилам роли; catalog.prices.read.all — prices[] всех видов и параметр priceListId (08 §3.15, 11 §4.3).'
+        — цена по правилам роли; catalog.prices.read.all — prices[] всех видов и параметр priceListId (08 §3.15, 11 §4.3).
+        Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): маршрут закрытого списка, как customer без привязки — обычная
+        цена, остатки по customer_stock_display и только по складу планшета (user_profiles.home_warehouse_id; не задан или
+        неактивен → 403 FORBIDDEN reason kiosk_warehouse_unavailable); priceListId, warehouseId → 403 FORBIDDEN. Открытие
+        карточки планшетом не пишет recent_products.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -458,6 +475,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -471,9 +489,13 @@ paths:
         или снят (для customer) → 404. ETag, Cache-Control: private, max-age=60 (08 §2.8). customer (R1, ядро §24.2): цена — по виду цены клиента,
         остатки — по app_settings.customer_stock_display (status — только stockLevel, quantity — плюс available; 08 §3.6). x-permissions: catalog.read
         — обязательный код операции; catalog.prices.read — цена по правилам роли; catalog.prices.read.all — prices[] всех видов и параметр priceListId
-        (08 §3.15, 11 §4.3).'
+        (08 §3.15, 11 §4.3).
+        Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): маршрут закрытого списка, как customer без привязки — обычная
+        цена, остатки по customer_stock_display и только по складу планшета (user_profiles.home_warehouse_id; не задан или
+        неактивен → 403 FORBIDDEN reason kiosk_warehouse_unavailable); priceListId, warehouseId → 403 FORBIDDEN.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -539,6 +561,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -548,9 +571,11 @@ paths:
       tags:
       - catalog
       summary: Справочник единиц измерения
-      description: 'Единицы с qtyPrecision (08 §4.4.6). ETag = sha256(snapshotVersion), Cache-Control: private, max-age=300 (08 §2.8).'
+      description: 'Единицы с qtyPrecision (08 §4.4.6). ETag = sha256(snapshotVersion), Cache-Control: private, max-age=300 (08 §2.8).
+        Планшет магазина (kiosk; 08 §4.25, ADR-115): маршрут закрытого списка, ответ — как у customer без привязки.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -602,6 +627,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -612,7 +638,9 @@ paths:
       - catalog
       summary: Справочник видов цен (только staff)
       description: 'Справочник для параметра priceListId и меток prices[] (08 §4.4.6; 11 §4.3.1: список видов цен — catalog.prices.read, кроме
-        customer). customer → 403 FORBIDDEN. ETag, Cache-Control: private, max-age=300 (08 §2.8).'
+        customer). customer → 403 FORBIDDEN. ETag, Cache-Control: private, max-age=300 (08 §2.8).
+        Планшет магазина (kiosk): маршрут в закрытом списке 08 §4.25, но, как для customer, ответ 403 FORBIDDEN — справочник
+        видов цен покупателю не отдаётся; поэтому kiosk в x-roles не входит (ADR-115).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
       - $ref: '#/components/parameters/AppVersion'
@@ -674,9 +702,11 @@ paths:
       tags:
       - catalog
       summary: Справочник складов
-      description: 'Склады 1С (08 §4.4.6). ETag, Cache-Control: private, max-age=300 (08 §2.8).'
+      description: 'Склады 1С (08 §4.4.6). ETag, Cache-Control: private, max-age=300 (08 §2.8).
+        Планшет магазина (kiosk; 08 §4.25, ADR-115): маршрут закрытого списка, ответ — как у customer без привязки.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -728,6 +758,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -744,9 +775,13 @@ paths:
         → prices → stock → images; не более 2 параллельных запросов. Права: catalog.read — все сущности; prices, price_lists — дополнительно catalog.prices.read,
         только виды цен из price_lists.visible_to_roles (все — при catalog.prices.read.all); stock — дополнительно inventory.read (customer —
         по customer_stock_display). Токен integration → 403. ETag = хэш (entity, since, nextCursor), Cache-Control: private, no-cache; If-None-Match
-        → 304 — изменений после since нет. Повтор с тем же since → те же строки. Аудит не пишется.'
+        → 304 — изменений после since нет. Повтор с тем же since → те же строки. Аудит не пишется.
+        Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): маршрут закрытого списка, как customer без привязки — обычная
+        цена, остатки по customer_stock_display и только по складу планшета (user_profiles.home_warehouse_id; не задан или
+        неактивен → 403 FORBIDDEN reason kiosk_warehouse_unavailable); priceListId, warehouseId → 403 FORBIDDEN.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -833,6 +868,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -906,9 +942,13 @@ paths:
         в каждом элементе. Те же фильтры, что GET /catalog/products (ядро §19.2). Cache-Control: private, max-age=30, без ETag (08 §2.8). NFR:
         p95 ≤ 300 мс при 50 000 SKU. Клиент — debounce 300 мс. Ошибки: VALIDATION_FAILED (q_too_short, sort_field, cursor_sort_mismatch), FORBIDDEN
         (priceListId без catalog.prices.read.all). x-permissions: search.read — обязательный код; catalog.prices.read / catalog.prices.read.all
-        — цена и priceListId.'
+        — цена и priceListId.
+        Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): маршрут закрытого списка, как customer без привязки — обычная
+        цена, остатки по customer_stock_display и только по складу планшета (user_profiles.home_warehouse_id; не задан или
+        неактивен → 403 FORBIDDEN reason kiosk_warehouse_unavailable); priceListId, warehouseId → 403 FORBIDDEN.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -1010,6 +1050,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-SEARCH
@@ -1021,7 +1062,9 @@ paths:
       summary: Точное совпадение штрихкода для сканера
       description: 'HID-сканер/камера (SCR-17, D-42): ровно один товар/вариант/упаковка для немедленного добавления в корзину. Нет совпадения
         → 404 NOT_FOUND (клиент предлагает текстовый поиск). Штрихкод у двух товаров → 200 с более новым DataVersion и предупреждением ambiguous_barcode
-        (sync_errors BARCODE_CONFLICT). Cache-Control: private, max-age=30.'
+        (sync_errors BARCODE_CONFLICT). Cache-Control: private, max-age=30.
+        Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 (Р-15) → 403 FORBIDDEN (reason kiosk_closed_list),
+        хотя роль kiosk держит search.read (11 SEC-137; ADR-115).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
       - $ref: '#/components/parameters/AppVersion'
@@ -1089,9 +1132,13 @@ paths:
       tags:
       - search
       summary: Подсказки поиска
-      description: 'Подсказки к строке поиска (08 §4.5.3). Cache-Control: private, max-age=30. VALIDATION_FAILED rule q_too_short.'
+      description: 'Подсказки к строке поиска (08 §4.5.3). Cache-Control: private, max-age=30. VALIDATION_FAILED rule q_too_short.
+        Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): маршрут закрытого списка, как customer без привязки — обычная
+        цена, остатки по customer_stock_display и только по складу планшета (user_profiles.home_warehouse_id; не задан или
+        неактивен → 403 FORBIDDEN reason kiosk_warehouse_unavailable); priceListId, warehouseId → 403 FORBIDDEN.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -1156,6 +1203,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-SEARCH
@@ -1269,9 +1317,12 @@ paths:
       summary: Актуальные остатки по вариантам
       description: 'Остатки по списку вариантов (D-22, D-29). customer — по app_settings.customer_stock_display (status — только stockLevel, quantity
         — плюс available; ядро §24.2). live=true — только staff, синхронная проверка 1С ≤ 2 с; customer → 403. Массовая загрузка в офлайн-кэш
-        — GET /catalog/sync/stock, не этот эндпоинт. Cache-Control: no-store; X-Data-As-Of.'
+        — GET /catalog/sync/stock, не этот эндпоинт. Cache-Control: no-store; X-Data-As-Of.
+        Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): по customer_stock_display и только склад планшета — параметр
+        warehouseId → 403 FORBIDDEN, тело POST /inventory/check — только склад планшета (другой → 403).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -1347,6 +1398,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -1358,9 +1410,12 @@ paths:
       summary: Пакетная проверка доступности для корзины
       description: 'Чистая проверка без побочных эффектов, ничего не резервирует (SRC-C-076, D-22); Idempotency-Key не требуется, автоматический
         повтор допустим (08 §4.6.2). customer — по customer_stock_display (по умолчанию status: в shortages[] только variantId и stockLevel).
-        Cache-Control: no-store. Аудит не пишется.'
+        Cache-Control: no-store. Аудит не пишется.
+        Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): по customer_stock_display и только склад планшета — параметр
+        warehouseId → 403 FORBIDDEN, тело POST /inventory/check — только склад планшета (другой → 403).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -1422,6 +1477,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: true
       x-rate-limit-group: RL-CART
@@ -1432,12 +1488,17 @@ paths:
       - settings
       summary: Публичные настройки и флаги функций
       description: 'Несекретные настройки для клиента всех ролей (ядро §19.2, §24.2, §24.4; 08 §4.23.1): слоты доставки, контакты поддержки и
-        ПДн, порог «мало», минимальная/рекомендуемая версии, customerStockDisplay, features. Скрытие действий по флагам — не защита. Пользователь
+        ПДн, порог «мало», минимальная/рекомендуемая версии, customerStockDisplay, kiosk, features. Скрытие действий по флагам — не защита. Пользователь
         user_status=pending_activation (статус, не роль) допускается как «*» по правилу profile.manage.own; токен integration → 403 FORBIDDEN;
         без access JWT → 401 (клиент использует встроенные значения по умолчанию). Секреты, параметры OTP/лимиты и внутренние адреса не отдаются.
-        ETag (хэш значений), Cache-Control: private, max-age=300.'
+        ETag (хэш значений), Cache-Control: private, max-age=300.
+        Планшет магазина (kiosk; 08 §4.23.1, §4.25; ADR-115): маршрут закрытого списка, отвечает и при KIOSK_MODE=false;
+        планшет обращается не реже раза в 5 мин — это отметка связи (store_tablets.last_seen_at) вместо GET /sync/status.
+        features.storeTablet — env KIOSK_MODE; kiosk {idleSeconds, idleWarningSeconds, doneSeconds} — всем ролям при любом
+        KIOSK_MODE (с 1.3.0).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -1487,6 +1548,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ

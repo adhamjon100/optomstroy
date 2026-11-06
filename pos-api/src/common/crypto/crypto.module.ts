@@ -1,5 +1,6 @@
 import { Global, Logger, Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config/app-config.js';
+import { ExitCodeHasher } from './exit-code-hasher.service.js';
 import { OtpHmacService } from './otp-hmac.service.js';
 import { PinHasher } from './pin-hasher.service.js';
 import { parseSecretRing, type SecretRing } from './secret-ring.js';
@@ -25,8 +26,9 @@ function ringFactory(name: 'OTP_HMAC_SECRET' | 'PIN_PEPPER') {
 }
 
 /**
- * common/crypto (RM-D-001, RM-D-004 — общий фундамент): HMAC OTP и хэш PIN с версионированными секретами
- * из `*_FILE`. CSPRNG-утилиты (random.ts) — чистые функции, DI не требуют.
+ * common/crypto (RM-D-001, RM-D-004 — общий фундамент): HMAC OTP, хэш PIN и хэш аварийного кода выхода планшета
+ * магазина (тот же pepper `PIN_PEPPER`, 11 SEC-047, SEC-140; ADR-115) с версионированными секретами из `*_FILE`.
+ * CSPRNG-утилиты (random.ts) — чистые функции, DI не требуют.
  */
 @Global()
 @Module({
@@ -35,7 +37,8 @@ function ringFactory(name: 'OTP_HMAC_SECRET' | 'PIN_PEPPER') {
     { provide: PIN_PEPPER_RING, inject: [APP_CONFIG], useFactory: ringFactory('PIN_PEPPER') },
     { provide: OtpHmacService, inject: [OTP_HMAC_SECRET_RING], useFactory: (r: SecretRing) => new OtpHmacService(r) },
     { provide: PinHasher, inject: [PIN_PEPPER_RING], useFactory: (r: SecretRing) => new PinHasher(r) },
+    { provide: ExitCodeHasher, inject: [PIN_PEPPER_RING], useFactory: (r: SecretRing) => new ExitCodeHasher(r) },
   ],
-  exports: [OtpHmacService, PinHasher, OTP_HMAC_SECRET_RING, PIN_PEPPER_RING],
+  exports: [OtpHmacService, PinHasher, ExitCodeHasher, OTP_HMAC_SECRET_RING, PIN_PEPPER_RING],
 })
 export class CryptoModule {}

@@ -590,8 +590,8 @@ export class CatalogProductsService {
       [productId],
     );
     const p = ext.rows[0];
-    const warehouses = await this.activeWarehouses();
-    const [variants, packagings, barcodes, images, prices, stockRows] = await Promise.all([
+    const warehouses = await this.warehousesOf(viewer);
+    const [variants, packagings, barcodes, images, prices, allStockRows] = await Promise.all([
       include.has('variants') ? this.variantRows(viewer, row, p.multiplicity, warehouses, snap, false) : undefined,
       this.packagings(productId),
       this.pool.query<{ value: string }>(
@@ -604,6 +604,9 @@ export class CatalogProductsService {
         : undefined,
       this.productStockByWarehouse(row),
     ]);
+    // Склад зрителя закреплён (планшет магазина, ADR-115 п. 23): остатки и `availableTotal` — только по его складу.
+    const shown = new Set(warehouses.map((w) => w.id));
+    const stockRows = viewer.warehouseLocked ? allStockRows.filter((s) => shown.has(s.warehouse_id)) : allStockRows;
     const byWh = new Map(stockRows.map((s) => [s.warehouse_id, s]));
     const stockByWarehouse = row.default_variant_id
       ? warehouses.map((w) => {
@@ -659,7 +662,7 @@ export class CatalogProductsService {
       `SELECT multiplicity::text AS multiplicity FROM products WHERE id = $1::uuid`,
       [productId],
     );
-    const warehouses = await this.activeWarehouses();
+    const warehouses = await this.warehousesOf(viewer);
     let items = await this.variantRows(viewer, row, ext.rows[0]?.multiplicity ?? null, warehouses, snap, true);
     if (inStockOnly) items = items.filter((v) => v.inStock);
     const keys = await this.attributeKeys(items.map((v) => v.dto));
@@ -822,6 +825,15 @@ export class CatalogProductsService {
   }
 
   // ---------------------------------------------------------------- блоки карточки
+
+  /**
+   * Склады блоков «по складам» карточки и вариантов (08 §4.4.3–§4.4.4): все активные; у зрителя с закреплённым складом
+   * (планшет магазина `kind=kiosk`, 10 KIOSK-007) — только его склад (остатки других складов планшету не видны).
+   */
+  private warehousesOf(viewer: CatalogViewer): Promise<WarehouseRow[]> {
+    if (!viewer.warehouseLocked) return this.activeWarehouses();
+    return Promise.resolve(viewer.warehouse ? [{ id: viewer.warehouse.id, name: viewer.warehouse.name }] : []);
+  }
 
   async activeWarehouses(): Promise<WarehouseRow[]> {
     const res = await this.pool.query<WarehouseRow>(

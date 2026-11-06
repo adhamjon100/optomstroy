@@ -1,7 +1,7 @@
 // `ProductSummary` (08 §3.6) → данные карточки `ProductCard*` (02 ч. B §2.3): строки ARB, правила
 // контрола количества (INV-013, INV-014, INV-023, INV-052) и показа остатка по роли (CUST-022:
-// `customer` — по `customer_stock_display`: статус или доступное количество; количества скрывает и
-// сервер). Клиент ничего не вычисляет: цена и `available` — значения сервера (D-22, D-23). Товар уже в корзине —
+// покупатель — `customer` и планшет магазина `kiosk` (10 KIOSK-007) — по `customer_stock_display`: статус или доступное
+// количество; количества скрывает и сервер). Клиент ничего не вычисляет: цена и `available` — значения сервера (D-22, D-23). Товар уже в корзине —
 // «В корзине · N — ещё +1» (прототип 2026-10-29, ADR-112): N — количество строки черновика, не вычисляется.
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
@@ -27,12 +27,14 @@ final class CatalogCardContext {
     this.showMatch = false,
     this.customerStockDisplay = CustomerStockDisplay.status,
     this.busyIds = const <String>{},
+    this.addDisabled = false,
   });
 
   final AppLocalizations l10n;
   final DateTime now;
 
-  /// Роль (`catalogViewerRoleProvider`): `owner` — без контролов корзины, `customer` — без чисел остатка.
+  /// Роль (`catalogViewerRoleProvider`): `owner` — без контролов корзины, `customer` и `kiosk` — без чисел остатка
+  /// (кроме `customer_stock_display=quantity`).
   final RoleCode? role;
   final Set<String> favoriteIds;
 
@@ -49,15 +51,26 @@ final class CatalogCardContext {
   /// Бейдж типа совпадения (SCR-11).
   final bool showMatch;
 
-  /// Показ остатков клиенту (`customer_stock_display`, RM-E-017): `quantity` — доступное количество
-  /// (без «остатка» и «резерва»), `status` — только статус. Для staff не используется.
+  /// Показ остатков покупателю (`customer_stock_display`, RM-E-017; планшет магазина — 10 KIOSK-007): `quantity` —
+  /// доступное количество (без «остатка» и «резерва»), `status` — только статус. Для staff не используется.
   final CustomerStockDisplay customerStockDisplay;
 
   /// Товары, для которых «+ Добавить» уже выполняется (кнопка в загрузке, повторные нажатия игнорируются).
   final Set<String> busyIds;
 
-  /// Число доступного на бейдже: staff — всегда; `customer` — только при `quantity` (CUST-022).
-  bool get showsStockQuantity => role != RoleCode.customer || customerStockDisplay == CustomerStockDisplay.quantity;
+  /// «+ Добавить» недоступна (серая кнопка, нажатие не принимается): планшет магазина без связи, при `426` и метке
+  /// сброса без сети (02 UI-51-010, SCR-51.7). По умолчанию — `false` (сотрудник и `customer` — как прежде).
+  final bool addDisabled;
+
+  /// Покупатель: `customer` (свой телефон) и планшет магазина `kiosk` (02 ч. F; ADR-115).
+  bool get buyer => role == RoleCode.customer || role == RoleCode.kiosk;
+
+  /// Число доступного на бейдже: staff — всегда; покупатель — только при `quantity` (CUST-022, KIOSK-007).
+  bool get showsStockQuantity => !buyer || customerStockDisplay == CustomerStockDisplay.quantity;
+
+  /// Метка возраста данных «данные от HH:MM» на бейдже и в описании карточки для диктора: у всех, кроме планшета
+  /// магазина — каталог из кэша «без отметки времени для покупателя» (02 SCR-51.7; без связи — баннер UI-51-014).
+  bool get showsDataAge => role != RoleCode.kiosk;
 
   bool isFavorite(ProductSummary p) => favoriteOverrides[p.id] ?? (favoriteIds.contains(p.id) || p.isFavorite);
 }
@@ -122,6 +135,9 @@ abstract final class CatalogCardMapper {
   }
 
   static String? _asOf(CatalogCardContext ctx, ProductSummary p) {
+    if (!ctx.showsDataAge) {
+      return null;
+    }
     final DateTime? at = p.stock?.asOf;
     if (at == null) {
       return null;
@@ -157,6 +173,10 @@ abstract final class CatalogCardMapper {
     }
     if (p.stock!.stockLevel == StockLevel.out) {
       return (ProductCardActionKind.unavailable, l10n.catalog_card_out_of_stock);
+    }
+    if (ctx.addDisabled) {
+      // Планшет без связи / `426` / метка сброса: «+ Добавить» серая (02 UI-51-010), в очередь ничего не встаёт.
+      return (ProductCardActionKind.unavailable, l10n.ds_button_add);
     }
     if (cartQty != null && cartQty.milli > 0) {
       return (ProductCardActionKind.inCart, inCartLabels(l10n, cartQty).$1);

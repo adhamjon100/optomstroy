@@ -6,6 +6,7 @@ import { AuditService, type AuditStepUpMethod } from '../../common/audit/audit.s
 import { CLOCK, type Clock } from '../../common/auth/clock.js';
 import { APP_CONFIG, type AppConfig } from '../../common/config/app-config.js';
 import type { AuthenticatedPrincipal } from '../../common/auth/principal.js';
+import { customerModeOrDeny } from '../../common/auth/subject-kind.js';
 import { OtpHmacService } from '../../common/crypto/otp-hmac.service.js';
 import type { RequestWithContext } from '../../common/http/request-context.js';
 import { MONEY_AMOUNT_RE } from '../../common/money/money.js';
@@ -72,11 +73,18 @@ function boolParam(q: Query, name: string): boolean {
   throw bad([{ field: name, rule: 'type', message: 'Ожидается true или false.' }]);
 }
 
+/** Долги вне закрытого списка планшета: `kind=kiosk` и вид вне перечня — `403` (06 ARCH-065), иначе — режим клиента. */
+function customerModeOf(p: AuthenticatedPrincipal): boolean {
+  return customerModeOrDeny(p.kind, () => {
+    throw forbidden();
+  });
+}
+
 function salesActorOf(p: AuthenticatedPrincipal, requestId: string | null): SalesActor {
   return {
     userId: p.userId,
     roles: p.roles,
-    isCustomer: p.kind === 'customer',
+    isCustomer: customerModeOf(p),
     sessionId: p.sessionId,
     deviceId: p.deviceId,
     requestId,
@@ -121,7 +129,7 @@ export class ReceivablesService {
     const p = principalOf(req);
     const id = uuidParam(rawId);
     const perms = this.catalog.effectivePermissions(p);
-    const isCustomer = p.kind === 'customer';
+    const isCustomer = customerModeOf(p);
     // Режим клиента выключен (CUSTOMER_SELF_SERVICE=false): строки `customer` матрицы не действуют — 403 (10 CASH-006,
     // 11 §4.2, T-CASH-014; ревью G-security-2).
     if (isCustomer && !this.config.CUSTOMER_SELF_SERVICE) throw forbidden();
@@ -155,7 +163,7 @@ export class ReceivablesService {
     const id = uuidParam(rawId);
     const perms = this.catalog.effectivePermissions(p);
     // seller, customer → 403 (RBAC: `customer.receivables.read.summary`; режим клиента — запрещён явно).
-    if (p.kind === 'customer' || !perms.has('customer.receivables.read.summary')) throw forbidden();
+    if (customerModeOf(p) || !perms.has('customer.receivables.read.summary')) throw forbidden();
     const wantDocs = includeDocuments(q);
     const stepUpMethod = wantDocs ? await this.detailStepUp(req, p, perms, false) : null;
     this.consumeUserQuota(p.userId);

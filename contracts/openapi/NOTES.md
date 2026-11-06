@@ -40,7 +40,7 @@ contracts/openapi/
 | Ошибка | `#/components/responses/<Класс>` (ниже); схема — `#/components/schemas/Problem`, код — `ProblemCode` |
 | Предупреждения | `warnings: { type: array, items: { $ref: "#/components/schemas/Warning" } }` |
 | Пагинация | `allOf: [ { $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/<T>" } } } } ]` — именованные схемы `XxxPage` **не** создаются |
-| Параметры | `#/components/parameters/{DeviceId, AppVersion, Platform, RequestId, AcceptLanguage, IdempotencyKey, IdempotencyKeyOptional, StepUpToken, IfNoneMatch, Limit, Cursor, Sort, Q, From, To, IdPath}` |
+| Параметры | `#/components/parameters/{DeviceId, AppVersion, Platform, RequestId, AcceptLanguage, IdempotencyKey, IdempotencyKeyOptional, StepUpToken, IfNoneMatch, Limit, Cursor, Sort, Q, From, To, IdPath, KioskLock}` (`KioskLock` — `X-Kiosk-Lock`, с 1.3.0, §9) |
 | Заголовки ответов | `#/components/headers/{XRequestId, RetryAfter, IdempotentReplayed, XDataAsOf, XMinAppVersion, XRecommendedAppVersion, ETag, CacheControl, ContentLanguage, Location, XRateLimit*}` |
 | Enum-ы | `OrderStatus`, `PaymentStatus`, `PaymentMethod`, `RoleCode`, `PermissionCode`, `SyncEntity` и др. — имена 07 §6.1 в PascalCase. Значения enum **не копируются** во фрагменты: только `$ref` |
 
@@ -50,16 +50,16 @@ contracts/openapi/
 |---|---|---|
 | 304 | `NotModified` | ETag совпал |
 | 400 | `BadRequest` | `VALIDATION_FAILED` (схема, лишние поля, `forbidden_field`, `idempotency_key_required`) |
-| 401 | `Unauthorized` | `UNAUTHENTICATED`, `TOKEN_STALE`, `SESSION_REVOKED`, `REGISTRATION_TOKEN_INVALID`, `PIN_INVALID`, `UNLOCK_REQUIRED`, `WEBHOOK_SIGNATURE_INVALID` |
-| 403 | `Forbidden` | `FORBIDDEN`, `STEP_UP_REQUIRED` |
+| 401 | `Unauthorized` | `UNAUTHENTICATED`, `TOKEN_STALE`, `SESSION_REVOKED`, `REGISTRATION_TOKEN_INVALID`, `PIN_INVALID`, `UNLOCK_REQUIRED`, `WEBHOOK_SIGNATURE_INVALID`, `KIOSK_REVOKED` (с 1.3.0) |
+| 403 | `Forbidden` | `FORBIDDEN`, `STEP_UP_REQUIRED`, `KIOSK_DISABLED`, `KIOSK_NETWORK_DENIED` (с 1.3.0) |
 | 404 | `NotFound` | `NOT_FOUND` |
 | 405 | `MethodNotAllowed` | `METHOD_NOT_ALLOWED` |
 | 409 | `Conflict` | `VERSION_CONFLICT`, `IDEMPOTENCY_IN_PROGRESS`, `ORDER_STATE_INVALID`, `PAYMENT_STATE_INVALID`, `PHONE_ALREADY_REGISTERED`, `DEVICE_MISMATCH`, `CUSTOMER_LINK_CONFLICT`, `CUSTOMER_DUPLICATE_SUSPECTED`, `SYNC_ALREADY_RUNNING` |
 | 413 / 415 | `PayloadTooLarge` / `UnsupportedMediaType` | — |
-| 422 | `UnprocessableEntity` | бизнес-валидация |
-| 423 | `Locked` | `OTP_LOCKED`, `PIN_LOCKED` |
+| 422 | `UnprocessableEntity` | бизнес-валидация (с 1.3.0 — и `KIOSK_EXIT_CODE_INVALID`) |
+| 423 | `Locked` | `OTP_LOCKED`, `PIN_LOCKED`, `KIOSK_EXIT_LOCKED` (с 1.3.0) |
 | 426 | `UpgradeRequired` | `APP_UPDATE_REQUIRED` |
-| 429 | `TooManyRequests` | `RATE_LIMITED`, `OTP_RATE_LIMITED` |
+| 429 | `TooManyRequests` | `RATE_LIMITED`, `OTP_RATE_LIMITED`, `KIOSK_RATE_LIMITED` (с 1.3.0) |
 | 500 | `InternalError` | `INTERNAL` |
 | 503 | `ServiceUnavailable` | `SMS_PROVIDER_ERROR`, `ONEC_UNAVAILABLE`, `QR_UNAVAILABLE`, `APP_READ_ONLY` |
 
@@ -67,7 +67,7 @@ contracts/openapi/
 
 ## 3. Правила для операций (по 08 §2 и §8)
 
-1. Тег — ровно один, из списка `tags` корня (22 тега 08 §8). Модуль D-06 указан в расширении `x-module` тега.
+1. Тег — ровно один, из списка `tags` корня (22 тега 08 §8; с 1.3.0 — 23, последним `kiosk`, §9). Модуль D-06 указан в расширении `x-module` тега.
 2. `operationId` имеет вид `<module>_<action>` в snake_case по тегу: `orders_create`, `auth_otp_request` (08 §8).
 3. Безопасность:
    - по умолчанию действует глобальная `bearerAuth`;
@@ -97,12 +97,12 @@ contracts/openapi/
 
 | Расширение | Значение | Правило |
 |---|---|---|
-| `x-permissions` | массив кодов `PermissionCode` (11 §4.3) | Коды, которые сервер проверяет на операции (08 §3.15). Альтернативы перечисляются все: `[order.read.own, order.read.all]`. Для публичных операций — `[]`. Код `integration` — `[sync.exchange]` |
+| `x-permissions` | массив кодов `PermissionCode` (11 §4.3) | Коды, которые сервер проверяет на операции (08 §3.15). Альтернативы перечисляются все: `[order.read.own, order.read.all]`. Если сервер требует несколько кодов вместе (И) или «код И одно из» (форма CNF, ADR-115), перечисляются все коды требования, а форма записывается в `description`: `POST /cart/checkout-preview` — `cart.manage.own` и одно из `order.create` \| `kiosk.order.submit`; `POST /kiosk/reset` — `cart.manage.own` и `kiosk.order.submit` (§9 п. 5). Для публичных операций — `[]`. Код `integration` — `[sync.exchange]` |
 | `x-roles` | массив `RoleCode` | Роли, допущенные к операции по 11 §4.4 и 08 §9. На свойствах схем — field-level видимость |
 | `x-step-up` | `true` / `false` | `true`, если операция требует или может требовать `X-Step-Up-Token` (08 §2.12, «S!» в 08 §3.15). Условие («только для чужой сессии», «только при `include=documents`», «только с `discountOverride`») описывается в `description` |
 | `x-step-up-operation` | массив `StepUpOperation` | Значения `operation` из 08 §2.12, которые сервер вернёт в `403 STEP_UP_REQUIRED`. Обязательно при `x-step-up: true` |
 | `x-idempotent` | `required` / `true` / `false` | `required` — ключ обязателен (перечень 08 §2.7); `true` — ключ допускается; `false` — не применяется. Машинно проверяемая истина — параметр `IdempotencyKey` или `IdempotencyKeyOptional` (п. 3.5); значения обязаны совпадать |
-| `x-feature-flag` | строка `NAME` или `NAME=value` | Флаг развёртывания, без которого маршрут выключен (`404`) или работает иначе. Имена — переменные окружения 16 §4.3 и ядра §17.7 или ключи `app_settings` 07: `DEBT_PAYMENTS_FROM_POS`, `QR_PROVIDER=bakai`, `ONEC_INBOUND_ENABLED`, `SMSPRO_DLR_MODE=push`, `CUSTOMER_SELF_SERVICE`, `RETURNS_FROM_POS_ENABLED=false`, `returns_enabled` |
+| `x-feature-flag` | строка `NAME` или `NAME=value` | Флаг развёртывания, без которого маршрут выключен (`404`) или работает иначе. Имена — переменные окружения 16 §4.3 и ядра §17.7 или ключи `app_settings` 07: `DEBT_PAYMENTS_FROM_POS`, `QR_PROVIDER=bakai`, `ONEC_INBOUND_ENABLED`, `SMSPRO_DLR_MODE=push`, `CUSTOMER_SELF_SERVICE`, `RETURNS_FROM_POS_ENABLED=false`, `returns_enabled`, `KIOSK_MODE` (с 1.3.0) |
 | `x-status` | `proposed` | Только для условных путей до решения заказчика «да» (13 RM-B-003, §5.4 п. 5; например `POST /payments` — Q-152). Если расширения нет, путь принят. R2-пути в контракт R1 не входят совсем |
 | `x-rate-limit-group` | `RL-*` (08 §2.9) | Группа лимита (08 §8). Для `/integrations/onec/*` — `RL-INTEGRATION` (08 §4.21) |
 
@@ -110,7 +110,7 @@ contracts/openapi/
 
 1. **Имя расширения прав.** В постановке задачи — `x-permission` (код), в 08 §8 (владелец правил генерации) — `x-permissions: [...]` (массив). Принят вариант владельца: `x-permissions`, массив. Массив нужен потому, что на многих операциях проверяется одна из нескольких альтернатив (`order.read.own` / `order.read.all`). Написание `x-permission` в частях модулей не используется. Если оно встретится, при сборке его нужно привести к `x-permissions: [<код>]`.
 2. **Значения `x-idempotent`.** В постановке — `true`/`false`, в 08 §8 — `true|required`. Принято объединение: `required | true | false`. Значение `true` означает «допускается», а **не** «обязательно» (п. 4).
-3. **Теги.** Взяты 22 тега скелета 08 §8. Тег `me` соответствует модулю D-06 `profile`. Теги `search` и `inventory` относятся к `catalog`, `receivables`, `discounts` и `favorites` — к `customers`, `pos` — к `payments` (11 §4.3 №39), `settings` — к `admin`. Соответствие записано в `x-module` каждого тега.
+3. **Теги.** Взяты 22 тега скелета 08 §8 (с 1.3.0 — 23-й тег `kiosk`, модуль D-06 `kiosk`, 06 MOD-030; §9). Тег `me` соответствует модулю D-06 `profile`. Теги `search` и `inventory` относятся к `catalog`, `receivables`, `discounts` и `favorites` — к `customers`, `pos` — к `payments` (11 §4.3 №39), `settings` — к `admin`. Соответствие записано в `x-module` каждого тега.
 4. **`Customer` по ролям.** `Customer` — надмножество полей 08 §3.7 с `x-roles` на полях. Строгие представления сделаны как `additionalProperties: false`: они нужны для контрактных тестов allowlist.
 
    | Схема | Роли |
@@ -131,7 +131,7 @@ contracts/openapi/
    - `Me.status` ссылается на `UserStatus`, где есть и `deleted` (07). В 08 §3.14 перечислены 4 значения; надмножество допустимо, клиент обрабатывает неизвестное значение как `unknown` (08 §2.11).
    - `StepUpMethod` — `pin | biometric | otp` (07). В `Problem.stepUp.allowedMethods` для R1 — только `pin`, `otp` (ядро §19.3).
    - `QrProvider` — свойство QR: `onec | bakai | elqr_static | none`. `QrProviderMode` — значение env `QR_PROVIDER`: `none | onec | bakai` (ядро §24.4).
-7. **`Problem`.** К полям 08 §3.3 добавлены поля, которые 08 §2.4 прямо называет в ответах: `creditReason`, `overdueAmount`, `asOf`, `openPaymentId`. `stepUp.operation` типизирован как `StepUpOperation` (08 §2.12). `ProblemCode` — полный перечень 08 §2.4 (50 кодов); он совпадает с enum скелета 08 §8. Коды предупреждений (`WarningCode`) в него не входят. Коды журнала синхронизации — отдельный enum `SyncErrorCode` (14 значений, 07 §6.1.1).
+7. **`Problem`.** К полям 08 §3.3 добавлены поля, которые 08 §2.4 прямо называет в ответах: `creditReason`, `overdueAmount`, `asOf`, `openPaymentId`. `stepUp.operation` типизирован как `StepUpOperation` (08 §2.12). `ProblemCode` — полный перечень 08 §2.4 (50 кодов; с 1.3.0 — 56: шесть кодов `KIOSK_*` после `APP_READ_ONLY`); он совпадает с enum скелета 08 §8. Коды предупреждений (`WarningCode`) в него не входят. Коды журнала синхронизации — отдельный enum `SyncErrorCode` (14 значений, 07 §6.1.1).
 8. **`CartConflict.oldPrice` / `newPrice` — тип `Money`** по псевдосхеме 08 §3.8 (владелец DTO). Пример problem+json в 08 §2.4 показывает голые строки `"2350.00"`. Это расхождение 08 надо выровнять у владельца: пример 08 §2.4. `CartConflict.stockLevel` добавлен по тексту 08 §3.6: при `customer_stock_display=status` конфликт возвращается без чисел, но с `stockLevel`.
 9. **`Delivery.geo` не включён:** это R2 (Q-178). В R1 поле в теле запроса даёт `VALIDATION_FAILED` с `rule: forbidden_field` (ядро §19.4). `Delivery`, `Receiver`, `PrintOptions`, `Money` и `Quantity` используются в телах запросов, поэтому у них `additionalProperties: false`.
 10. **`warnings[]`** добавлен в `Order`: ответ `202` `POST /orders` — это `Order` + `warnings` (08 §4.8.1). Он же добавлен в `CheckoutPreview` и уже был в `Payment` (08 §3.10) — по общему правилу 08 §2.4: успешный ответ может нести `warnings[]`.
@@ -199,7 +199,7 @@ python -I -X utf8 scripts/check_enum_triangle.py          # enums.json ↔ DDL �
    остаются в шапках частей и являются частью этих заметок:
    `10_auth.yaml` — A1–A9; `20_catalog.yaml` — 10 решений; `30_cart_orders.yaml` — F1–F12;
    `40_payments_pos_returns.yaml` — п. 1–10; `50_customers.yaml` — комментарии и `description`;
-   `60_sync_admin_ops.yaml` — шапка файла.
+   `60_sync_admin_ops.yaml` — шапка файла; `70_kiosk.yaml` — K1–K10 (с 1.3.0, §9).
 6. **Версия при уточнении описаний** (ревью закрытия F, второй круг, RS-7). Правка только текста описаний
    (`description`, без схемы, путей, прав и `x-*`) в версии, ещё не выпущенной (не принятой воротами этапа),
    вносится в раздел этой версии CHANGELOG «Уточнено» без повышения `info.version`; после выпуска — патч
@@ -235,9 +235,16 @@ python -I -X utf8 scripts/check_enum_triangle.py          # enums.json ↔ DDL �
 6. Неиспользуемые компоненты (предупреждения `no-unused-components`) оставлены намеренно:
    `CustomerViewSeller|Cashier|Admin|Self` и `ReceivableBadge` — эталонные ролевые представления для контрактных
    тестов allowlist (§5 п. 4; по B-AR-17 сериализация — единый `CustomerProjector.forRole()`, предложение 06, §8); `OtpPurpose`, `PrintDocumentKind` — enum-ы 07 §6.1; `Sort` — общий параметр
-   08 §2.6 (модули объявляют `sort` со своим enum); `MethodNotAllowed` — ответ 405 08 §2.4.
-7. Предупреждения `check_api_permissions.py` [A] «роль держит код операции, но не в `x-roles`» (9 операций) —
-   условия карточек 08 (например, `DELETE /me/pin` — только `customer`, D-48); ошибок нет.
+   08 §2.6 (модули объявляют `sort` со своим enum); `MethodNotAllowed` — ответ 405 08 §2.4; `MeKiosk` — строгая
+   форма `GET /me` планшета магазина для контрактных тестов (с 1.3.0, §9 п. 4).
+7. Предупреждения `check_api_permissions.py` [A] «роль держит код операции, но не в `x-roles`» (9 операций; с 1.3.0 —
+   17) — условия карточек 08 (например, `DELETE /me/pin` — только `customer`, D-48); ошибок нет. С 1.3.0 роль `kiosk`
+   держит `cart.manage.own`, `catalog.read`, `catalog.prices.read` и `search.read`, но маршрут закрыт guard-ом закрытого
+   списка 08 §4.25 (11 SEC-137) или отвечает `403`, как у `customer`: `PATCH /cart`, `DELETE /cart`,
+   `POST/DELETE /cart/customer`, `POST /cart/park`, `GET /cart/parked`, `DELETE /cart/parked/{id}`,
+   `POST /cart/parked/{id}/resume`, `GET/DELETE /catalog/products/recent`, `GET /catalog/price-lists`,
+   `GET /search/barcode/{value}` (Р-15) — `kiosk` в их `x-roles` не входит. `POST /kiosk/reset` — `cart.manage.own` и
+   `kiosk.order.submit` вместе (§9 п. 5): сотрудники и `customer` держат только первый код.
 
 ## 8. Исправления по архитектурной проверке этапа B (2026-10-21)
 
@@ -277,3 +284,69 @@ python -I -X utf8 scripts/check_enum_triangle.py          # enums.json ↔ DDL �
 | B-AR-18 | 13 RM-B-008 (AC) | Заменить `x-permission` на `x-permissions` (массив кодов), как в 08 §8 и в контракте (§5 п.1) |
 | B-AR-21 | 06 §7.4 (а), 07 §5.28 | Таблица «столбец → писатель» `customers` (migrations NOTES §10) |
 | B-AR-22 | 06 §6.1 | Фича `customers` — собственный read-model `customers/domain/CustomerOrderSummary` для истории покупок (SCR-31/SCR-33); переход к заказу — по маршруту `go_router`, без импорта `orders` |
+
+## 9. Планшет магазина (1.3.0, 2026-11-04; P-002, ADR-115)
+
+Источник — 08 v1.20 (§2.2–§2.4, §2.7, §2.9, §2.12, §3.9, §3.13, §3.14, §3.17, §4.18.6, §4.18.11–§4.18.15, §4.23.1,
+§4.25, §9), 07 v1.17 (§5.65, §6.1, §6.1.1), 11 v1.4 (§4.3 №77–81, §4.4, SEC-136…SEC-143). P-002 утверждён владельцем
+2026-11-04: «P-002 утверждаю, делай»; группа А — «Да, все рекомендации (Рекоменд.)», в пояснении варианта — «Р-01 а».
+Операции планшета — часть `parts/70_kiosk.yaml` (решения K1–K10 — в её шапке); изменения прочих частей — ниже и в
+CHANGELOG [1.3.0]. Изменение аддитивное: путь `v1`, существующие поля и их обязательность не менялись.
+
+1. **Тег и часть.** Все десять операций (`/admin/store-tablets*` и `/kiosk/*`) — тег `kiosk`, последний в `tags` корня
+   (порядок сверяет `check_openapi_dictionaries.py` с 08 §8); `operationId` — `kiosk_<action>`. Сборщик берёт части по
+   маске `parts/*.yaml`, регистрировать `70_kiosk.yaml` в `scripts/build_openapi.py` не нужно.
+2. **Перечни.** `UserKind`, `RoleCode`, `OtpPurpose`, `NotificationKind` — новые значения в конце (07 §6.1). Схемы
+   CHECK-перечней `OrderCreatedVia`, `KioskCustomerMatch`, `StoreTabletStatus` — в корне (во фрагментах только `$ref`,
+   §2); имена — PascalCase от `order_created_via`, `kiosk_customer_match`, `store_tablet_status` (`contracts/CHANGELOG.md`
+   [1.3.0]). Скрипты их пока не сверяют: `check_enum_triangle.py` [2] сверяет только `dbEnums`, а
+   `check_openapi_dictionaries.py` п. 3 — перечисленные в нём CHECK-перечни.
+3. **`x-roles: kiosk` — только закрытый список 08 §4.25:** каталог (`/catalog/categories`, `/products`, `/products/{id}`,
+   `/products/{id}/variants`, `/units`, `/warehouses`, `/sync/{entity}`), `GET /search/products`, `GET /search/suggest`,
+   `GET /inventory/balances`, `POST /inventory/check`, `GET /cart`, `PUT/DELETE /cart/items/{variantId}`,
+   `POST /cart/checkout-preview`, `GET /settings/public`, `GET /me` и `/kiosk/*`. `GET /catalog/price-lists` в закрытом
+   списке, но отвечает `403`, как у `customer`, — `kiosk` в его `x-roles` нет. Остальные маршруты для планшета —
+   `403 FORBIDDEN` (`reason: kiosk_closed_list`); там, где роль держит код, это записано в описании операции (§7.4 п. 7).
+4. **`GET /me` без `oneOf`.** Форма планшета `{kind, tablet}` (08 §3.14, 12 T-KIOSK-046) выражена необязательным
+   свойством `Me.tablet` (`MeKioskTablet`) и значением `kind=kiosk`; `required` схемы `Me` не ослаблен: oasdiff считает
+   breaking и ослабление обязательности поля ответа, и `oneOf` вместо существующей схемы ответа. Что обязательность прочих
+   полей `Me` на форму планшета не распространяется, записано в описании схемы (как в 08 §3.14). Строгая форма для
+   контрактных тестов — `MeKiosk` (`additionalProperties: false`; путями не используется, как `CustomerView*`, §5 п. 4).
+   `x-permissions` — `[profile.manage.own, kiosk.self.read]` (одно из).
+5. **Требования «И».** `POST /cart/checkout-preview` — `[cart.manage.own, order.create, kiosk.order.submit]`
+   («`cart.manage.own` и одно из `order.create` \| `kiosk.order.submit`», 08 §4.7.7); `POST /kiosk/reset` —
+   `[cart.manage.own, kiosk.order.submit]` (оба кода вместе, 08 §4.25.4). Массив `x-permissions` остаётся плоским (§4).
+   Сверка «коды маршрута ⊆ `x-permissions`» (`pos-api/test/e2e/rbac-matrix.e2e-spec.ts`, T-SEC-018) работает без
+   изменений; статическая сверка ролей (T-SEC-019) для `POST /kiosk/reset` считает роль допущенной, только если та держит
+   все коды операции (перечень `ALL_CODES_REQUIRED` теста).
+6. **`X-Kiosk-Lock`.** Параметр корня `KioskLock` (`on|off`, необязательный; 08 §2.3, ADR-115 п. 26) — у `/kiosk/*` и у
+   операций закрытого списка из п. 3: приложение передаёт заголовок на каждом запросе сессии планшета, сервер пишет его в
+   `store_tablets.lock_task_enabled` вместе с `last_seen_at`. Иное значение сервер не отвергает, а игнорирует (описание
+   параметра); у `/admin/store-tablets*` заголовка нет. Значения в YAML записаны в кавычках (`"on"`, `"off"`): без кавычек
+   YAML 1.1 читает их как `true`/`false`.
+7. **Флаг, step-up, идемпотентность, лимиты** — K3–K6 шапки `70_kiosk.yaml`. `x-feature-flag: KIOSK_MODE` — подключение,
+   подключение заново и все `/kiosk/*` (`403 KIOSK_DISABLED`); step-up `kiosk.manage` (область `admin_users`) —
+   подключение, отключение, подключение заново; ключ идемпотентности обязателен — подключение, подключение заново,
+   `POST /kiosk/orders`. Группы — RL-ADMIN, RL-OTP-SEND, RL-FIN, RL-READ, RL-CART, RL-PIN по абзацу 08 §2.9 «Лимиты
+   планшета магазина»; состав RL-READ, RL-CART, RL-FIN и RL-ADMIN сверяют `test/catalog/catalog-rate-limit.e2e.spec.ts`
+   и `test/orders/orders-rate-limit.e2e.spec.ts`.
+8. **Заказ.** `Order.createdVia` и `OrderSummary.createdVia` сервер отдаёт с этапа G (`order-presenter.ts`), в 1.2.0 поле
+   не было объявлено. `kioskCustomerMatch` — nullable, `x-roles` сотрудников (покупателю поле не отдаётся).
+   `Receiver.phoneMasked` — `readOnly`: `Receiver` используется и в телах запросов с `additionalProperties: false`, а в
+   запросе поле не передаётся; `Receiver.phone` после маскирования — `null`, формат `PhoneE164` не ослаблен.
+   `awaitingPayment[]` дашборда — тот же `OrderSummary`, отдельного поля не нужно. `GET /orders?createdVia=` — одно
+   значение `OrderCreatedVia`.
+9. **`StoreTablet` строгая.** Все одиннадцать полей обязательны (nullable приходят как `null`: «сигнала `X-Kiosk-Lock` ещё
+   не было» отличимо от «поля нет»), `additionalProperties: false` — без ПДн покупателей, хэша и счётчиков аварийного кода
+   и `device_key` (08 §3.17, 11 SEC-141). Так же строги `KioskOrderAccepted` и `KioskOrderOtpResponse` (номер в ответе не
+   повторяется).
+10. **Настройки.** `AdminSettingsValues` — шесть ключей `kiosk*` с границами 08 §4.18.6 (там они помечены
+    [НЕ ПОДТВЕРЖДЕНО]); `kioskWorkingHours` — строка ≤ 200 без шаблона (формат 07 §5.59 проверяет сервер, rule `format`);
+    `AdminSettingsEnv.kioskMode` — только чтение. `PublicSettings.kiosk` (три тайминга) и `PublicSettings.features.storeTablet`.
+    Сервер выставит их в пакете WP-S1A-KIOSK; до него сверки состава в `test:admin` и `test:settings` ожидаемо красные
+    (план сборки P-002, `parallelSafety`).
+11. **Окна до реализации.** Операций планшета в экспорте `/api/v1/openapi.json` пока нет: проверка `smoke.e2e-spec.ts`
+    «контракт ⊆ экспорт» красная до пакета, который реализует последнюю из них (WP-S4C); сверка групп лимитов
+    (`test:catalog`) — до WP-S1A-KIOSK. `OPENAPI_INFO_VERSION` (`pos-api/src/health/openapi.document.ts`) поднят до 1.3.0
+    вместе с контрактом, тег `kiosk` добавлен в `OPENAPI_TAGS`. DTO-тесты `pos-app`, которые читают схемы контракта, красные
+    до пакета приложения WP-A01.

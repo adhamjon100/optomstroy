@@ -21,7 +21,7 @@ import { CHECK_TABLES_SQL, expectedTables, MIGRATIONS_DIR, POS_API_DIR, SCHEMA_D
 import { dumpSchema } from './support/schema-dump.js';
 
 /**
- * RM-C-006 на PostgreSQL 17 (embedded): migrate на пустой БД под ролью pos_migrate → 64 таблицы → seed →
+ * RM-C-006 на PostgreSQL 17 (embedded): migrate на пустой БД под ролью pos_migrate → 65 таблиц → seed →
  * ключи app_settings = R0 §17.7 (+ customer_stock_display) → повторный migrate/seed = 0 изменений →
  * Drizzle-схема = БД → forward-only → /health/ready → выгрузка DDL docs/erd/schema_v1.sql (и её проверка
  * повторным применением). Запуск: `npx vitest run --config test/db/vitest.config.ts`
@@ -138,9 +138,10 @@ describe('RM-C-006: migrate → seed → проверки на PostgreSQL 17', (
     });
   });
 
-  it('2. в public ровно 64 таблицы по scripts/check_tables.sql (app.env=dev → dev_outbox есть)', async () => {
+  // 65 = 64 таблицы 07 §5 до v1.17 + store_tablets (07 §5.65, 0022_kiosk_schema.sql, ADR-115); dev-миграций по-прежнему одна.
+  it('2. в public ровно 65 таблиц по scripts/check_tables.sql (app.env=dev → dev_outbox есть)', async () => {
     const expected = expectedTables();
-    expect(expected).toHaveLength(64);
+    expect(expected).toHaveLength(65);
     await withDb('pos_c006', async (c) => {
       await c.query(`SET app.env = 'dev'`);
       await c.query(readFileSync(CHECK_TABLES_SQL, 'utf8')); // RAISE EXCEPTION при расхождении
@@ -269,7 +270,7 @@ describe('RM-C-006: migrate → seed → проверки на PostgreSQL 17', (
       compareDrizzleWithDb(schema as Record<string, unknown>, await readTables(c), await readEnums(c)),
     );
     expect(diff.problems).toEqual([]);
-    expect(diff.tablesCompared).toBe(64);
+    expect(diff.tablesCompared).toBe(65);
     expect(diff.enumsCompared).toBe(45);
     console.error(
       `[RM-C-006] сверка Drizzle ↔ БД: таблиц ${diff.tablesCompared}, столбцов ${diff.columnsCompared}, enum-ов ${diff.enumsCompared}, расхождений 0`,
@@ -425,7 +426,7 @@ describe('RM-C-006: migrate → seed → проверки на PostgreSQL 17', (
         `SELECT to_regclass('public.dev_outbox') AS t, to_regnamespace('pos_dev') AS dev_journal`,
       );
       expect(r.rows[0]).toEqual({ t: null, dev_journal: null });
-      await c.query(readFileSync(CHECK_TABLES_SQL, 'utf8')); // без app.env: 63 таблицы, dev_outbox обязан отсутствовать
+      await c.query(readFileSync(CHECK_TABLES_SQL, 'utf8')); // без app.env: 64 таблицы, dev_outbox обязан отсутствовать
     });
   });
 

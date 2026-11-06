@@ -132,10 +132,13 @@ final class ProductDetailsState {
   /// Режим остатков клиента-покупателя.
   final CustomerStockDisplay stockDisplay;
 
-  /// Склад корзины (`cart_draft.warehouse_id`); `null` — склад по умолчанию.
+  /// Склад корзины (`cart_draft.warehouse_id`); `null` — склад по умолчанию (у планшета магазина — всегда: склад
+  /// выбирает сервер, 10 KIOSK-007).
   final String? cartWarehouseId;
 
-  bool get isCustomer => role == RoleCode.customer;
+  /// Вариант покупателя: клиент на своём телефоне и планшет магазина (02 UI-51-011 — SCR-14 в варианте `customer`:
+  /// без таблицы складов, штрихкодов и кода 1С; ADR-115).
+  bool get isCustomer => role == RoleCode.customer || role == RoleCode.kiosk;
 
   /// Колонки «Резерв», «Остаток» и «Все виды цен» (`catalog.prices.read.all`, 11 §4.4).
   bool get isSeniorStaff =>
@@ -434,7 +437,9 @@ final class ProductDetailsNotifier extends Notifier<ProductDetailsState> {
   Future<void> _load() async {
     if (!ref.mounted) return;
     final CartDraftRepository? cart = _cartOrNull();
-    final String? warehouseId = cart == null ? null : (await _guard(cart.warehouseId)).valueOrNull;
+    // Склад корзины — для наличия и цены карточки. Корзина планшета склада не сообщает (`null`): запросы карточки
+    // уходят без `warehouseId` — его параметр от планшета сервер отклоняет `403` (08 §4.25; 02 AC-UI-51-005).
+    final String? warehouseId = cart == null || _kiosk ? null : (await _guard(cart.warehouseId)).valueOrNull;
     if (!ref.mounted) return;
     state = state.copyWith(cartWarehouseId: warehouseId);
     // 1) Кэш drift (≤ 200 мс, NFR-PERF-003).
@@ -485,6 +490,9 @@ final class ProductDetailsNotifier extends Notifier<ProductDetailsState> {
 
   static bool _isNotFound(Failure f) =>
       f is ServerFailure && (f.status == 404 || f.problemCode == ProblemCode.notFound);
+
+  /// Карточка открыта на планшете магазина (роль зрителя `kiosk`).
+  bool get _kiosk => state.role == RoleCode.kiosk;
 
   /// Черновик корзины; `null` — порт не подключён (тесты маршрутов, до входа).
   CartDraftRepository? _cartOrNull() {
@@ -603,6 +611,8 @@ final class ProductDetailsNotifier extends Notifier<ProductDetailsState> {
           quantity: lineQty,
           priceSnapshot: linePrice?.amount,
           stockSnapshot: s.stock?.available,
+          // Корзина планшета отправляет строку сразу: единица — от карточки, если варианта нет в кэше каталога.
+          unitId: pk != null ? pk.unitId : s.baseUnit?.id,
         ),
       ),
     );

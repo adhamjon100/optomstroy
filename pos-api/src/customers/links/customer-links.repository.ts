@@ -31,6 +31,20 @@ export interface LinkUserInfo {
   readonly displayName: string | null;
 }
 
+/**
+ * Привязки одной карточки для фильтра надёжности номера заявки с планшета магазина (P-002 §8.6; 10 KIOSK-014;
+ * 11 SEC-130 «Планшет магазина»; ADR-115 п. 4).
+ */
+export interface CardLinkFacts {
+  /**
+   * Телефоны пользователей `confirmed`-привязок карточки (`null` — у пользователя телефона нет). Только для сравнения
+   * с номером кода на сервере: наружу и в журналы не отдаются (11 SEC-062).
+   */
+  readonly confirmedUserPhones: readonly (string | null)[];
+  /** У карточки есть привязка в статусе `conflict` (её разрешает только `admin`, SEC-130). */
+  readonly hasOpenConflict: boolean;
+}
+
 const cardColumns = {
   id: customers.id,
   name: customers.name,
@@ -157,6 +171,24 @@ export class CustomerLinksRepository {
           ne(customerLinks.userId, userId),
         ),
       );
+  }
+
+  /**
+   * Привязки карточки для поиска клиента заявки с планшета (P-002 §8.6; 10 KIOSK-014): телефоны пользователей
+   * `confirmed`-привязок (SEC-130 «карточка уже привязана к другому пользователю» — у планшета пользователя нет,
+   * поэтому сравнивается телефон) и признак открытого `conflict`. Одно чтение без блокировок: поиск идёт вне
+   * транзакции заявки (P-002 §8.5 п. 3, шаг 2); строки `customer_links` не создаются и не меняются.
+   */
+  async linkFactsForCard(customerId: string, ex: DbExecutor = this.db): Promise<CardLinkFacts> {
+    const rows = await ex
+      .select({ status: customerLinks.status, phoneE164: users.phoneE164 })
+      .from(customerLinks)
+      .leftJoin(users, eq(users.id, customerLinks.userId))
+      .where(and(eq(customerLinks.customerId, customerId), inArray(customerLinks.status, ['confirmed', 'conflict'])));
+    return {
+      confirmedUserPhones: rows.filter((r) => r.status === 'confirmed').map((r) => r.phoneE164),
+      hasOpenConflict: rows.some((r) => r.status === 'conflict'),
+    };
   }
 
   /**

@@ -51,6 +51,8 @@ abstract final class NotificationTargets {
         );
       case NotificationKind.orderStatus:
       case NotificationKind.paymentStatus:
+      // Заявка с планшета магазина → SCR-24 (`payload.orderId`), как `order_status` (02 §8 п. 70; ADR-115).
+      case NotificationKind.kioskOrder:
         return orderId == null ? null : NotificationLink(_order(orderId), NotificationNavigation.go);
       case NotificationKind.cartPriceChanged:
       case NotificationKind.cartStockChanged:
@@ -115,6 +117,8 @@ abstract final class NotificationTargets {
       case NotificationKind.syncError:
       case NotificationKind.creditBlocked:
       case NotificationKind.returnStatus:
+      // Только кассиру и старшему продавцу (02 SCR-44.10); клиенту не адресуется.
+      case NotificationKind.kioskOrder:
         return null;
       case null:
         return of(n);

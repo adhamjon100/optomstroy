@@ -19,6 +19,30 @@ abstract final class DsPhoneFormat {
     return '+$countryCode ${groupNational(national)}';
   }
 
+  /// Маска номера `+996 7** *** *01` (03 §16.4, §9.4; DS-102): видны первая цифра оператора и две последние цифры.
+  ///
+  /// Только для номера, который ввёл сам покупатель на планшете магазина (шаг «Код» SCR-52): ответ
+  /// `POST /kiosk/order-otp` номер не повторяет (08 §4.25). Остальные экраны показывают `phoneMasked` сервера.
+  /// Принимается только номер целиком (`+996` и 9 цифр, «0» и 9 цифр или 9 цифр), без усечения лишних цифр, как у
+  /// [normalize]; иначе номер не раскрывается — `+996 *** *** ***`.
+  static String masked(String e164) {
+    final String digits = e164.replaceAll(RegExp(r'\D'), '');
+    final String? national = switch (digits.length) {
+      nationalLength => digits,
+      10 when digits.startsWith('0') => digits.substring(1),
+      12 when digits.startsWith(countryCode) => digits.substring(countryCode.length),
+      _ => null,
+    };
+    if (national == null) {
+      return '+$countryCode ${groupNational(_hidden * nationalLength)}';
+    }
+    final String shown = national[0] + _hidden * (nationalLength - 3) + national.substring(nationalLength - 2);
+    return '+$countryCode ${groupNational(shown)}';
+  }
+
+  /// Знак скрытой цифры маски.
+  static const String _hidden = '*';
+
   /// Ввод пользователя («0XXX…», «996…», «+996…», с пробелами/скобками) → E.164 или `null`.
   static String? normalize(String input) {
     final String? national = nationalDigits(input);

@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { DbExecutor } from '../../common/audit/db-executor.js';
 import { CLOCK, type Clock } from '../../common/auth/clock.js';
 import { type AmrValue, type IssuedToken, JwtService } from '../../common/auth/jwt.service.js';
+import { bySubjectKind } from '../../common/auth/subject-kind.js';
 import { generateOpaqueToken, sha256 } from '../../common/crypto/random.js';
 import { DevicesRepository } from '../../users/devices.repository.js';
 import { SessionsRepository } from '../../users/sessions.repository.js';
@@ -40,22 +41,44 @@ export interface IssuedSession {
   readonly revokedSessionIds: readonly string[];
 }
 
-/** Время жизни refresh и idle-срок по виду пользователя (09 §8.2; D-12): staff 7 дн / 24 ч, customer 30 дн / 14 дн. */
+/** Данные сессии планшета магазина (09 §8.9 п. 1–2; 08 §4.18.11, §4.18.15; ADR-115). */
+export interface KioskSessionInput {
+  /** Технический пользователь планшета (`kind=kiosk`, `status=active`, без телефона). */
+  readonly user: UserRow;
+  readonly roles: readonly RoleCode[];
+  /** Строка `devices` технического пользователя для `device_key` устройства подключения. */
+  readonly device: DeviceRow;
+  readonly ip: string | null;
+  readonly userAgent: string | null;
+}
+
+/**
+ * Время жизни refresh и idle-срок по виду пользователя (09 §8.2, §8.9 п. 2; D-12; Р-22 (а)): staff 7 дн / 24 ч,
+ * customer 30 дн / 14 дн, kiosk 180 дн / 7 дн. Разбор вида — полной таблицей (06 ARCH-065): вид без строки не
+ * компилируется, значение вне перечня — исключение.
+ */
 export function sessionTerms(
   kind: UserRow['kind'],
   p: SessionPolicy,
   now: Date,
 ): { expiresAt: Date; idleExpiresAt: Date } {
-  const day = 24 * 3600_000;
-  return kind === 'staff'
-    ? {
-        expiresAt: new Date(now.getTime() + p.refreshTtlStaffDays * day),
-        idleExpiresAt: new Date(now.getTime() + p.idleStaffHours * 3600_000),
-      }
-    : {
-        expiresAt: new Date(now.getTime() + p.refreshTtlCustomerDays * day),
-        idleExpiresAt: new Date(now.getTime() + p.idleCustomerDays * day),
-      };
+  const hour = 3600_000;
+  const day = 24 * hour;
+  const t = bySubjectKind(kind, {
+    staff: { ttlMs: p.refreshTtlStaffDays * day, idleMs: p.idleStaffHours * hour },
+    customer: { ttlMs: p.refreshTtlCustomerDays * day, idleMs: p.idleCustomerDays * day },
+    kiosk: { ttlMs: p.refreshTtlKioskDays * day, idleMs: p.idleKioskDays * day },
+  });
+  return { expiresAt: new Date(now.getTime() + t.ttlMs), idleExpiresAt: new Date(now.getTime() + t.idleMs) };
+}
+
+/** Лимит одновременных устройств по виду (09 §8.2, §8.9 п. 2): staff 3, customer 5, kiosk 1. */
+export function maxSessions(kind: UserRow['kind'], p: SessionPolicy): number {
+  return bySubjectKind(kind, {
+    staff: p.maxSessionsStaff,
+    customer: p.maxSessionsCustomer,
+    kiosk: p.maxSessionsKiosk,
+  });
 }
 
 /** Idle-срок не выходит за абсолютный срок сессии. */
@@ -121,6 +144,42 @@ export class SessionIssuer {
     return { session, device, refreshToken, access, revokedSessionIds: revoked };
   }
 
+  /**
+   * Сессия планшета магазина (09 §8.9 п. 1–2; 08 §4.18.11, §4.18.15; ADR-115) — в транзакции подключения вызывающего:
+   * без OTP-челленджа (`created_from_challenge_id = NULL`; подключение подтверждено step-up администратора по
+   * `kiosk.manage`), `sessions.kind='standard'`, `amr=["pin"]`, сроки kiosk (180 дн / 7 дн простоя), без
+   * idle-блокировки (`unlocked_until = NULL`: PIN, SCR-08 и биометрии у планшета нет); одна сессия на технического
+   * пользователя — прежняя сессия того же устройства → `logout`, остальные → `session_limit` (лимит 1). Access-JWT
+   * `kind=kiosk`, `amr=["pin"]`, TTL — как у всех (900 с).
+   */
+  async createKioskSession(input: KioskSessionInput, tx: DbExecutor): Promise<IssuedSession> {
+    if (input.user.kind !== 'kiosk') throw new Error('createKioskSession: пользователь не kind=kiosk');
+    if (input.device.userId !== input.user.id) throw new Error('createKioskSession: устройство другого пользователя');
+    const p = (await this.policy.effective()).session;
+    const now = this.clock.now();
+    const revoked = await this.enforceDeviceLimit(input.user, input.device.id, p, now, tx);
+    const refreshToken = generateOpaqueToken();
+    const terms = sessionTerms(input.user.kind, p, now);
+    const session = await this.sessions.create(
+      {
+        userId: input.user.id,
+        deviceId: input.device.id,
+        refreshHash: sha256(refreshToken),
+        kind: 'standard',
+        expiresAt: terms.expiresAt,
+        idleExpiresAt: terms.idleExpiresAt,
+        amr: ['pin'],
+        createdFromChallengeId: null,
+        ipLast: input.ip,
+        userAgent: input.userAgent?.slice(0, 256) ?? null,
+        unlockedUntil: null,
+      },
+      tx,
+    );
+    const access = await this.access(input.user, input.roles, session, input.device.deviceKey, ['pin']);
+    return { session, device: input.device, refreshToken, access, revokedSessionIds: revoked };
+  }
+
   /** Access-JWT для сессии: роли и `permissionsVersion` — текущие из БД (09 §8.7). */
   access(
     user: UserRow,
@@ -146,7 +205,8 @@ export class SessionIssuer {
 
   /**
    * Повторный вход на том же устройстве завершает прежнюю стандартную сессию этого устройства (`logout`, 09 §4.5);
-   * затем при числе активных устройств ≥ лимита отзываются самые старые (`session_limit`, 09 §8.2).
+   * затем при числе активных устройств ≥ лимита отзываются самые старые (`session_limit`, 09 §8.2; лимит по виду —
+   * `maxSessions`).
    */
   private async enforceDeviceLimit(
     user: UserRow,
@@ -167,7 +227,7 @@ export class SessionIssuer {
         others.push(r.session);
       }
     }
-    const max = user.kind === 'staff' ? p.maxSessionsStaff : p.maxSessionsCustomer;
+    const max = maxSessions(user.kind, p);
     // others — новые первыми; оставляем max − 1 (новая сессия займёт последнее место).
     for (const s of others.slice(Math.max(0, max - 1))) {
       if (await this.sessions.revoke(s.id, 'session_limit', tx)) revoked.push(s.id);

@@ -15,7 +15,8 @@ export interface OrderRow extends Record<string, unknown> {
   cart_id: string | null;
   customer_id: string;
   created_by_user_id: string;
-  created_via: 'staff' | 'customer';
+  /** Канал (CHECK `orders_created_via_chk`, 07 §6.1.1): `kiosk` — заявка с планшета магазина (ADR-115, миграция 0022). */
+  created_via: 'staff' | 'customer' | 'kiosk';
   device_id: string | null;
   warehouse_id: string;
   price_list_id: string;
@@ -37,6 +38,14 @@ export interface OrderRow extends Record<string, unknown> {
   receiver_kind: 'customer' | 'other_person';
   receiver_name: string | null;
   receiver_phone_e164: string | null;
+  /**
+   * Маска номера покупателя заявки с планшета после срока хранения (`+996 7** *** *01`, 07 §5.37, §13.3; 11 PRIV-034):
+   * задание `retention.daily` ставит `receiver_phone_e164 = NULL` и пишет маску сюда; до маскирования и у других
+   * каналов — NULL (ADR-115, миграция 0022).
+   */
+  receiver_phone_masked: string | null;
+  /** Итог поиска карточки 1С по номеру заявки с планшета (`single | ambiguous | none`); у других каналов — NULL. */
+  kiosk_customer_match: 'single' | 'ambiguous' | 'none' | null;
   delivery_recipient_phone_e164: string | null;
   delivery_address: string | null;
   delivery_comment: string | null;
@@ -78,7 +87,8 @@ const ORDER_COLUMNS = sql.raw(`
   o.discount_total::text AS discount_total, o.total::text AS total, o.onec_total::text AS onec_total, o.totals_differ,
   o.payment_method::text AS payment_method, o.credit_due_date::text AS credit_due_date,
   o.paid_amount::text AS paid_amount, o.paid_at, o.is_paid, o.delivery_method::text AS delivery_method,
-  o.receiver_kind::text AS receiver_kind, o.receiver_name, o.receiver_phone_e164, o.delivery_recipient_phone_e164,
+  o.receiver_kind::text AS receiver_kind, o.receiver_name, o.receiver_phone_e164, o.receiver_phone_masked,
+  o.kiosk_customer_match, o.delivery_recipient_phone_e164,
   o.delivery_address, o.delivery_comment, o.delivery_date::text AS delivery_date,
   to_char(o.delivery_time_from, 'HH24:MI') AS delivery_time_from, to_char(o.delivery_time_to, 'HH24:MI') AS delivery_time_to,
   o.print_options, o.comment, o.onec_ref::text AS onec_ref, o.onec_number, o.onec_date, o.onec_status_raw,

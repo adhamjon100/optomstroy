@@ -18,4 +18,5 @@ export {
   HttpRateLimitModule,
   httpRateLimitGroup,
   MemoryWindowCounter,
+  rateLimitedProblem,
 } from './http-rate-limit.js';

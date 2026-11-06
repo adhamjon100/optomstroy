@@ -32,6 +32,8 @@ import { SettingsModule } from './common/settings/settings.module.js';
 import { createValidationPipe } from './common/validation/validation.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { HealthModule } from './health/health.module.js';
+import { KIOSK_ACCESS_GUARD } from './kiosk/common/kiosk-access.guard.js';
+import { KioskModule } from './kiosk/kiosk.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { DocumentsModule } from './orders/documents/documents.module.js';
 import { OrdersModule } from './orders/orders.module.js';
@@ -70,9 +72,10 @@ export const DOMAIN_MODULES = [
 
 /**
  * Модули вне перечня D-06, подключаемые к API: публичные настройки `GET /settings/public` (08 §4.23; RM-D-015,
- * D_spec_questions LNK-11 — путь `src/settings`).
+ * D_spec_questions LNK-11 — путь `src/settings`); режим «Планшет магазина» `kiosk` (06 MOD-030, ADR-115; модули D-06
+ * не менялись) — его `KioskTabletReader` нужен глобальному `KIOSK_ACCESS_GUARD`.
  */
-export const EXTRA_API_MODULES = [PublicSettingsModule];
+export const EXTRA_API_MODULES = [PublicSettingsModule, KioskModule];
 
 /**
  * Этап F (основа backend): глобальный модуль портов межмодульных вызовов (`SalesPortsModule` — DI-токены
@@ -116,12 +119,15 @@ export function commonImports(config: AppConfig, options: AppModuleOptions = {})
 /**
  * Глобальные guard/interceptor/filter/pipe. Порядок guard'ов (Nest применяет APP_GUARD в порядке регистрации):
  * read-only (ADR-083) → аутентификация (common/auth AuthGuard, 08 §2.2) → ограничение сессии без PIN и активность
- * сессии (auth SessionActivityGuard, 08 API-181) → RBAC (11 §4.3.1). 401 всегда раньше 403 (08 §2.4).
+ * сессии (auth SessionActivityGuard, 08 API-181) → закрытый список планшета магазина `kind=kiosk` (kiosk
+ * KioskAccessGuard: `KIOSK_DISABLED`, `kiosk_closed_list`; 06 ARCH-066, 08 §4.25, 11 SEC-137) → RBAC (11 §4.3.1).
+ * 401 всегда раньше 403 (08 §2.4).
  */
 export const GLOBAL_PROVIDERS = [
   { provide: APP_GUARD, useClass: ReadOnlyGuard },
   AUTH_APP_GUARD,
   AUTH_SESSION_ACTIVITY_GUARD,
+  KIOSK_ACCESS_GUARD,
   { provide: APP_GUARD, useClass: RbacGuard },
   { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
   { provide: APP_FILTER, useClass: ProblemDetailsFilter },

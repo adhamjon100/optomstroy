@@ -4,6 +4,7 @@ import type { DbExecutor } from '../../common/audit/db-executor.js';
 import { CLOCK, type Clock } from '../../common/auth/clock.js';
 import { APP_CONFIG, type AppConfig } from '../../common/config/app-config.js';
 import { DRIZZLE } from '../../common/db/database.module.js';
+import { ProblemException } from '../../common/problem-details/problem.exception.js';
 import { PermissionCatalog } from '../../common/rbac/permission-catalog.js';
 import { roleDiscountLimits } from '../../db/schema/index.js';
 import { DevicesRepository } from '../../users/devices.repository.js';
@@ -16,7 +17,7 @@ import { type ConsentDto, ConsentsService } from '../consents/consents.service.j
 import { CustomerLinkReader, type MeCustomerLinkDto } from '../customer-link.reader.js';
 import { AppPinsRepository } from '../../auth/pin/app-pins.repository.js';
 import { IDLE_LOCK_MAX_CUSTOMER } from '../profile.constants.js';
-import { type SettingsDto, settingsFromProfile } from './settings.projection.js';
+import { type SettingsContext, type SettingsDto, settingsFromProfile } from './settings.projection.js';
 
 /** contracts/openapi `Profile` (08 §3.14). `phone` — полный номер только владельцу (09 §2.4). */
 export interface ProfileDto {
@@ -33,7 +34,7 @@ export type BiometricsPlatform = 'android_class3' | 'ios' | 'windows_hello_gate'
 /** contracts/openapi `Me` (08 §4.3.1, §3.14). */
 export interface MeDto {
   readonly id: string;
-  readonly kind: 'staff' | 'customer';
+  readonly kind: UserRow['kind'];
   readonly status: UserRow['status'];
   readonly roles: RoleCode[];
   readonly permissions: string[];
@@ -59,6 +60,29 @@ export interface MeDto {
   readonly appVersion?: { readonly min?: string; readonly recommended?: string | null };
   readonly apiVersion: string;
   readonly serverTime: string;
+}
+
+/**
+ * Форма `GET /me` для `kind=kiosk` (08 §3.14, §4.3.1; contracts/openapi `MeKiosk` — строгая): только вид и планшет,
+ * без телефона, ФИО, ролей, прав, сессий и клиента (12 T-KIOSK-046; ADR-115).
+ */
+export interface MeKioskDto {
+  readonly kind: 'kiosk';
+  readonly tablet: {
+    /** `store_tablets.id`. */
+    readonly id: string;
+    /** `user_profiles.full_name` технического пользователя. */
+    readonly name: string;
+    /** Склад планшета — `user_profiles.home_warehouse_id`. */
+    readonly warehouseId: string;
+  };
+}
+
+/** Планшет запроса для формы `MeKiosk` (контекст `KioskAccessGuard`, `req.kiosk`). */
+export interface MeKioskTablet {
+  readonly tabletId: string;
+  readonly name: string;
+  readonly warehouseId: string | null;
 }
 
 export interface MeContext {
@@ -114,7 +138,7 @@ export class MeService {
     private readonly catalog: PermissionCatalog,
   ) {}
 
-  settingsContext(kind: 'staff' | 'customer', roles: readonly string[], platform?: string | null) {
+  settingsContext(kind: SettingsContext['kind'], roles: readonly string[], platform?: string | null) {
     return {
       kind,
       roles,
@@ -181,6 +205,22 @@ export class MeService {
       apiVersion: API_VERSION,
       serverTime: this.clock.now().toISOString(),
     };
+  }
+
+  /**
+   * `GET /me` планшета магазина (`kind=kiosk`, право `kiosk.self.read`): только `{kind, tablet}` (MeKiosk). Планшета в
+   * контексте нет (guard планшета не пропустил запрос или не подключён) — `403 FORBIDDEN` (fail-closed); склада нет —
+   * `403 FORBIDDEN` `reason: kiosk_warehouse_unavailable` (ADR-115 п. 23; запасного склада нет).
+   */
+  buildKiosk(tablet: MeKioskTablet | undefined): MeKioskDto {
+    if (!tablet) throw new ProblemException('FORBIDDEN', { detail: 'Планшет магазина не подключён.' });
+    if (tablet.warehouseId === null) {
+      throw new ProblemException('FORBIDDEN', {
+        detail: 'Склад планшета не задан. Обратитесь к администратору.',
+        reason: 'kiosk_warehouse_unavailable',
+      });
+    }
+    return { kind: 'kiosk', tablet: { id: tablet.tabletId, name: tablet.name, warehouseId: tablet.warehouseId } };
   }
 
   /** Лимит ручной скидки роли (`role_discount_limits`, 07 DATA-133) — только `staff`, строка `Percent`. */

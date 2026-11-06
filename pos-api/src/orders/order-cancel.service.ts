@@ -23,7 +23,7 @@ import { ProblemException } from '../common/problem-details/problem.exception.js
 import { assertOrderTransition, decideOrderCancel } from '../sales-domain/order/order-status.js';
 import { isSalesDomainError, SalesDomainError } from '../sales-domain/domain-error.js';
 import { toProblemException } from '../sales-domain/problem.js';
-import { insertOrderTransaction, OrderProjector } from './order-projection.js';
+import { insertOrderTransaction, isKioskOrder, OrderProjector } from './order-projection.js';
 import { OrderViewService } from './order-view.service.js';
 import { findOrder, findOrderOutbox, insertHistory } from './order.repository.js';
 import { parseCancelBody, validationFailed } from './orders.request.js';
@@ -33,7 +33,9 @@ import { idempotencyExecutor } from './sql-executor.js';
  * `POST /orders/{id}/cancel` (08 §4.8.4; 10 ORD-050…ORD-053 — владелец; ядро §22.9; 07 §6.3). Решение —
  * `decideOrderCancel` (sales-domain): (а) немедленная отмена заказа `submitting`, документ 1С которого не создан
  * (outbox `create` в `pending`/`dead` → `cancelled`), неполученные платежи → `voided`, состав → корзина (ORD-027);
- * (б) запрос отмены — outbox `cancel` (`POST /pos/v1/orders/{uuid}/cancel`), статус меняет только 1С.
+ * у заявки с планшета (`created_via='kiosk'`) состав не возвращается, уведомление — ролям `cashier` и `senior_seller`
+ * (10 KIOSK-030; 08 §4.8.4); (б) запрос отмены — outbox `cancel` (`POST /pos/v1/orders/{uuid}/cancel`), статус меняет
+ * только 1С.
  * `order.cancel.own` — без step-up; `order.cancel.request.any` — со step-up. Платёж `manual_confirm` → `409
  * PAYMENT_STATE_INVALID` (`open_payment_exists`). Транзакция `order_cancelled` — только при фактической отмене.
  */
@@ -176,7 +178,8 @@ export class OrderCancelService {
             requestId: auditCtx.requestId ?? null,
           });
           await this.voidOpenPayments(tx, o.id, actor);
-          await this.restoreCart(tx, o.id, o.created_by_user_id);
+          // Заявка с планшета: состав в корзину технического пользователя не возвращается (10 KIOSK-030).
+          if (!isKioskOrder(o)) await this.restoreCart(tx, o.id, o.created_by_user_id);
           await insertOrderTransaction(tx, {
             kind: 'order_cancelled',
             orderId: o.id,
@@ -189,6 +192,7 @@ export class OrderCancelService {
             details: { reasonCode: body.reasonCode, via: decision.via },
             dedupeKey: `order_cancelled:${o.id}`,
           });
+          // Автору — `order_status`; заявка с планшета — роли `cashier` и `senior_seller` (notifyOwner, KIOSK-030).
           if (o.created_by_user_id !== actor.userId) await this.projector.notifyOwner(tx, o, 'cancelled');
           await this.audit.write(
             auditCtx,

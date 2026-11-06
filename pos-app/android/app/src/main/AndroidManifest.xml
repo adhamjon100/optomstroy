@@ -16,7 +16,11 @@
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
+            android:lockTaskMode="if_whitelisted"
             android:windowSoftInputMode="adjustResize">
+            <!-- Планшет магазина (13 TAB-2-09; ADR-115 п. 29): если владелец устройства разрешил приложение
+                 (setLockTaskPackages, KioskLockChannel.enable), окно само входит в lock task при каждом запуске,
+                 в том числе после перезагрузки. Без Device Owner — обычный режим (телефоны и ПК сотрудников). -->
             <!-- Specifies an Android theme to apply to this Activity as soon as
                  the Android process has started. This theme is visible to the user
                  while the Flutter UI initializes. After that, this theme continues
@@ -30,6 +34,34 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Приложение «Домой» планшета магазина (P-002 §8.10; 16 §10.10). Выключено по умолчанию: включает только
+             KioskLockChannel.enable у владельца устройства (с addPersistentPreferredActivity), disable возвращает
+             значение манифеста. У сотрудников и покупателей приложение «Домой» не появляется. -->
+        <activity-alias
+            android:name=".KioskHomeAlias"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.HOME"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity-alias>
+        <!-- Владелец устройства планшета магазина: adb shell dpm set-device-owner
+             com.example.optomstroy/.KioskDeviceAdminReceiver (16 §10.10 шаг 4). Вызвать приёмник может только система
+             (BIND_DEVICE_ADMIN); политики — res/xml/device_admin.xml (пустой список). -->
+        <receiver
+            android:name=".KioskDeviceAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED"/>
+            </intent-filter>
+        </receiver>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

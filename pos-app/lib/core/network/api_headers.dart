@@ -18,6 +18,9 @@ abstract final class ApiHeaders {
   static const String retryAfter = 'Retry-After';
   static const String dataAsOf = 'X-Data-As-Of';
   static const String cacheControl = 'Cache-Control';
+
+  /// Закрепление планшета магазина `on` | `off` — на каждом запросе сессии `kind=kiosk` (08 §2.3; ADR-115 п. 26).
+  static const String kioskLock = 'X-Kiosk-Lock';
 }
 
 /// Профиль автоповтора (08 §2.10): 2 повтора для интерактивных запросов,

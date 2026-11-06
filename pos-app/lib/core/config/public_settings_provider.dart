@@ -16,6 +16,10 @@
 // Ошибка запроса (401 до входа, офлайн) не стирает известные значения — остаётся кэш/умолчания.
 //
 // Приоритет флагов: сервер (`features`) важнее локальных `FEATURE_*` (environment.dart).
+//
+// Планшет магазина (OpenAPI 1.3.0; 08 §4.23.1; ADR-115): `features.storeTablet` (env `KIOSK_MODE`) — fail-closed
+// ([kioskEnabledProvider]: до ответа сервера `false`, флага сборки нет); `kiosk {idleSeconds, idleWarningSeconds,
+// doneSeconds}` — тайминги автосброса ([kioskTimingsProvider], значения по умолчанию 120 / 15 / 60 с).
 import 'dart:async';
 import 'dart:convert';
 
@@ -36,7 +40,7 @@ import 'package:optomstroy/core/network/models/public_settings.dart';
 import 'package:optomstroy/core/session/session_controller.dart';
 
 export 'package:optomstroy/core/network/models/public_settings.dart'
-    show DeliverySlot, PublicFeatures, PublicSettings, SupportContact;
+    show DeliverySlot, PublicFeatures, PublicKioskSettings, PublicSettings, SupportContact;
 
 final Logger _log = Logger('public_settings');
 
@@ -123,6 +127,7 @@ final class PublicSettingsSnapshot {
 /// Умолчания при неизвестном значении сервера: `customerSelfService` — флаг сборки
 /// `FEATURE_CUSTOMER_SELF_SERVICE` (по умолчанию `true`, ядро §24.2); остальные действия скрыты
 /// (`false` / `QrProviderMode.none`) до ответа сервера — скрытие не защита, сервер проверяет сам.
+/// `storeTablet` — только с сервера (флага сборки нет), иначе `false` (08 §4.23.1: «до входа — `false`»).
 @immutable
 final class PublicFeatureFlags {
   const PublicFeatureFlags({
@@ -132,6 +137,7 @@ final class PublicFeatureFlags {
     required this.qrWebhook,
     required this.debtPaymentsFromPos,
     required this.fromServer,
+    this.storeTablet = false,
   });
 
   /// Сводка из ответа сервера [server] и конфигурации сборки [config].
@@ -145,6 +151,7 @@ final class PublicFeatureFlags {
     qrWebhook: server?.qrWebhook ?? false,
     debtPaymentsFromPos: server?.debtPaymentsFromPos ?? false,
     fromServer: server != null,
+    storeTablet: server?.storeTablet ?? false,
   );
 
   /// `features.customerSelfService` — режим клиента (SCR-06, SCR-50, вкладка «Привязки» SCR-45).
@@ -162,6 +169,10 @@ final class PublicFeatureFlags {
   /// `features.debtPaymentsFromPos` (Q-152).
   final bool debtPaymentsFromPos;
 
+  /// `features.storeTablet` — режим «Планшет магазина» (env `KIOSK_MODE`, ADR-115); от [customerSelfService] не
+  /// зависит (10 KIOSK-001).
+  final bool storeTablet;
+
   /// Флаги получены от сервера (из ответа или его копии в `app_meta`).
   final bool fromServer;
 
@@ -173,16 +184,70 @@ final class PublicFeatureFlags {
       other.qrProvider == qrProvider &&
       other.qrWebhook == qrWebhook &&
       other.debtPaymentsFromPos == debtPaymentsFromPos &&
-      other.fromServer == fromServer;
+      other.fromServer == fromServer &&
+      other.storeTablet == storeTablet;
 
   @override
-  int get hashCode =>
-      Object.hash(customerSelfService, returnsFromPos, qrProvider, qrWebhook, debtPaymentsFromPos, fromServer);
+  int get hashCode => Object.hash(
+    customerSelfService,
+    returnsFromPos,
+    qrProvider,
+    qrWebhook,
+    debtPaymentsFromPos,
+    fromServer,
+    storeTablet,
+  );
 
   @override
   String toString() =>
       'PublicFeatureFlags(selfService: $customerSelfService, returns: $returnsFromPos, qr: ${qrProvider.value}, '
-      'qrWebhook: $qrWebhook, debt: $debtPaymentsFromPos, fromServer: $fromServer)';
+      'qrWebhook: $qrWebhook, debt: $debtPaymentsFromPos, storeTablet: $storeTablet, fromServer: $fromServer)';
+}
+
+/// Тайминги автосброса планшета магазина (`PublicSettings.kiosk`; 08 §4.18.6, §4.23.1; ADR-115, Р-09 (а)): общие для
+/// всех планшетов. Нет значения или оно вне границ контракта — значение по умолчанию сервера.
+@immutable
+final class KioskTimings {
+  const KioskTimings({this.idle = defaultIdle, this.idleWarning = defaultIdleWarning, this.done = defaultDone});
+
+  /// Сводка из ответа сервера [server] (`null` — до ответа: значения по умолчанию).
+  factory KioskTimings.resolve(PublicKioskSettings? server) => KioskTimings(
+    idle: _seconds(server?.idleSeconds, 30, 1800) ?? defaultIdle,
+    idleWarning: _seconds(server?.idleWarningSeconds, 5, 120) ?? defaultIdleWarning,
+    done: _seconds(server?.doneSeconds, 10, 600) ?? defaultDone,
+  );
+
+  /// `kiosk_idle_seconds` по умолчанию — 120 с.
+  static const Duration defaultIdle = Duration(seconds: 120);
+
+  /// `kiosk_idle_warning_seconds` по умолчанию — 15 с.
+  static const Duration defaultIdleWarning = Duration(seconds: 15);
+
+  /// `kiosk_done_seconds` по умолчанию — 60 с.
+  static const Duration defaultDone = Duration(seconds: 60);
+
+  /// Автосброс без касаний (`idleSeconds`).
+  final Duration idle;
+
+  /// Обратный отсчёт «Вы ещё здесь?» перед сбросом (`idleWarningSeconds`).
+  final Duration idleWarning;
+
+  /// Номер заявки на SCR-53 до сброса (`doneSeconds`).
+  final Duration done;
+
+  static Duration? _seconds(int? value, int min, int max) =>
+      value != null && value >= min && value <= max ? Duration(seconds: value) : null;
+
+  @override
+  bool operator ==(Object other) =>
+      other is KioskTimings && other.idle == idle && other.idleWarning == idleWarning && other.done == done;
+
+  @override
+  int get hashCode => Object.hash(idle, idleWarning, done);
+
+  @override
+  String toString() =>
+      'KioskTimings(idle: ${idle.inSeconds} s, warning: ${idleWarning.inSeconds} s, done: ${done.inSeconds} s)';
 }
 
 /// Ответ `GET /settings/public`.
@@ -315,6 +380,20 @@ final publicFeatureFlagsProvider = Provider<PublicFeatureFlags>(
 /// `features.customerSelfService` (по умолчанию — флаг сборки, `true`).
 final publicCustomerSelfServiceProvider = Provider<bool>(
   (ref) => ref.watch(publicFeatureFlagsProvider.select((PublicFeatureFlags f) => f.customerSelfService)),
+);
+
+/// `features.storeTablet` — режим «Планшет магазина» включён на сервере (env `KIOSK_MODE`; 08 §4.23.1; ADR-115).
+/// Fail-closed: до ответа сервера (или его копии в `app_meta`) и без поля в ответе — `false`; флага сборки нет;
+/// от [publicCustomerSelfServiceProvider] не зависит (10 KIOSK-001). Скрытие — не защита: сервер отвечает
+/// `403 KIOSK_DISABLED` сам.
+final kioskEnabledProvider = Provider<bool>(
+  (ref) => ref.watch(publicFeatureFlagsProvider.select((PublicFeatureFlags f) => f.storeTablet)),
+);
+
+/// Тайминги автосброса планшета магазина (`PublicSettings.kiosk`); до ответа сервера — значения по умолчанию.
+final kioskTimingsProvider = Provider<KioskTimings>(
+  (ref) =>
+      KioskTimings.resolve(ref.watch(publicSettingsProvider.select((PublicSettingsSnapshot s) => s.settings.kiosk))),
 );
 
 /// `customerStockDisplay` — показ остатков клиенту: `status` (по умолчанию) — только «в наличии / мало / нет»,

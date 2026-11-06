@@ -4,7 +4,7 @@ import { type RequestWithContext } from '../http/request-context.js';
 import { isUuid } from '../ids/uuid.js';
 import { ProblemException } from '../problem-details/problem.exception.js';
 import { PUBLIC_ROUTE } from '../rbac/rbac.decorators.js';
-import { AuthStateCache } from './auth-state.js';
+import { type AuthSessionState, AuthStateCache, KIOSK_REVOKED_REASON } from './auth-state.js';
 import { CLOCK, type Clock } from './clock.js';
 import { type AccessTokenClaims, JwtService, JwtVerificationError } from './jwt.service.js';
 import type { AuthenticatedPrincipal } from './principal.js';
@@ -20,12 +20,13 @@ export interface AuthGuardOptions {
 export const AUTH_GUARD_OPTIONS = Symbol('AUTH_GUARD_OPTIONS');
 export const DEFAULT_AUTH_GUARD_OPTIONS: AuthGuardOptions = Object.freeze({ requireDeviceHeader: true });
 
-type RejectCode = 'UNAUTHENTICATED' | 'SESSION_REVOKED' | 'TOKEN_STALE';
+type RejectCode = 'UNAUTHENTICATED' | 'SESSION_REVOKED' | 'TOKEN_STALE' | 'KIOSK_REVOKED';
 
 const DETAILS: Readonly<Record<RejectCode, string>> = {
   UNAUTHENTICATED: 'Требуется вход.',
   SESSION_REVOKED: 'Сессия завершена. Войдите снова.',
   TOKEN_STALE: 'Права доступа изменились. Обновите токен.',
+  KIOSK_REVOKED: 'Планшет отключён администратором.',
 };
 
 /**
@@ -37,7 +38,9 @@ const DETAILS: Readonly<Record<RejectCode, string>> = {
  * → 401 UNAUTHENTICATED; `X-Device-Id` (см. AuthGuardOptions); снимок БД (кэш 60 с): пользователь существует и
  * `kind` совпадает (иначе UNAUTHENTICATED), статус `active|pending_activation`, сессия `sid` принадлежит `sub`, не
  * отозвана, не истекла, устройство сессии = `deviceId`, `jti` не в denylist (иначе 401 SESSION_REVOKED);
- * `permissionsVersion` токена = `users.permissions_version` (иначе 401 TOKEN_STALE).
+ * `permissionsVersion` токена = `users.permissions_version` (иначе 401 TOKEN_STALE). Сессия планшета магазина
+ * (`kind=kiosk`), отозванная с `revoke_reason='kiosk_revoked'`, — 401 KIOSK_REVOKED раньше всех веток отзыва
+ * (08 §2.2; 09 §8.9 п. 8; ADR-115); прочие отказы планшета — прежние коды.
  * Логи — только причина и requestId (без токена и claims ПДн, 11 SEC-062).
  */
 @Injectable()
@@ -88,6 +91,13 @@ export class AuthGuard implements CanActivate {
     }
 
     const snap = await this.state.snapshot({ userId: claims.sub, sessionId: claims.sid, jti: claims.jti });
+    // Планшет магазина (`kind=kiosk`), сессия отозвана с `kiosk_revoked` (отключение администратором, аварийный
+    // выход, подключение заново): `401 KIOSK_REVOKED` на всех ветках отзыва — сразу после снимка и до denylist `jti`
+    // (08 §2.2; 09 §8.9 п. 8 (б); 11 SEC-139). Снимок, взятый до отзыва (кэш ≤ 60 с, denylist процесса), даёт
+    // прежний ответ — принятый остаток 09 §8.9 п. 8 (2).
+    if (claims.kind === 'kiosk' && isKioskRevoked(snap.session, claims.sub)) {
+      this.reject(req, 'KIOSK_REVOKED', KIOSK_REVOKED_REASON);
+    }
     // `jti` в denylist проверяется первым: снимок после `denyJti` может не содержать пользователя, а отказ обязан
     // быть SESSION_REVOKED (09 §8.6; D_spec_questions A-13).
     if (snap.jtiDenied) this.reject(req, 'SESSION_REVOKED', 'jti_denied');
@@ -127,6 +137,11 @@ export class AuthGuard implements CanActivate {
     this.logger.warn({ event: 'auth.rejected', requestId: req.id, code, reason }, 'auth.rejected');
     throw new ProblemException(code, { detail: DETAILS[code] });
   }
+}
+
+/** Сессия `sid` этого субъекта отозвана с причиной `kiosk_revoked` (09 §8.9 п. 8). */
+function isKioskRevoked(s: AuthSessionState | null, userId: string): boolean {
+  return s !== null && s.userId === userId && s.revokedAt !== null && s.revokeReason === KIOSK_REVOKED_REASON;
 }
 
 function singleHeader(v: string | string[] | undefined): string | undefined {

@@ -1,19 +1,20 @@
 // GENERATED FILE — DO NOT EDIT.
-// Source: contracts/enums.json (optomstroy-pos-enums 1.2.0, sha256 3e1a7b459ff5b94974e57aa4b3b82b2b88942b0c84fb3e21f8a60b1198357d0a)
+// Source: contracts/enums.json (optomstroy-pos-enums 1.3.0, sha256 f0c79cf87a4e3ad0a4d4f5d2641fdb14b0d21fafc0cd1693312641c9dd1bb00b)
 // Generator: scripts/gen_enums.py (RM-B-009). Owners: 07 §6.1/§6.1.1, 08 §2.4/§3.8 (R0 §18.1).
 /* eslint-disable */
 
-export const ENUMS_CONTRACT_VERSION = '1.2.0' as const;
+export const ENUMS_CONTRACT_VERSION = '1.3.0' as const;
 
 // ===== 07 §6.1 — типы PostgreSQL (CREATE TYPE … AS ENUM) =====
 
 /**
- * user_kind — 07 §6.1 (CREATE TYPE). Источник: ядро §6.
+ * user_kind — 07 §6.1 (CREATE TYPE). Источник: ядро §6; kiosk — ADR-115 (07 §19 п. 31).
  * Используется: users.kind.
  */
 export const USER_KIND_VALUES = [
   'staff',
   'customer',
+  'kiosk',
 ] as const;
 export type UserKind = (typeof USER_KIND_VALUES)[number];
 export function isUserKind(value: unknown): value is UserKind {
@@ -37,7 +38,7 @@ export function isUserStatus(value: unknown): value is UserStatus {
 }
 
 /**
- * role_code — 07 §6.1 (CREATE TYPE). Источник: ядро §6.
+ * role_code — 07 §6.1 (CREATE TYPE). Источник: ядро §6; kiosk — ADR-115 (07 §19 п. 31).
  * Используется: roles.code, user_invitations.role, role_discount_limits.role, price_lists.visible_to_roles[], audit_logs.actor_role.
  */
 export const ROLE_CODE_VALUES = [
@@ -48,6 +49,7 @@ export const ROLE_CODE_VALUES = [
   'owner',
   'customer',
   'integration',
+  'kiosk',
 ] as const;
 export type RoleCode = (typeof ROLE_CODE_VALUES)[number];
 export function isRoleCode(value: unknown): value is RoleCode {
@@ -281,7 +283,7 @@ export function isOutboxStatus(value: unknown): value is OutboxStatus {
 }
 
 /**
- * notification_kind — 07 §6.1 (CREATE TYPE). Источник: ядро §6 + §17.3.
+ * notification_kind — 07 §6.1 (CREATE TYPE). Источник: ядро §6 + §17.3; kiosk_order — ADR-115 (07 §19 п. 31).
  * Используется: notifications.kind.
  */
 export const NOTIFICATION_KIND_VALUES = [
@@ -293,6 +295,7 @@ export const NOTIFICATION_KIND_VALUES = [
   'system',
   'payment_status',
   'return_status',
+  'kiosk_order',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KIND_VALUES)[number];
 export function isNotificationKind(value: unknown): value is NotificationKind {
@@ -356,8 +359,8 @@ export function isStepUpMethod(value: unknown): value is StepUpMethod {
 }
 
 /**
- * otp_purpose — 07 §6.1 (CREATE TYPE). Источник: РЕШЕНИЕ: ядро §17.3, §18.2 п.7; карточка §5.11.
- * Используется: otp_challenges.purpose; тело POST /auth/otp/request (08).
+ * otp_purpose — 07 §6.1 (CREATE TYPE). Источник: РЕШЕНИЕ: ядро §17.3, §18.2 п.7; карточка §5.11; kiosk_order — ADR-115.
+ * Используется: otp_challenges.purpose; тело POST /auth/otp/request (08; kiosk_order им не принимается — только POST /kiosk/order-otp).
  * Не используются: login.
  */
 export const OTP_PURPOSE_VALUES = [
@@ -366,6 +369,7 @@ export const OTP_PURPOSE_VALUES = [
   'phone_change_old',
   'phone_change_new',
   'customer_link',
+  'kiosk_order',
 ] as const;
 export type OtpPurpose = (typeof OTP_PURPOSE_VALUES)[number];
 export function isOtpPurpose(value: unknown): value is OtpPurpose {
@@ -750,7 +754,7 @@ export function isInvitationRole(value: unknown): value is InvitationRole {
 
 /**
  * session_revoke_reason — 07 §6.1.1 (CHECK). Поля: sessions.revoke_reason.
- * Источник: D-12, ядро §18.2 п.8; 09 §8.3, миграция 0003 (EQ-AUTH-03, ADR-088).
+ * Источник: D-12, ядро §18.2 п.8; 09 §8.3, миграция 0003 (EQ-AUTH-03, ADR-088); ADR-115 (миграция 0022).
  */
 export const SESSION_REVOKE_REASON_VALUES = [
   'logout',
@@ -766,6 +770,7 @@ export const SESSION_REVOKE_REASON_VALUES = [
   'device_mismatch',
   'biometric_invalidated',
   'refresh_replay',
+  'kiosk_revoked',
 ] as const;
 export type SessionRevokeReason = (typeof SESSION_REVOKE_REASON_VALUES)[number];
 export function isSessionRevokeReason(value: unknown): value is SessionRevokeReason {
@@ -805,7 +810,7 @@ export function isTokenDenyReason(value: unknown): value is TokenDenyReason {
 
 /**
  * rate_limit_scope — 07 §6.1.1 (CHECK). Поля: rate_limit_counters.scope.
- * Источник: D-10, D-44; миграция 0003 (EQ-AUTH-01, ADR-088).
+ * Источник: D-10, D-44; миграция 0003 (EQ-AUTH-01, ADR-088); ADR-115 (миграция 0022).
  */
 export const RATE_LIMIT_SCOPE_VALUES = [
   'otp_phone_15m',
@@ -822,6 +827,8 @@ export const RATE_LIMIT_SCOPE_VALUES = [
   'otp_verify_ip_10m',
   'pin_user_device_10m',
   'admin_user_1m',
+  'otp_kiosk_tablet_1h',
+  'otp_kiosk_tablet_24h',
 ] as const;
 export type RateLimitScope = (typeof RATE_LIMIT_SCOPE_VALUES)[number];
 export function isRateLimitScope(value: unknown): value is RateLimitScope {
@@ -865,6 +872,19 @@ export const INTEGRATION_TOKEN_REVOKE_REASON_VALUES = [
 export type IntegrationTokenRevokeReason = (typeof INTEGRATION_TOKEN_REVOKE_REASON_VALUES)[number];
 export function isIntegrationTokenRevokeReason(value: unknown): value is IntegrationTokenRevokeReason {
   return typeof value === 'string' && (INTEGRATION_TOKEN_REVOKE_REASON_VALUES as readonly string[]).includes(value);
+}
+
+/**
+ * store_tablet_status — 07 §6.1.1 (CHECK). Поля: store_tablets.status.
+ * Источник: ADR-115 (07 §5.65, миграция 0022).
+ */
+export const STORE_TABLET_STATUS_VALUES = [
+  'active',
+  'revoked',
+] as const;
+export type StoreTabletStatus = (typeof STORE_TABLET_STATUS_VALUES)[number];
+export function isStoreTabletStatus(value: unknown): value is StoreTabletStatus {
+  return typeof value === 'string' && (STORE_TABLET_STATUS_VALUES as readonly string[]).includes(value);
 }
 
 /**
@@ -943,15 +963,30 @@ export function isRefundIntent(value: unknown): value is RefundIntent {
 
 /**
  * order_created_via — 07 §6.1.1 (CHECK). Поля: orders.created_via.
- * Источник: ядро v1.9 §24.2.
+ * Источник: ядро v1.9 §24.2; ADR-115 (миграция 0022).
  */
 export const ORDER_CREATED_VIA_VALUES = [
   'staff',
   'customer',
+  'kiosk',
 ] as const;
 export type OrderCreatedVia = (typeof ORDER_CREATED_VIA_VALUES)[number];
 export function isOrderCreatedVia(value: unknown): value is OrderCreatedVia {
   return typeof value === 'string' && (ORDER_CREATED_VIA_VALUES as readonly string[]).includes(value);
+}
+
+/**
+ * kiosk_customer_match — 07 §6.1.1 (CHECK). Поля: orders.kiosk_customer_match.
+ * Источник: ADR-115 (07 §5.37, миграция 0022).
+ */
+export const KIOSK_CUSTOMER_MATCH_VALUES = [
+  'single',
+  'ambiguous',
+  'none',
+] as const;
+export type KioskCustomerMatch = (typeof KIOSK_CUSTOMER_MATCH_VALUES)[number];
+export function isKioskCustomerMatch(value: unknown): value is KioskCustomerMatch {
+  return typeof value === 'string' && (KIOSK_CUSTOMER_MATCH_VALUES as readonly string[]).includes(value);
 }
 
 /**
@@ -1135,13 +1170,14 @@ export function isPrintPaper(value: unknown): value is PrintPaper {
 
 /**
  * sms_template_key — 07 §6.1.1 (CHECK). Поля: sms_outbox.template_key.
- * Источник: D-11.
+ * Источник: D-11; ADR-115 (миграция 0022).
  */
 export const SMS_TEMPLATE_KEY_VALUES = [
   'otp_login',
   'otp_step_up',
   'otp_phone_change',
   'otp_customer_link',
+  'otp_kiosk_order',
 ] as const;
 export type SmsTemplateKey = (typeof SMS_TEMPLATE_KEY_VALUES)[number];
 export function isSmsTemplateKey(value: unknown): value is SmsTemplateKey {
@@ -1263,6 +1299,12 @@ export const PROBLEM_CODE_VALUES = [
   'QR_UNAVAILABLE',
   'CONSENT_REQUIRED',
   'APP_READ_ONLY',
+  'KIOSK_REVOKED',
+  'KIOSK_DISABLED',
+  'KIOSK_NETWORK_DENIED',
+  'KIOSK_RATE_LIMITED',
+  'KIOSK_EXIT_CODE_INVALID',
+  'KIOSK_EXIT_LOCKED',
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODE_VALUES)[number];
 export function isProblemCode(value: unknown): value is ProblemCode {
@@ -1321,6 +1363,12 @@ export const PROBLEM_CODE_HTTP_STATUS: { readonly [K in ProblemCode]: readonly n
   QR_UNAVAILABLE: [503],
   CONSENT_REQUIRED: [422],
   APP_READ_ONLY: [503],
+  KIOSK_REVOKED: [401],
+  KIOSK_DISABLED: [403],
+  KIOSK_NETWORK_DENIED: [403],
+  KIOSK_RATE_LIMITED: [429],
+  KIOSK_EXIT_CODE_INVALID: [422],
+  KIOSK_EXIT_LOCKED: [423],
 };
 
 /** Реестр типов PostgreSQL: имя типа → значения в порядке CREATE TYPE (07 §6.1; тест pg_enum, DATA-200). */
@@ -1383,12 +1431,14 @@ export const CHECK_LISTS = {
   'integration_tokens.scope': INTEGRATION_TOKEN_SCOPE_VALUES,
   'integration_tokens.source': INTEGRATION_TOKEN_SOURCE_VALUES,
   'integration_tokens.revoke_reason': INTEGRATION_TOKEN_REVOKE_REASON_VALUES,
+  'store_tablets.status': STORE_TABLET_STATUS_VALUES,
   'receivable_documents.kind': RECEIVABLE_DOCUMENT_KIND_VALUES,
   'receivable_documents.status': RECEIVABLE_DOCUMENT_STATUS_VALUES,
   'payments.review_reason': REVIEW_REASON_VALUES,
   'orders.cancel_reason_code': CANCEL_REASON_CODE_VALUES,
   'orders.refund_intent': REFUND_INTENT_VALUES,
   'orders.created_via': ORDER_CREATED_VIA_VALUES,
+  'orders.kiosk_customer_match': KIOSK_CUSTOMER_MATCH_VALUES,
   'payments.qr_provider': QR_PROVIDER_MODE_VALUES,
   'return_requests.onec_result': RETURN_ONEC_RESULT_VALUES,
   'return_requests.approval_reason': RETURN_APPROVAL_REASON_VALUES,

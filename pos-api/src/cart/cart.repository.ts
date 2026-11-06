@@ -314,6 +314,19 @@ export class CartRepository {
     return r[0]?.id ?? null;
   }
 
+  /**
+   * Склад планшета магазина (`kind=kiosk`, ADR-115 п. 23; 10 KIOSK-007): только `user_profiles.home_warehouse_id`,
+   * активный и не помеченный на удаление; без `settings.defaultWarehouseId` и запасных складов — `null`, если его нет.
+   */
+  async kioskWarehouse(ex: DbExecutor, userId: string): Promise<string | null> {
+    const r = await rows<{ id: string }>(
+      ex,
+      sql`SELECT w.id FROM user_profiles up JOIN warehouses w ON w.id = up.home_warehouse_id
+           WHERE up.user_id = ${userId}::uuid AND w.is_active AND NOT w.deletion_mark`,
+    );
+    return r[0]?.id ?? null;
+  }
+
   /** Подтверждённая карточка 1С клиента-покупателя (`customer_links.status='confirmed'`, ядро §22.12). */
   async confirmedCustomerOf(ex: DbExecutor, userId: string): Promise<string | null> {
     const r = await rows<{ id: string }>(

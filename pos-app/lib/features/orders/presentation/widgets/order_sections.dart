@@ -1,6 +1,7 @@
-// Блоки SCR-24 (02 SCR-24.2/24.3): A — шапка (номер, № 1С, статус, свежесть 1С), B — баннеры, C — история
-// статусов, D — клиент и получение, E — состав, F — итоги и оплата, G — платежи. Только токены варианта B и строки
-// ARB; суммы — расчёт сервера (D-23), клиент их только показывает.
+// Блоки SCR-24 (02 SCR-24.2/24.3): A — шапка (номер, № 1С, статус, пометка «С планшета», свежесть 1С), B — баннеры,
+// C — история статусов, D — клиент и получение (подсказка совпадения клиента заявки с планшета), E — состав, F — итоги
+// и оплата, G — платежи. Только токены варианта B и строки ARB; суммы — расчёт сервера (D-23), клиент их только
+// показывает. Заявка с планшета магазина (`createdVia=kiosk`, ADR-115): UI-24-023, UI-24-024, UI-24-005 — 02 SCR-24.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import 'package:optomstroy/design_system/components/app_snackbar.dart';
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/order_status_chip.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
+import 'package:optomstroy/design_system/formats/ds_phone_format.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/design_system/tokens/ds_typography.dart';
@@ -69,6 +71,28 @@ class OrderSection extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Пометка «С планшета» (03 §9.39, DS-104; 02 UI-24-023, UI-25-015): `StatusChip` neutral с иконкой `tablet_android`
+/// и текстом `order_badge_kiosk` — не только цветом (A11Y-004). Показывается только у `createdVia=kiosk` и только
+/// сотрудникам — решает вызывающий код.
+class OrderKioskBadge extends StatelessWidget {
+  /// Создаёт пометку.
+  const OrderKioskBadge({super.key, this.dense = true});
+
+  /// Высота 20 (строки SCR-25); `false` — 24, как статус в шапке SCR-24.
+  final bool dense;
+
+  /// Иконка пометки (03 §9.39: `tablet_android`).
+  static const IconData icon = Icons.tablet_android_rounded;
+
+  @override
+  Widget build(BuildContext context) => StatusChip(
+    label: AppLocalizations.of(context).order_badge_kiosk,
+    variant: StatusChipVariant.neutral,
+    icon: icon,
+    dense: dense,
+  );
 }
 
 /// Строка «подпись — значение» итогов.
@@ -143,6 +167,9 @@ class OrderHeaderBlock extends StatelessWidget {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
         OrderStatusChip(key: const ValueKey<String>('order-status'), status: order.status),
+        // UI-24-023: заявка с планшета магазина — пометка рядом со статусом (сотрудникам; AC-UI-24-018).
+        if (viewer.isStaff && order.createdVia == OrderCreatedVia.kiosk)
+          const OrderKioskBadge(key: ValueKey<String>('order-badge-kiosk'), dense: false),
         if (order.cancelRequested)
           StatusChip(
             key: const ValueKey<String>('order-cancel-requested'),
@@ -460,7 +487,7 @@ class _OrderHistoryBlockState extends State<OrderHistoryBlock> {
   }
 }
 
-/// D — клиент и получение (UI-24-004, UI-24-005).
+/// D — клиент и получение (UI-24-004, UI-24-005); у заявки с планшета — подсказка совпадения клиента UI-24-024.
 class OrderCustomerBlock extends StatelessWidget {
   /// Создаёт блок.
   const OrderCustomerBlock({super.key, required this.order, required this.viewer, this.onOpenCustomer});
@@ -471,6 +498,37 @@ class OrderCustomerBlock extends StatelessWidget {
   /// «Карточка ›» → SCR-32 (staff).
   final VoidCallback? onOpenCustomer;
 
+  /// UI-24-024 (02 SCR-24; 10 KIOSK-019; P-002 §8.7 п. 5): подсказка кассиру по `kioskCustomerMatch` заявки с планшета —
+  /// `single` — сверить имя покупателя с карточкой до оплаты (`info`), `ambiguous` / `none` — «Повторить заказ» на
+  /// карточку клиента (`warning`). Без закрытия; оплату не блокирует. `null` — не заявка с планшета, итога нет или
+  /// смотрит не сотрудник (у `customer` подсказки нет, AC-UI-24-019).
+  static Widget? kioskMatchHint(BuildContext context, Order order, OrdersViewer viewer) {
+    final KioskCustomerMatch? match = order.kioskCustomerMatch;
+    if (!viewer.isStaff || order.createdVia != OrderCreatedVia.kiosk || match == null) return null;
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final String name = order.customer?.displayName ?? order.customer?.name ?? '';
+    final (String message, ErrorStateTone tone) = switch (match) {
+      KioskCustomerMatch.single => (
+        name.isEmpty ? l10n.order_kiosk_match_single : l10n.order_kiosk_match_single_check(name),
+        ErrorStateTone.info,
+      ),
+      // Вторая строка баннера — подсказка «Повторить заказ» (UI-24-011), затем отмена заявки (Р-06 (а)).
+      KioskCustomerMatch.ambiguous => (
+        '${l10n.order_kiosk_match_ambiguous}\n${l10n.order_kiosk_match_repeat_hint}',
+        ErrorStateTone.warning,
+      ),
+      KioskCustomerMatch.none => (
+        '${l10n.order_kiosk_match_none}\n${l10n.order_kiosk_match_repeat_hint}',
+        ErrorStateTone.warning,
+      ),
+    };
+    return ClipRRect(
+      key: ValueKey<String>('order-kiosk-match-${match.value}'),
+      borderRadius: BorderRadius.all(context.radii.sm),
+      child: ErrorState.banner(message: message, tone: tone),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context);
@@ -478,6 +536,13 @@ class OrderCustomerBlock extends StatelessWidget {
     final String? name = order.customer?.displayName ?? order.customer?.name;
     final Delivery? d = order.delivery;
     final Receiver? r = order.receiver;
+    // UI-24-005, заявка с планшета: номер покупателя — телефон получателя (`receiver.kind=customer`, без имени); после
+    // маскирования через 90 дней — `receiver.phoneMasked`, `phone = null` (11 PRIV-034). Только сотрудникам.
+    final String? kioskPhone =
+        viewer.isStaff && order.createdVia == OrderCreatedVia.kiosk && r != null && r.kind != ReceiverKind.otherPerson
+        ? (r.phoneE164 == null ? r.phoneMasked : DsPhoneFormat.display(r.phoneE164!))
+        : null;
+    final Widget? kioskHint = kioskMatchHint(context, order, viewer);
     final List<String> deliveryParts = <String>[
       if (d?.address != null && d!.address!.isNotEmpty) d.address!,
       if (d?.desiredDate != null)
@@ -487,6 +552,7 @@ class OrderCustomerBlock extends StatelessWidget {
         ].join(', '),
       if (r != null && r.kind == ReceiverKind.otherPerson && (r.name != null || r.phoneE164 != null))
         <String>[?r.name, ?r.phoneE164].join(', '),
+      ?kioskPhone,
       if (d?.courierComment != null && d!.courierComment!.isNotEmpty) '«${d.courierComment}»',
     ];
     return OrderSection(
@@ -503,6 +569,7 @@ class OrderCustomerBlock extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          if (kioskHint != null) ...<Widget>[kioskHint, SizedBox(height: context.space.s3)],
           if (name != null) Text(name, style: context.text.bodyMedium.copyWith(color: c.textPrimary)),
           if (order.customer?.phoneMasked != null)
             Text(order.customer!.phoneMasked!, style: context.text.caption.copyWith(color: c.textSecondary)),

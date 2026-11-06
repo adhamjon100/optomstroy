@@ -16,6 +16,7 @@ import {
 import { auditContextFromRequest } from '../common/audit/audit-context.js';
 import { CurrentUser } from '../common/auth/auth.decorators.js';
 import type { AuthenticatedPrincipal } from '../common/auth/principal.js';
+import { customerModeOrDeny } from '../common/auth/subject-kind.js';
 import type { RequestWithContext } from '../common/http/request-context.js';
 import { IDEMPOTENCY_KEY_HEADER, Idempotent } from '../common/idempotency/idempotent.decorator.js';
 import { ProblemException } from '../common/problem-details/problem.exception.js';
@@ -57,7 +58,10 @@ export class ReturnsController {
       actor: {
         userId: p.userId,
         roles: p.roles,
-        isCustomer: p.kind === 'customer',
+        // Возвраты вне закрытого списка планшета: `kind=kiosk` — 403 (06 ARCH-065).
+        isCustomer: customerModeOrDeny(p.kind, () => {
+          throw new ProblemException('FORBIDDEN', { detail: 'Недостаточно прав для операции.' });
+        }),
         sessionId: p.sessionId,
         deviceId: p.deviceId,
         requestId: typeof req.id === 'string' ? req.id : null,

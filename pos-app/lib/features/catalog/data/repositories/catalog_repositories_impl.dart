@@ -2,6 +2,10 @@
 // Ошибки сети/сервера → `Failure` только через `ErrorMapper` (06 §6.8). Без открытой БД
 // пользователя методы кэша возвращают `UnknownFailure(cause: CatalogCacheUnavailable())`.
 // Курсор кэшированных страниц — смещение (строка с числом).
+// Склад кэша по умолчанию ([LocalWarehouseAccess]): у планшета магазина — склад планшета (признак, `GET /me` →
+// `tablet.warehouseId`; 10 KIOSK-007, 02 SCR-51.9), иначе `null` — склад `warehouses.is_default`. Подставляется только в
+// чтения кэша (drift) без явного склада; сетевые запросы и `/catalog/sync/*` склада не получают (планшету
+// `warehouseId` → `403`, AC-UI-51-005).
 import 'package:dio/dio.dart';
 import 'package:optomstroy/core/database/daos/app_meta_dao.dart';
 import 'package:optomstroy/core/database/daos/catalog_dao.dart';
@@ -28,6 +32,11 @@ import 'package:optomstroy/features/catalog/domain/repositories/catalog_reposito
 /// Доступ к кэшу: `null` — БД пользователя ещё не открыта (до входа).
 typedef CatalogDaoAccess = CatalogDao? Function();
 
+/// Склад для чтений кэша без явного склада: склад планшета магазина; `null` — склад по умолчанию.
+typedef LocalWarehouseAccess = String? Function();
+
+String? _noLocalWarehouse() => null;
+
 Future<Result<T>> _local<T>(CatalogDaoAccess dao, Future<T> Function(CatalogDao dao) body) async {
   final d = dao();
   if (d == null) return const FailureResult(UnknownFailure(cause: CatalogCacheUnavailable()));
@@ -40,20 +49,21 @@ Future<Result<T>> _local<T>(CatalogDaoAccess dao, Future<T> Function(CatalogDao 
 
 int _offset(String? cursor) => cursor == null ? 0 : (int.tryParse(cursor) ?? 0).clamp(0, 1 << 30);
 
-CatalogLocalFilter _localFilter(CatalogFilter f, {List<String>? productIds}) => CatalogLocalFilter(
-  categoryId: f.categoryId,
-  includeSubcategories: f.includeSubcategories,
-  priceListId: f.priceListId,
-  warehouseId: f.warehouseId,
-  inStock: f.inStock ?? false,
-  priceMinTyiyn: f.priceMin?.tyiyn,
-  priceMaxTyiyn: f.priceMax?.tyiyn,
-  brands: f.brands,
-  attrs: f.attrs,
-  favoriteOnly: f.favorite ?? false,
-  hasImage: f.hasImage ?? false,
-  productIds: productIds,
-);
+CatalogLocalFilter _localFilter(CatalogFilter f, {List<String>? productIds, String? localWarehouseId}) =>
+    CatalogLocalFilter(
+      categoryId: f.categoryId,
+      includeSubcategories: f.includeSubcategories,
+      priceListId: f.priceListId,
+      warehouseId: f.warehouseId ?? localWarehouseId,
+      inStock: f.inStock ?? false,
+      priceMinTyiyn: f.priceMin?.tyiyn,
+      priceMaxTyiyn: f.priceMax?.tyiyn,
+      brands: f.brands,
+      attrs: f.attrs,
+      favoriteOnly: f.favorite ?? false,
+      hasImage: f.hasImage ?? false,
+      productIds: productIds,
+    );
 
 CatalogPage<ProductSummary> _cachedPage(CachedProductPage page, {required int limit, DateTime? asOf}) =>
     CatalogPage<ProductSummary>(
@@ -70,12 +80,17 @@ Future<DateTime?> _metaAsOf(CatalogDao dao, String entity) async => fromUnixMs((
 // ---------------------------------------------------------------------------
 
 final class CatalogRepositoryImpl implements CatalogRepository {
-  CatalogRepositoryImpl({required CatalogRemoteDataSource remote, required CatalogDaoAccess dao})
-    : _remote = remote,
-      _dao = dao;
+  CatalogRepositoryImpl({
+    required CatalogRemoteDataSource remote,
+    required CatalogDaoAccess dao,
+    LocalWarehouseAccess localWarehouseId = _noLocalWarehouse,
+  }) : _remote = remote,
+       _dao = dao,
+       _localWarehouseId = localWarehouseId;
 
   final CatalogRemoteDataSource _remote;
   final CatalogDaoAccess _dao;
+  final LocalWarehouseAccess _localWarehouseId;
 
   @override
   Future<Result<CategoryTree>> categories({
@@ -153,7 +168,7 @@ final class CatalogRepositoryImpl implements CatalogRepository {
   @override
   Future<Result<CatalogPage<ProductSummary>>> cachedProducts(CatalogQuery query) => _local(_dao, (dao) async {
     final page = await dao.listProducts(
-      filter: _localFilter(query.filter),
+      filter: _localFilter(query.filter, localWarehouseId: _localWarehouseId()),
       sort: (query.sort ?? CatalogSort.nameAsc).value,
       limit: query.limit.clamp(1, CatalogQuery.maxLimit),
       offset: _offset(query.cursor),
@@ -165,19 +180,26 @@ final class CatalogRepositoryImpl implements CatalogRepository {
   Future<Result<Product?>> cachedProduct(String productId, {String? warehouseId, String? priceListId}) =>
       _local(_dao, (dao) async {
         final card = await dao.productCard(productId);
-        return card == null ? null : productFromCard(card, priceListId: priceListId, warehouseId: warehouseId);
+        return card == null
+            ? null
+            : productFromCard(card, priceListId: priceListId, warehouseId: warehouseId ?? _localWarehouseId());
       });
 }
 
 // ---------------------------------------------------------------------------
 
 final class SearchRepositoryImpl implements SearchRepository {
-  SearchRepositoryImpl({required CatalogRemoteDataSource remote, required CatalogDaoAccess dao})
-    : _remote = remote,
-      _dao = dao;
+  SearchRepositoryImpl({
+    required CatalogRemoteDataSource remote,
+    required CatalogDaoAccess dao,
+    LocalWarehouseAccess localWarehouseId = _noLocalWarehouse,
+  }) : _remote = remote,
+       _dao = dao,
+       _localWarehouseId = localWarehouseId;
 
   final CatalogRemoteDataSource _remote;
   final CatalogDaoAccess _dao;
+  final LocalWarehouseAccess _localWarehouseId;
 
   /// Токен текущего запроса первой страницы поиска: новый запрос (шаг debounce 300 мс) отменяет предыдущий
   /// (06 §6.7 «CancelToken», D-31); ответ отменённого игнорируется и вызывающим (номер запроса).
@@ -229,7 +251,7 @@ final class SearchRepositoryImpl implements SearchRepository {
   Future<Result<SearchResult>> searchCached(SearchQuery query) => _local(_dao, (dao) async {
     final page = await dao.searchProducts(
       query.q,
-      filter: _localFilter(query.filter),
+      filter: _localFilter(query.filter, localWarehouseId: _localWarehouseId()),
       sort: query.sort.value,
       limit: query.limit.clamp(1, CatalogQuery.maxLimit),
       offset: _offset(query.cursor),
@@ -256,35 +278,42 @@ final class SearchRepositoryImpl implements SearchRepository {
   });
 
   @override
-  Future<Result<BarcodeLookup?>> barcodeCached(String value, {String? warehouseId, String? priceListId}) =>
-      _local(_dao, (dao) async {
-        final row = await dao.barcodeByValue(value.trim());
-        if (row == null || row.productId.isEmpty) return null;
-        final card = await dao.productCard(row.productId);
-        if (card == null) return null;
-        final product = productFromCard(card, priceListId: priceListId, warehouseId: warehouseId);
-        final variant = product.variants.where((v) => v.id == row.variantId).firstOrNull ?? product.defaultVariant;
-        if (variant == null) return null;
-        return BarcodeLookup(
-          product: product.summary.copyWith(matchType: MatchType.barcode),
-          variant: variant,
-          packaging: product.packagings.where((p) => p.id == row.packagingId).firstOrNull,
-          barcodeType: BarcodeType.tryParse(row.barcodeType) ?? BarcodeType.other,
-          source: DataSource.cache,
-          asOf: await _metaAsOf(dao, 'stock') ?? await _metaAsOf(dao, 'barcodes'),
-        );
-      });
+  Future<Result<BarcodeLookup?>> barcodeCached(String value, {String? warehouseId, String? priceListId}) => _local(
+    _dao,
+    (dao) async {
+      final row = await dao.barcodeByValue(value.trim());
+      if (row == null || row.productId.isEmpty) return null;
+      final card = await dao.productCard(row.productId);
+      if (card == null) return null;
+      final product = productFromCard(card, priceListId: priceListId, warehouseId: warehouseId ?? _localWarehouseId());
+      final variant = product.variants.where((v) => v.id == row.variantId).firstOrNull ?? product.defaultVariant;
+      if (variant == null) return null;
+      return BarcodeLookup(
+        product: product.summary.copyWith(matchType: MatchType.barcode),
+        variant: variant,
+        packaging: product.packagings.where((p) => p.id == row.packagingId).firstOrNull,
+        barcodeType: BarcodeType.tryParse(row.barcodeType) ?? BarcodeType.other,
+        source: DataSource.cache,
+        asOf: await _metaAsOf(dao, 'stock') ?? await _metaAsOf(dao, 'barcodes'),
+      );
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
 
 final class InventoryRepositoryImpl implements InventoryRepository {
-  InventoryRepositoryImpl({required CatalogRemoteDataSource remote, required CatalogDaoAccess dao})
-    : _remote = remote,
-      _dao = dao;
+  InventoryRepositoryImpl({
+    required CatalogRemoteDataSource remote,
+    required CatalogDaoAccess dao,
+    LocalWarehouseAccess localWarehouseId = _noLocalWarehouse,
+  }) : _remote = remote,
+       _dao = dao,
+       _localWarehouseId = localWarehouseId;
 
   final CatalogRemoteDataSource _remote;
   final CatalogDaoAccess _dao;
+  final LocalWarehouseAccess _localWarehouseId;
 
   @override
   Future<Result<InventoryBalances>> balances(List<String> variantIds, {String? warehouseId, bool live = false}) =>
@@ -315,7 +344,7 @@ final class InventoryRepositoryImpl implements InventoryRepository {
   @override
   Future<Result<InventoryBalances>> cachedBalances(List<String> variantIds, {String? warehouseId}) =>
       _local(_dao, (dao) async {
-        final rows = await dao.stockFor(variantIds, warehouseId: warehouseId);
+        final rows = await dao.stockFor(variantIds, warehouseId: warehouseId ?? _localWarehouseId());
         final names = {for (final w in await dao.allWarehouses()) w.id: w.name};
         final asOf = rows.isEmpty ? null : rows.map((r) => r.snapshotAt).reduce((a, b) => a > b ? a : b);
         return InventoryBalances(

@@ -204,6 +204,9 @@ describe('OtpService.check — ветви проверки кода (unit, 100 %
       issuedByUserId: null,
       lockedAt: null,
       issuedJti: null,
+      kioskTabletId: null,
+      cartId: null,
+      noticeVersion: null,
       ...patch,
     });
     return { id, code };
@@ -414,8 +417,9 @@ describe('auth: in-memory лимиты 08 §2.9 и circuit-breaker', () => {
 });
 
 describe('step-up: операции и области (08 §2.12)', () => {
-  it('25 значений operation; право — код 11 §4.3 или profile/session.manage.own; scope токена — [operation]', () => {
-    expect(STEP_UP_OPERATIONS).toHaveLength(25);
+  it('26 значений operation (с kiosk.manage — ADR-115); право — код 11 §4.3 или profile/session.manage.own; scope токена — [operation]', () => {
+    expect(STEP_UP_OPERATIONS).toHaveLength(26);
+    expect(permissionForOperation('kiosk.manage')).toBe('kiosk.manage');
     expect(permissionForOperation('profile.pin.set')).toBe('profile.manage.own');
     expect(permissionForOperation('session.logout_all')).toBe('session.manage.own');
     expect(permissionForOperation('session.revoke.any')).toBe('session.revoke.any');

@@ -53,6 +53,8 @@ const Set<String> kernelPaths = <String>{
   '/admin/users',
   '/admin/settings',
   '/admin/audit',
+  // SCR-54 «Планшеты магазина» — ветка admin, вне карты ядра §9 (ADR-115; navigation.md §3, §12 п. 11).
+  '/admin/tablets',
   '/reports',
   '/home',
 };

@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import type { DbExecutor } from '../common/audit/db-executor.js';
+import { bySubjectKind, type SubjectKind } from '../common/auth/subject-kind.js';
 import { maskPhone } from '../common/logging/redaction.js';
 import { customerDisplayName } from '../common/presenters/customer-name.js';
 import { iso, rows } from './cart-common.js';
@@ -50,9 +51,19 @@ export async function loadCustomers(ex: DbExecutor, ids: readonly string[]): Pro
 /**
  * `Customer` по allowlist роли (08 §3.7; OpenAPI `CustomerViewSeller|Cashier|Admin|Self`; 11 SEC-031, SEC-042):
  * поля, не разрешённые роли, отсутствуют (а не `null`). В корзине (`Cart.customer`) и в поиске суммы долга не
- * отдаются — только флаги `hasDebt`/`isOverdue` (ядро §22.13 п. 1). `seller` — маскированный телефон.
+ * отдаются — только флаги `hasDebt`/`isOverdue` (ядро §22.13 п. 1). `seller` — маскированный телефон. Планшету
+ * магазина (`subjectKind = kiosk`) карточка клиента не отдаётся совсем — `null` (08 §4.25 «Данные в ответах
+ * планшету»; 11 SEC-141): ни имени, ни телефонов, ни вида цены и скидки соглашения.
  */
-export function customerDto(c: CustomerViewRow, role: string, isCustomer: boolean): Record<string, unknown> {
+export function customerDto(
+  c: CustomerViewRow,
+  role: string,
+  isCustomer: boolean,
+  subjectKind?: SubjectKind,
+): Record<string, unknown> | null {
+  if (subjectKind !== undefined && bySubjectKind(subjectKind, { staff: false, customer: false, kiosk: true })) {
+    return null;
+  }
   const base: Record<string, unknown> = {
     id: c.id,
     name: c.name,

@@ -155,13 +155,13 @@ export class SecurityService {
   }
 
   /** Срок `biometric_refresh` (09 §9.5 п. 5): сотрудник 7 дн., клиент 30 дн., не дольше обычной сессии. */
-  private biometricTtlMs(kind: 'staff' | 'customer'): number {
+  private biometricTtlMs(kind: AuthenticatedPrincipal['kind']): number {
     return (
       (kind === 'staff' ? this.config.AUTH_REFRESH_TTL_STAFF_DAYS : this.config.AUTH_REFRESH_TTL_CUSTOMER_DAYS) * DAY_MS
     );
   }
 
-  private biometricIdleMs(kind: 'staff' | 'customer'): number {
+  private biometricIdleMs(kind: AuthenticatedPrincipal['kind']): number {
     return kind === 'staff'
       ? this.config.AUTH_REFRESH_IDLE_STAFF_HOURS * 3600_000
       : this.config.AUTH_REFRESH_IDLE_CUSTOMER_DAYS * DAY_MS;

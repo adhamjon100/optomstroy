@@ -33,6 +33,25 @@ export interface IssueOtpInput {
   /** Аккаунт на момент запроса (09 §4.1: фиксируется в `otp_challenges.user_id`, клиенту не раскрывается). */
   readonly userId: string | null;
   readonly audit: AuditContext;
+  /**
+   * Код заявки с планшета магазина (`purpose='kiosk_order'`, только `POST /kiosk/order-otp` — 08 §4.25.1; 09 §5.3,
+   * §5.4; ADR-115): задан ⇔ назначение `kiosk_order`, тогда `userId = null` (CHECK `otp_challenges_kiosk_chk`).
+   */
+  readonly kiosk?: KioskOtpScope;
+}
+
+/** Планшет, корзина и версия текста информирования кода `kiosk_order`; лимиты планшета — из `app_settings`. */
+export interface KioskOtpScope {
+  /** `store_tablets.id` планшета по токену (не `X-Device-Id`) — субъект лимитов RL-OTP-KIOSK. */
+  readonly tabletId: string;
+  /** Активная непустая корзина планшета (`otp_challenges.cart_id`). */
+  readonly cartId: string;
+  /** Версия текста `kiosk_order_notice` из каталога `contracts/legal/notices_ru.md` (11 PRIV-032). */
+  readonly noticeVersion: string;
+  /** `kiosk_otp_per_hour` (30 по умолчанию) — область `otp_kiosk_tablet_1h`. */
+  readonly perHour: number;
+  /** `kiosk_otp_per_day` (200 по умолчанию) — область `otp_kiosk_tablet_24h`. */
+  readonly perDay: number;
 }
 
 export interface IssuedChallenge {
@@ -60,6 +79,8 @@ const TEMPLATE_BY_PURPOSE: Readonly<Record<OtpPurpose, SmsTemplateKey>> = {
   phone_change_old: 'otp_phone_change',
   phone_change_new: 'otp_phone_change',
   customer_link: 'otp_customer_link',
+  // код заявки с планшета магазина (ADR-115; 07 §5.61); выдаёт только POST /kiosk/order-otp
+  kiosk_order: 'otp_kiosk_order',
 };
 
 /** Субъект глобального лимита RL-OTP-GLOBAL (`otp_global_1m`, весь сервис). */
@@ -71,6 +92,11 @@ const CLIENT_SCOPES: ReadonlySet<RateLimitScope> = new Set<RateLimitScope>([
   'otp_ip_24h',
   'otp_device_10m',
   'otp_device_24h',
+]);
+/** RL-OTP-KIOSK (08 §2.9): лимиты планшета магазина вместо RL-OTP-SEND-IP / RL-OTP-SEND-DEV. */
+const KIOSK_SCOPES: ReadonlySet<RateLimitScope> = new Set<RateLimitScope>([
+  'otp_kiosk_tablet_1h',
+  'otp_kiosk_tablet_24h',
 ]);
 
 /**
@@ -138,13 +164,31 @@ export class OtpService {
   }
 
   /**
+   * Лимиты планшета магазина RL-OTP-KIOSK (08 §2.9; 09 §5.4 строка «Планшет магазина»): `kiosk_otp_per_hour` и
+   * `kiosk_otp_per_day` по `store_tablets.id` из токена — вместо лимитов IP и `X-Device-Id` (планшеты магазина
+   * работают за одним NAT, а `X-Device-Id` задаёт клиент).
+   */
+  tabletRules(k: KioskOtpScope): RateLimitRule[] {
+    return [
+      { scope: 'otp_kiosk_tablet_1h', subject: k.tabletId, limit: k.perHour },
+      { scope: 'otp_kiosk_tablet_24h', subject: k.tabletId, limit: k.perDay },
+    ];
+  }
+
+  /**
    * Выпуск кода (09 §4.2, §5.3–§5.4). Порядок отказов: circuit-breaker → cooldown (429 OTP_RATE_LIMITED) →
    * пауза номера (423 OTP_LOCKED) → лимиты номера (429 OTP_RATE_LIMITED) → лимиты IP/устройства (429
    * RATE_LIMITED) → глобальный лимит (503 SMS_PROVIDER_ERROR). Все лимиты — фиксированные окна
    * `rate_limit_counters` (переживают рестарт и общие для реплик), учитываются атомарно одним `consume`:
    * отказ по любому правилу не расходует ни одну квоту.
+   *
+   * Код `kiosk_order` планшета магазина (`input.kiosk`; 09 §5.3, §5.4; ADR-115): блокировка сначала планшета, затем
+   * номера; вместо лимитов IP/устройства — лимиты планшета (429 KIOSK_RATE_LIMITED + аудит `kiosk.limit_reached` и
+   * алерт); прежний действующий код этого планшета (на любой номер) → `superseded`; в строку кода — планшет, корзина
+   * и версия текста информирования, `user_id = NULL`; аудит `auth.otp.sent` — с `kioskId` и `noticeVersion`.
    */
   async issue(input: IssueOtpInput): Promise<IssuedChallenge> {
+    const kiosk = kioskScopeOf(input);
     const policy = (await this.policy.effective()).otp;
     if (this.breaker.isOpen() || (this.provider.blocked !== undefined && (await this.provider.blocked()))) {
       throw smsProviderError();
@@ -161,9 +205,12 @@ export class OtpService {
       | { kind: 'paused'; retryAfter: number }
       | { kind: 'phone_limit'; retryAfter: number; scope: string }
       | { kind: 'client_limit'; retryAfter: number; scope: string }
+      | { kind: 'kiosk_limit'; retryAfter: number; scope: RateLimitScope; limit: number }
       | { kind: 'global' };
 
     const outcome = await this.db.transaction(async (tx): Promise<Outcome> => {
+      // Порядок блокировок «планшет → номер» (09 §5.4): один действующий код на планшет без 23505 при гонке.
+      if (kiosk) await this.challenges.lockKioskTablet(kiosk.tabletId, tx);
       await this.challenges.lockPhone(input.phoneE164, input.purpose, tx);
       const recent = await this.challenges.recentDelivered(
         input.phoneE164,
@@ -189,14 +236,18 @@ export class OtpService {
       const consumed = await this.rateLimit.consume(
         [
           ...this.phoneRules(input.phoneE164, policy),
-          ...this.clientRules(input, policy),
+          // Планшет магазина: лимиты планшета вместо IP и устройства (08 §2.9 RL-OTP-KIOSK).
+          ...(kiosk ? this.tabletRules(kiosk) : this.clientRules(input, policy)),
           { scope: 'otp_global_1m', subject: OTP_GLOBAL_SUBJECT, limit: policy.globalPerMinute },
         ],
         tx,
       );
       if (!consumed.allowed) return classifyDenial(consumed);
 
+      // Один `sent` на номер и назначение (код на тот же номер с другого планшета тоже вытесняется) и — для
+      // планшета — один `sent` на планшет («Изменить номер», 09 §5.3 п. 3).
       await this.challenges.retireActive(input.phoneE164, input.purpose, now, tx);
+      if (kiosk) await this.challenges.retireActiveForTablet(kiosk.tabletId, now, tx);
       const expiresAt = new Date(now.getTime() + policy.ttlSeconds * 1000);
       await this.challenges.insert(
         {
@@ -204,6 +255,9 @@ export class OtpService {
           phoneE164: input.phoneE164,
           userId: input.userId,
           purpose: input.purpose,
+          kioskTabletId: kiosk?.tabletId ?? null,
+          cartId: kiosk?.cartId ?? null,
+          noticeVersion: kiosk?.noticeVersion ?? null,
           codeHmac: this.hmac.codeHmac(challengeId, code),
           // 07 §5.11 `salt NOT NULL`; по 09 §5.2 соль = challenge_id (входит в сообщение HMAC) — D_spec_questions F-03.
           salt: Buffer.from(uuidParse(challengeId)),
@@ -235,7 +289,15 @@ export class OtpService {
           action: 'auth.otp.sent',
           entityType: 'otp_challenge',
           entityId: challengeId,
-          after: { purpose: input.purpose, phone: input.phoneE164, testMode, delivery: testMode ? 'none' : 'queued' },
+          after: {
+            purpose: input.purpose,
+            phone: input.phoneE164,
+            testMode,
+            delivery: testMode ? 'none' : 'queued',
+            // След информирования остаётся и тогда, когда заявки нет (11 PRIV-032, §7.2: `after.kioskId`,
+            // `after.noticeVersion` у кода `kiosk_order`); телефон маскирует audit-sanitize.
+            ...(kiosk ? { kioskId: kiosk.tabletId, noticeVersion: kiosk.noticeVersion } : {}),
+          },
         },
         tx,
       );
@@ -269,6 +331,12 @@ export class OtpService {
           detail: 'Слишком много запросов. Повторите позже.',
           retryAfter: outcome.retryAfter,
         });
+      case 'kiosk_limit':
+        await this.kioskLimitReached(input, outcome.scope, outcome.limit);
+        throw new ProblemException('KIOSK_RATE_LIMITED', {
+          detail: 'Слишком много кодов с этого планшета. Обратитесь к продавцу.',
+          retryAfter: outcome.retryAfter,
+        });
       case 'global':
         this.breaker.open('global_limit', 5);
         await this.rateLimitedAudit(input, 'otp_global_1m');
@@ -282,6 +350,7 @@ export class OtpService {
         purpose: input.purpose,
         phoneMasked: maskPhone(input.phoneE164),
         deviceId: input.deviceKey,
+        ...(kiosk ? { kioskId: kiosk.tabletId } : {}),
         requestId: input.requestId ?? undefined,
       },
       testMode ? 'otp.test_mode' : 'otp.requested',
@@ -423,6 +492,7 @@ export class OtpService {
   }
 
   private async rateLimitedAudit(input: IssueOtpInput, scope: string): Promise<void> {
+    const kioskId = input.kiosk ? { kioskId: input.kiosk.tabletId } : {};
     this.logger.warn(
       {
         event: 'otp.rate_limited',
@@ -430,6 +500,7 @@ export class OtpService {
         purpose: input.purpose,
         phoneMasked: maskPhone(input.phoneE164),
         deviceId: input.deviceKey,
+        ...kioskId,
         requestId: input.requestId ?? undefined,
       },
       'otp.rate_limited',
@@ -439,10 +510,39 @@ export class OtpService {
         action: 'auth.otp.rate_limited',
         entityType: 'otp_challenge',
         result: 'denied',
-        after: { purpose: input.purpose, phone: input.phoneE164, scope },
+        // `auth.otp.*` кода `kiosk_order` — с `after.kioskId` (11 §7.2).
+        after: { purpose: input.purpose, phone: input.phoneE164, scope, ...kioskId },
       })
       .catch((err: unknown) =>
         this.logger.error({ event: 'audit.write_failed', action: 'auth.otp.rate_limited', err }, 'audit failed'),
+      );
+  }
+
+  /**
+   * Исчерпан лимит планшета магазина (09 §5.4; 11 SEC-016, §6.2 п. (2), §7.2.1): аудит `kiosk.limit_reached` —
+   * `store_tablets.id`, область, лимит, **без телефона**; актор — система (11 §7.2.1, как `kiosk.network_denied`):
+   * `actor_user_id`/`actor_role` пусты, сеанс, устройство и адрес запроса — из контекста. Алерт — структурное событие
+   * `security.alert` (канал SEC-068; содержимое SEC-132: без телефонов и IP). Ошибка записи аудита ответ 429 не меняет.
+   */
+  private async kioskLimitReached(input: IssueOtpInput, scope: RateLimitScope, limit: number): Promise<void> {
+    const tabletId = input.kiosk?.tabletId ?? null;
+    this.logger.warn(
+      { event: 'security.alert', alert: 'kiosk.limit_reached', kioskId: tabletId, scope, limit },
+      'security.alert',
+    );
+    await this.audit
+      .write(
+        { ...input.audit, actorUserId: null, actorRole: null },
+        {
+          action: 'kiosk.limit_reached',
+          entityType: 'store_tablet',
+          entityId: tabletId,
+          result: 'denied',
+          after: { kioskId: tabletId, scope, limit },
+        },
+      )
+      .catch((err: unknown) =>
+        this.logger.error({ event: 'audit.write_failed', action: 'kiosk.limit_reached', err }, 'audit failed'),
       );
   }
 }
@@ -450,9 +550,23 @@ export class OtpService {
 type LimitDenial =
   | { kind: 'phone_limit'; retryAfter: number; scope: string }
   | { kind: 'client_limit'; retryAfter: number; scope: string }
+  | { kind: 'kiosk_limit'; retryAfter: number; scope: RateLimitScope; limit: number }
   | { kind: 'global' };
 
-/** Итог отказа `consume`: приоритет — номер → IP/устройство → глобальный (порядок 09 §5.4). */
+/**
+ * Код `kiosk_order` и планшет — только вместе (08 §4.25.1; CHECK `otp_challenges_kiosk_chk`): `kiosk_order` выдаёт
+ * только `POST /kiosk/order-otp`, у кода нет пользователя. Нарушение — ошибка программиста, а не ответ клиенту.
+ */
+function kioskScopeOf(input: IssueOtpInput): KioskOtpScope | undefined {
+  const isKioskPurpose = input.purpose === 'kiosk_order';
+  if (isKioskPurpose !== (input.kiosk !== undefined)) {
+    throw new Error('OtpService.issue: kiosk_order выдаётся только с планшетом (kiosk), и только он');
+  }
+  if (input.kiosk && input.userId !== null) throw new Error('OtpService.issue: у кода kiosk_order нет user_id');
+  return input.kiosk;
+}
+
+/** Итог отказа `consume`: приоритет — номер → планшет → IP/устройство → глобальный (порядок 09 §5.4). */
 function classifyDenial(r: RateLimitResult): LimitDenial {
   const denied = r.decisions.filter((d) => !d.allowed);
   const pick = (set: ReadonlySet<RateLimitScope>) => denied.filter((d) => set.has(d.scope));
@@ -462,6 +576,15 @@ function classifyDenial(r: RateLimitResult): LimitDenial {
       kind: 'phone_limit',
       scope: phone[0].scope,
       retryAfter: phone.reduce((m, d) => Math.max(m, d.retryAfterSec), 0),
+    };
+  }
+  const tablet = pick(KIOSK_SCOPES);
+  if (tablet.length > 0) {
+    return {
+      kind: 'kiosk_limit',
+      scope: tablet[0].scope,
+      limit: tablet[0].limit,
+      retryAfter: tablet.reduce((m, d) => Math.max(m, d.retryAfterSec), 0),
     };
   }
   const client = pick(CLIENT_SCOPES);

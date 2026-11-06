@@ -9,10 +9,16 @@
 //     `catalogBindings`;
 //   - порты core/sync: `catalogCachePortProvider`, `syncStatusPortProvider` (адаптеры) и
 //     `syncViewerRoleProvider` (= `catalogViewerRoleProvider`).
+// Планшет магазина (роль `kiosk`, ADR-115; 02 SCR-51.9; 07 §11.2; 11 PRIV-033): настройки экранов каталога и история
+// поиска в drift не пишутся (хранилища настроек нет — только память процесса), статуса обмена `GET /sync/status` у
+// планшета нет (вне закрытого списка 08 §4.25, связь — `GET /settings/public`, ADR-115 п. 21): кэш каталога
+// обновляется по порогу устаревания.
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:optomstroy/core/database/daos/catalog_dao.dart';
 import 'package:optomstroy/core/di/core_providers.dart';
+import 'package:optomstroy/core/enums.dart' show RoleCode;
+import 'package:optomstroy/core/session/session_overlay.dart' show kioskLocalWarehouseIdProvider;
 import 'package:optomstroy/core/sync/sync_providers.dart';
 import 'package:optomstroy/features/catalog/catalog_providers.dart';
 import 'package:optomstroy/features/catalog/data/catalog_bindings.dart' show catalogRemoteDataSourceProvider;
@@ -24,6 +30,10 @@ import 'package:optomstroy/features/catalog/data/repositories/offline_first_repo
 CatalogDao? Function() _dao(Ref ref) =>
     () => ref.read(appDatabaseProvider)?.catalogDao;
 
+/// Склад чтений кэша без явного склада: у планшета магазина — склад планшета (только drift, не сеть; 10 KIOSK-007).
+String? Function() _localWarehouse(Ref ref) =>
+    () => ref.read(kioskLocalWarehouseIdProvider);
+
 OnlineProbe _online(Ref ref) =>
     () => ref.read(connectivityWatcherProvider).current;
 
@@ -31,19 +41,31 @@ OnlineProbe _online(Ref ref) =>
 final List<Override> catalogOfflineFirstBindings = <Override>[
   catalogRepositoryProvider.overrideWith(
     (Ref ref) => OfflineFirstCatalogRepository(
-      base: CatalogRepositoryImpl(remote: ref.watch(catalogRemoteDataSourceProvider), dao: _dao(ref)),
+      base: CatalogRepositoryImpl(
+        remote: ref.watch(catalogRemoteDataSourceProvider),
+        dao: _dao(ref),
+        localWarehouseId: _localWarehouse(ref),
+      ),
       online: _online(ref),
     ),
   ),
   searchRepositoryProvider.overrideWith(
     (Ref ref) => OfflineFirstSearchRepository(
-      base: SearchRepositoryImpl(remote: ref.watch(catalogRemoteDataSourceProvider), dao: _dao(ref)),
+      base: SearchRepositoryImpl(
+        remote: ref.watch(catalogRemoteDataSourceProvider),
+        dao: _dao(ref),
+        localWarehouseId: _localWarehouse(ref),
+      ),
       online: _online(ref),
     ),
   ),
   inventoryRepositoryProvider.overrideWith(
     (Ref ref) => OfflineFirstInventoryRepository(
-      base: InventoryRepositoryImpl(remote: ref.watch(catalogRemoteDataSourceProvider), dao: _dao(ref)),
+      base: InventoryRepositoryImpl(
+        remote: ref.watch(catalogRemoteDataSourceProvider),
+        dao: _dao(ref),
+        localWarehouseId: _localWarehouse(ref),
+      ),
       online: _online(ref),
     ),
   ),
@@ -61,15 +83,19 @@ final List<Override> catalogOfflineFirstBindings = <Override>[
   catalogJsonDecoderProvider.overrideWith((Ref ref) => const CatalogJsonDecoderImpl()),
   // EQ-CAT-05/06: вид, сортировка, сайдбар и история поиска — drift `settings` БД пользователя.
   catalogUserSettingsStoreProvider.overrideWith((Ref ref) {
+    // Планшет: вид, сортировка, `catalog_last_root` и `search_history` между покупателями не хранятся (KIOSK-021).
+    if (ref.watch(catalogViewerRoleProvider) == RoleCode.kiosk) return null;
     final db = ref.watch(appDatabaseProvider);
     return db == null ? null : DriftCatalogUserSettingsStore(db, ref.watch(clockProvider));
   }),
   catalogCachePortProvider.overrideWith((Ref ref) => CatalogCachePortAdapter(ref.watch(catalogSyncRepositoryProvider))),
   syncStatusPortProvider.overrideWith(
-    (Ref ref) => SyncStatusPortAdapter(
-      status: ref.watch(syncStatusRepositoryProvider),
-      cache: ref.watch(catalogSyncRepositoryProvider),
-    ),
+    (Ref ref) => ref.watch(catalogViewerRoleProvider) == RoleCode.kiosk
+        ? null
+        : SyncStatusPortAdapter(
+            status: ref.watch(syncStatusRepositoryProvider),
+            cache: ref.watch(catalogSyncRepositoryProvider),
+          ),
   ),
   syncViewerRoleProvider.overrideWith((Ref ref) => ref.watch(catalogViewerRoleProvider)),
 ];

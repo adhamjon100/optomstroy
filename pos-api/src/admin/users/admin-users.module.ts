@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
+import { IgnoreIdempotencyKeyGuard } from '../../common/idempotency/ignore-idempotency-key.guard.js';
 import { AdminInvitationsModule } from '../invitations/admin-invitations.module.js';
 import { AdminUsersController } from './admin-users.controller.js';
 import { AdminUsersService } from './admin-users.service.js';
 import { EmergencyLoginCodeController } from './emergency-code/emergency-code.controller.js';
 import { EmergencyCodeRepository } from './emergency-code/emergency-code.repository.js';
 import { EmergencyLoginCodeService } from './emergency-code/emergency-code.service.js';
-import { IgnoreIdempotencyKeyGuard } from './emergency-code/ignore-idempotency-key.guard.js';
 import { AdminSharedModule } from './shared/admin-shared.module.js';
 
 /**

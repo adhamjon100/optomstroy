@@ -124,9 +124,10 @@ describe('набор API на бандле, эталон, шум', () => {
   test('контракт: несоответствий только у бандла — 0 (несоответствия обоих — в contract-report.md)', () => {
     assert.deepEqual(groups.filter((g) => g.bundle > 0 && g.reference === 0).map((g) => `${g.operationId} ${g.status}: ${g.error}`), []);
   });
-  test('покрыто не меньше 106 из 116 операций приложения (Dio)', () => {
-    assert.ok(A.coverage.dioTotal === 116, `операций Dio ${A.coverage.dioTotal}`);
-    assert.ok(A.coverage.dioCovered >= 106, `покрыто ${A.coverage.dioCovered}: ${A.coverage.uncovered.map((o) => o.operationId).join(', ')}`);
+  // Планшет магазина (P-002, ADR-115; WP-T1): +10 операций 70_kiosk.yaml (116 → 126), запас непокрытых прежний — 10.
+  test('покрыто не меньше 116 из 126 операций приложения (Dio)', () => {
+    assert.ok(A.coverage.dioTotal === 126, `операций Dio ${A.coverage.dioTotal}`);
+    assert.ok(A.coverage.dioCovered >= 116, `покрыто ${A.coverage.dioCovered}: ${A.coverage.uncovered.map((o) => o.operationId).join(', ')}`);
   });
   test('единица работы и pg-shim на бандле: 0 ожиданий замка > 3 с, 0 удержаний/ожиданий слота > 3 с, 0 подсадок вне белого списка, 0 BEGIN из чужой единицы', () => {
     const s = A.stats;

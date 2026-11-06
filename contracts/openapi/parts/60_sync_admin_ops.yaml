@@ -37,7 +37,10 @@ paths:
       summary: Список in-app уведомлений текущего пользователя
       description: '08 §4.16.1. Только свои уведомления (notifications.read.own — все роли, 08 §9, 11 §4.4). Клиент опрашивает при старте, при
         возврате в foreground и каждые 60 с (push — R2, Q-036). Ответ — Page<Notification> + unreadCount (бейдж колокольчика). Ошибки: 400 VALIDATION_FAILED
-        (неизвестный kind, limit > 100, подделанный cursor); 401; 403 FORBIDDEN (токен integration). Аудит не пишется.'
+        (неизвестный kind, limit > 100, подделанный cursor); 401; 403 FORBIDDEN (токен integration). Аудит не пишется.
+        kind=kiosk_order — «Новая заявка с планшета № {number}» ролям cashier и senior_seller, переход SCR-44 → SCR-24 по
+        payload.orderId (08 §3.13, §4.16.1; ADR-115; с 1.3.0). Токен планшета (kind=kiosk) → 403 FORBIDDEN (права
+        notifications.read.own у роли kiosk нет).'
       parameters:
       - {$ref: '#/components/parameters/DeviceId'}
       - {$ref: '#/components/parameters/AppVersion'}
@@ -525,7 +528,9 @@ paths:
       summary: Список пользователей (сотрудники и клиенты)
       description: '08 §4.18.1. users.read (admin, owner). Ответ — Page<AdminUser>. Ошибки: 400 VALIDATION_FAILED (role/status/kind вне enum,
         limit, cursor); 401; 403 FORBIDDEN. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18).
-        Cache-Control: no-store.'
+        Cache-Control: no-store.
+        Технический пользователь планшета магазина (kind=kiosk) в списке не показывается, в том числе при фильтрах kind=kiosk
+        и role=kiosk (08 §4.18, ADR-115 п. 19); планшеты — GET /admin/store-tablets.'
       parameters:
       - {$ref: '#/components/parameters/DeviceId'}
       - {$ref: '#/components/parameters/AppVersion'}
@@ -647,7 +652,9 @@ paths:
       operationId: admin_users_get
       summary: Карточка пользователя
       description: '08 §4.18.1. users.read (admin, owner). Ошибки: 401; 403 FORBIDDEN; 404 NOT_FOUND. Все операции модуля admin — permission по
-        08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+        08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.
+        Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9;
+        ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       parameters:
       - {$ref: '#/components/parameters/DeviceId'}
       - {$ref: '#/components/parameters/AppVersion'}
@@ -683,7 +690,9 @@ paths:
         операциями; discountLimitPercent, warehouseIds не принимаются (forbidden_field). Ограничения цели — 11 SEC-043. Ошибки: 400 VALIDATION_FAILED;
         401; 403 FORBIDDEN (цель owner, SEC-043), STEP_UP_REQUIRED; 404 NOT_FOUND; 409 VERSION_CONFLICT (current), IDEMPOTENCY_IN_PROGRESS; 422
         VALIDATION_FAILED. Аудит user.updated. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08
-        §4.18). Cache-Control: no-store.'
+        §4.18). Cache-Control: no-store.
+        Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9;
+        ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -739,7 +748,9 @@ paths:
         назначает/снимает seller/cashier/senior_seller; цель owner при субъекте admin), STEP_UP_REQUIRED; 404 NOT_FOUND; 409 VERSION_CONFLICT;
         422 VALIDATION_FAILED (roles содержит integration; rule self_demotion — снять admin с себя; rule user_pending_activation). Аудит user.role_changed
         (before/after, reason); отказ по SEC-040 — authz.denied. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит
-        с before/after (08 §4.18). Cache-Control: no-store.'
+        с before/after (08 §4.18). Cache-Control: no-store.
+        Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9;
+        ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -791,7 +802,9 @@ paths:
         сессии отозваны, приглашение аннулировано; blocked=false → active. Повтор с тем же значением blocked → 200 без изменений. Ошибки: 400
         VALIDATION_FAILED; 401; 403 FORBIDDEN (цель — сам субъект; цель с ролью owner — SEC-043; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND.
         Аудит user.blocked / user.unblocked. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18).
-        Cache-Control: no-store.'
+        Cache-Control: no-store.
+        Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9;
+        ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -841,7 +854,9 @@ paths:
         кроме owner; owner — только цели с ролью admin/owner. Тела запроса нет. Повтор → 204. Ошибки: 401; 403 FORBIDDEN (цель — сам субъект;
         цель owner при субъекте admin; owner над целью без ролей admin/owner; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND. Аудит session.revoked
         (actor, reason, число отозванных сессий в after). Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after
-        (08 §4.18). Cache-Control: no-store.'
+        (08 §4.18). Cache-Control: no-store.
+        Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9;
+        ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -883,7 +898,9 @@ paths:
         до установки нового PIN → 403 FORBIDDEN reason pin_not_set. Тело — reason (≥ 5 символов). DELETE идемпотентен: повтор → 204; Idempotency-Key
         не требуется (вне перечня 08 §2.7). Ошибки: 400 VALIDATION_FAILED (reason); 401; 403 FORBIDDEN (цель — сам администратор, customer-аккаунт
         или пользователь с ролью owner; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND. Аудит auth.pin.reset (цель, reason; без PIN). Все
-        операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+        операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.
+        Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9;
+        ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -932,7 +949,9 @@ paths:
         FORBIDDEN (роль; себе; цель с ролью admin/owner), STEP_UP_REQUIRED; 404 NOT_FOUND; 422 VALIDATION_FAILED (цель не kind=staff или не status=active);
         429 RATE_LIMITED (не более 3 кодов на пользователя и 20 на администратора за сутки — 09 §6.13). Аудит auth.emergency_code.issued (без
         кода); при входе — auth.emergency_code.used; уведомление цели и всем owner; алерт. Все операции модуля admin — permission по 08 §9 / 11
-        §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+        §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.
+        Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9;
+        ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -1194,7 +1213,10 @@ paths:
       description: '08 §4.18.6 и таблица соответствия ключей; ядро §19.2, §24.2, §24.4. settings.app.read (admin, owner; для owner SCR-46 — только
         просмотр, ядро §21 п.3). Ключи app_settings — camelCase-проекция snake_case-ключей 07 §5.59 (каждый сегмент через точку отдельно); блок
         env — значения переменных окружения только для чтения; секреты (SMSPro, 1С, ключи) не отдаются. Ошибки: 401; 403 FORBIDDEN. Все операции
-        модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+        модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.
+        Ключи планшета магазина (08 §4.18.6; ADR-115; с 1.3.0): kioskIdleSeconds, kioskIdleWarningSeconds, kioskDoneSeconds
+        (публичны — объект kiosk GET /settings/public), kioskOtpPerHour, kioskOtpPerDay, kioskWorkingHours; env kioskMode
+        (KIOSK_MODE, только чтение; публикуется как features.storeTablet).'
       parameters:
       - {$ref: '#/components/parameters/DeviceId'}
       - {$ref: '#/components/parameters/AppVersion'}
@@ -1229,7 +1251,10 @@ paths:
         §19.2) и неизвестные ключи → VALIDATION_FAILED (rule read_only_setting / unknown_setting). Повтор того же тела → 200 без изменений. Ошибки:
         400 VALIDATION_FAILED (схема, read_only_setting, unknown_setting); 401; 403 FORBIDDEN, STEP_UP_REQUIRED; 409 VERSION_CONFLICT; 422 VALIDATION_FAILED
         (customerStockDisplay вне status|quantity — rule enum; диапазоны: lowStockThreshold ≥ 0, syncInterval.<entity> 60…86400, parkedCartTtlDays
-        1…30, receivables.maxAgeMinutes 5…1440, otp.ttlSeconds 180…600). Аудит settings.changed (по ключам, before/after). Все операции модуля
+        1…30, receivables.maxAgeMinutes 5…1440, otp.ttlSeconds 180…600, kioskIdleSeconds 30…1800, kioskIdleWarningSeconds 5…120,
+        kioskDoneSeconds 10…600, kioskOtpPerHour 1…1000, kioskOtpPerDay 1…10000 — границы ключей планшета — предложение 08
+        [НЕ ПОДТВЕРЖДЕНО]; kioskWorkingHours — формат 07 §5.59, rule format; kioskMode — read_only_setting). Аудит
+        settings.changed (по ключам, before/after). Все операции модуля
         admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
       security:
       - bearerAuth: []
@@ -2270,7 +2295,9 @@ components:
           items: {$ref: '#/components/schemas/RoleCode'}
           description: 'R1: ровно одна роль (07 §5.7: одна активная роль, user_roles_one_active_uq) — больше одной → 400 VALIDATION_FAILED
             по схеме, а не 500 из БД; расширение maxItems — после решения Q-005 (expand-изменение; B-AR-02). Me.roles и AdminUser.roles
-            остаются массивами. integration → 422 VALIDATION_FAILED (ядро §18.2 п.4); ограничения по owner — 11 SEC-040, ядро §21 п.3.'
+            остаются массивами. integration → 422 VALIDATION_FAILED (ядро §18.2 п.4); ограничения по owner — 11 SEC-040, ядро §21 п.3.
+            kiosk — неназначаемая роль планшета магазина (is_assignable=false): назначить её нельзя (403/422 по 08 §4.18.2;
+            ADR-115).'
         reason:
           type: string
           maxLength: 500
@@ -2590,6 +2617,41 @@ components:
           maxItems: 500
           items: {$ref: '#/components/schemas/SupportContact'}
           description: support_contacts (json; kind phone|telegram|email). Публичный.
+        kioskIdleSeconds:
+          type: integer
+          minimum: 30
+          maximum: 1800
+          description: 'kiosk_idle_seconds; 120 — автосброс планшета магазина без касаний, секунды (Р-09 (а); значение по
+            умолчанию — в коде). Границы — предложение 08 §4.18.6 [НЕ ПОДТВЕРЖДЕНО]. Публичный (kiosk.idleSeconds). С 1.3.0.'
+        kioskIdleWarningSeconds:
+          type: integer
+          minimum: 5
+          maximum: 120
+          description: 'kiosk_idle_warning_seconds; 15 — обратный отсчёт «Вы ещё здесь?» перед сбросом, секунды. Публичный
+            (kiosk.idleWarningSeconds). С 1.3.0.'
+        kioskDoneSeconds:
+          type: integer
+          minimum: 10
+          maximum: 600
+          description: 'kiosk_done_seconds; 60 — номер заявки на экране SCR-53 до сброса, секунды. Публичный (kiosk.doneSeconds).
+            С 1.3.0.'
+        kioskOtpPerHour:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          description: 'kiosk_otp_per_hour; 30 — кодов с одного планшета в час (RL-OTP-KIOSK, 08 §2.9; Р-14 (а)). Не публичный.
+            С 1.3.0.'
+        kioskOtpPerDay:
+          type: integer
+          minimum: 1
+          maximum: 10000
+          description: 'kiosk_otp_per_day; 200 — кодов с одного планшета в сутки (Р-14 (а)). Не публичный. С 1.3.0.'
+        kioskWorkingHours:
+          type: string
+          maxLength: 200
+          description: 'kiosk_working_hours — часы работы магазина по дням недели, Asia/Bishkek, формат 07 §5.59
+            (mon-sat 08:00-20:00;sun 09:00-15:00); по умолчанию пусто — алерт «планшет не на связи» выключен
+            [ТРЕБУЕТ РЕШЕНИЯ ЗАКАЗЧИКА: Q-341]. Не публичный. С 1.3.0.'
     AdminSettingsEnv:
       type: object
       readOnly: true
@@ -2598,6 +2660,10 @@ components:
         customerSelfService:
           type: boolean
           description: CUSTOMER_SELF_SERVICE — только env, по умолчанию true (ядро §24.2, §19.2).
+        kioskMode:
+          type: boolean
+          description: 'KIOSK_MODE — режим «Планшет магазина», только env, по умолчанию false; от CUSTOMER_SELF_SERVICE не
+            зависит (08 §4.18.6, §4.25; ADR-115). Публикуется как features.storeTablet. С 1.3.0.'
         debtPaymentsFromPos:
           type: boolean
           description: DEBT_PAYMENTS_FROM_POS (Q-152).

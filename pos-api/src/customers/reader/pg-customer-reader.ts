@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { type SQL, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../common/audit/db-executor.js';
+import { bySubjectKind } from '../../common/auth/subject-kind.js';
 import { DRIZZLE } from '../../common/db/database.module.js';
 import type { CustomerLinkStatus, CustomerOnecStatus, CustomerSource, CustomerType } from '../../common/enums.js';
 import type {
@@ -63,6 +64,13 @@ export class PgCustomerReader implements CustomerReader {
     actor: SalesActor,
     customerId: string,
   ): Promise<{ readonly card: CustomerCard; readonly access: CustomerAccess } | null> {
+    // Планшет магазина (`kind=kiosk`, ADR-115): покупатель без привязки — карточек клиентов нет (11 SEC-141).
+    if (
+      actor.subjectKind !== undefined &&
+      bySubjectKind(actor.subjectKind, { staff: false, customer: false, kiosk: true })
+    ) {
+      return null;
+    }
     const policy = this.fieldPolicy(actor);
     if (actor.isCustomer || actor.roles.includes('customer')) {
       if (!actor.userId) return null;

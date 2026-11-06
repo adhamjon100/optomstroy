@@ -2,7 +2,9 @@
 // `/admin/users?tab=users|invitations|links&userId=`). Режимы: `admin` — полный; `owner` — по ядру
 // §21 п.3 (11 §4.4). Compact: вкладки → инструменты → список; тап → карточка отдельным экраном,
 // FAB «+ Пригласить». Medium (ландшафт)/expanded: мастер-деталь (список 360/400 + карточка ≤ 800).
-// Данные не кэшируются (ПДн): офлайн — EmptyState offlineNoCache.
+// Данные не кэшируются (ПДн): офлайн — EmptyState offlineNoCache. Технические пользователи планшетов магазина
+// (`kind=kiosk`) в списке не показываются (02 AC-UI-45-022; ADR-115 п. 19): сервер их не отдаёт, экран отбрасывает и
+// случайно пришедшие; планшетами управляют в SCR-54 (пункт «Планшеты магазина» меню раздела, UI-45-025).
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide SearchBar;
@@ -410,8 +412,12 @@ class _UsersList extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final slice = state.users;
-    if (slice.loading && slice.items.isEmpty) return const _ListSkeleton();
-    if (slice.failure != null && slice.items.isEmpty) {
+    final items = [
+      for (final u in slice.items)
+        if (u.kind != UserKind.kiosk.value) u,
+    ];
+    if (slice.loading && items.isEmpty) return const _ListSkeleton();
+    if (slice.failure != null && items.isEmpty) {
       final failure = slice.failure!;
       if (failure is NetworkFailure) {
         return EmptyState(
@@ -425,7 +431,7 @@ class _UsersList extends StatelessWidget {
         child: ErrorState.inline(message: AdminFailureText.of(l10n, failure), onRetry: onRetry),
       );
     }
-    if (slice.items.isEmpty) {
+    if (items.isEmpty) {
       return EmptyState(
         variant: EmptyStateVariant.search,
         title: l10n.admin_users_empty,
@@ -435,14 +441,14 @@ class _UsersList extends StatelessWidget {
     }
     return ListView.separated(
       key: const ValueKey<String>('admin-users-list'),
-      itemCount: slice.items.length + (slice.hasMore ? 1 : 0),
+      itemCount: items.length + (slice.hasMore ? 1 : 0),
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
-        if (i >= slice.items.length) {
+        if (i >= items.length) {
           WidgetsBinding.instance.addPostFrameCallback((_) => onMore());
           return const Padding(padding: EdgeInsets.all(16), child: SkeletonBox.text());
         }
-        final user = slice.items[i];
+        final user = items[i];
         return _UserRow(user: user, compact: compact, selected: user.id == selectedId, onTap: () => onOpen(user));
       },
     );

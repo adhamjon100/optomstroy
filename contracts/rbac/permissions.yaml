@@ -1,11 +1,14 @@
 # RM-B-008 — матрица прав (RBAC) «Оптомстрой POS», Release 1.
 # Канон: 11_SECURITY_PRIVACY §4.1–§4.4 (владелец словаря permissions и матрицы роль × право — ядро R0 §18.1);
 # роли — ядро R0 §3.1, §24.2 (customer — R1), 07 §5.4 (role_code); step-up — ядро §3.3, §17.2, 11 §4.1 п.7.
+# Версия 2 (2026-11-04): роль kiosk и коды №77–81 планшета магазина (P-002, ADR-115) — contracts/rbac/CHANGELOG.md.
 # Deny by default: роль получает только перечисленные в grants коды; код без строки в grants никому не выдан.
-# Файл — источник для seed pos-api/migrations/0002_rbac_seed.sql и e2e-теста матрицы (RM-B-008 п.3, этап D).
-# Сверка: python -I -X utf8 scripts/check_api_permissions.py. Решения и отступления — contracts/rbac/NOTES.md.
+# Файл — источник для seed pos-api/migrations/0002_rbac_seed.sql (элементы без since), дельта-миграций seed
+# (элементы с since — 0023_kiosk_rbac_seed.sql; NOTES.md §2 п.19) и e2e-теста матрицы (RM-B-008 п.3, этап D).
+# Генерация: python -I -X utf8 scripts/gen_rbac_seed.py; сверка: python -I -X utf8 scripts/check_api_permissions.py.
+# Решения и отступления — contracts/rbac/NOTES.md.
 
-version: 1
+version: 2
 source:
   dictionary: "docs/specification/11_SECURITY_PRIVACY.md §4.3"
   matrix: "docs/specification/11_SECURITY_PRIVACY.md §4.4"
@@ -14,6 +17,8 @@ source:
   tables: "docs/specification/07_DATA_MODEL.md §5.4–§5.7"
 
 # roles → таблица roles (07 §5.4). sort_order — порядок значений enum role_code (07 §14.2).
+# since: "NNNN" (у roles и permissions) — элемент вносит дельта-миграция seed NNNN_*_rbac_seed.sql, а не
+# применённая 0002 (07 §12.1 forward-only; ADR-115 п. 14); без since — 0002. Элементы с since — в конце списка.
 roles:
   - code: seller
     name_ru: "Продавец"
@@ -50,6 +55,12 @@ roles:
     is_system: true
     is_assignable: false
     sort_order: 7
+  - code: kiosk
+    name_ru: "Планшет магазина"
+    is_system: true
+    is_assignable: false
+    sort_order: 8
+    since: "0023"
 
 # permissions → таблица permissions (07 §5.5): code, description_ru (= description), requires_step_up (= step_up).
 # number — номер строки 11 §4.3; module — модуль D-06; step_up_scope — область токена step-up (11 §4.1 п.7);
@@ -473,8 +484,42 @@ permissions:
     module: "admin"
     step_up: true
     step_up_scope: admin_users
+  - number: "77"
+    code: kiosk.read
+    description: "Планшеты магазина: список (GET /admin/store-tablets) — имя, склад, статус, последняя связь, закрепление, версия приложения, срок подключения; без токенов и аварийного кода"
+    module: "kiosk"
+    step_up: false
+    since: "0023"
+  - number: "78"
+    code: kiosk.manage
+    description: "Планшеты магазина: подключение текущего устройства (POST /admin/store-tablets), изменение имени и склада (PATCH /admin/store-tablets/{id}), отключение (POST /admin/store-tablets/{id}/revoke), подключение заново (POST /admin/store-tablets/{id}/reconnect); только admin"
+    module: "kiosk"
+    step_up: true
+    step_up_scope: admin_users
+    step_up_note: "подключение, отключение, подключение заново (область admin_users, §4.1 п.7); изменение имени и склада — без step-up"
+    since: "0023"
+  - number: "79"
+    code: kiosk.order.submit
+    description: "Планшет магазина: код для заявки (POST /kiosk/order-otp), заявка (POST /kiosk/orders), восстановление по ключу (GET /kiosk/orders?idempotencyKey=); вместе с cart.manage.own — сброс корзины (POST /kiosk/reset) и предпросмотр (POST /cart/checkout-preview вместо order.create); засчитывается только при kind=kiosk (SEC-138)"
+    module: "kiosk"
+    step_up: false
+    since: "0023"
+  - number: "80"
+    code: kiosk.self.read
+    description: "Планшет магазина: GET /me в форме планшета (kind, tablet — id, имя, склад) без ПДн (SEC-141); засчитывается только при kind=kiosk (SEC-138)"
+    module: "kiosk"
+    step_up: false
+    since: "0023"
+  - number: "81"
+    code: kiosk.self.exit
+    description: "Планшет магазина: аварийный выход со связью (POST /kiosk/exit, SEC-140); засчитывается только при kind=kiosk (SEC-138)"
+    module: "kiosk"
+    step_up: false
+    since: "0023"
 
 # grants → таблица role_permissions (07 §5.6): роль → коды (порядок — 11 §4.3).
+# Пара роль → код относится к той seed-миграции, где появился позднейший из двух её концов (since роли или кода):
+# admin/owner → kiosk.* и все пары роли kiosk — 0023, остальные — 0002 (NOTES.md §2 п.19).
 grants:
   seller:
     - catalog.read
@@ -652,6 +697,8 @@ grants:
     - customer.link.conflicts.read
     - return.approve
     - users.emergency_code.issue
+    - kiosk.read
+    - kiosk.manage
   owner:
     - catalog.read
     - catalog.prices.read
@@ -691,6 +738,7 @@ grants:
     - customer.link.read
     - order.onec_link
     - settings.public.read
+    - kiosk.read
   customer:
     - catalog.read
     - catalog.prices.read
@@ -714,6 +762,18 @@ grants:
     - customer.link.self_resolve
   integration:
     - sync.exchange
+  # Планшет магазина (11 §4.4, колонка kiosk; ADR-115 п. 13): без order.create, profile.manage.own, session.manage.own;
+  # kiosk.order.submit, kiosk.self.* засчитываются только при kind=kiosk — проверяет код (SEC-138), не seed.
+  kiosk:
+    - catalog.read
+    - catalog.prices.read
+    - inventory.read
+    - search.read
+    - cart.manage.own
+    - settings.public.read
+    - kiosk.order.submit
+    - kiosk.self.read
+    - kiosk.self.exit
 
 # constraints → role_permissions.constraint_json (07 §5.6): атрибутные ограничители ячеек матрицы 11 §4.4.
 # own — только свои объекты (фильтр владельца в SQL, 11 §4.1 п.5, SEC-030); maxPercentFrom — лимит из
@@ -752,6 +812,7 @@ constraints:
     payment.read.own: {"own": true}
     customer.link.self_resolve: {"own": true}
   integration: {}
+  kiosk: {}
 
 # Не роль: статус пользователя pending_activation (11 §4.2) — фиксированный псевдо-набор guard'а; в seed не входит.
 pseudo_sets:

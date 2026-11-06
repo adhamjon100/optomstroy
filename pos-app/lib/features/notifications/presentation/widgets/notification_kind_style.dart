@@ -31,6 +31,8 @@ final class NotificationKindStyle {
         NotificationSeverity.error => c.error,
       }),
       NotificationKind.returnStatus => NotificationKindStyle(Icons.undo_rounded, c.info),
+      // Заявка с планшета магазина (02 SCR-44.3, версия 1.27; ADR-115).
+      NotificationKind.kioskOrder => NotificationKindStyle(Icons.tablet_android_rounded, c.info),
       NotificationKind.system => NotificationKindStyle(Icons.info_outline_rounded, c.textSecondary),
       null => NotificationKindStyle(Icons.notifications_none_rounded, c.textSecondary),
     };
@@ -48,6 +50,7 @@ abstract final class NotificationLabels {
     NotificationKind.creditBlocked => l10n.notification_kind_credit_blocked,
     NotificationKind.paymentStatus => l10n.notification_kind_payment_status,
     NotificationKind.returnStatus => l10n.notification_kind_return_status,
+    NotificationKind.kioskOrder => l10n.notification_kind_kiosk_order,
     NotificationKind.system => l10n.notification_kind_system,
     null => l10n.notifications_title,
   };
@@ -79,7 +82,8 @@ abstract final class NotificationLabels {
 /// Группа фильтра видов UI-44-006.
 enum NotificationKindGroup {
   sync({NotificationKind.syncError}),
-  orders({NotificationKind.orderStatus}),
+  // `kiosk_order` — в группе «Заказы» (02 SCR-44: «фильтр видов UI-44-006 включает `kiosk_order`», версия 1.27).
+  orders({NotificationKind.orderStatus, NotificationKind.kioskOrder}),
   cart({NotificationKind.cartPriceChanged, NotificationKind.cartStockChanged}),
   payment({NotificationKind.paymentStatus}),
   returns({NotificationKind.returnStatus}),

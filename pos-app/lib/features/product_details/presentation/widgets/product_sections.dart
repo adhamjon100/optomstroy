@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:optomstroy/core/di/core_providers.dart';
-import 'package:optomstroy/core/enums.dart' show CustomerStockDisplay;
+import 'package:optomstroy/core/enums.dart' show CustomerStockDisplay, RoleCode;
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/core/utils/qty.dart';
@@ -344,8 +344,11 @@ class _PriceBlockState extends State<_PriceBlock> {
             if (price.priceListName != null)
               StatusChip(
                 key: const ValueKey<String>('product-price-list'),
-                // Клиенту — «Ваш вид цены: …» (вид цены выбирает сервер, CUST-021; 02 UI-50-007).
-                label: s.isCustomer ? l10n.home_price_list_label(price.priceListName!) : price.priceListName!,
+                // Клиенту — «Ваш вид цены: …» (вид цены выбирает сервер, CUST-021; 02 UI-50-007); планшету магазина —
+                // «Обычные цены магазина» (02 UI-51-004, KIOSK-006).
+                label: s.role == RoleCode.kiosk
+                    ? l10n.kiosk_price_chip
+                    : (s.isCustomer ? l10n.home_price_list_label(price.priceListName!) : price.priceListName!),
                 variant: StatusChipVariant.priceList,
                 tooltip: s.isCustomer ? null : l10n.product_price_list_tooltip,
               ),
@@ -584,11 +587,22 @@ String ctaLabelOf(AppLocalizations l10n, ProductDetailsState s, {bool spoken = f
 
 /// Степпер + CTA (UI-14-010/011/012/029); на compact — внутри закреплённой панели UI-14-027.
 class ProductQuantityBar extends StatelessWidget {
-  const ProductQuantityBar({super.key, required this.state, required this.notifier, this.showRules = true});
+  const ProductQuantityBar({
+    super.key,
+    required this.state,
+    required this.notifier,
+    this.showRules = true,
+    this.addBlocked = false,
+  });
 
   final ProductDetailsState state;
   final ProductDetailsNotifier notifier;
   final bool showRules;
+
+  /// Добавление недоступно извне карточки: слой карточки планшета без связи, при `426` и метке сброса без сети
+  /// (02 UI-51-010, AC-UI-51-006, AC-UI-51-009) — «Добавление недоступно», степпер и нампад неактивны. Состояние CTA
+  /// карточки ([ProductDetailsState.cta]) для других ролей не меняется.
+  final bool addBlocked;
 
   @override
   Widget build(BuildContext context) {
@@ -601,8 +615,8 @@ class ProductQuantityBar extends StatelessWidget {
     final String unitLabel = pk == null ? units.baseLabel : units.packLabel(pk);
     final String value = ProductFormat.qty(s.lineQuantity);
     final String? issue = qtyIssueText(l10n, s.quantityIssue, unit: units.baseLabel, warehouse: s.stock?.warehouseName);
-    final bool enabled = s.cta == ProductCta.add || s.cta == ProductCta.addMore;
-    final bool stockBlocked = s.stockUnknown || s.outOfStock;
+    final bool enabled = !addBlocked && (s.cta == ProductCta.add || s.cta == ProductCta.addMore);
+    final bool stockBlocked = addBlocked || s.stockUnknown || s.outOfStock;
     final Widget stepper = QuantityStepper(
       key: const ValueKey<String>('product-quantity-stepper'),
       value: value,
@@ -610,12 +624,12 @@ class ProductQuantityBar extends StatelessWidget {
       error: issue != null,
       increaseLabel: l10n.ds_qty_increase_a11y,
       decreaseLabel: l10n.ds_qty_decrease_a11y,
-      onIncrement: s.canIncrement ? notifier.increment : null,
+      onIncrement: s.canIncrement && !addBlocked ? notifier.increment : null,
       onDecrement: s.canDecrement && !stockBlocked ? notifier.decrement : null,
       onValueTap: stockBlocked ? null : () => openProductNumpad(context, state: s, notifier: notifier),
       onIncrementLongPress: stockBlocked ? null : () => openProductNumpad(context, state: s, notifier: notifier),
     );
-    final String fullLabel = ctaLabelOf(l10n, s);
+    final String fullLabel = addBlocked ? l10n.product_cta_unavailable : ctaLabelOf(l10n, s);
     final Widget cta = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints box) {
         // Узкое окно (compact 360–412 lp): если «В корзину · 2 850,00 сом» не помещается в CTA L
@@ -623,7 +637,10 @@ class ProductQuantityBar extends StatelessWidget {
         // обрезается многоточием (деньги всегда с 2 знаками — ADR-114); screen reader читает полный текст.
         String label = fullLabel;
         final Money? sum = s.ctaSum;
-        if (box.hasBoundedWidth && sum != null && (s.cta == ProductCta.add || s.cta == ProductCta.invalidQuantity)) {
+        if (box.hasBoundedWidth &&
+            sum != null &&
+            !addBlocked &&
+            (s.cta == ProductCta.add || s.cta == ProductCta.invalidQuantity)) {
           final double room = box.maxWidth - 2 * AppButtonSize.l.padding; // money-double: allow — геометрия UI (lp)
           final TextStyle ts = context.text.bodyLg.copyWith(fontWeight: FontWeight.w600);
           final TextPainter tp = TextPainter(
@@ -640,7 +657,7 @@ class ProductQuantityBar extends StatelessWidget {
           label: label,
           // Диктор — полный текст с суммой в форме `PriceText.spoken` («В корзину · 2 850 сом»; ADR-114 п. 4, ревью
           // R2C-04).
-          semanticLabel: ctaLabelOf(l10n, s, spoken: true),
+          semanticLabel: addBlocked ? fullLabel : ctaLabelOf(l10n, s, spoken: true),
           onPressed: enabled ? notifier.add : null,
           loading: s.adding,
           size: AppButtonSize.l,
@@ -720,10 +737,13 @@ class ProductQuantityRules extends StatelessWidget {
 
 /// Закреплённая нижняя панель compact (UI-14-027): 72, `surface`, граница `border`, `elevation.2`.
 class ProductBottomBar extends StatelessWidget {
-  const ProductBottomBar({super.key, required this.state, required this.notifier});
+  const ProductBottomBar({super.key, required this.state, required this.notifier, this.addBlocked = false});
 
   final ProductDetailsState state;
   final ProductDetailsNotifier notifier;
+
+  /// См. [ProductQuantityBar.addBlocked].
+  final bool addBlocked;
 
   @override
   Widget build(BuildContext context) {
@@ -740,7 +760,7 @@ class ProductBottomBar extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-          child: ProductQuantityBar(state: state, notifier: notifier, showRules: false),
+          child: ProductQuantityBar(state: state, notifier: notifier, showRules: false, addBlocked: addBlocked),
         ),
       ),
     );

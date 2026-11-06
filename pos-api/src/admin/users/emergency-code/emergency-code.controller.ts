@@ -1,11 +1,11 @@
 import { Body, Controller, Header, HttpCode, Param, Post, Req, UseGuards } from '@nestjs/common';
 import type { RequestWithContext } from '../../../common/http/request-context.js';
+import { IgnoreIdempotencyKeyGuard } from '../../../common/idempotency/ignore-idempotency-key.guard.js';
 import { RequirePermission } from '../../../common/rbac/rbac.decorators.js';
 import { uuidParam } from '../shared/params.js';
 import { AdminStepUpGuard, RequireStepUp } from '../shared/step-up.guard.js';
 import { type EmergencyLoginCodeDto, EmergencyLoginCodeRequestDto } from './emergency-code.dto.js';
 import { EmergencyLoginCodeService } from './emergency-code.service.js';
-import { IgnoreIdempotencyKeyGuard } from './ignore-idempotency-key.guard.js';
 
 /**
  * `POST /admin/users/{id}/emergency-login-code` (08 §4.18.10; contracts/openapi

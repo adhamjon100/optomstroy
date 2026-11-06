@@ -8,20 +8,23 @@ part of 'app_router.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// Единственный `GoRouter` приложения: маршруты `$appRoutes` (routes.dart) и
-/// глобальный redirect (guards/). Пересчитывает redirect при смене сессии/режима.
+/// Единственный `GoRouter` приложения: маршруты `$appRoutes` (routes.dart), маршруты режима планшета
+/// `kioskRoutes()` (kiosk_routes.dart, вне оболочки) и глобальный redirect (guards/). Пересчитывает redirect при смене
+/// сессии/режима.
 
 @ProviderFor(appRouter)
 final appRouterProvider = AppRouterProvider._();
 
-/// Единственный `GoRouter` приложения: маршруты `$appRoutes` (routes.dart) и
-/// глобальный redirect (guards/). Пересчитывает redirect при смене сессии/режима.
+/// Единственный `GoRouter` приложения: маршруты `$appRoutes` (routes.dart), маршруты режима планшета
+/// `kioskRoutes()` (kiosk_routes.dart, вне оболочки) и глобальный redirect (guards/). Пересчитывает redirect при смене
+/// сессии/режима.
 
 final class AppRouterProvider
     extends $FunctionalProvider<GoRouter, GoRouter, GoRouter>
     with $Provider<GoRouter> {
-  /// Единственный `GoRouter` приложения: маршруты `$appRoutes` (routes.dart) и
-  /// глобальный redirect (guards/). Пересчитывает redirect при смене сессии/режима.
+  /// Единственный `GoRouter` приложения: маршруты `$appRoutes` (routes.dart), маршруты режима планшета
+  /// `kioskRoutes()` (kiosk_routes.dart, вне оболочки) и глобальный redirect (guards/). Пересчитывает redirect при смене
+  /// сессии/режима.
   AppRouterProvider._()
     : super(
         from: null,
@@ -55,4 +58,4 @@ final class AppRouterProvider
   }
 }
 
-String _$appRouterHash() => r'f7a4abdd40cded67a00daad16c97b83a1f9143f6';
+String _$appRouterHash() => r'ae832f9517900fd2ef88ccc0f0cc573f5f816b0b';

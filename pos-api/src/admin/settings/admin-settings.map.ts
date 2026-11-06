@@ -1,6 +1,12 @@
 import { parsePlatformVersions, formatVersionHeader } from '../../common/app-version/version-policy.js';
 import { SYNC_ENTITY_VALUES } from '../../common/enums.js';
-import { camelProjection } from '../../settings/public-settings.map.js';
+import {
+  camelProjection,
+  KIOSK_INTEGER_SETTINGS,
+  KIOSK_WORKING_HOURS_DEFAULT,
+  type KioskIntegerSettingKey,
+  parseKioskWorkingHours,
+} from '../../settings/public-settings.map.js';
 
 /**
  * Таблица соответствия ключей `app_settings` (snake_case, 07 §5.59) → полей `/admin/settings` (08 §4.18.6;
@@ -23,7 +29,8 @@ export type SettingRule =
   | { readonly kind: 'slots' }
   | { readonly kind: 'contacts' }
   | { readonly kind: 'strings'; readonly maxItems: number; readonly maxLength: number }
-  | { readonly kind: 'object' };
+  | { readonly kind: 'object' }
+  | { readonly kind: 'working_hours'; readonly maxLength: number };
 
 export interface AdminSettingKey {
   /** Ключ `app_settings` (07 §5.59). */
@@ -35,6 +42,12 @@ export interface AdminSettingKey {
   readonly rule: SettingRule;
   /** `app_settings.description_ru` для новой строки (ключи вне seed создаются при первой записи). */
   readonly descriptionRu: string;
+  /**
+   * Значение по умолчанию в коде: строки ключа в `app_settings` нет — `GET /admin/settings` отдаёт его (ключи планшета
+   * магазина, 07 §5.59, 08 §4.18.6: сид не меняется, ключ создаёт первая запись из SCR-46). У прочих ключей нет —
+   * незаданное значение не выводится (действует env или сид).
+   */
+  readonly codeDefault?: unknown;
 }
 
 /** Поле API ключа: проекция по сегментам; сущность `sync_interval.<entity>` — без перевода (enum). */
@@ -47,6 +60,15 @@ const int = (min: number, max?: number): SettingRule => ({
   kind: 'integer',
   min,
   ...(max !== undefined ? { max } : {}),
+});
+
+/** Целочисленный ключ планшета магазина: границы и значение по умолчанию — `KIOSK_INTEGER_SETTINGS` (08 §4.18.6). */
+const kioskInt = (key: KioskIntegerSettingKey, descriptionRu: string): Omit<AdminSettingKey, 'apiField'> => ({
+  key,
+  valueType: 'integer',
+  rule: int(KIOSK_INTEGER_SETTINGS[key].min, KIOSK_INTEGER_SETTINGS[key].max),
+  descriptionRu,
+  codeDefault: KIOSK_INTEGER_SETTINGS[key].default,
 });
 
 const ROWS: readonly Omit<AdminSettingKey, 'apiField'>[] = [
@@ -139,6 +161,19 @@ const ROWS: readonly Omit<AdminSettingKey, 'apiField'>[] = [
     descriptionRu: 'Что видит клиент о наличии: status | quantity',
   },
   { key: 'support_contacts', valueType: 'json', rule: { kind: 'contacts' }, descriptionRu: 'Контакты поддержки' },
+  // Планшет магазина (07 §5.59 «Ключи планшета магазина»; 08 §4.18.6; P-002 §13; ADR-115): общие для всех планшетов.
+  kioskInt('kiosk_idle_seconds', 'Автосброс планшета магазина без касаний, сек'),
+  kioskInt('kiosk_idle_warning_seconds', 'Обратный отсчёт «Вы ещё здесь?» перед сбросом планшета, сек'),
+  kioskInt('kiosk_done_seconds', 'Номер заявки на экране планшета до сброса, сек'),
+  kioskInt('kiosk_otp_per_hour', 'Кодов для заявки с одного планшета в час'),
+  kioskInt('kiosk_otp_per_day', 'Кодов для заявки с одного планшета в сутки'),
+  {
+    key: 'kiosk_working_hours',
+    valueType: 'string',
+    rule: { kind: 'working_hours', maxLength: 200 },
+    descriptionRu: 'Часы работы магазина для сигнала «планшет не на связи» (Asia/Bishkek); пусто — сигнал выключен',
+    codeDefault: KIOSK_WORKING_HOURS_DEFAULT,
+  },
 ];
 
 export const ADMIN_SETTING_KEYS: readonly AdminSettingKey[] = ROWS.map((r) => ({
@@ -152,11 +187,13 @@ export const ADMIN_SETTING_BY_FIELD: ReadonlyMap<string, AdminSettingKey> = new 
 
 /**
  * Поля блока `env` (`AdminSettingsEnv`) — только чтение (ядро §19.2; изменяются только на сервере). Попытка записать
- * их в `settings` → 400 `read_only_setting` (AC-API-164: `customerSelfService`). `minAppVersion` и
+ * их в `settings` → 400 `read_only_setting` (AC-API-164: `customerSelfService`; 08 §4.18.6: `kioskMode` — env
+ * `KIOSK_MODE`, ADR-115; `KIOSK_ALLOWED_CIDRS` через API не отдаётся). `minAppVersion` и
  * `recommendedAppVersion` есть в обоих блоках: в `settings` это ключи `app_settings` (запись разрешена).
  */
 export const ADMIN_SETTINGS_ENV_FIELDS = [
   'customerSelfService',
+  'kioskMode',
   'debtPaymentsFromPos',
   'qrProvider',
   'qrTtlMinutes',
@@ -277,5 +314,14 @@ export function checkSettingValue(rule: SettingRule, value: unknown): SettingChe
     }
     case 'object':
       return isPlainObject(value) ? { ok: true, value } : type('Ожидается объект');
+    case 'working_hours': {
+      if (typeof value !== 'string') return type('Ожидается строка');
+      const t = value.trim();
+      if (t.length > rule.maxLength) return fail('maxLength', `Не длиннее ${rule.maxLength} символов`);
+      if (parseKioskWorkingHours(t) === null) {
+        return fail('format', 'Формат: mon-sat 08:00-20:00;sun 09:00-15:00 (начало раньше конца)');
+      }
+      return { ok: true, value: t };
+    }
   }
 }

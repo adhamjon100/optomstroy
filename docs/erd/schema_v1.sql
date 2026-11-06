@@ -1,4 +1,4 @@
--- docs/erd/schema_v1.sql — DDL схемы БД «Оптомстрой POS» после migrations/0001+0002+0003+0005+0006+0007+0009+0011+0012+0013+0017+0018+0019+0020
+-- docs/erd/schema_v1.sql — DDL схемы БД «Оптомстрой POS» после migrations/0001+0002+0003+0005+0006+0007+0009+0011+0012+0013+0017+0018+0019+0020+0021+0022+0023
 -- (RM-C-006 п. 5). Аналог `pg_dump --schema-only`: в embedded-postgres нет клиента pg_dump, Docker на машине
 -- нет — DDL выгружен из каталога (pg_get_functiondef/pg_get_constraintdef/pg_get_indexdef/pg_get_triggerdef)
 -- скриптом pos-api/test/db/support/schema-dump.ts; проверка — повторное применение к пустой БД даёт тот же
@@ -52,10 +52,10 @@ CREATE TYPE public.idempotency_status AS ENUM ('in_progress', 'completed');
 CREATE TYPE public.image_status AS ENUM ('pending', 'downloading', 'ready', 'failed', 'missing_source');
 CREATE TYPE public.invitation_status AS ENUM ('pending', 'accepted', 'revoked', 'expired');
 CREATE TYPE public.link_match_method AS ENUM ('phone', 'manual_admin', 'onec_created');
-CREATE TYPE public.notification_kind AS ENUM ('sync_error', 'order_status', 'cart_price_changed', 'cart_stock_changed', 'credit_blocked', 'system', 'payment_status', 'return_status');
+CREATE TYPE public.notification_kind AS ENUM ('sync_error', 'order_status', 'cart_price_changed', 'cart_stock_changed', 'credit_blocked', 'system', 'payment_status', 'return_status', 'kiosk_order');
 CREATE TYPE public.onec_sync_state AS ENUM ('unknown', 'pending', 'linked', 'missing', 'ambiguous');
 CREATE TYPE public.order_status AS ENUM ('draft', 'submitting', 'submit_failed', 'pending_approval', 'awaiting_payment', 'approved', 'awaiting_shipment', 'shipped', 'partially_returned', 'closed', 'cancelled');
-CREATE TYPE public.otp_purpose AS ENUM ('login_or_register', 'step_up', 'phone_change_old', 'phone_change_new', 'customer_link');
+CREATE TYPE public.otp_purpose AS ENUM ('login_or_register', 'step_up', 'phone_change_old', 'phone_change_new', 'customer_link', 'kiosk_order');
 CREATE TYPE public.otp_status AS ENUM ('sent', 'verified', 'expired', 'locked', 'failed_delivery', 'superseded');
 CREATE TYPE public.outbox_aggregate AS ENUM ('order', 'payment', 'customer', 'return_request');
 CREATE TYPE public.outbox_status AS ENUM ('pending', 'sending', 'sent', 'confirmed', 'failed', 'dead', 'cancelled');
@@ -66,7 +66,7 @@ CREATE TYPE public.print_job_status AS ENUM ('queued', 'ready', 'failed', 'unava
 CREATE TYPE public.receiver_kind AS ENUM ('customer', 'other_person');
 CREATE TYPE public.return_reason AS ENUM ('defect', 'wrong_item', 'not_suitable', 'surplus', 'seller_error', 'other');
 CREATE TYPE public.return_request_status AS ENUM ('draft', 'submitted', 'accepted', 'rejected', 'completed');
-CREATE TYPE public.role_code AS ENUM ('seller', 'cashier', 'senior_seller', 'admin', 'owner', 'customer', 'integration');
+CREATE TYPE public.role_code AS ENUM ('seller', 'cashier', 'senior_seller', 'admin', 'owner', 'customer', 'integration', 'kiosk');
 CREATE TYPE public.session_kind AS ENUM ('standard', 'biometric');
 CREATE TYPE public.sms_status AS ENUM ('queued', 'sent', 'delivered', 'failed', 'expired');
 CREATE TYPE public.status_change_source AS ENUM ('pos_user', 'pos_system', 'onec_sync', 'onec_response');
@@ -77,7 +77,7 @@ CREATE TYPE public.sync_run_status AS ENUM ('queued', 'running', 'success', 'par
 CREATE TYPE public.sync_trigger AS ENUM ('schedule', 'manual', 'retry', 'dependency');
 CREATE TYPE public.transaction_kind AS ENUM ('order_created', 'order_cancelled', 'payment_received', 'payment_voided', 'refund', 'discount_override', 'credit_sale_approved', 'manual_qr_confirm', 'return_requested');
 CREATE TYPE public.transaction_source AS ENUM ('pos', 'onec');
-CREATE TYPE public.user_kind AS ENUM ('staff', 'customer');
+CREATE TYPE public.user_kind AS ENUM ('staff', 'customer', 'kiosk');
 CREATE TYPE public.user_status AS ENUM ('pending', 'pending_activation', 'active', 'blocked', 'deleted');
 
 -- ----------------------------------------------------------------------------------------------------
@@ -1270,7 +1270,11 @@ CREATE TABLE public.orders (
     idempotency_key text,
     row_version integer DEFAULT 1 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    kiosk_customer_match text,
+    pd_notice_version text,
+    pd_notice_sha256 text,
+    receiver_phone_masked text
 );
 
 CREATE TABLE public.otp_challenges (
@@ -1296,7 +1300,10 @@ CREATE TABLE public.otp_challenges (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     issued_by_user_id uuid,
     locked_at timestamp with time zone,
-    issued_jti uuid
+    issued_jti uuid,
+    kiosk_tablet_id uuid,
+    cart_id uuid,
+    notice_version text
 );
 
 CREATE TABLE public.packagings (
@@ -1777,6 +1784,30 @@ CREATE TABLE public.stock_balances (
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+CREATE TABLE public.store_tablets (
+    id uuid DEFAULT uuid_generate_v7() NOT NULL,
+    user_id uuid NOT NULL,
+    device_id uuid NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    exit_code_hash text NOT NULL,
+    exit_code_pepper_version smallint NOT NULL,
+    exit_code_used_at timestamp with time zone,
+    exit_failed_attempts smallint DEFAULT 0 NOT NULL,
+    exit_locked_until timestamp with time zone,
+    enrolled_by_user_id uuid NOT NULL,
+    enrolled_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen_at timestamp with time zone,
+    last_app_version text,
+    lock_task_enabled boolean,
+    reconnected_at timestamp with time zone,
+    reconnected_by_user_id uuid,
+    revoked_at timestamp with time zone,
+    revoked_by_user_id uuid,
+    revoke_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE public.sync_entity_versions (
     entity sync_entity NOT NULL,
     onec_key text NOT NULL,
@@ -2149,7 +2180,7 @@ ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_cancel_reason_chk CHECK ((l
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_cancel_reason_code_chk CHECK ((cancel_reason_code = ANY (ARRAY['customer_refused'::text, 'duplicate'::text, 'error'::text, 'other'::text])));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_cancel_request_chk CHECK (((cancel_requested_at IS NULL) OR ((cancel_requested_by_user_id IS NOT NULL) AND (cancel_reason_code IS NOT NULL))));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_comment_chk CHECK ((length(comment) <= 500));
-ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_created_via_chk CHECK ((created_via = ANY (ARRAY['staff'::text, 'customer'::text])));
+ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_created_via_chk CHECK ((created_via = ANY (ARRAY['staff'::text, 'customer'::text, 'kiosk'::text])));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_currency_chk CHECK ((currency = 'KGS'::bpchar));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_customer_channel_chk CHECK (((created_via <> 'customer'::text) OR ((payment_method = ANY (ARRAY['cash'::payment_method, 'qr_bakai'::payment_method])) AND (discount_percent = (0)::numeric) AND (manual_discount_total = (0)::numeric) AND (discount_approved_by_user_id IS NULL) AND (credit_approved_by_user_id IS NULL))));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_customer_discount_percent_chk CHECK (((customer_discount_percent >= (0)::numeric) AND (customer_discount_percent <= (100)::numeric)));
@@ -2162,6 +2193,9 @@ ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_delivery_recipient_phone_e1
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_discount_percent_chk CHECK (((discount_percent >= (0)::numeric) AND (discount_percent <= (100)::numeric)));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_discount_split_chk CHECK ((discount_total = (customer_discount_total + manual_discount_total)));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_discount_total_chk CHECK (((discount_total >= (0)::numeric) AND (discount_total <= subtotal)));
+ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_kiosk_channel_chk CHECK (((created_via <> 'kiosk'::text) OR ((payment_method = 'cash'::payment_method) AND (discount_percent = (0)::numeric) AND (manual_discount_total = (0)::numeric) AND (discount_approved_by_user_id IS NULL) AND (credit_approved_by_user_id IS NULL) AND (delivery_method = 'pickup'::delivery_method))));
+ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_kiosk_customer_match_chk CHECK ((kiosk_customer_match = ANY (ARRAY['single'::text, 'ambiguous'::text, 'none'::text])));
+ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_kiosk_match_chk CHECK (((created_via = 'kiosk'::text) = (kiosk_customer_match IS NOT NULL)));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_manual_discount_total_chk CHECK ((manual_discount_total >= (0)::numeric));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_onec_sync_ref_chk CHECK (
 CASE onec_sync_state
@@ -2173,14 +2207,18 @@ CASE onec_sync_state
 END);
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_onec_sync_status_chk CHECK ((((status <> ALL (ARRAY['draft'::order_status, 'submit_failed'::order_status])) OR (onec_sync_state = 'unknown'::onec_sync_state)) AND ((onec_sync_state <> 'unknown'::onec_sync_state) OR (status = ANY (ARRAY['draft'::order_status, 'submitting'::order_status, 'submit_failed'::order_status, 'cancelled'::order_status]))) AND ((onec_sync_state <> 'ambiguous'::onec_sync_state) OR (status = 'submitting'::order_status))));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_paid_amount_chk CHECK ((paid_amount >= (0)::numeric));
+ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_pd_notice_sha256_chk CHECK ((pd_notice_sha256 ~ '^[0-9a-f]{64}$'::text));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_public_number_chk CHECK ((public_number ~ '^POS-[0-9]{4}-[0-9]{6}$'::text));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_receiver_chk CHECK (((receiver_kind = 'customer'::receiver_kind) OR ((receiver_name IS NOT NULL) AND (receiver_phone_e164 IS NOT NULL))));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_receiver_phone_e164_chk CHECK ((receiver_phone_e164 ~ '^\+996[0-9]{9}$'::text));
+ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_receiver_phone_masked_chk CHECK ((receiver_phone_masked ~ '^\+996 [0-9]\*\* \*\*\* \*[0-9]{2}$'::text));
+ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_receiver_phone_masked_null_chk CHECK (((receiver_phone_masked IS NULL) OR (receiver_phone_e164 IS NULL)));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_refund_intent_chk CHECK ((refund_intent = ANY (ARRAY['none'::text, 'refund'::text, 'advance'::text])));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_subtotal_chk CHECK ((subtotal >= (0)::numeric));
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_total_chk CHECK ((total = (subtotal - discount_total)));
 ALTER TABLE ONLY public.otp_challenges ADD CONSTRAINT otp_challenges_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.otp_challenges ADD CONSTRAINT otp_challenges_issued_by_chk CHECK (((issued_by_user_id IS NULL) OR ((purpose = 'login_or_register'::otp_purpose) AND (sms_outbox_id IS NULL))));
+ALTER TABLE ONLY public.otp_challenges ADD CONSTRAINT otp_challenges_kiosk_chk CHECK ((((purpose = 'kiosk_order'::otp_purpose) = ((kiosk_tablet_id IS NOT NULL) AND (cart_id IS NOT NULL) AND (notice_version IS NOT NULL))) AND ((purpose = 'kiosk_order'::otp_purpose) OR ((kiosk_tablet_id IS NULL) AND (cart_id IS NULL) AND (notice_version IS NULL))) AND ((purpose <> 'kiosk_order'::otp_purpose) OR ((user_id IS NULL) AND (issued_by_user_id IS NULL)))));
 ALTER TABLE ONLY public.packagings ADD CONSTRAINT packagings_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.packagings ADD CONSTRAINT packagings_factor_chk CHECK ((factor > (0)::numeric));
 ALTER TABLE ONLY public.packagings ADD CONSTRAINT packagings_owner_chk CHECK (((product_id IS NOT NULL) OR (packaging_set_ref IS NOT NULL)));
@@ -2219,7 +2257,7 @@ ALTER TABLE ONLY public.products ADD CONSTRAINT products_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.products ADD CONSTRAINT products_min_qty_chk CHECK ((min_qty > (0)::numeric));
 ALTER TABLE ONLY public.products ADD CONSTRAINT products_multiplicity_chk CHECK ((multiplicity > (0)::numeric));
 ALTER TABLE ONLY public.rate_limit_counters ADD CONSTRAINT rate_limit_counters_pkey PRIMARY KEY (scope, subject, window_start);
-ALTER TABLE ONLY public.rate_limit_counters ADD CONSTRAINT rate_limit_counters_scope_chk CHECK ((scope = ANY (ARRAY['otp_phone_15m'::text, 'otp_phone_24h'::text, 'otp_ip_1h'::text, 'otp_device_24h'::text, 'login_ip_1h'::text, 'step_up_user_1h'::text, 'webhook_ip_1m'::text, 'otp_ip_10m'::text, 'otp_ip_24h'::text, 'otp_device_10m'::text, 'otp_global_1m'::text, 'otp_verify_ip_10m'::text, 'pin_user_device_10m'::text, 'admin_user_1m'::text])));
+ALTER TABLE ONLY public.rate_limit_counters ADD CONSTRAINT rate_limit_counters_scope_chk CHECK ((scope = ANY (ARRAY['otp_phone_15m'::text, 'otp_phone_24h'::text, 'otp_ip_1h'::text, 'otp_device_24h'::text, 'login_ip_1h'::text, 'step_up_user_1h'::text, 'webhook_ip_1m'::text, 'otp_ip_10m'::text, 'otp_ip_24h'::text, 'otp_device_10m'::text, 'otp_global_1m'::text, 'otp_verify_ip_10m'::text, 'pin_user_device_10m'::text, 'admin_user_1m'::text, 'otp_kiosk_tablet_1h'::text, 'otp_kiosk_tablet_24h'::text])));
 ALTER TABLE ONLY public.receivable_documents ADD CONSTRAINT receivable_documents_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.receivable_documents ADD CONSTRAINT receivable_documents_customer_onec_ref_uq UNIQUE (customer_id, onec_ref);
 ALTER TABLE ONLY public.receivable_documents ADD CONSTRAINT receivable_documents_kind_chk CHECK ((kind = ANY (ARRAY['invoice'::text, 'payment'::text, 'return'::text, 'discount'::text, 'adjustment'::text])));
@@ -2246,7 +2284,7 @@ ALTER TABLE ONLY public.role_permissions ADD CONSTRAINT role_permissions_pkey PR
 ALTER TABLE ONLY public.roles ADD CONSTRAINT roles_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.sessions ADD CONSTRAINT sessions_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.sessions ADD CONSTRAINT sessions_amr_chk CHECK ((amr <@ ARRAY['sms'::text, 'pin'::text, 'bio'::text, 'admin_code'::text]));
-ALTER TABLE ONLY public.sessions ADD CONSTRAINT sessions_revoke_reason_chk CHECK ((revoke_reason = ANY (ARRAY['logout'::text, 'logout_all'::text, 'reuse_detected'::text, 'admin'::text, 'phone_changed'::text, 'role_changed'::text, 'expired'::text, 'device_revoked'::text, 'blocked'::text, 'session_limit'::text, 'device_mismatch'::text, 'biometric_invalidated'::text, 'refresh_replay'::text])));
+ALTER TABLE ONLY public.sessions ADD CONSTRAINT sessions_revoke_reason_chk CHECK ((revoke_reason = ANY (ARRAY['logout'::text, 'logout_all'::text, 'reuse_detected'::text, 'admin'::text, 'phone_changed'::text, 'role_changed'::text, 'expired'::text, 'device_revoked'::text, 'blocked'::text, 'session_limit'::text, 'device_mismatch'::text, 'biometric_invalidated'::text, 'refresh_replay'::text, 'kiosk_revoked'::text])));
 ALTER TABLE ONLY public.shipment_items ADD CONSTRAINT shipment_items_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.shipment_items ADD CONSTRAINT shipment_items_line_uq UNIQUE (shipment_id, onec_line_no);
 ALTER TABLE ONLY public.shipments ADD CONSTRAINT shipments_pkey PRIMARY KEY (id);
@@ -2257,8 +2295,13 @@ ALTER TABLE ONLY public.sms_outbox ADD CONSTRAINT sms_outbox_phones_recognized_c
 ALTER TABLE ONLY public.sms_outbox ADD CONSTRAINT sms_outbox_provider_chk CHECK ((provider = ANY (ARRAY['smspro'::text, 'fake'::text])));
 ALTER TABLE ONLY public.sms_outbox ADD CONSTRAINT sms_outbox_provider_message_id_chk CHECK ((provider_message_id ~ '^[A-Za-z0-9]{12}$'::text));
 ALTER TABLE ONLY public.sms_outbox ADD CONSTRAINT sms_outbox_sms_parts_chk CHECK ((sms_parts >= 0));
-ALTER TABLE ONLY public.sms_outbox ADD CONSTRAINT sms_outbox_template_key_chk CHECK ((template_key = ANY (ARRAY['otp_login'::text, 'otp_step_up'::text, 'otp_phone_change'::text, 'otp_customer_link'::text])));
+ALTER TABLE ONLY public.sms_outbox ADD CONSTRAINT sms_outbox_template_key_chk CHECK ((template_key = ANY (ARRAY['otp_login'::text, 'otp_step_up'::text, 'otp_phone_change'::text, 'otp_customer_link'::text, 'otp_kiosk_order'::text])));
 ALTER TABLE ONLY public.stock_balances ADD CONSTRAINT stock_balances_pkey PRIMARY KEY (variant_id, warehouse_id);
+ALTER TABLE ONLY public.store_tablets ADD CONSTRAINT store_tablets_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.store_tablets ADD CONSTRAINT store_tablets_exit_failed_attempts_chk CHECK ((exit_failed_attempts >= 0));
+ALTER TABLE ONLY public.store_tablets ADD CONSTRAINT store_tablets_revoke_reason_chk CHECK ((revoke_reason ~ '^[a-z_]+(\.[a-z_]+)+$'::text));
+ALTER TABLE ONLY public.store_tablets ADD CONSTRAINT store_tablets_revoked_chk CHECK (((status = 'revoked'::text) = (revoked_at IS NOT NULL)));
+ALTER TABLE ONLY public.store_tablets ADD CONSTRAINT store_tablets_status_chk CHECK ((status = ANY (ARRAY['active'::text, 'revoked'::text])));
 ALTER TABLE ONLY public.sync_entity_versions ADD CONSTRAINT sync_entity_versions_pkey PRIMARY KEY (entity, onec_key);
 ALTER TABLE ONLY public.sync_entity_versions ADD CONSTRAINT sync_entity_versions_onec_key_chk CHECK (((length(onec_key) >= 1) AND (length(onec_key) <= 150)));
 ALTER TABLE ONLY public.sync_entity_versions ADD CONSTRAINT sync_entity_versions_ref_key_chk CHECK (((onec_ref IS NULL) OR (onec_key = (onec_ref)::text)));
@@ -2294,6 +2337,7 @@ ALTER TABLE ONLY public.user_profiles ADD CONSTRAINT user_profiles_full_name_chk
 ALTER TABLE ONLY public.user_profiles ADD CONSTRAINT user_profiles_locale_chk CHECK ((locale = ANY (ARRAY['ru'::text, 'ky'::text, 'en'::text])));
 ALTER TABLE ONLY public.user_roles ADD CONSTRAINT user_roles_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.users ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.users ADD CONSTRAINT users_kiosk_phone_chk CHECK (((kind <> 'kiosk'::user_kind) OR (phone_e164 IS NULL)));
 ALTER TABLE ONLY public.users ADD CONSTRAINT users_phone_e164_chk CHECK ((phone_e164 ~ '^\+996[0-9]{9}$'::text));
 ALTER TABLE ONLY public.variant_attribute_values ADD CONSTRAINT variant_attribute_values_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.variant_attribute_values ADD CONSTRAINT variant_attribute_values_variant_attribute_uq UNIQUE (variant_id, attribute_id);
@@ -2379,6 +2423,7 @@ CREATE INDEX orders_creator_idx ON public.orders USING btree (created_by_user_id
 CREATE INDEX orders_customer_idx ON public.orders USING btree (customer_id, created_at DESC);
 CREATE INDEX orders_customer_requests_idx ON public.orders USING btree (status, created_at DESC) WHERE (created_via = 'customer'::text);
 CREATE UNIQUE INDEX orders_idem_uq ON public.orders USING btree (idempotency_key, created_by_user_id) WHERE (idempotency_key IS NOT NULL);
+CREATE INDEX orders_kiosk_idx ON public.orders USING btree (status, created_at) WHERE (created_via = 'kiosk'::text);
 CREATE INDEX orders_onec_number_idx ON public.orders USING btree (onec_number) WHERE (onec_number IS NOT NULL);
 CREATE UNIQUE INDEX orders_onec_ref_uq ON public.orders USING btree (onec_ref) WHERE (onec_ref IS NOT NULL);
 CREATE INDEX orders_onec_sync_attention_idx ON public.orders USING btree (onec_sync_state) WHERE (onec_sync_state = ANY (ARRAY['missing'::onec_sync_state, 'ambiguous'::onec_sync_state]));
@@ -2387,6 +2432,8 @@ CREATE UNIQUE INDEX orders_public_number_uq ON public.orders USING btree (public
 CREATE UNIQUE INDEX otp_challenges_active_uq ON public.otp_challenges USING btree (phone_e164, purpose) WHERE (status = 'sent'::otp_status);
 CREATE INDEX otp_challenges_expires_idx ON public.otp_challenges USING btree (expires_at);
 CREATE INDEX otp_challenges_issued_by_idx ON public.otp_challenges USING btree (issued_by_user_id) WHERE (issued_by_user_id IS NOT NULL);
+CREATE UNIQUE INDEX otp_challenges_kiosk_active_uq ON public.otp_challenges USING btree (kiosk_tablet_id) WHERE ((purpose = 'kiosk_order'::otp_purpose) AND (status = 'sent'::otp_status));
+CREATE INDEX otp_challenges_kiosk_created_idx ON public.otp_challenges USING btree (kiosk_tablet_id, created_at) WHERE (kiosk_tablet_id IS NOT NULL);
 CREATE INDEX otp_challenges_phone_created_idx ON public.otp_challenges USING btree (phone_e164, created_at DESC);
 CREATE INDEX otp_challenges_registration_token_idx ON public.otp_challenges USING btree (registration_token_hash) WHERE (registration_token_hash IS NOT NULL);
 CREATE UNIQUE INDEX packagings_onec_ref_uq ON public.packagings USING btree (onec_ref) WHERE (onec_ref IS NOT NULL);
@@ -2501,6 +2548,8 @@ CREATE INDEX stock_balances_synced_idx ON public.stock_balances USING btree (syn
 CREATE INDEX stock_balances_updated_at_key_idx ON public.stock_balances USING btree (updated_at, variant_id, warehouse_id);
 CREATE INDEX stock_balances_warehouse_idx ON public.stock_balances USING btree (warehouse_id);
 CREATE INDEX stock_balances_wh_avail_idx ON public.stock_balances USING btree (warehouse_id) WHERE (available > (0)::numeric);
+CREATE INDEX store_tablets_device_idx ON public.store_tablets USING btree (device_id);
+CREATE UNIQUE INDEX store_tablets_user_id_uq ON public.store_tablets USING btree (user_id);
 CREATE INDEX sync_entity_versions_last_seen_idx ON public.sync_entity_versions USING btree (entity, last_seen_at);
 CREATE INDEX sync_entity_versions_run_idx ON public.sync_entity_versions USING btree (seen_in_run_id);
 CREATE INDEX sync_entity_versions_seen_idx ON public.sync_entity_versions USING btree (entity, seen_in_run_id);
@@ -2608,7 +2657,9 @@ ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_discount_rule_id_fk FOREIGN
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_onec_linked_by_user_id_fk FOREIGN KEY (onec_linked_by_user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_price_list_id_fk FOREIGN KEY (price_list_id) REFERENCES price_lists(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.orders ADD CONSTRAINT orders_warehouse_id_fk FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+ALTER TABLE ONLY public.otp_challenges ADD CONSTRAINT otp_challenges_cart_id_fk FOREIGN KEY (cart_id) REFERENCES carts(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.otp_challenges ADD CONSTRAINT otp_challenges_issued_by_user_id_fk FOREIGN KEY (issued_by_user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+ALTER TABLE ONLY public.otp_challenges ADD CONSTRAINT otp_challenges_kiosk_tablet_id_fk FOREIGN KEY (kiosk_tablet_id) REFERENCES store_tablets(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.otp_challenges ADD CONSTRAINT otp_challenges_sms_outbox_id_fk FOREIGN KEY (sms_outbox_id) REFERENCES sms_outbox(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.otp_challenges ADD CONSTRAINT otp_challenges_user_id_fk FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.packagings ADD CONSTRAINT packagings_product_id_fk FOREIGN KEY (product_id) REFERENCES products(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
@@ -2664,6 +2715,11 @@ ALTER TABLE ONLY public.shipments ADD CONSTRAINT shipments_warehouse_id_fk FOREI
 ALTER TABLE ONLY public.sms_outbox ADD CONSTRAINT sms_outbox_otp_challenge_id_fk FOREIGN KEY (otp_challenge_id) REFERENCES otp_challenges(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.stock_balances ADD CONSTRAINT stock_balances_variant_id_fk FOREIGN KEY (variant_id) REFERENCES product_variants(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.stock_balances ADD CONSTRAINT stock_balances_warehouse_id_fk FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+ALTER TABLE ONLY public.store_tablets ADD CONSTRAINT store_tablets_device_id_fk FOREIGN KEY (device_id) REFERENCES devices(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+ALTER TABLE ONLY public.store_tablets ADD CONSTRAINT store_tablets_enrolled_by_user_id_fk FOREIGN KEY (enrolled_by_user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+ALTER TABLE ONLY public.store_tablets ADD CONSTRAINT store_tablets_reconnected_by_user_id_fk FOREIGN KEY (reconnected_by_user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+ALTER TABLE ONLY public.store_tablets ADD CONSTRAINT store_tablets_revoked_by_user_id_fk FOREIGN KEY (revoked_by_user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+ALTER TABLE ONLY public.store_tablets ADD CONSTRAINT store_tablets_user_id_fk FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.sync_entity_versions ADD CONSTRAINT sync_entity_versions_seen_in_run_id_fk FOREIGN KEY (seen_in_run_id) REFERENCES sync_runs(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.sync_errors ADD CONSTRAINT sync_errors_outbox_id_fk FOREIGN KEY (outbox_id) REFERENCES onec_outbox(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.sync_errors ADD CONSTRAINT sync_errors_resolved_by_user_id_fk FOREIGN KEY (resolved_by_user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
@@ -2775,6 +2831,7 @@ CREATE TRIGGER trg_shipment_items_set_updated_at BEFORE UPDATE ON public.shipmen
 CREATE TRIGGER trg_shipments_set_updated_at BEFORE UPDATE ON public.shipments FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_sms_outbox_set_updated_at BEFORE UPDATE ON public.sms_outbox FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_stock_balances_set_updated_at BEFORE UPDATE ON public.stock_balances FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE TRIGGER trg_store_tablets_set_updated_at BEFORE UPDATE ON public.store_tablets FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_sync_entity_versions_set_updated_at BEFORE UPDATE ON public.sync_entity_versions FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_sync_errors_set_updated_at BEFORE UPDATE ON public.sync_errors FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_sync_node_state_monotonic BEFORE UPDATE OF last_message_number ON public.sync_node_state FOR EACH ROW EXECUTE FUNCTION sync_node_state_monotonic();
@@ -2972,6 +3029,9 @@ GRANT SELECT ON TABLE public.sms_outbox TO pos_readonly;
 GRANT DELETE, INSERT, SELECT, UPDATE ON TABLE public.stock_balances TO pos_app;
 GRANT SELECT ON TABLE public.stock_balances TO pos_backup;
 GRANT SELECT ON TABLE public.stock_balances TO pos_readonly;
+GRANT DELETE, INSERT, SELECT, UPDATE ON TABLE public.store_tablets TO pos_app;
+GRANT SELECT ON TABLE public.store_tablets TO pos_backup;
+GRANT SELECT ON TABLE public.store_tablets TO pos_readonly;
 GRANT DELETE, INSERT, SELECT, UPDATE ON TABLE public.sync_entity_versions TO pos_app;
 GRANT SELECT ON TABLE public.sync_entity_versions TO pos_backup;
 GRANT SELECT ON TABLE public.sync_entity_versions TO pos_readonly;

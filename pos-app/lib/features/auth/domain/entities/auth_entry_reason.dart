@@ -11,7 +11,11 @@ enum AuthEntryReason {
   pinLocked('pin_locked'),
   pinReset('pin_reset'),
   bioInvalidated('bio_invalidated'),
-  deviceMismatch('device_mismatch');
+  deviceMismatch('device_mismatch'),
+
+  /// Аварийный выход планшета магазина без связи (02 SCR-51 UI-51-017 п. 3; ADR-115): «Отключите этот планшет в списке
+  /// «Планшеты магазина»» — сервер о выходе не знает.
+  kioskExitOffline('kiosk_exit_offline');
 
   const AuthEntryReason(this.value);
 

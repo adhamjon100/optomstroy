@@ -1,7 +1,7 @@
-// Фильтры SCR-25 (02 UI-25-002…UI-25-005, UI-25-012, UI-25-013): группы статусов чипов, период в границах суток
-// Бишкека (AC-UI-25-011), «Мои / Все», клиент, способ оплаты, оплачен, поиск по номеру, сортировка. Значения
-// `status`, `from`, `to`, `customerId`, `mine` отражаются в query маршрута (восстановление и «Назад» из SCR-24,
-// AC-UI-25-010); прочие — только память экрана.
+// Фильтры SCR-25 (02 UI-25-002…UI-25-005, UI-25-012, UI-25-013, UI-25-014): группы статусов чипов, период в границах
+// суток Бишкека (AC-UI-25-011), «Мои / Все», «С планшета» (`createdVia=kiosk`, ADR-115), клиент, способ оплаты,
+// оплачен, поиск по номеру, сортировка. Значения `status`, `from`, `to`, `customerId`, `mine`, `createdVia` отражаются
+// в query маршрута (восстановление и «Назад» из SCR-24, AC-UI-25-010, AC-UI-25-013); прочие — только память экрана.
 import 'package:flutter/foundation.dart';
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/features/orders/domain/entities/order.dart';
@@ -132,6 +132,7 @@ final class OrdersFilters {
     required this.period,
     this.statuses = const <OrderStatus>{},
     this.mine = false,
+    this.kioskOnly = false,
     this.customerId,
     this.customerName,
     this.paymentMethod,
@@ -144,7 +145,8 @@ final class OrdersFilters {
   factory OrdersFilters.defaults(DateTime nowUtc) =>
       OrdersFilters(period: OrdersPeriod.preset(OrdersPeriodPreset.last3Days, nowUtc));
 
-  /// Фильтры из query маршрута (`status`, `from`, `to`, `customerId`, `mine`); неверные значения — по умолчанию.
+  /// Фильтры из query маршрута (`status`, `from`, `to`, `customerId`, `mine`, `createdVia`); неверные значения — по
+  /// умолчанию (`createdVia` — только `kiosk`: других чипов канала на SCR-25 нет).
   factory OrdersFilters.fromRoute({
     required DateTime nowUtc,
     String? status,
@@ -152,6 +154,7 @@ final class OrdersFilters {
     String? to,
     String? customerId,
     String? mine,
+    String? createdVia,
   }) {
     final Set<OrderStatus> statuses = <OrderStatus>{
       for (final String s in (status ?? '').split(',')) ?OrderStatus.tryParse(s.trim()),
@@ -162,7 +165,13 @@ final class OrdersFilters {
         ? _periodFor(f, t, nowUtc)
         : OrdersPeriod.preset(OrdersPeriodPreset.last3Days, nowUtc);
     final String? customer = customerId == null || customerId.isEmpty ? null : customerId;
-    return OrdersFilters(period: period, statuses: statuses, mine: mine == '1', customerId: customer);
+    return OrdersFilters(
+      period: period,
+      statuses: statuses,
+      mine: mine == '1',
+      kioskOnly: createdVia == kioskRouteValue,
+      customerId: customer,
+    );
   }
 
   static OrdersPeriod _periodFor(DateTime from, DateTime to, DateTime nowUtc) {
@@ -174,11 +183,18 @@ final class OrdersFilters {
     return OrdersPeriod(preset: OrdersPeriodPreset.custom, from: from, to: to);
   }
 
+  /// Значение query маршрута для чипа «С планшета» (`createdVia=kiosk`).
+  static final String kioskRouteValue = OrderCreatedVia.kiosk.value;
+
   final OrdersPeriod period;
   final Set<OrderStatus> statuses;
 
   /// «Мои» (для ролей с `order.read.all`).
   final bool mine;
+
+  /// Чип «С планшета» (UI-25-014, для ролей с `order.read.all`): только заявки с планшета магазина (`createdVia=kiosk`).
+  /// С «Мои» не сочетается — автор заявок технический пользователь планшета.
+  final bool kioskOnly;
   final String? customerId;
 
   /// Наименование выбранного клиента (подпись фильтра; в запрос не уходит).
@@ -199,13 +215,17 @@ final class OrdersFilters {
 
   /// Фильтры отличаются от умолчаний (для `EmptyState`: «по выбранным фильтрам»).
   bool differsFromDefaults(DateTime nowUtc) =>
-      statuses.isNotEmpty || panelCount > 0 || period != OrdersPeriod.preset(OrdersPeriodPreset.last3Days, nowUtc);
+      statuses.isNotEmpty ||
+      panelCount > 0 ||
+      kioskOnly ||
+      period != OrdersPeriod.preset(OrdersPeriodPreset.last3Days, nowUtc);
 
   /// Копия.
   OrdersFilters copyWith({
     OrdersPeriod? period,
     Set<OrderStatus>? statuses,
     bool? mine,
+    bool? kioskOnly,
     String? Function()? customerId,
     String? Function()? customerName,
     PaymentMethod? Function()? paymentMethod,
@@ -216,6 +236,7 @@ final class OrdersFilters {
     period: period ?? this.period,
     statuses: statuses ?? this.statuses,
     mine: mine ?? this.mine,
+    kioskOnly: kioskOnly ?? this.kioskOnly,
     customerId: customerId == null ? this.customerId : customerId(),
     customerName: customerName == null ? this.customerName : customerName(),
     paymentMethod: paymentMethod == null ? this.paymentMethod : paymentMethod(),
@@ -225,11 +246,13 @@ final class OrdersFilters {
   );
 
   /// Запрос `GET /orders` первой страницы (`include=statusCounts` — AC-UI-25-012). «Мои» уходит как `createdBy`
-  /// только у ролей с `order.read.all` (у `seller`/`customer` сервер сам ограничивает своими — без `403`).
+  /// только у ролей с `order.read.all` (у `seller`/`customer` сервер сам ограничивает своими — без `403`); «С планшета»
+  /// — как `createdVia=kiosk` только у них же (у продавца и покупателя чипа нет, AC-UI-25-013).
   OrdersQuery toQuery(OrdersViewer viewer, {String? cursor}) => OrdersQuery(
     statuses: statuses,
     customerId: customerId,
     createdBy: viewer.canReadAll && mine ? viewer.userId : null,
+    createdVia: viewer.canReadAll && kioskOnly ? OrderCreatedVia.kiosk : null,
     from: period.from,
     to: period.to,
     paymentMethod: paymentMethod,
@@ -244,13 +267,15 @@ final class OrdersFilters {
     cursor: cursor,
   );
 
-  /// Query маршрута `/orders?status=&from=&to=&customerId=&mine=` (значения как в `OrdersRoute`).
+  /// Query маршрута `/orders?status=&from=&to=&customerId=&mine=&createdVia=` (значения как в `OrdersRoute`;
+  /// `createdVia` типизированный маршрут не разбирает — экран читает его из адреса, ADR-115).
   Map<String, String> toRouteQuery() => <String, String>{
     if (statuses.isNotEmpty) 'status': (statuses.map((OrderStatus s) => s.value).toList()..sort()).join(','),
     'from': period.from.toUtc().toIso8601String(),
     'to': period.to.toUtc().toIso8601String(),
     'customerId': ?customerId,
     if (mine) 'mine': '1',
+    if (kioskOnly) 'createdVia': kioskRouteValue,
   };
 
   @override
@@ -259,6 +284,7 @@ final class OrdersFilters {
       other.period == period &&
       setEquals(other.statuses, statuses) &&
       other.mine == mine &&
+      other.kioskOnly == kioskOnly &&
       other.customerId == customerId &&
       other.paymentMethod == paymentMethod &&
       other.paid == paid &&
@@ -267,5 +293,5 @@ final class OrdersFilters {
 
   @override
   int get hashCode =>
-      Object.hash(period, Object.hashAllUnordered(statuses), mine, customerId, paymentMethod, paid, q, sort);
+      Object.hash(period, Object.hashAllUnordered(statuses), mine, kioskOnly, customerId, paymentMethod, paid, q, sort);
 }

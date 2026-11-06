@@ -10,6 +10,7 @@ import {
   type SendRequest,
   type SendResult,
   type SmsGateway,
+  type SmsTemplateKey,
   toE164Kg,
   TRANSACTION_ID_RE,
 } from './sms-gateway.js';
@@ -37,6 +38,24 @@ export interface FakeSmsGatewayOptions {
 }
 
 const UNDEFINED_TABLE = '42P01';
+
+/**
+ * Значения CHECK `dev_outbox_template_key_chk` (db/migrations-dev/0001_dev_outbox.sql:22; 07 §5.63). Dev-миграция
+ * применена и хэшируется в эпоху веб-демо, поэтому новые ключи шаблона (`otp_kiosk_order`, ADR-115) в CHECK не
+ * добавляются: шлюз пишет их как `otp_login` с настоящим текстом (ADR-115 п. 25; 09 §6.7). Лог и `sms_outbox`
+ * сохраняют настоящий ключ. Сверка со списком миграции — test/integrations/fake-sms.gateway.spec.ts.
+ */
+export const DEV_OUTBOX_TEMPLATE_KEYS: readonly SmsTemplateKey[] = [
+  'otp_login',
+  'otp_step_up',
+  'otp_phone_change',
+  'otp_customer_link',
+];
+
+/** Ключ шаблона строки `dev_outbox`: значение вне CHECK dev-схемы → `otp_login` (текст SMS — настоящий). */
+export function devOutboxTemplateKey(purpose: SmsTemplateKey): SmsTemplateKey {
+  return DEV_OUTBOX_TEMPLATE_KEYS.includes(purpose) ? purpose : 'otp_login';
+}
 
 /**
  * `FakeSmsGateway` (09 §6.8, RM-C-008; ядро R0 §17.3): в сеть не ходит; принятое «SMS» записывает **только** в таблицу
@@ -106,7 +125,7 @@ export class FakeSmsGateway implements SmsGateway {
          VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (transaction_id) DO NOTHING
          RETURNING id`,
-        [req.transactionId, req.smsOutboxId ?? null, phone, purpose, req.text, simulated],
+        [req.transactionId, req.smsOutboxId ?? null, phone, devOutboxTemplateKey(purpose), req.text, simulated],
       );
       if (res.rowCount === 0) return finish(10);
     } catch (e) {

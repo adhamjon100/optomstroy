@@ -19,6 +19,14 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const LIMIT_DEFAULT = 50;
 const LIMIT_MAX = 200;
 const MAX_RANGE_MS = 366 * 86_400_000;
+/** Канал заказа (`orders.created_via`, CHECK `orders_created_via_chk`; OpenAPI `OrderCreatedVia`, 08 §4.8.2). */
+const CREATED_VIA = ['staff', 'customer', 'kiosk'] as const;
+type CreatedVia = (typeof CREATED_VIA)[number];
+
+function isCreatedVia(v: string): v is CreatedVia {
+  return (CREATED_VIA as readonly string[]).includes(v);
+}
+
 const SORTS = {
   'createdAt:desc': sql.raw('o.created_at DESC, o.id DESC'),
   'total:desc': sql.raw('o.total DESC, o.id DESC'),
@@ -60,6 +68,8 @@ export interface OrdersListQuery {
   readonly isPaid?: boolean;
   readonly q?: string;
   readonly idempotencyKey?: string;
+  /** Канал заказа — одно значение (чип «С планшета» SCR-25; 08 §4.8.2, ADR-115). */
+  readonly createdVia?: CreatedVia;
   readonly statusCounts: boolean;
   readonly limit: number;
   readonly offset: number;
@@ -125,6 +135,15 @@ export class OrderQueryService {
       throw bad('sort', 'sort_field', 'Допустимо: createdAt:desc, total:desc, status:asc.');
     const qs = str(q.q);
     if (qs !== undefined && qs.length > 64) throw bad('q', 'max_length', 'Не длиннее 64 символов.');
+    // Канал — одно значение перечня (OpenAPI `OrderCreatedVia`); видимость роли не расширяет (фильтр — внутри where).
+    let createdVia: CreatedVia | undefined;
+    const via = Array.isArray(q.createdVia) ? null : str(q.createdVia);
+    if (via !== undefined) {
+      if (via === null || !isCreatedVia(via)) {
+        throw bad('createdVia', 'enum', 'Допустимо одно значение: staff, customer, kiosk.');
+      }
+      createdVia = via;
+    }
     return {
       statuses,
       ...(parseUuidParam(q.customerId, 'customerId') ? { customerId: parseUuidParam(q.customerId, 'customerId') } : {}),
@@ -137,6 +156,7 @@ export class OrderQueryService {
       ...(parseUuidParam(q.idempotencyKey, 'idempotencyKey')
         ? { idempotencyKey: parseUuidParam(q.idempotencyKey, 'idempotencyKey') }
         : {}),
+      ...(createdVia ? { createdVia } : {}),
       statusCounts: include === 'statusCounts',
       limit,
       offset: this.decodeCursor(q.cursor, sort),
@@ -162,6 +182,8 @@ export class OrderQueryService {
     if (f.to) parts.push(sql`o.created_at <= ${f.to.toISOString()}::timestamptz`);
     if (f.paymentMethod) parts.push(sql`o.payment_method = ${f.paymentMethod}::payment_method`);
     if (f.isPaid !== undefined) parts.push(sql`o.is_paid = ${f.isPaid}::boolean`);
+    // Канал заказа (08 §4.8.2): для `kiosk` — частичный индекс `orders_kiosk_idx` (07 §5.37, миграция 0022).
+    if (f.createdVia) parts.push(sql`o.created_via = ${f.createdVia}`);
     if (f.q) {
       const like = `%${f.q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
       parts.push(sql`(o.public_number ILIKE ${like} OR o.onec_number ILIKE ${like})`);

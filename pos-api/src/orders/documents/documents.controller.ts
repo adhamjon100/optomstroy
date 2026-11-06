@@ -4,6 +4,7 @@ import type { RequestWithContext } from '../../common/http/request-context.js';
 import type { PaperFormat } from '../../common/ports/documents.port.js';
 import type { SalesActor } from '../../common/ports/sales-context.js';
 import { ProblemException } from '../../common/problem-details/problem.exception.js';
+import { customerModeOrDeny } from '../../common/auth/subject-kind.js';
 import { RequireAnyPermission, RequirePermission } from '../../common/rbac/rbac.decorators.js';
 import { CustomerModeGuard } from '../customer-mode.guard.js';
 import { DocumentsService, type RenderKind } from './documents.service.js';
@@ -54,7 +55,10 @@ export function actorOf(req: RequestWithContext): SalesActor {
   return {
     userId: p.userId,
     roles: p.roles,
-    isCustomer: p.kind === 'customer',
+    // Документы вне закрытого списка планшета: `kind=kiosk` и вид вне перечня — 403 (06 ARCH-065).
+    isCustomer: customerModeOrDeny(p.kind, () => {
+      throw new ProblemException('FORBIDDEN', { detail: 'Недостаточно прав для операции.' });
+    }),
     sessionId: p.sessionId ?? null,
     deviceId: p.deviceId ?? null,
     requestId: req.id ?? null,

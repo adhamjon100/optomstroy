@@ -310,6 +310,9 @@ export const otpChallenges = pgTable('otp_challenges', {
   issuedByUserId: uuid('issued_by_user_id'),
   lockedAt: timestamp('locked_at', { withTimezone: true }),
   issuedJti: uuid('issued_jti'),
+  kioskTabletId: uuid('kiosk_tablet_id'),
+  cartId: uuid('cart_id'),
+  noticeVersion: text('notice_version'),
 });
 
 /** rate_limit_counters — 07 §5.12 */
@@ -398,6 +401,43 @@ export const integrationTokens = pgTable('integration_tokens', {
   revokeReason: text('revoke_reason'),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
   lastUsedIp: inet('last_used_ip'),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+});
+
+/** store_tablets — 07 §5.65 (ADR-115) */
+export const storeTablets = pgTable('store_tablets', {
+  id: uuid('id')
+    .primaryKey()
+    .default(sql`uuid_generate_v7()`),
+  userId: uuid('user_id').notNull(),
+  deviceId: uuid('device_id').notNull(),
+  status: text('status')
+    .notNull()
+    .default(sql`'active'::text`),
+  exitCodeHash: text('exit_code_hash').notNull(),
+  exitCodePepperVersion: smallint('exit_code_pepper_version').notNull(),
+  exitCodeUsedAt: timestamp('exit_code_used_at', { withTimezone: true }),
+  exitFailedAttempts: smallint('exit_failed_attempts')
+    .notNull()
+    .default(sql`0`),
+  exitLockedUntil: timestamp('exit_locked_until', { withTimezone: true }),
+  enrolledByUserId: uuid('enrolled_by_user_id').notNull(),
+  enrolledAt: timestamp('enrolled_at', { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  lastAppVersion: text('last_app_version'),
+  lockTaskEnabled: boolean('lock_task_enabled'),
+  reconnectedAt: timestamp('reconnected_at', { withTimezone: true }),
+  reconnectedByUserId: uuid('reconnected_by_user_id'),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  revokedByUserId: uuid('revoked_by_user_id'),
+  revokeReason: text('revoke_reason'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .default(sql`now()`),

@@ -15,7 +15,9 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$Me {
 
- String get id; String get kind; String get status; List<String> get roles; List<String> get permissions; int get permissionsVersion; String? get discountLimitPercent; MeProfile? get profile; MeCustomerLink? get customerLink; UserSettings? get settings; MeSecurity? get security; List<Consent>? get consents; MeSession? get session; MeAppVersion? get appVersion; String? get apiVersion; DateTime? get serverTime;
+ String get id; String get kind; String get status; List<String> get roles; List<String> get permissions; int get permissionsVersion;/// `Me.tablet` (OpenAPI 1.3.0) — только `kind=kiosk`: планшет магазина вызывающего технического пользователя
+/// (08 §3.14; ADR-115). У `staff` и `customer` поля нет.
+ MeKioskTablet? get tablet; String? get discountLimitPercent; MeProfile? get profile; MeCustomerLink? get customerLink; UserSettings? get settings; MeSecurity? get security; List<Consent>? get consents; MeSession? get session; MeAppVersion? get appVersion; String? get apiVersion; DateTime? get serverTime;
 /// Create a copy of Me
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,12 +30,12 @@ $MeCopyWith<Me> get copyWith => _$MeCopyWithImpl<Me>(this as Me, _$identity);
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Me&&(identical(other.id, id) || other.id == id)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other.roles, roles)&&const DeepCollectionEquality().equals(other.permissions, permissions)&&(identical(other.permissionsVersion, permissionsVersion) || other.permissionsVersion == permissionsVersion)&&(identical(other.discountLimitPercent, discountLimitPercent) || other.discountLimitPercent == discountLimitPercent)&&(identical(other.profile, profile) || other.profile == profile)&&(identical(other.customerLink, customerLink) || other.customerLink == customerLink)&&(identical(other.settings, settings) || other.settings == settings)&&(identical(other.security, security) || other.security == security)&&const DeepCollectionEquality().equals(other.consents, consents)&&(identical(other.session, session) || other.session == session)&&(identical(other.appVersion, appVersion) || other.appVersion == appVersion)&&(identical(other.apiVersion, apiVersion) || other.apiVersion == apiVersion)&&(identical(other.serverTime, serverTime) || other.serverTime == serverTime));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Me&&(identical(other.id, id) || other.id == id)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other.roles, roles)&&const DeepCollectionEquality().equals(other.permissions, permissions)&&(identical(other.permissionsVersion, permissionsVersion) || other.permissionsVersion == permissionsVersion)&&(identical(other.tablet, tablet) || other.tablet == tablet)&&(identical(other.discountLimitPercent, discountLimitPercent) || other.discountLimitPercent == discountLimitPercent)&&(identical(other.profile, profile) || other.profile == profile)&&(identical(other.customerLink, customerLink) || other.customerLink == customerLink)&&(identical(other.settings, settings) || other.settings == settings)&&(identical(other.security, security) || other.security == security)&&const DeepCollectionEquality().equals(other.consents, consents)&&(identical(other.session, session) || other.session == session)&&(identical(other.appVersion, appVersion) || other.appVersion == appVersion)&&(identical(other.apiVersion, apiVersion) || other.apiVersion == apiVersion)&&(identical(other.serverTime, serverTime) || other.serverTime == serverTime));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,kind,status,const DeepCollectionEquality().hash(roles),const DeepCollectionEquality().hash(permissions),permissionsVersion,discountLimitPercent,profile,customerLink,settings,security,const DeepCollectionEquality().hash(consents),session,appVersion,apiVersion,serverTime);
+int get hashCode => Object.hash(runtimeType,id,kind,status,const DeepCollectionEquality().hash(roles),const DeepCollectionEquality().hash(permissions),permissionsVersion,tablet,discountLimitPercent,profile,customerLink,settings,security,const DeepCollectionEquality().hash(consents),session,appVersion,apiVersion,serverTime);
 
 
 
@@ -44,11 +46,11 @@ abstract mixin class $MeCopyWith<$Res>  {
   factory $MeCopyWith(Me value, $Res Function(Me) _then) = _$MeCopyWithImpl;
 @useResult
 $Res call({
- String id, String kind, String status, List<String> roles, List<String> permissions, int permissionsVersion, String? discountLimitPercent, MeProfile? profile, MeCustomerLink? customerLink, UserSettings? settings, MeSecurity? security, List<Consent>? consents, MeSession? session, MeAppVersion? appVersion, String? apiVersion, DateTime? serverTime
+ String id, String kind, String status, List<String> roles, List<String> permissions, int permissionsVersion, MeKioskTablet? tablet, String? discountLimitPercent, MeProfile? profile, MeCustomerLink? customerLink, UserSettings? settings, MeSecurity? security, List<Consent>? consents, MeSession? session, MeAppVersion? appVersion, String? apiVersion, DateTime? serverTime
 });
 
 
-$MeProfileCopyWith<$Res>? get profile;$MeCustomerLinkCopyWith<$Res>? get customerLink;$UserSettingsCopyWith<$Res>? get settings;$MeSecurityCopyWith<$Res>? get security;$MeSessionCopyWith<$Res>? get session;$MeAppVersionCopyWith<$Res>? get appVersion;
+$MeKioskTabletCopyWith<$Res>? get tablet;$MeProfileCopyWith<$Res>? get profile;$MeCustomerLinkCopyWith<$Res>? get customerLink;$UserSettingsCopyWith<$Res>? get settings;$MeSecurityCopyWith<$Res>? get security;$MeSessionCopyWith<$Res>? get session;$MeAppVersionCopyWith<$Res>? get appVersion;
 
 }
 /// @nodoc
@@ -61,7 +63,7 @@ class _$MeCopyWithImpl<$Res>
 
 /// Create a copy of Me
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? kind = null,Object? status = null,Object? roles = null,Object? permissions = null,Object? permissionsVersion = null,Object? discountLimitPercent = freezed,Object? profile = freezed,Object? customerLink = freezed,Object? settings = freezed,Object? security = freezed,Object? consents = freezed,Object? session = freezed,Object? appVersion = freezed,Object? apiVersion = freezed,Object? serverTime = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? kind = null,Object? status = null,Object? roles = null,Object? permissions = null,Object? permissionsVersion = null,Object? tablet = freezed,Object? discountLimitPercent = freezed,Object? profile = freezed,Object? customerLink = freezed,Object? settings = freezed,Object? security = freezed,Object? consents = freezed,Object? session = freezed,Object? appVersion = freezed,Object? apiVersion = freezed,Object? serverTime = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
@@ -69,7 +71,8 @@ as String,status: null == status ? _self.status : status // ignore: cast_nullabl
 as String,roles: null == roles ? _self.roles : roles // ignore: cast_nullable_to_non_nullable
 as List<String>,permissions: null == permissions ? _self.permissions : permissions // ignore: cast_nullable_to_non_nullable
 as List<String>,permissionsVersion: null == permissionsVersion ? _self.permissionsVersion : permissionsVersion // ignore: cast_nullable_to_non_nullable
-as int,discountLimitPercent: freezed == discountLimitPercent ? _self.discountLimitPercent : discountLimitPercent // ignore: cast_nullable_to_non_nullable
+as int,tablet: freezed == tablet ? _self.tablet : tablet // ignore: cast_nullable_to_non_nullable
+as MeKioskTablet?,discountLimitPercent: freezed == discountLimitPercent ? _self.discountLimitPercent : discountLimitPercent // ignore: cast_nullable_to_non_nullable
 as String?,profile: freezed == profile ? _self.profile : profile // ignore: cast_nullable_to_non_nullable
 as MeProfile?,customerLink: freezed == customerLink ? _self.customerLink : customerLink // ignore: cast_nullable_to_non_nullable
 as MeCustomerLink?,settings: freezed == settings ? _self.settings : settings // ignore: cast_nullable_to_non_nullable
@@ -83,6 +86,18 @@ as DateTime?,
   ));
 }
 /// Create a copy of Me
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$MeKioskTabletCopyWith<$Res>? get tablet {
+    if (_self.tablet == null) {
+    return null;
+  }
+
+  return $MeKioskTabletCopyWith<$Res>(_self.tablet!, (value) {
+    return _then(_self.copyWith(tablet: value));
+  });
+}/// Create a copy of Me
 /// with the given fields replaced by the non-null parameter values.
 @override
 @pragma('vm:prefer-inline')
@@ -236,10 +251,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String kind,  String status,  List<String> roles,  List<String> permissions,  int permissionsVersion,  String? discountLimitPercent,  MeProfile? profile,  MeCustomerLink? customerLink,  UserSettings? settings,  MeSecurity? security,  List<Consent>? consents,  MeSession? session,  MeAppVersion? appVersion,  String? apiVersion,  DateTime? serverTime)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String kind,  String status,  List<String> roles,  List<String> permissions,  int permissionsVersion,  MeKioskTablet? tablet,  String? discountLimitPercent,  MeProfile? profile,  MeCustomerLink? customerLink,  UserSettings? settings,  MeSecurity? security,  List<Consent>? consents,  MeSession? session,  MeAppVersion? appVersion,  String? apiVersion,  DateTime? serverTime)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Me() when $default != null:
-return $default(_that.id,_that.kind,_that.status,_that.roles,_that.permissions,_that.permissionsVersion,_that.discountLimitPercent,_that.profile,_that.customerLink,_that.settings,_that.security,_that.consents,_that.session,_that.appVersion,_that.apiVersion,_that.serverTime);case _:
+return $default(_that.id,_that.kind,_that.status,_that.roles,_that.permissions,_that.permissionsVersion,_that.tablet,_that.discountLimitPercent,_that.profile,_that.customerLink,_that.settings,_that.security,_that.consents,_that.session,_that.appVersion,_that.apiVersion,_that.serverTime);case _:
   return orElse();
 
 }
@@ -257,10 +272,10 @@ return $default(_that.id,_that.kind,_that.status,_that.roles,_that.permissions,_
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String kind,  String status,  List<String> roles,  List<String> permissions,  int permissionsVersion,  String? discountLimitPercent,  MeProfile? profile,  MeCustomerLink? customerLink,  UserSettings? settings,  MeSecurity? security,  List<Consent>? consents,  MeSession? session,  MeAppVersion? appVersion,  String? apiVersion,  DateTime? serverTime)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String kind,  String status,  List<String> roles,  List<String> permissions,  int permissionsVersion,  MeKioskTablet? tablet,  String? discountLimitPercent,  MeProfile? profile,  MeCustomerLink? customerLink,  UserSettings? settings,  MeSecurity? security,  List<Consent>? consents,  MeSession? session,  MeAppVersion? appVersion,  String? apiVersion,  DateTime? serverTime)  $default,) {final _that = this;
 switch (_that) {
 case _Me():
-return $default(_that.id,_that.kind,_that.status,_that.roles,_that.permissions,_that.permissionsVersion,_that.discountLimitPercent,_that.profile,_that.customerLink,_that.settings,_that.security,_that.consents,_that.session,_that.appVersion,_that.apiVersion,_that.serverTime);case _:
+return $default(_that.id,_that.kind,_that.status,_that.roles,_that.permissions,_that.permissionsVersion,_that.tablet,_that.discountLimitPercent,_that.profile,_that.customerLink,_that.settings,_that.security,_that.consents,_that.session,_that.appVersion,_that.apiVersion,_that.serverTime);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -277,10 +292,10 @@ return $default(_that.id,_that.kind,_that.status,_that.roles,_that.permissions,_
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String kind,  String status,  List<String> roles,  List<String> permissions,  int permissionsVersion,  String? discountLimitPercent,  MeProfile? profile,  MeCustomerLink? customerLink,  UserSettings? settings,  MeSecurity? security,  List<Consent>? consents,  MeSession? session,  MeAppVersion? appVersion,  String? apiVersion,  DateTime? serverTime)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String kind,  String status,  List<String> roles,  List<String> permissions,  int permissionsVersion,  MeKioskTablet? tablet,  String? discountLimitPercent,  MeProfile? profile,  MeCustomerLink? customerLink,  UserSettings? settings,  MeSecurity? security,  List<Consent>? consents,  MeSession? session,  MeAppVersion? appVersion,  String? apiVersion,  DateTime? serverTime)?  $default,) {final _that = this;
 switch (_that) {
 case _Me() when $default != null:
-return $default(_that.id,_that.kind,_that.status,_that.roles,_that.permissions,_that.permissionsVersion,_that.discountLimitPercent,_that.profile,_that.customerLink,_that.settings,_that.security,_that.consents,_that.session,_that.appVersion,_that.apiVersion,_that.serverTime);case _:
+return $default(_that.id,_that.kind,_that.status,_that.roles,_that.permissions,_that.permissionsVersion,_that.tablet,_that.discountLimitPercent,_that.profile,_that.customerLink,_that.settings,_that.security,_that.consents,_that.session,_that.appVersion,_that.apiVersion,_that.serverTime);case _:
   return null;
 
 }
@@ -292,7 +307,7 @@ return $default(_that.id,_that.kind,_that.status,_that.roles,_that.permissions,_
 @JsonSerializable()
 
 class _Me extends Me {
-  const _Me({required this.id, required this.kind, required this.status, required final  List<String> roles, required final  List<String> permissions, required this.permissionsVersion, this.discountLimitPercent, this.profile, this.customerLink, this.settings, this.security, final  List<Consent>? consents, this.session, this.appVersion, this.apiVersion, this.serverTime}): _roles = roles,_permissions = permissions,_consents = consents,super._();
+  const _Me({required this.id, required this.kind, required this.status, required final  List<String> roles, required final  List<String> permissions, required this.permissionsVersion, this.tablet, this.discountLimitPercent, this.profile, this.customerLink, this.settings, this.security, final  List<Consent>? consents, this.session, this.appVersion, this.apiVersion, this.serverTime}): _roles = roles,_permissions = permissions,_consents = consents,super._();
   factory _Me.fromJson(Map<String, dynamic> json) => _$MeFromJson(json);
 
 @override final  String id;
@@ -313,6 +328,9 @@ class _Me extends Me {
 }
 
 @override final  int permissionsVersion;
+/// `Me.tablet` (OpenAPI 1.3.0) — только `kind=kiosk`: планшет магазина вызывающего технического пользователя
+/// (08 §3.14; ADR-115). У `staff` и `customer` поля нет.
+@override final  MeKioskTablet? tablet;
 @override final  String? discountLimitPercent;
 @override final  MeProfile? profile;
 @override final  MeCustomerLink? customerLink;
@@ -345,12 +363,12 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Me&&(identical(other.id, id) || other.id == id)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other._roles, _roles)&&const DeepCollectionEquality().equals(other._permissions, _permissions)&&(identical(other.permissionsVersion, permissionsVersion) || other.permissionsVersion == permissionsVersion)&&(identical(other.discountLimitPercent, discountLimitPercent) || other.discountLimitPercent == discountLimitPercent)&&(identical(other.profile, profile) || other.profile == profile)&&(identical(other.customerLink, customerLink) || other.customerLink == customerLink)&&(identical(other.settings, settings) || other.settings == settings)&&(identical(other.security, security) || other.security == security)&&const DeepCollectionEquality().equals(other._consents, _consents)&&(identical(other.session, session) || other.session == session)&&(identical(other.appVersion, appVersion) || other.appVersion == appVersion)&&(identical(other.apiVersion, apiVersion) || other.apiVersion == apiVersion)&&(identical(other.serverTime, serverTime) || other.serverTime == serverTime));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Me&&(identical(other.id, id) || other.id == id)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other._roles, _roles)&&const DeepCollectionEquality().equals(other._permissions, _permissions)&&(identical(other.permissionsVersion, permissionsVersion) || other.permissionsVersion == permissionsVersion)&&(identical(other.tablet, tablet) || other.tablet == tablet)&&(identical(other.discountLimitPercent, discountLimitPercent) || other.discountLimitPercent == discountLimitPercent)&&(identical(other.profile, profile) || other.profile == profile)&&(identical(other.customerLink, customerLink) || other.customerLink == customerLink)&&(identical(other.settings, settings) || other.settings == settings)&&(identical(other.security, security) || other.security == security)&&const DeepCollectionEquality().equals(other._consents, _consents)&&(identical(other.session, session) || other.session == session)&&(identical(other.appVersion, appVersion) || other.appVersion == appVersion)&&(identical(other.apiVersion, apiVersion) || other.apiVersion == apiVersion)&&(identical(other.serverTime, serverTime) || other.serverTime == serverTime));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,kind,status,const DeepCollectionEquality().hash(_roles),const DeepCollectionEquality().hash(_permissions),permissionsVersion,discountLimitPercent,profile,customerLink,settings,security,const DeepCollectionEquality().hash(_consents),session,appVersion,apiVersion,serverTime);
+int get hashCode => Object.hash(runtimeType,id,kind,status,const DeepCollectionEquality().hash(_roles),const DeepCollectionEquality().hash(_permissions),permissionsVersion,tablet,discountLimitPercent,profile,customerLink,settings,security,const DeepCollectionEquality().hash(_consents),session,appVersion,apiVersion,serverTime);
 
 
 
@@ -361,11 +379,11 @@ abstract mixin class _$MeCopyWith<$Res> implements $MeCopyWith<$Res> {
   factory _$MeCopyWith(_Me value, $Res Function(_Me) _then) = __$MeCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String kind, String status, List<String> roles, List<String> permissions, int permissionsVersion, String? discountLimitPercent, MeProfile? profile, MeCustomerLink? customerLink, UserSettings? settings, MeSecurity? security, List<Consent>? consents, MeSession? session, MeAppVersion? appVersion, String? apiVersion, DateTime? serverTime
+ String id, String kind, String status, List<String> roles, List<String> permissions, int permissionsVersion, MeKioskTablet? tablet, String? discountLimitPercent, MeProfile? profile, MeCustomerLink? customerLink, UserSettings? settings, MeSecurity? security, List<Consent>? consents, MeSession? session, MeAppVersion? appVersion, String? apiVersion, DateTime? serverTime
 });
 
 
-@override $MeProfileCopyWith<$Res>? get profile;@override $MeCustomerLinkCopyWith<$Res>? get customerLink;@override $UserSettingsCopyWith<$Res>? get settings;@override $MeSecurityCopyWith<$Res>? get security;@override $MeSessionCopyWith<$Res>? get session;@override $MeAppVersionCopyWith<$Res>? get appVersion;
+@override $MeKioskTabletCopyWith<$Res>? get tablet;@override $MeProfileCopyWith<$Res>? get profile;@override $MeCustomerLinkCopyWith<$Res>? get customerLink;@override $UserSettingsCopyWith<$Res>? get settings;@override $MeSecurityCopyWith<$Res>? get security;@override $MeSessionCopyWith<$Res>? get session;@override $MeAppVersionCopyWith<$Res>? get appVersion;
 
 }
 /// @nodoc
@@ -378,7 +396,7 @@ class __$MeCopyWithImpl<$Res>
 
 /// Create a copy of Me
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? kind = null,Object? status = null,Object? roles = null,Object? permissions = null,Object? permissionsVersion = null,Object? discountLimitPercent = freezed,Object? profile = freezed,Object? customerLink = freezed,Object? settings = freezed,Object? security = freezed,Object? consents = freezed,Object? session = freezed,Object? appVersion = freezed,Object? apiVersion = freezed,Object? serverTime = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? kind = null,Object? status = null,Object? roles = null,Object? permissions = null,Object? permissionsVersion = null,Object? tablet = freezed,Object? discountLimitPercent = freezed,Object? profile = freezed,Object? customerLink = freezed,Object? settings = freezed,Object? security = freezed,Object? consents = freezed,Object? session = freezed,Object? appVersion = freezed,Object? apiVersion = freezed,Object? serverTime = freezed,}) {
   return _then(_Me(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
@@ -386,7 +404,8 @@ as String,status: null == status ? _self.status : status // ignore: cast_nullabl
 as String,roles: null == roles ? _self._roles : roles // ignore: cast_nullable_to_non_nullable
 as List<String>,permissions: null == permissions ? _self._permissions : permissions // ignore: cast_nullable_to_non_nullable
 as List<String>,permissionsVersion: null == permissionsVersion ? _self.permissionsVersion : permissionsVersion // ignore: cast_nullable_to_non_nullable
-as int,discountLimitPercent: freezed == discountLimitPercent ? _self.discountLimitPercent : discountLimitPercent // ignore: cast_nullable_to_non_nullable
+as int,tablet: freezed == tablet ? _self.tablet : tablet // ignore: cast_nullable_to_non_nullable
+as MeKioskTablet?,discountLimitPercent: freezed == discountLimitPercent ? _self.discountLimitPercent : discountLimitPercent // ignore: cast_nullable_to_non_nullable
 as String?,profile: freezed == profile ? _self.profile : profile // ignore: cast_nullable_to_non_nullable
 as MeProfile?,customerLink: freezed == customerLink ? _self.customerLink : customerLink // ignore: cast_nullable_to_non_nullable
 as MeCustomerLink?,settings: freezed == settings ? _self.settings : settings // ignore: cast_nullable_to_non_nullable
@@ -401,6 +420,18 @@ as DateTime?,
 }
 
 /// Create a copy of Me
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$MeKioskTabletCopyWith<$Res>? get tablet {
+    if (_self.tablet == null) {
+    return null;
+  }
+
+  return $MeKioskTabletCopyWith<$Res>(_self.tablet!, (value) {
+    return _then(_self.copyWith(tablet: value));
+  });
+}/// Create a copy of Me
 /// with the given fields replaced by the non-null parameter values.
 @override
 @pragma('vm:prefer-inline')
@@ -473,6 +504,267 @@ $MeAppVersionCopyWith<$Res>? get appVersion {
     return _then(_self.copyWith(appVersion: value));
   });
 }
+}
+
+
+/// @nodoc
+mixin _$MeKioskTablet {
+
+ String get id; String get name; String get warehouseId;
+/// Create a copy of MeKioskTablet
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$MeKioskTabletCopyWith<MeKioskTablet> get copyWith => _$MeKioskTabletCopyWithImpl<MeKioskTablet>(this as MeKioskTablet, _$identity);
+
+  /// Serializes this MeKioskTablet to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MeKioskTablet&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.warehouseId, warehouseId) || other.warehouseId == warehouseId));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,name,warehouseId);
+
+
+
+}
+
+/// @nodoc
+abstract mixin class $MeKioskTabletCopyWith<$Res>  {
+  factory $MeKioskTabletCopyWith(MeKioskTablet value, $Res Function(MeKioskTablet) _then) = _$MeKioskTabletCopyWithImpl;
+@useResult
+$Res call({
+ String id, String name, String warehouseId
+});
+
+
+
+
+}
+/// @nodoc
+class _$MeKioskTabletCopyWithImpl<$Res>
+    implements $MeKioskTabletCopyWith<$Res> {
+  _$MeKioskTabletCopyWithImpl(this._self, this._then);
+
+  final MeKioskTablet _self;
+  final $Res Function(MeKioskTablet) _then;
+
+/// Create a copy of MeKioskTablet
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? warehouseId = null,}) {
+  return _then(_self.copyWith(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String,warehouseId: null == warehouseId ? _self.warehouseId : warehouseId // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [MeKioskTablet].
+extension MeKioskTabletPatterns on MeKioskTablet {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _MeKioskTablet value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _MeKioskTablet() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _MeKioskTablet value)  $default,){
+final _that = this;
+switch (_that) {
+case _MeKioskTablet():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _MeKioskTablet value)?  $default,){
+final _that = this;
+switch (_that) {
+case _MeKioskTablet() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String warehouseId)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _MeKioskTablet() when $default != null:
+return $default(_that.id,_that.name,_that.warehouseId);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String warehouseId)  $default,) {final _that = this;
+switch (_that) {
+case _MeKioskTablet():
+return $default(_that.id,_that.name,_that.warehouseId);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String warehouseId)?  $default,) {final _that = this;
+switch (_that) {
+case _MeKioskTablet() when $default != null:
+return $default(_that.id,_that.name,_that.warehouseId);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _MeKioskTablet extends MeKioskTablet {
+  const _MeKioskTablet({required this.id, required this.name, required this.warehouseId}): super._();
+  factory _MeKioskTablet.fromJson(Map<String, dynamic> json) => _$MeKioskTabletFromJson(json);
+
+@override final  String id;
+@override final  String name;
+@override final  String warehouseId;
+
+/// Create a copy of MeKioskTablet
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$MeKioskTabletCopyWith<_MeKioskTablet> get copyWith => __$MeKioskTabletCopyWithImpl<_MeKioskTablet>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$MeKioskTabletToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _MeKioskTablet&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.warehouseId, warehouseId) || other.warehouseId == warehouseId));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,name,warehouseId);
+
+
+
+}
+
+/// @nodoc
+abstract mixin class _$MeKioskTabletCopyWith<$Res> implements $MeKioskTabletCopyWith<$Res> {
+  factory _$MeKioskTabletCopyWith(_MeKioskTablet value, $Res Function(_MeKioskTablet) _then) = __$MeKioskTabletCopyWithImpl;
+@override @useResult
+$Res call({
+ String id, String name, String warehouseId
+});
+
+
+
+
+}
+/// @nodoc
+class __$MeKioskTabletCopyWithImpl<$Res>
+    implements _$MeKioskTabletCopyWith<$Res> {
+  __$MeKioskTabletCopyWithImpl(this._self, this._then);
+
+  final _MeKioskTablet _self;
+  final $Res Function(_MeKioskTablet) _then;
+
+/// Create a copy of MeKioskTablet
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? warehouseId = null,}) {
+  return _then(_MeKioskTablet(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String,warehouseId: null == warehouseId ? _self.warehouseId : warehouseId // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
 }
 
 

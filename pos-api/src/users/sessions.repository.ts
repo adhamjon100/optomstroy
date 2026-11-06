@@ -70,6 +70,15 @@ export class SessionsRepository {
     return rows[0];
   }
 
+  /**
+   * Сессия под `FOR UPDATE` в транзакции вызывающего (подключение планшета магазина: сессия администратора и сессия
+   * планшета при повторе по ключу идемпотентности — 08 §2.7, §4.18.11): сериализует параллельные запросы той же сессии.
+   */
+  async lockById(id: string, ex: DbExecutor): Promise<SessionRow | undefined> {
+    const rows = await ex.select().from(sessions).where(eq(sessions.id, id)).limit(1).for('update');
+    return rows[0];
+  }
+
   /** Сессия по хэшу действующего refresh (`sessions_refresh_hash_uq`). `forUpdate` — блокировка строки в транзакции. */
   async findByRefreshHash(hash: Buffer, ex: DbExecutor = this.db, forUpdate = false): Promise<SessionRow | undefined> {
     const q = ex.select().from(sessions).where(eq(sessions.refreshHash, hash)).limit(1);

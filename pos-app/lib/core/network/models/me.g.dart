@@ -15,6 +15,9 @@ _Me _$MeFromJson(Map<String, dynamic> json) => _Me(
       .map((e) => e as String)
       .toList(),
   permissionsVersion: (json['permissionsVersion'] as num).toInt(),
+  tablet: json['tablet'] == null
+      ? null
+      : MeKioskTablet.fromJson(json['tablet'] as Map<String, dynamic>),
   discountLimitPercent: json['discountLimitPercent'] as String?,
   profile: json['profile'] == null
       ? null
@@ -50,6 +53,7 @@ Map<String, dynamic> _$MeToJson(_Me instance) => <String, dynamic>{
   'roles': instance.roles,
   'permissions': instance.permissions,
   'permissionsVersion': instance.permissionsVersion,
+  'tablet': instance.tablet,
   'discountLimitPercent': instance.discountLimitPercent,
   'profile': instance.profile,
   'customerLink': instance.customerLink,
@@ -61,6 +65,20 @@ Map<String, dynamic> _$MeToJson(_Me instance) => <String, dynamic>{
   'apiVersion': instance.apiVersion,
   'serverTime': instance.serverTime?.toIso8601String(),
 };
+
+_MeKioskTablet _$MeKioskTabletFromJson(Map<String, dynamic> json) =>
+    _MeKioskTablet(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      warehouseId: json['warehouseId'] as String,
+    );
+
+Map<String, dynamic> _$MeKioskTabletToJson(_MeKioskTablet instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'name': instance.name,
+      'warehouseId': instance.warehouseId,
+    };
 
 _MeProfile _$MeProfileFromJson(Map<String, dynamic> json) => _MeProfile(
   fullName: json['fullName'] as String?,

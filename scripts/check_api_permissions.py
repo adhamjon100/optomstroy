@@ -8,16 +8,18 @@
      публичных путей 11 §4.3.1 / SEC-013 (security: [] или схема без субъекта — webhookSignature); /integrations/onec/* —
      ровно [sync.exchange]; x-step-up: true — хотя бы один код со step_up; x-roles — каждая роль
      держит хотя бы один код операции.
-  B. Словарь: коды permissions.yaml == таблица 11 §4.3 (77 кодов: №1–76 и 42a) в обе стороны, совпадают
+  B. Словарь: коды permissions.yaml == таблица 11 §4.3 (82 кода: №1–81 и 42a) в обе стороны, совпадают
      номер, модуль и признак step-up (колонка «Step-up» начинается с «S!»); step_up_scope == таблица
      областей 11 §4.1 п.7.
   C. Роли: roles == enum role_code 07 §14.2 == роли 11 §4.2 (без статуса pending_activation);
-     name_ru — 07 §5.4; is_assignable=false ровно у customer и integration (07 §5.4).
+     name_ru — 07 §5.4; is_assignable=false ровно у customer, integration и kiosk (07 §5.4, ADR-115).
   D. Матрица: grants == матрица 11 §4.4 (ячейка не «—» → право выдано) с явно перечисленными
-     особыми строками и решениями NOTES.md (customer → customer.self.*); инварианты SEC-036, T-SEC-019,
+     особыми строками и решениями NOTES.md (customer → customer.self.*); инварианты SEC-036, SEC-138, T-SEC-019,
      ядро §17.2, §21 п.3, §22.11, §23 п.3, §24.2; псевдо-набор pending_activation == 11 §4.2.
-  E. Seed: pos-api/migrations/0002_rbac_seed.sql содержит ровно роли, коды (с requires_step_up),
-     пары role_permissions (с constraint_json) и контрольные списки, что и permissions.yaml.
+  E. Seed: seed-миграции RBAC pos-api/migrations/NNNN_*rbac_seed.sql — 0002_rbac_seed.sql (элементы yaml без
+     since) и дельты (элементы с since: "NNNN"; пара — по позднейшему концу, NOTES.md §2 п.19, ADR-115 п. 14):
+     каждый файл содержит ровно свои роли, коды (с requires_step_up), пары role_permissions (с constraint_json)
+     и контрольные списки DO-блока; объединение файлов == permissions.yaml.
 
 Сетевых запросов нет. Запуск:
   python -I -X utf8 scripts/check_api_permissions.py [--root D:/optomstroy] [--openapi FILE]
@@ -40,7 +42,9 @@ except ImportError:  # pragma: no cover
 DOC07 = "docs/specification/07_DATA_MODEL.md"
 DOC11 = "docs/specification/11_SECURITY_PRIVACY.md"
 RBAC = "contracts/rbac/permissions.yaml"
-SEED = "pos-api/migrations/0002_rbac_seed.sql"
+SEED_DIR = "pos-api/migrations"
+SEED_BASE = "0002"  # 0002_rbac_seed.sql — элементы yaml без since (файл применён и заморожен, ADR-115 п. 14)
+SEED_FILE_RE = re.compile(r"^(\d{4})_(?:[a-z0-9_]+_)?rbac_seed\.sql$")  # 0002_rbac_seed.sql, 0023_kiosk_rbac_seed.sql
 OPENAPI_BUILT = "contracts/openapi/pos-api.v1.yaml"
 OPENAPI_PARTS = "contracts/openapi/parts"
 
@@ -48,6 +52,11 @@ TICK = re.compile(r"`([^`]+)`")
 CODE_RE = re.compile(r"^[a-z_]+(\.[a-z_]+)+$")  # 07 §5.5 CHECK permissions.code
 HTTP_METHODS = ("get", "put", "post", "delete", "patch", "head", "options", "trace")
 CONSTRAINT_KEYS = {"own", "maxPercentFrom"}  # примеры constraint_json 07 §5.6
+# Блок B: число кодов 11 §4.3 («Всего 82 кода», строки 1–81 и 42a; №77–81 — ADR-115) — независимая константа.
+EXPECTED_CODES = 82
+# Блок C: роли с is_assignable=false (07 §5.4): customer — назначает система при регистрации, integration — токен
+# без пользователя, kiosk — технический пользователь планшета, только POST /admin/store-tablets (SEC-136, SEC-142).
+NON_ASSIGNABLE = ("customer", "integration", "kiosk")
 
 # Публичные пути без access JWT (11 §4.3.1 «без access JWT», SEC-013, SEC-019); параметры нормализованы в {}.
 PUBLIC_PATHS = {
@@ -213,8 +222,8 @@ def parse_matrix(doc11: str) -> tuple[list[str], list[tuple[str, dict[str, str]]
 def check_dictionary(rep: Report, rb: dict, doc11: str) -> None:
     dic = parse_dictionary(doc11)
     scopes = parse_scopes(doc11)
-    if len(dic) != 77:
-        rep.err("B", f"в 11 §4.3 найдено {len(dic)} кодов, ожидалось 77")
+    if len(dic) != EXPECTED_CODES:
+        rep.err("B", f"в 11 §4.3 найдено {len(dic)} кодов, ожидалось {EXPECTED_CODES}")
     by_code = {d["code"]: d for d in dic}
     perms = rb["permissions"]
     seen = set()
@@ -267,7 +276,7 @@ def check_roles(rep: Report, rb: dict, doc07: str, doc11: str) -> None:
         code = r.get("code")
         if i < len(names07) and r.get("name_ru") != names07[i]:
             rep.err("C", f"{code}: name_ru={r.get('name_ru')!r}, в 07 §5.4 — {names07[i]!r}")
-        expect_assignable = code not in ("customer", "integration")
+        expect_assignable = code not in NON_ASSIGNABLE
         if r.get("is_assignable") is not expect_assignable:
             rep.err("C", f"{code}: is_assignable={r.get('is_assignable')}, по 07 §5.4 — {expect_assignable}")
         if r.get("is_system") is not True:
@@ -357,6 +366,7 @@ def expected_from_matrix(rep: Report, doc11: str, known: set[str]) -> dict[str, 
 def check_matrix(rep: Report, rb: dict, doc11: str) -> None:
     known = {p["code"] for p in rb["permissions"] if isinstance(p.get("code"), str)}
     reserved = {p["code"] for p in rb["permissions"] if p.get("reserved")}
+    by_code = {p["code"]: p for p in rb["permissions"] if isinstance(p.get("code"), str)}
     roles = [r["code"] for r in rb["roles"]]
     grants: dict[str, list[str]] = rb.get("grants") or {}
     if set(grants) != set(roles):
@@ -418,6 +428,15 @@ def check_matrix(rep: Report, rb: dict, doc11: str) -> None:
          "customer без долга, ручной скидки, приёма оплаты, поиска клиентов, транзакций (ядро §24.2, SEC-037)"),
         (holders("catalog.cost_price.read") == {"owner"}, "catalog.cost_price.read — только owner"),
         (all(holders(c) == set() for c in reserved), "зарезервированные коды никому не выданы"),
+        # Планшет магазина (ADR-115 п. 13, п. 14; 11 §4.2, §4.4, SEC-138).
+        (all(holders(c) == {"kiosk"} for c in ("kiosk.order.submit", "kiosk.self.read", "kiosk.self.exit")),
+         "kiosk.order.submit, kiosk.self.* — только kiosk (SEC-138)"),
+        (not ({"order.create", "profile.manage.own", "session.manage.own"} & g.get("kiosk", set())),
+         "kiosk без order.create, profile.manage.own, session.manage.own (SEC-138, ADR-115 п. 13)"),
+        (not any(by_code.get(c, {}).get("step_up") for c in g.get("kiosk", set())),
+         "kiosk без кодов S! (у планшета нет телефона и PIN — step-up невозможен, 11 §4.2)"),
+        (holders("kiosk.manage") == {"admin"}, "kiosk.manage — только admin (ADR-115 п. 14)"),
+        (holders("kiosk.read") == {"admin", "owner"}, "kiosk.read — admin, owner (ADR-115 п. 14)"),
     ]
     for ok, text in inv:
         if not ok:
@@ -452,16 +471,47 @@ def sql_unq(s: str) -> str:
 
 
 def block(sql: str, start: str, end: str) -> list[str]:
+    """Строки от `start` до `end`; пусто, если раздела нет (дельта seed без ролей или без кодов)."""
     i = sql.find(start)
     if i < 0:
-        raise ValueError(f"в seed нет {start!r}")
+        return []
     j = sql.find(end, i)
     if j < 0:
         raise ValueError(f"в seed нет {end!r} после {start!r}")
     return sql[i:j].splitlines()
 
 
-def check_seed(rep: Report, rb: dict, sql: str) -> None:
+def since_of(item: dict) -> str:
+    return str(item.get("since") or SEED_BASE)
+
+
+def expected_seed_parts(rep: Report, rb: dict) -> dict[str, dict]:
+    """Ожидаемое содержимое seed-миграций по yaml: since → роли, коды, пары (пара — по позднейшему концу)."""
+    rsince = {r["code"]: since_of(r) for r in rb["roles"]}
+    psince = {p["code"]: since_of(p) for p in rb["permissions"]}
+    for code, s in [*rsince.items(), *psince.items()]:
+        if not re.fullmatch(r"\d{4}", s) or s < SEED_BASE:
+            rep.err("E", f"{code}: since={s!r} — нужен номер seed-миграции «NNNN» не раньше {SEED_BASE}")
+    cons = rb.get("constraints") or {}
+    parts: dict[str, dict] = {}
+
+    def part(s: str) -> dict:
+        return parts.setdefault(s, {"roles": [], "perms": [], "pairs": []})
+
+    part(SEED_BASE)
+    for r in rb["roles"]:
+        part(rsince[r["code"]])["roles"].append(
+            {k: r[k] for k in ("code", "name_ru", "is_system", "is_assignable", "sort_order")})
+    for p in rb["permissions"]:
+        part(psince[p["code"]])["perms"].append((p["code"], p["description"], bool(p["step_up"])))
+    for r in rb["roles"]:
+        for c in rb["grants"].get(r["code"]) or []:
+            s = max(rsince[r["code"]], psince.get(c, SEED_BASE))
+            part(s)["pairs"].append((r["code"], c, (cons.get(r["code"]) or {}).get(c)))
+    return parts
+
+
+def parse_seed(sql: str) -> dict:
     s = r"'((?:[^']|'')*)'"
     roles = []
     for line in block(sql, "INSERT INTO roles", "ON CONFLICT DO NOTHING;"):
@@ -469,51 +519,90 @@ def check_seed(rep: Report, rb: dict, sql: str) -> None:
         if m:
             roles.append({"code": m[1], "name_ru": sql_unq(m[2]), "is_system": m[3] == "true",
                           "is_assignable": m[4] == "true", "sort_order": int(m[5])})
-    want_roles = [{k: r[k] for k in ("code", "name_ru", "is_system", "is_assignable", "sort_order")}
-                  for r in rb["roles"]]
-    if roles != want_roles:
-        rep.err("E", f"roles в seed != permissions.yaml: {roles} vs {want_roles}")
-
     perms = []
     for line in block(sql, "INSERT INTO permissions", "ON CONFLICT DO NOTHING;"):
         m = re.match(rf"^\s*\({s}, {s}, (true|false)\),?$", line)
         if m:
             perms.append((m[1], sql_unq(m[2]), m[3] == "true"))
-    want_perms = [(p["code"], p["description"], bool(p["step_up"])) for p in rb["permissions"]]
-    if perms != want_perms:
-        a, b = set(perms), set(want_perms)
-        rep.err("E", f"permissions в seed != yaml: только в seed {sorted(a - b)[:5]}, только в yaml {sorted(b - a)[:5]}")
-
     pairs = []
     for line in block(sql, "INSERT INTO role_permissions", "ON CONFLICT DO NOTHING;"):
         m = re.match(rf"^\s*\({s}, {s}, (?:NULL::jsonb|{s}::jsonb)\),?$", line)
         if m:
             pairs.append((m[1], m[2], json.loads(sql_unq(m[3])) if m[3] is not None else None))
-    cons = rb.get("constraints") or {}
-    want_pairs = [(r["code"], c, (cons.get(r["code"]) or {}).get(c)) for r in rb["roles"]
-                  for c in (rb["grants"].get(r["code"]) or [])]
-    if pairs != want_pairs:
-        a = {(x, y, json.dumps(z, sort_keys=True)) for x, y, z in pairs}
-        b = {(x, y, json.dumps(z, sort_keys=True)) for x, y, z in want_pairs}
-        rep.err("E", f"role_permissions в seed != yaml: только в seed {sorted(a - b)[:5]}, только в yaml {sorted(b - a)[:5]}")
+    out: dict = {"roles": roles, "perms": perms, "pairs": pairs, "do": None}
+    i = sql.find("DO $$")
+    if i >= 0:
+        do = sql[i:]
 
-    do = sql[sql.find("DO $$"):]
-    if not do.startswith("DO $$"):
-        rep.err("E", "в seed нет контрольного DO-блока")
-    else:
-        ctl_roles = re.findall(r"'([a-z_]+)'", do[do.find("unnest(ARRAY["):do.find("]) AS e(code)")])
-        p0 = do.find("missing_perms\n")
-        ctl_perms = re.findall(r"^\s*'([a-z_.]+)',?$", do[p0:do.find("missing_pairs\n")], re.M)
-        ctl_pairs = re.findall(r"^\s*\('([a-z_]+)', '([a-z_.]+)'\),?$", do, re.M)
-        if ctl_roles != [r["code"] for r in rb["roles"]]:
-            rep.err("E", "контрольный список ролей DO-блока != yaml")
-        if ctl_perms != [p["code"] for p in rb["permissions"]]:
-            rep.err("E", "контрольный список кодов DO-блока != yaml")
-        if ctl_pairs != [(x, y) for x, y, _ in want_pairs]:
-            rep.err("E", "контрольный список пар DO-блока != yaml")
-    if "ON CONFLICT DO NOTHING" not in sql or sql.count("ON CONFLICT DO NOTHING;") < 3:
-        rep.err("E", "каждый INSERT seed должен быть ON CONFLICT DO NOTHING")
-    rep.note("E", f"seed: roles={len(roles)}, permissions={len(perms)}, role_permissions={len(pairs)}")
+        def region(anchor: str, stop: str) -> str:
+            a = do.find(anchor)
+            return "" if a < 0 else do[a:do.find(stop, a)]
+
+        out["do"] = {
+            "roles": re.findall(r"'([a-z_]+)'", region("INTO missing_roles", "WHERE NOT EXISTS")),
+            "perms": re.findall(r"^\s*'([a-z_.]+)',?$", region("INTO missing_perms", "WHERE NOT EXISTS"), re.M),
+            "pairs": re.findall(r"^\s*\('([a-z_]+)', '([a-z_.]+)'\),?$",
+                                region("INTO missing_pairs", "AS e(role_code"), re.M),
+            "raise": "RAISE EXCEPTION" in do,
+        }
+    out["inserts"] = len(re.findall(r"^INSERT INTO ", sql, re.M))
+    out["conflicts"] = len(re.findall(r"^ON CONFLICT DO NOTHING;$", sql, re.M))
+    return out
+
+
+def check_seed(rep: Report, rb: dict, root: Path) -> None:
+    files: dict[str, Path] = {}
+    for f in sorted((root / SEED_DIR).glob("*.sql")):
+        m = SEED_FILE_RE.match(f.name)
+        if not m:
+            continue
+        if m[1] in files:
+            rep.err("E", f"два seed-файла RBAC с номером {m[1]}: {files[m[1]].name}, {f.name}")
+        files[m[1]] = f
+    if SEED_BASE not in files:
+        raise ValueError(f"нет {SEED_DIR}/{SEED_BASE}_rbac_seed.sql")
+    parts = expected_seed_parts(rep, rb)
+    for s in sorted(set(parts) - set(files)):
+        rep.err("E", f"в permissions.yaml есть элементы since: \"{s}\", но файла {SEED_DIR}/{s}_*rbac_seed.sql нет "
+                     "(python -I -X utf8 scripts/gen_rbac_seed.py)")
+    for s in sorted(set(files) - set(parts)):
+        rep.err("E", f"{files[s].name}: seed RBAC без элементов permissions.yaml с since: \"{s}\"")
+    notes, tot = [], [0, 0, 0]
+    for s in sorted(set(parts) & set(files)):
+        name, want = files[s].name, parts[s]
+        got = parse_seed(files[s].read_text(encoding="utf-8"))
+        if got["roles"] != want["roles"]:
+            rep.err("E", f"{name}: roles != permissions.yaml (since {s}): {got['roles']} vs {want['roles']}")
+        if got["perms"] != want["perms"]:
+            a, b = set(got["perms"]), set(want["perms"])
+            rep.err("E", f"{name}: permissions != yaml (since {s}): только в seed {sorted(a - b)[:5]}, "
+                         f"только в yaml {sorted(b - a)[:5]}")
+        if got["pairs"] != want["pairs"]:
+            a = {(x, y, json.dumps(z, sort_keys=True)) for x, y, z in got["pairs"]}
+            b = {(x, y, json.dumps(z, sort_keys=True)) for x, y, z in want["pairs"]}
+            rep.err("E", f"{name}: role_permissions != yaml (since {s}): только в seed {sorted(a - b)[:5]}, "
+                         f"только в yaml {sorted(b - a)[:5]}")
+        do = got["do"]
+        if do is None:
+            rep.err("E", f"{name}: нет контрольного DO-блока")
+        else:
+            if do["roles"] != [r["code"] for r in want["roles"]]:
+                rep.err("E", f"{name}: контрольный список ролей DO-блока != yaml")
+            if do["perms"] != [p[0] for p in want["perms"]]:
+                rep.err("E", f"{name}: контрольный список кодов DO-блока != yaml")
+            if do["pairs"] != [(x, y) for x, y, _ in want["pairs"]]:
+                rep.err("E", f"{name}: контрольный список пар DO-блока != yaml")
+            if not do["raise"]:
+                rep.err("E", f"{name}: DO-блок без RAISE EXCEPTION")
+        if got["inserts"] == 0 or got["inserts"] != got["conflicts"]:
+            rep.err("E", f"{name}: каждый INSERT seed должен быть ON CONFLICT DO NOTHING "
+                         f"(INSERT {got['inserts']}, ON CONFLICT {got['conflicts']})")
+        n = (len(got["roles"]), len(got["perms"]), len(got["pairs"]))
+        tot = [tot[0] + n[0], tot[1] + n[1], tot[2] + n[2]]
+        notes.append(f"{name}: roles={n[0]}, permissions={n[1]}, role_permissions={n[2]}")
+    if len(files) > 1:
+        notes.append(f"итого: roles={tot[0]}, permissions={tot[1]}, role_permissions={tot[2]}")
+    rep.note("E", "seed: " + "; ".join(notes))
 
 
 # ---------------------------------------------------------------- A: OpenAPI
@@ -620,7 +709,7 @@ def main() -> int:
     ap.add_argument("--root", default=str(Path(__file__).resolve().parent.parent))
     ap.add_argument("--openapi", help="проверить этот файл OpenAPI вместо собранного/частей")
     ap.add_argument("--require-operations", action="store_true", help="0 операций в OpenAPI — ошибка")
-    ap.add_argument("--no-seed", action="store_true", help="не сверять 0002_rbac_seed.sql")
+    ap.add_argument("--no-seed", action="store_true", help="не сверять seed RBAC (0002 и дельты)")
     args = ap.parse_args()
     root = Path(args.root)
     rep = Report()
@@ -635,7 +724,7 @@ def main() -> int:
         check_roles(rep, rb, doc07, doc11)
         check_matrix(rep, rb, doc11)
         if not args.no_seed:
-            check_seed(rep, rb, (root / SEED).read_text(encoding="utf-8"))
+            check_seed(rep, rb, root)
         check_openapi(rep, rb, root, args.openapi, args.require_operations)
     except (OSError, ValueError, KeyError, StopIteration, yaml.YAMLError) as e:
         print(f"ERROR: {type(e).__name__}: {e}", file=sys.stderr)

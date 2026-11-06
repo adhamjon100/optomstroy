@@ -65,6 +65,7 @@ import 'package:optomstroy/core/sync/sync_providers.dart';
 import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/app_icon_button.dart';
+import 'package:optomstroy/design_system/components/cart_line.dart' as ds show CartLine;
 import 'package:optomstroy/design_system/components/notification_bell.dart';
 import 'package:optomstroy/design_system/components/pin_field.dart';
 import 'package:optomstroy/design_system/components/product_card.dart';
@@ -88,6 +89,8 @@ import 'package:optomstroy/features/catalog/presentation/widgets/catalog_header.
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_workspace.dart';
 import 'package:optomstroy/features/registration/presentation/screens/registration_security_screen.dart';
 import 'package:optomstroy/features/splash/presentation/screens/splash_screen.dart';
+
+import 'support/clean_start.dart';
 
 const String _otpCode = String.fromEnvironment('E2E_OTP_CODE', defaultValue: '246810');
 const String _sellerPhone = String.fromEnvironment('E2E_STAFF_PHONE', defaultValue: '777000902');
@@ -406,7 +409,7 @@ AppDatabase _db(WidgetTester tester) {
 }
 
 Future<void> _staffLogin(WidgetTester tester) async {
-  await FlutterSecureStorageAdapter().deleteAll(<SecureKey>[...SecureKey.session, ...SecureKey.registration]);
+  await FlutterSecureStorageAdapter().deleteAll(kCleanStartKeys);
   await bootstrap();
   await tester.pump();
   await pumpUntilFound(tester, find.byKey(SplashScreen.screenKey));
@@ -488,21 +491,13 @@ bool _cartConfirmed(WidgetTester tester, int lines) {
   return s.server != null && !s.preliminary && s.lines.length >= lines;
 }
 
-/// Ключ строки корзины `cart-line-<variantId>-<packagingId>` (`CartKeys.line`), без служебных `cart-line-reduce-…`
-/// и `cart-line-variant`.
-bool _isCartLineKey(Key? key) =>
-    key is ValueKey<String> &&
-    key.value.startsWith('cart-line-') &&
-    !key.value.startsWith('cart-line-reduce-') &&
-    key.value != 'cart-line-variant';
-
-/// Строки корзины в открытом drawer.
+/// Строки корзины в открытом drawer — ключи `CartKeys.line` (`cart-line-<variantId>-<packagingId>`) виджетов строки
+/// `ds.CartLine` (один на строку). Отбор по виджету, а не по префиксу `cart-line-`: тот же префикс у служебных ключей
+/// внутри строки (`cart-line-variant`, `cart-line-remove` — ADR-114, `cart-line-reduce-…`), и счёт по префиксу давал
+/// «строк 4 ≠ 3» (у трёх строк один и тот же `cart-line-remove`).
 Set<String> _drawerLineKeys() => <String>{
-  for (final Element e
-      in find
-          .descendant(of: _cartDrawer, matching: find.byWidgetPredicate((Widget w) => _isCartLineKey(w.key)))
-          .evaluate())
-    (e.widget.key! as ValueKey<String>).value,
+  for (final Element e in find.descendant(of: _cartDrawer, matching: find.byType(ds.CartLine)).evaluate())
+    if (e.widget.key case final ValueKey<String> k) k.value,
 };
 
 /// Открыть drawer корзины кнопкой в шапке и дождаться конца анимации (ANIM-025, 250 мс).
@@ -1176,6 +1171,10 @@ Future<void> _qaSidebarCollapsed(WidgetTester tester, Size main, List<Size> size
   const Key columnKey = ValueKey<String>('catalog-sidebar-column');
   final Finder toggle = find.byKey(toggleKey);
   final Finder column = find.byKey(columnKey);
+  // «‹‹» — в строке заголовка «Каталог», первом элементе прокручиваемой колонки (ADR-114; до неё кнопка была внизу
+  // колонки, вне прокрутки). `_qaOpenRoot` → `_showTile` → `ensureVisible` выравнивает плитку корня по верху колонки,
+  // и строка заголовка уходит из кадра (finder без offstage её не видит) — колонку к началу, как её видит продавец.
+  await _scrollToTop(tester);
   if (toggle.evaluate().isEmpty || column.evaluate().isEmpty) {
     _problem('QA (j): нет кнопки «Свернуть» или колонки категорий');
     return;
@@ -1220,6 +1219,8 @@ Future<void> _qaSidebarCollapsed(WidgetTester tester, Size main, List<Size> size
     await mouse.removePointer();
     await _wait(tester, const Duration(milliseconds: 400));
   }
+  // «››» свёрнутой колонки — тоже первый элемент её прокрутки.
+  await _scrollToTop(tester);
   await _tapVisible(tester, toggle);
   final bool expanded = await _until(tester, () => (tester.getSize(column.first).width - before).abs() < 0.5);
   await _quiet(tester, max: const Duration(seconds: 2));

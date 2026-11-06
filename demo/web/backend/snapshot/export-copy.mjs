@@ -37,6 +37,9 @@ export const EXCLUDED_TABLES = {
   'public.sms_outbox': { mustBeEmpty: true, why: 'очередь SMS (OTP)' },
   'public.payment_webhook_events': { mustBeEmpty: true, why: 'события провайдера оплат' },
   'public.dev_outbox': { mustBeEmpty: true, why: 'журнал dev-outbox (local-stack)' },
+  // Планшет магазина (P-002 TAB-3-01, ADR-115): строку store_tablets создаёт только POST /admin/store-tablets с
+  // устройства зрителя (ключ устройства — браузера), посев невозможен; в снимке её быть не может.
+  'public.store_tablets': { mustBeEmpty: true, why: 'планшеты подключаются в браузере зрителя через интерфейс' },
 };
 
 /** Окно «времени сборки» после T0: значения в нём сдвигаются при восстановлении. */

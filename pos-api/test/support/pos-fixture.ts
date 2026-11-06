@@ -48,6 +48,7 @@ import { initialPaymentStatus } from '../../src/sales-domain/payment/payment-sta
 import { priceCart } from '../../src/sales-domain/pricing/cart-pricing.js';
 import { SalesPortsModule } from '../../src/sales-domain/sales-ports.module.js';
 import { outboxPayloadHash } from '../../src/sync/outbox/onec-outbox.writer.js';
+import { users } from '../../src/db/schema/index.js';
 import { DevicesRepository } from '../../src/users/devices.repository.js';
 import { SessionsRepository } from '../../src/users/sessions.repository.js';
 import { UserRolesRepository } from '../../src/users/user-roles.repository.js';
@@ -106,6 +107,11 @@ export interface PosFixtureOptions {
   /** Модули этапа F (по умолчанию `F_MODULES`); `[]` — только каталог и порты. */
   readonly modules?: readonly (Type | DynamicModule)[];
   readonly providers?: readonly Provider[];
+  /**
+   * Глобальные guard-ы между AuthGuard и RbacGuard (порядок app.module `GLOBAL_PROVIDERS`), например
+   * `KIOSK_ACCESS_GUARD` планшета магазина (test/kiosk). По умолчанию — нет: ReadOnly → Auth → RBAC.
+   */
+  readonly guards?: readonly Provider[];
   readonly controllers?: readonly Type[];
   readonly clock?: FixedClock;
   /** Запускать pg-boss (публикация job, `outbox.dispatch`); по умолчанию `true`. */
@@ -254,6 +260,7 @@ export class PosTestApp {
         { provide: READ_ONLY_ALLOWLIST, useValue: DEFAULT_READ_ONLY_ALLOWLIST },
         { provide: APP_GUARD, useClass: ReadOnlyGuard },
         AUTH_APP_GUARD,
+        ...(opts.guards ?? []),
         { provide: APP_GUARD, useClass: RbacGuard },
         { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
         { provide: APP_FILTER, useClass: ProblemDetailsFilter },
@@ -343,16 +350,24 @@ export class PosTestApp {
 
   // ------------------------------------------------------------------------------------------------- субъекты
 
-  /** Пользователь роли с устройством, сессией и access-токеном (как в e2e этапов D/E). */
+  /**
+   * Пользователь роли с устройством, сессией и access-токеном (как в e2e этапов D/E). `kind: 'kiosk'` — технический
+   * пользователь планшета магазина (ADR-115): без телефона (`users_kiosk_phone_chk`), роль по умолчанию `kiosk`;
+   * строку `store_tablets` и профиль создаёт стенд test/kiosk (`kiosk-fixture.ts`).
+   */
   async actor(opts: { readonly role?: RoleCode | null; readonly kind?: UserKind } = {}): Promise<PosActor> {
-    const kind = opts.kind ?? (opts.role === 'customer' ? 'customer' : 'staff');
-    const role = opts.role === undefined ? (kind === 'customer' ? 'customer' : 'seller') : opts.role;
-    const user = await new UsersRepository(this.db).create({
-      phoneE164: nextPhone(),
-      kind,
-      status: 'active',
-      phoneVerifiedAt: new Date(),
-    });
+    const kind = opts.kind ?? (opts.role === 'customer' ? 'customer' : opts.role === 'kiosk' ? 'kiosk' : 'staff');
+    const role =
+      opts.role === undefined ? (kind === 'customer' ? 'customer' : kind === 'kiosk' ? 'kiosk' : 'seller') : opts.role;
+    const user =
+      kind === 'kiosk'
+        ? await this.kioskUser()
+        : await new UsersRepository(this.db).create({
+            phoneE164: nextPhone(),
+            kind,
+            status: 'active',
+            phoneVerifiedAt: new Date(),
+          });
     if (role) await new UserRolesRepository(this.db).assignRole(user.id, role, null);
     const deviceKey = randomUUID();
     const device = await new DevicesRepository(this.db).upsert({ userId: user.id, deviceKey, platform: 'android' });
@@ -373,6 +388,14 @@ export class PosTestApp {
       sid: session.id,
     });
     return { userId: user.id, deviceKey, deviceId: device.id, sessionId: session.id, role, kind, token };
+  }
+
+  /** Технический пользователь планшета: `kind=kiosk`, `active`, без телефона (07 §5.1, DATA-300). */
+  private async kioskUser() {
+    const rows = await this.db.insert(users).values({ phoneE164: null, kind: 'kiosk', status: 'active' }).returning();
+    const row = rows[0];
+    if (!row) throw new Error('kioskUser: INSERT не вернул строку');
+    return row;
   }
 
   /** По одному пользователю каждой роли (`integration` не создаётся — вход только техническим токеном). */

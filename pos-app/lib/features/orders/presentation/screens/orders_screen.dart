@@ -1,12 +1,14 @@
-// SCR-25 «Список заказов» (`/orders?status=&from=&to=&customerId=&mine=`; seller и customer — свои, прочие staff —
-// все). Владелец реализации — агент F-fe-orders (RM-F-006, RM-F-013: чипы `statusCounts`; RM-F-015: «Мои заказы»
-// клиента).
+// SCR-25 «Список заказов» (`/orders?status=&from=&to=&customerId=&mine=&createdVia=`; seller и customer — свои,
+// прочие staff — все). Владелец реализации — агент F-fe-orders (RM-F-006, RM-F-013: чипы `statusCounts`; RM-F-015:
+// «Мои заказы» клиента).
 //
 // Структура — 02 SCR-25.2: заголовок и счётчик (`totalEstimate`) · поиск по номеру (debounce 300 мс; номер целиком
-// и единственный результат — сразу SCR-24) · чипы групп статусов со счётчиками · период и «Мои / Все»
-// (`order.read.all`) · «Фильтры» (клиент, способ оплаты, оплачен) и сортировка · список (compact 72 / medium 56) или
-// таблица (expanded 48) · курсорная подгрузка. Смена фильтров — новый запрос с первой страницы; `status`, `from`,
-// `to`, `customerId`, `mine` — в query маршрута. Имя класса и конструктор фиксированы основой (routes.dart).
+// и единственный результат — сразу SCR-24) · чипы групп статусов со счётчиками · период, «Мои / Все» и «С планшета»
+// (`order.read.all`; UI-25-014, ADR-115) · «Фильтры» (клиент, способ оплаты, оплачен) и сортировка · список (compact 72
+// / medium 56) или таблица (expanded 48), у заявок с планшета — пометка «С планшета» (UI-25-015) · курсорная
+// подгрузка. Смена фильтров — новый запрос с первой страницы; `status`, `from`, `to`, `customerId`, `mine`,
+// `createdVia` — в query маршрута. Имя класса и конструктор фиксированы основой (routes.dart): `createdVia`
+// типизированный `OrdersRoute` не передаёт — экран читает его из адреса go_router (без перегенерации маршрутов).
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -15,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:optomstroy/core/connectivity/connectivity_watcher.dart';
 import 'package:optomstroy/core/di/core_providers.dart';
+import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/error/error_mapper.dart';
 import 'package:optomstroy/core/error/failure.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
@@ -23,6 +26,7 @@ import 'package:optomstroy/design_system/components/app_bottom_sheet.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/app_snackbar.dart';
 import 'package:optomstroy/design_system/components/app_tabs.dart';
+import 'package:optomstroy/design_system/components/category_chip.dart';
 import 'package:optomstroy/design_system/components/empty_state.dart';
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/offline_banner.dart';
@@ -98,6 +102,10 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
   /// Возврат из SCR-24 через [_open] уже обновил список — обновление по возврату на экран пропускается один раз.
   bool _returnRefreshed = false;
 
+  /// `createdVia` из адреса при последнем чтении ([_routeCreatedVia]); применяется к фильтрам только при изменении — как
+  /// параметры виджета в [didUpdateWidget].
+  String? _routeVia;
+
   DateTime get _now => ref.read(clockProvider).nowUtc();
 
   @override
@@ -119,11 +127,30 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     to: widget.to,
     customerId: widget.customerId,
     mine: widget.mine,
+    createdVia: _routeVia,
   );
+
+  /// Параметр `createdVia` адреса экрана (UI-25-014; AC-UI-25-013 — сохраняется при возврате из SCR-24). `null` — не
+  /// go_router (widget-тесты экрана) или параметра нет.
+  String? _routeCreatedVia() {
+    if (GoRouter.maybeOf(context) == null) return null;
+    try {
+      return GoRouterState.of(context).uri.queryParameters['createdVia'];
+    } on GoError {
+      return null;
+    }
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // Адрес экрана изменился (переход по ссылке `/orders?createdVia=kiosk`, первый показ): чип «С планшета» — из адреса.
+    final String? via = _routeCreatedVia();
+    if (via != _routeVia) {
+      _routeVia = via;
+      final OrdersFilters next = _filters.copyWith(kioskOnly: via == OrdersFilters.kioskRouteValue);
+      if (next != _filters) _filters = next;
+    }
     // 02 SCR-25.6: при возврате на экран — тихое обновление первой страницы с сохранением прокрутки. Экран живёт в
     // ветке оболочки и под SCR-24/SCR-22 (дочерние маршруты `/orders/…`), поэтому «Заказы» из меню или вкладки после
     // оплаты показывали снимок, загруженный до неё (uiA-03). Виден — ветка на экране и не закрыт непрозрачным маршрутом
@@ -158,7 +185,11 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
   @override
   void didUpdateWidget(covariant OrdersScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.status == widget.status &&
+    final String? via = _routeCreatedVia();
+    final bool viaChanged = via != _routeVia;
+    _routeVia = via;
+    if (!viaChanged &&
+        oldWidget.status == widget.status &&
         oldWidget.from == widget.from &&
         oldWidget.to == widget.to &&
         oldWidget.customerId == widget.customerId &&
@@ -447,7 +478,28 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
               ),
               AppTab<bool>(key: const ValueKey<String>('orders-scope-all'), value: false, label: l10n.orders_scope_all),
             ],
-            onChanged: (bool mine) => _setFilters(_filters.copyWith(mine: mine)),
+            // «Мои» и «С планшета» не сочетаются: автор заявок — технический пользователь планшета (UI-25-014).
+            onChanged: (bool mine) =>
+                _setFilters(_filters.copyWith(mine: mine, kioskOnly: mine ? false : _filters.kioskOnly)),
+          )
+        : null;
+
+    // UI-25-014: чип «С планшета» — `createdVia=kiosk` (держатели `order.read.all`; AC-UI-25-013); включение переводит
+    // «Мои / Все» на «Все». Ширина — по подписи (`CategoryChip` центрируется в полосе 48 и занял бы всю строку `Wrap`).
+    final Widget? kiosk = viewer.canReadAll
+        ? IntrinsicWidth(
+            child: CategoryChip(
+              key: const ValueKey<String>('orders-chip-kiosk'),
+              label: l10n.orders_chip_kiosk,
+              variant: CategoryChipVariant.filter,
+              selected: _filters.kioskOnly,
+              enabled: !offline,
+              onTap: () => _setFilters(
+                _filters.kioskOnly
+                    ? _filters.copyWith(kioskOnly: false)
+                    : _filters.copyWith(kioskOnly: true, mine: false),
+              ),
+            ),
           )
         : null;
 
@@ -488,7 +540,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
               spacing: context.space.s2,
               runSpacing: context.space.s2,
               crossAxisAlignment: WrapCrossAlignment.center,
-              children: <Widget>[periodButton, ?scope, filtersButton],
+              children: <Widget>[periodButton, ?scope, ?kiosk, filtersButton],
             ),
           ),
           SizedBox(width: context.space.s2),
@@ -624,6 +676,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
         );
       case OrdersListPhase.ready:
         final bool canPrint = viewer.canPrint && wide && ref.watch(orderDocumentPrinterProvider) != null;
+        // UI-25-015: пометка «С планшета» в строке — сотрудникам, только у `createdVia=kiosk`.
+        bool kioskBadge(OrderSummary o) => viewer.isStaff && o.createdVia == OrderCreatedVia.kiosk;
         final int extra = state.hasMore || state.loadMoreFailure != null ? 1 : 0;
         final Widget listView = ListView.builder(
           key: const ValueKey<String>('orders-list'),
@@ -637,6 +691,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                 ? OrdersTableRow(
                     key: ValueKey<String>('order-row-${o.id}'),
                     order: o,
+                    kioskBadge: kioskBadge(o),
                     onTap: () => unawaited(_open(o.id)),
                     printEnabled: !offline && OrderViewRules.rowPrintEnabled(o),
                     onPrint: canPrint ? (BuildContext anchor) => unawaited(_printFromRow(anchor, o, viewer)) : null,
@@ -644,7 +699,12 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                 : Column(
                     key: ValueKey<String>('order-row-${o.id}'),
                     children: <Widget>[
-                      OrdersListRow(order: o, dense: wc == WindowClass.medium, onTap: () => unawaited(_open(o.id))),
+                      OrdersListRow(
+                        order: o,
+                        dense: wc == WindowClass.medium,
+                        kioskBadge: kioskBadge(o),
+                        onTap: () => unawaited(_open(o.id)),
+                      ),
                       Divider(height: 1, thickness: 1, color: context.colors.border),
                     ],
                   );

@@ -339,6 +339,50 @@ void main() {
     final PublicSettingsApi api = env.container.read(publicSettingsApiProvider);
     expect(env.etagCache.get(api.etagKey)?.etag, 'W/"k"');
   });
+
+  // OpenAPI 1.3.0 (планшет магазина, ADR-115; 08 §4.23.1, §4.18.6).
+  test('features.storeTablet: fail-closed до ответа; только сервер; от customerSelfService не зависит', () async {
+    Map<String, Object?> body = _body(selfService: false);
+    final _Env env = _Env((RequestOptions o) async => json(200, body));
+    expect(env.container.read(kioskEnabledProvider), isFalse, reason: 'до ответа сервера — false');
+    await env.refresh();
+    expect(env.container.read(kioskEnabledProvider), isFalse, reason: 'поля нет в ответе — false');
+    body = _body(selfService: false)
+      ..['features'] = <String, Object?>{'customerSelfService': false, 'storeTablet': true};
+    env.clock.advance(const Duration(minutes: 6));
+    await env.refresh();
+    expect(env.container.read(kioskEnabledProvider), isTrue);
+    expect(env.container.read(publicCustomerSelfServiceProvider), isFalse);
+    expect(env.container.read(publicFeatureFlagsProvider).storeTablet, isTrue);
+    body = _body()..['features'] = <String, Object?>{'storeTablet': false};
+    env.clock.advance(const Duration(minutes: 6));
+    await env.refresh();
+    expect(env.container.read(kioskEnabledProvider), isFalse);
+  });
+
+  test('kiosk: тайминги автосброса — умолчания 120/15/60 с, значения сервера, вне границ — умолчание', () async {
+    Map<String, Object?> body = _body()
+      ..['kiosk'] = <String, Object?>{'idleSeconds': 300, 'idleWarningSeconds': 20, 'doneSeconds': 90};
+    final _Env env = _Env((RequestOptions o) async => json(200, body));
+    expect(env.container.read(kioskTimingsProvider), const KioskTimings());
+    expect(
+      (KioskTimings.defaultIdle, KioskTimings.defaultIdleWarning, KioskTimings.defaultDone),
+      (const Duration(seconds: 120), const Duration(seconds: 15), const Duration(seconds: 60)),
+    );
+    await env.refresh();
+    expect(
+      env.container.read(kioskTimingsProvider),
+      const KioskTimings(idle: Duration(seconds: 300), idleWarning: Duration(seconds: 20), done: Duration(seconds: 90)),
+    );
+    body = _body()..['kiosk'] = <String, Object?>{'idleSeconds': 5, 'idleWarningSeconds': 121, 'doneSeconds': 600};
+    env.clock.advance(const Duration(minutes: 6));
+    await env.refresh();
+    expect(
+      env.container.read(kioskTimingsProvider),
+      const KioskTimings(done: Duration(seconds: 600)),
+      reason: 'вне границ контракта — значение по умолчанию',
+    );
+  });
 }
 
 typedef FakeAdapterRequest = ({String method, String path, Map<String, Object?> headers, Object? data});

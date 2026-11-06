@@ -319,3 +319,73 @@ Seed `0002_rbac_seed.sql` с 2026-10-21 генерируется `scripts/gen_rb
 (`src/db/migrator.ts`) отказывает с `MIGRATION_OUT_OF_ORDER`, если в каталоге появился неприменённый файл с версией
 меньше максимальной применённой: на развёрнутой БД такой файл применился бы после `0007`, а на новой — до `0005`, и
 порядок схемы на средах разошёлся бы. Проверка — `test/db/migrate-seed.db-spec.ts`, сценарий 7.
+
+## 12. Режим «Планшет магазина»: `0021_kiosk_enum_values.sql`, `0022_kiosk_schema.sql` (P-002, ADR-115; 2026-11-04)
+
+Задача TAB-1-01, часть «БД» (пакет сборки WP-F1A-DB). Источник истины — 07 v1.17: §5.65 `store_tablets` (DATA-171),
+§5.1, §5.9, §5.11, §5.12, §5.37, §5.61, §6.1, §6.1.1, §12.2 (DATA-305), DDL §14.2, §14.3, §14.5. Seed роли `kiosk` и
+её прав — следующая миграция 0023 (пакет RBAC); `0002_rbac_seed.sql`, `seeds/` и `db/migrations-dev/` не меняются.
+
+1. **Разделение на два файла (07 §12.2, DATA-305).** Мигратор применяет каждый файл в своей транзакции
+   (`src/db/migrator.ts:190-194`), а значение, добавленное `ALTER TYPE … ADD VALUE`, нельзя использовать до COMMIT
+   добавившей его транзакции. Поэтому `0021` содержит только четыре `ALTER TYPE … ADD VALUE IF NOT EXISTS`
+   (`user_kind`, `role_code` — `kiosk`; `otp_purpose`, `notification_kind` — `kiosk_order`; в конец перечней, как в
+   07 §6.1) и не обёрнут в `BEGIN … COMMIT`: транзакцией управляет мигратор (PostgreSQL ≥ 12 допускает `ADD VALUE` в
+   транзакции), psql и `tools/pg/run-sql.mjs` выполняют операторы по одному. Все литералы (`'kiosk'`, `'kiosk_order'`
+   в CHECK и частичных индексах) — в `0022`. Это первый `ALTER TYPE` в проекте; число enum-типов не меняется (45).
+2. **Состав `0022`.** Таблица `store_tablets` (поля, CHECK, `store_tablets_user_id_uq`, `store_tablets_device_idx`,
+   триггер `trg_store_tablets_set_updated_at` — 07 §14.3); `users_kiosk_phone_chk`; CHECK-перечни
+   `sessions_revoke_reason_chk` (+ `kiosk_revoked`), `rate_limit_counters_scope_chk` (+ `otp_kiosk_tablet_1h`,
+   `otp_kiosk_tablet_24h`), `sms_outbox_template_key_chk` (+ `otp_kiosk_order`), `orders_created_via_chk` (+ `kiosk`)
+   пересоздаются под условием `position(<новое значение> IN pg_get_constraintdef(…)) = 0` с сохранением прежних
+   значений (как 0003, 0013); `otp_challenges`: `kiosk_tablet_id`, `cart_id`, `notice_version`, FK, CHECK
+   `otp_challenges_kiosk_chk`, `otp_challenges_kiosk_active_uq`, `otp_challenges_kiosk_created_idx`; `orders`:
+   `kiosk_customer_match`, `pd_notice_version`, `pd_notice_sha256`, `receiver_phone_masked`, CHECK
+   `orders_kiosk_customer_match_chk`, `orders_pd_notice_sha256_chk`, `orders_receiver_phone_masked_chk`,
+   `orders_kiosk_channel_chk`, `orders_kiosk_match_chk`, `orders_receiver_phone_masked_null_chk`, индекс
+   `orders_kiosk_idx`. Имена FK — `<table>_<col>_fk`, `ON DELETE RESTRICT ON UPDATE RESTRICT` (07 §2.1).
+3. **Состав схемы.** 65 таблиц `public` (dev/test, с `dev_outbox`) / 64 (prod), 45 enum-типов —
+   `scripts/check_tables.sql` (строка `store_tablets` в домене auth), `test/db/migrate-seed.db-spec.ts` (шаги 2, 5),
+   `test/db/ddl-behavior.db-spec.ts`. Dev-миграция не добавлялась: каталог `db/migrations-dev/` входит в ключ эпохи
+   веб-демо (`demo/web/backend/lib/epoch.mjs:42`), миграции после `EPOCH_MIGRATION_BASE` (`0020`) — нет.
+4. **Решения и замечания к 07 (DATA-285: при расхождении действует карточка).**
+   - (а) **`otp_challenges_kiosk_chk` дополнен вторым условием.** Формула 07 §5.11/§14.3
+     `(purpose = 'kiosk_order') = (kiosk_tablet_id IS NOT NULL AND cart_id IS NOT NULL AND notice_version IS NOT NULL)
+     AND (purpose <> 'kiosk_order' OR (user_id IS NULL AND issued_by_user_id IS NULL))` для других целей требует лишь
+     «не все три столбца сразу»: код `login_or_register` с одним `kiosk_tablet_id` её проходит, хотя текст карточки
+     («у остальных целей три новых столбца пусты») и AC-DATA-301 («строка `login_or_register` с `kiosk_tablet_id` →
+     ошибка CHECK») требуют отказа. В миграции между двумя условиями 07 добавлено
+     `AND (purpose = 'kiosk_order' OR (kiosk_tablet_id IS NULL AND cart_id IS NULL AND notice_version IS NULL))`.
+     **Предложение владельцу 07:** записать эту формулу в §5.11 (строки `kiosk_tablet_id`, `cart_id`,
+     `notice_version` и абзац «Код заявки с планшета»), §14.3 и DATA-301. **Внесено** в 07 v1.17 (§5.11, §14.3,
+     журнал §21.17) при сверке документов 2026-11-04.
+   - (б) `store_tablets` — без `row_version` (его нет в карточке §5.65; конкурирующих правок нет: изменения — одной
+     транзакцией сервиса на шаг жизненного цикла) и без триггера аудита уровня БД: история — события приложения
+     `kiosk.*` (07 §5.65, 11 §7.2). Права — явным `GRANT` (как `0005_search.sql:69-72`): `ALTER DEFAULT PRIVILEGES`
+     0001 действует, только когда мигратор — `pos_migrate`.
+   - (в) Индекса под FK `otp_challenges.cart_id` нет (в карточке его нет; правило NOTES §5 п. 3 касается проверки
+     `RESTRICT` при удалении родителя, а физического удаления корзин в коде пока нет). Когда появится очистка
+     `carts` (07 §13.3: порядок `otp_challenges` → `carts`), индекс `(cart_id) WHERE cart_id IS NOT NULL` стоит
+     добавить новой миграцией.
+   - (г) Новые CHECK добавляются с проверкой существующих строк (без `NOT VALID`): у прежних заказов
+     `created_via IN ('staff','customer')`, новые столбцы пусты; обновление БД 0001…0020 с данными прежних каналов
+     проверено тестом `test/db/kiosk-schema.db-spec.ts`.
+   - (д) `orders_receiver_phone_e164_chk` и `trg_orders_freeze_financials` не меняются: маскирование номера после
+     submit (E.164 → NULL, маска — в `receiver_phone_masked`) проходит под `pos_app` с `row_version + 1`
+     (`kiosk-schema.db-spec.ts`, `check_ddl_behavior.sql` п. 6.7). CHECK `dev_outbox_template_key_chk` не меняется:
+     фейковый шлюз пишет туда `otp_login` (ADR-115 п. 25).
+5. **Инструменты.** `scripts/check_enum_triangle.py` [1] применяет `ALTER TYPE … ADD VALUE` последующих миграций к
+   значениям `CREATE TYPE` 0001; [3] сверяет CHECK таблиц, созданных последующими миграциями (`store_tablets`), и
+   столбцов `ALTER TABLE … ADD COLUMN` (`orders.kiosk_customer_match`). `Makefile check-contracts` применяет все
+   `pos-api/migrations/*.sql` по порядку (раньше — только 0001 + 0002: `store_tablets` и новые CHECK не попали бы в
+   проверку); CI (`.github/workflows/ci.yml:106-128`) уже перебирает весь каталог. `check_ddl_behavior.sql` — раздел 6
+   (35 негативных сценариев: 34 с проверкой имени ограничения через `pg_temp.expect_constraint`, и 7 инвариантов).
+6. **Проверки (2026-11-04, PostgreSQL 17, раннер `tools/pg`, embedded-postgres).**
+
+| Команда | Результат |
+|---|---|
+| `node tools/pg/run-sql.mjs --set app.env=test --repeat-strict <все migrations/*.sql> db/migrations-dev/0001_dev_outbox.sql --check scripts/check_tables.sql` | `[repeat] ИТОГ: 0 изменений`; 65 из 65 таблиц, 45 enum-типов; код 0 |
+| `node tools/pg/run-sql.mjs <все migrations/*.sql> --check scripts/check_tables.sql` | 64 из 64 таблиц (prod, `dev_outbox` нет); код 0 |
+| `node tools/pg/run-sql.mjs --set app.env=test <все migrations/*.sql> db/migrations-dev/0001_dev_outbox.sql --check pos-api/test/sql/check_ddl_behavior.sql` | негативных сценариев 97 (было 62), позитивных инвариантов 13 (было 6); код 0 |
+| `cd pos-api && npx vitest run --config test/db/vitest.config.ts test/db/kiosk-schema.db-spec.ts` | 5 из 5 |
+| `cd pos-api && UPDATE_SCHEMA_DUMP=1 npx vitest run --config test/db/vitest.config.ts`, затем `npm run test:db` | 18 из 19; красный — только шаг 5 `migrate-seed` (Drizzle-схема `src/db/schema` ещё без `store_tablets` и новых столбцов/значений — её перегенерирует следующий пакет TS-части); `docs/erd/schema_v1.sql` перегенерирован |

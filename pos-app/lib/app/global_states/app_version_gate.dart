@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:optomstroy/core/di/core_providers.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/core/network/app_version/app_version_controller.dart';
+import 'package:optomstroy/core/session/session_overlay.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 
@@ -27,6 +28,10 @@ final appVersionGateStateProvider = Provider<AppVersionState>((ref) {
 /// Глобальное состояние поверх навигации: при `updateRequired` (ответ `426 APP_UPDATE_REQUIRED` или минимальная
 /// версия из `X-Min-App-Version` выше текущей) приложение заменяется блокирующим экраном без выхода назад; при
 /// `updateRecommended` над приложением — баннер с кнопкой «Позже», работа не блокируется.
+///
+/// Режим «Планшет магазина» (02 SCR-51.7, AC-UI-90-020; navigation.md G-12; ADR-115): гейт приложение не заменяет и
+/// баннера не показывает — `426` показывает SCR-51 «Планшет нужно обновить» (витрина из кэша, аварийный выход доступен:
+/// блокирующий экран без выхода запер бы закреплённый планшет); ссылки на загрузку покупателю нет.
 class AppVersionGate extends ConsumerStatefulWidget {
   /// Создаёт гейт над [child].
   const AppVersionGate({super.key, required this.child, this.openStoreUrl});
@@ -48,6 +53,7 @@ class _AppVersionGateState extends ConsumerState<AppVersionGate> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(appVersionGateStateProvider);
+    if (state.status != AppVersionStatus.ok && ref.watch(kioskModeProvider)) return widget.child;
     switch (state.status) {
       case AppVersionStatus.updateRequired:
         return UpdateRequiredScreen(state: state, openStoreUrl: widget.openStoreUrl);

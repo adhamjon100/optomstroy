@@ -56,4 +56,11 @@ export const PROBLEM_TITLES_RU: Readonly<Record<ProblemCode, string>> = {
   QR_UNAVAILABLE: 'QR-оплата временно недоступна',
   CONSENT_REQUIRED: 'Требуется согласие',
   APP_READ_ONLY: 'Режим только чтения',
+  // Планшет магазина (08 §2.4, ADR-115).
+  KIOSK_REVOKED: 'Планшет магазина отключён',
+  KIOSK_DISABLED: 'Режим планшета магазина выключен',
+  KIOSK_NETWORK_DENIED: 'Планшет не в сети магазина',
+  KIOSK_RATE_LIMITED: 'Слишком много кодов с планшета',
+  KIOSK_EXIT_CODE_INVALID: 'Неверный аварийный код',
+  KIOSK_EXIT_LOCKED: 'Аварийный выход временно заблокирован',
 };

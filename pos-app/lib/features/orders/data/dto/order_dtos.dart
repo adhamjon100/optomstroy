@@ -1,4 +1,4 @@
-// DTO-кодеки заказов и платежей (contracts/openapi/pos-api.v1.yaml 1.2.0; ADR-085 — вручную): `Order`,
+// DTO-кодеки заказов и платежей (contracts/openapi/pos-api.v1.yaml 1.3.0; ADR-085 — вручную): `Order`,
 // `OrderSummary`, `OrdersGetResponse`, `OrderItem`, `OrderOnecInfo`, `OrderStatusHistoryEntry`, `OrderDocuments`,
 // `OrderDocumentAvailability`, `OrdersWaybillStatus`, `Payment`, `QrInfo`, `PaymentAllocation`, `PaymentOnecInfo`,
 // `PaymentsGetResponse`, `OrdersPaymentResult`, `OrdersPaymentsListResponse` и тела запросов
@@ -303,6 +303,9 @@ abstract final class OrderHeaderDto {
     'submitError',
     'createdFromCartId',
     'idempotencyKey',
+    // OpenAPI 1.3.0 (планшет магазина, ADR-115; 08 §3.9).
+    'createdVia',
+    'kioskCustomerMatch',
   };
   static const Set<String> requiredKeys = {'id', 'publicNumber', 'status', 'total', 'paymentMethod'};
 
@@ -395,6 +398,8 @@ abstract final class OrderDto {
     idempotencyKey: jOpt<String>(j, 'idempotencyKey'),
     createdAt: OrderHeaderDto.createdAt(j),
     createdBy: OrderHeaderDto.createdBy(j),
+    createdVia: jEnum(j, 'createdVia', OrderCreatedVia.tryParse),
+    kioskCustomerMatch: jEnum(j, 'kioskCustomerMatch', KioskCustomerMatch.tryParse),
     warnings: WarningDto.listOf(j),
   );
 }
@@ -459,6 +464,8 @@ abstract final class OrderSummaryDto {
     idempotencyKey: jOpt<String>(j, 'idempotencyKey'),
     createdAt: OrderHeaderDto.createdAt(j),
     createdBy: OrderHeaderDto.createdBy(j),
+    createdVia: jEnum(j, 'createdVia', OrderCreatedVia.tryParse),
+    kioskCustomerMatch: jEnum(j, 'kioskCustomerMatch', KioskCustomerMatch.tryParse),
   );
 
   /// Ответ `GET /orders` (`Page<OrderSummary>` + `statusCounts`).

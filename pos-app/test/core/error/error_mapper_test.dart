@@ -91,6 +91,12 @@ void main() {
     expect(a(ProblemCode.qrUnavailable), ErrorAction.qrManualFallback);
     expect(a(ProblemCode.payloadTooLarge), ErrorAction.reportClientError);
     expect(a(ProblemCode.consentRequired), ErrorAction.provideConsent);
+    // Планшет магазина (08 §2.4 «Что делает клиент»; ADR-115).
+    expect(a(ProblemCode.kioskRevoked), ErrorAction.signIn);
+    expect(a(ProblemCode.kioskDisabled), ErrorAction.none);
+    expect(a(ProblemCode.kioskRateLimited), ErrorAction.none);
+    expect(a(ProblemCode.kioskExitLocked), ErrorAction.retryAfter);
+    expect(UiErrorMapper.forProblem(ProblemCode.kioskNetworkDenied).messageKey, 'error_kiosk_network_denied');
     expect(UiErrorMapper.forWarning(WarningCode.staleData).action, ErrorAction.onecPending);
   });
 

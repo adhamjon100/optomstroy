@@ -19,6 +19,9 @@ _PublicSettings _$PublicSettingsFromJson(Map<String, dynamic> json) =>
       minAppVersion: json['minAppVersion'] as String?,
       recommendedAppVersion: json['recommendedAppVersion'] as String?,
       customerStockDisplay: json['customerStockDisplay'] as String?,
+      kiosk: json['kiosk'] == null
+          ? null
+          : PublicKioskSettings.fromJson(json['kiosk'] as Map<String, dynamic>),
       features: json['features'] == null
           ? null
           : PublicFeatures.fromJson(json['features'] as Map<String, dynamic>),
@@ -33,6 +36,7 @@ Map<String, dynamic> _$PublicSettingsToJson(_PublicSettings instance) =>
       'minAppVersion': instance.minAppVersion,
       'recommendedAppVersion': instance.recommendedAppVersion,
       'customerStockDisplay': instance.customerStockDisplay,
+      'kiosk': instance.kiosk,
       'features': instance.features,
     };
 
@@ -56,6 +60,21 @@ Map<String, dynamic> _$SupportContactToJson(_SupportContact instance) =>
       'label': instance.label,
     };
 
+_PublicKioskSettings _$PublicKioskSettingsFromJson(Map<String, dynamic> json) =>
+    _PublicKioskSettings(
+      idleSeconds: (json['idleSeconds'] as num?)?.toInt(),
+      idleWarningSeconds: (json['idleWarningSeconds'] as num?)?.toInt(),
+      doneSeconds: (json['doneSeconds'] as num?)?.toInt(),
+    );
+
+Map<String, dynamic> _$PublicKioskSettingsToJson(
+  _PublicKioskSettings instance,
+) => <String, dynamic>{
+  'idleSeconds': instance.idleSeconds,
+  'idleWarningSeconds': instance.idleWarningSeconds,
+  'doneSeconds': instance.doneSeconds,
+};
+
 _PublicFeatures _$PublicFeaturesFromJson(Map<String, dynamic> json) =>
     _PublicFeatures(
       customerSelfService: json['customerSelfService'] as bool?,
@@ -63,6 +82,7 @@ _PublicFeatures _$PublicFeaturesFromJson(Map<String, dynamic> json) =>
       qrProvider: json['qrProvider'] as String?,
       qrWebhook: json['qrWebhook'] as bool?,
       debtPaymentsFromPos: json['debtPaymentsFromPos'] as bool?,
+      storeTablet: json['storeTablet'] as bool?,
     );
 
 Map<String, dynamic> _$PublicFeaturesToJson(_PublicFeatures instance) =>
@@ -72,4 +92,5 @@ Map<String, dynamic> _$PublicFeaturesToJson(_PublicFeatures instance) =>
       'qrProvider': instance.qrProvider,
       'qrWebhook': instance.qrWebhook,
       'debtPaymentsFromPos': instance.debtPaymentsFromPos,
+      'storeTablet': instance.storeTablet,
     };

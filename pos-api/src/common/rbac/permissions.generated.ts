@@ -1,12 +1,12 @@
 // GENERATED FILE — DO NOT EDIT.
-// Source: contracts/rbac/permissions.yaml (version 1, sha256 43d66dca058fbb8c2b5ad2cbba63fb52a9d10114ee85c9e85a4bc0a53abd38fa)
+// Source: contracts/rbac/permissions.yaml (version 2, sha256 d84ab4a83deee47fa579680f597a9cff3d53f52631c0535ab51b7eb25a7bbb4f)
 // Generator: pos-api/scripts/gen-permissions.mjs (RM-C-005). Канон: 11 §4.3–§4.4, ядро R0 §18.1.
 /* eslint-disable */
 
-export const PERMISSIONS_SOURCE_SHA256 = '43d66dca058fbb8c2b5ad2cbba63fb52a9d10114ee85c9e85a4bc0a53abd38fa' as const;
-export const PERMISSIONS_VERSION = 1 as const;
+export const PERMISSIONS_SOURCE_SHA256 = 'd84ab4a83deee47fa579680f597a9cff3d53f52631c0535ab51b7eb25a7bbb4f' as const;
+export const PERMISSIONS_VERSION = 2 as const;
 
-export const RBAC_ROLES = ["seller","cashier","senior_seller","admin","owner","customer","integration"] as const;
+export const RBAC_ROLES = ["seller","cashier","senior_seller","admin","owner","customer","integration","kiosk"] as const;
 export type RbacRole = (typeof RBAC_ROLES)[number];
 
 export const PERMISSION_CODES = [
@@ -87,6 +87,11 @@ export const PERMISSION_CODES = [
   "return.approve",
   "customer.link.self_resolve",
   "users.emergency_code.issue",
+  "kiosk.read",
+  "kiosk.manage",
+  "kiosk.order.submit",
+  "kiosk.self.read",
+  "kiosk.self.exit",
 ] as const;
 export type PermissionCode = (typeof PERMISSION_CODES)[number];
 
@@ -177,6 +182,11 @@ export const PERMISSIONS: readonly PermissionMeta[] = [
   {"code":"return.approve","number":"74","module":"returns","stepUp":true,"stepUpScope":"returns","reserved":false},
   {"code":"customer.link.self_resolve","number":"75","module":"customers","stepUp":false,"stepUpScope":null,"reserved":false},
   {"code":"users.emergency_code.issue","number":"76","module":"admin","stepUp":true,"stepUpScope":"admin_users","reserved":false},
+  {"code":"kiosk.read","number":"77","module":"kiosk","stepUp":false,"stepUpScope":null,"reserved":false},
+  {"code":"kiosk.manage","number":"78","module":"kiosk","stepUp":true,"stepUpScope":"admin_users","reserved":false},
+  {"code":"kiosk.order.submit","number":"79","module":"kiosk","stepUp":false,"stepUpScope":null,"reserved":false},
+  {"code":"kiosk.self.read","number":"80","module":"kiosk","stepUp":false,"stepUpScope":null,"reserved":false},
+  {"code":"kiosk.self.exit","number":"81","module":"kiosk","stepUp":false,"stepUpScope":null,"reserved":false},
 ];
 
 /** Роль → выданные коды (deny by default: кода нет в списке — права нет). */
@@ -184,10 +194,11 @@ export const ROLE_GRANTS: { readonly [R in RbacRole]: readonly PermissionCode[] 
   seller: ["catalog.read","catalog.prices.read","inventory.read","search.read","search.customers","cart.manage.own","order.create","order.read.own","order.cancel.own","order.documents.print","payment.qr.show","credit.sale.create","discount.apply.within_limit","discount.rules.read","customer.read.basic","customer.create","favorites.products.manage","transactions.read.own","sync.status.read","notifications.read.own","profile.manage.own","session.manage.own","payment.read.own","settings.public.read"],
   cashier: ["catalog.read","catalog.prices.read","inventory.read","search.read","search.customers","cart.manage.own","order.create","order.read.all","order.cancel.own","order.cancel.request.any","order.documents.print","payment.cash.receive","payment.qr.show","payment.qr.confirm_manual","payment.void","payment.read.all","credit.sale.create","discount.apply.within_limit","discount.rules.read","customer.read.basic","customer.create","customer.history.read","customer.receivables.read.summary","customer.receivables.read.detail","favorites.products.manage","favorites.customers.manage","transactions.read.all","return.create","return.read","dashboard.cashier.read","sync.status.read","notifications.read.own","profile.manage.own","session.manage.own","catalog.prices.read.all","payment.debt.receive","customer.create.force","customer.link.read","return.submit","settings.public.read"],
   senior_seller: ["catalog.read","catalog.prices.read","inventory.read","search.read","search.customers","cart.manage.own","cart.parked.read.all","cart.parked.resume.any","order.create","order.read.all","order.cancel.own","order.cancel.request.any","order.documents.print","payment.cash.receive","payment.qr.show","payment.qr.confirm_manual","payment.void","payment.read.all","credit.sale.create","credit.sale.approve","discount.apply.within_limit","discount.approve.over_limit","discount.rules.read","customer.read.basic","customer.create","customer.history.read","customer.receivables.read.summary","customer.receivables.read.detail","favorites.products.manage","favorites.customers.manage","transactions.read.all","return.create","return.read","dashboard.cashier.read","sync.status.read","sync.runs.read","sync.run.incremental.limited","sync.outbox.manage","notifications.read.own","profile.manage.own","session.manage.own","catalog.prices.read.all","payment.debt.receive","customer.create.force","customer.link.read","return.submit","order.onec_link","settings.public.read","return.approve"],
-  admin: ["catalog.read","catalog.prices.read","inventory.read","search.read","search.customers","cart.manage.own","cart.parked.read.all","cart.parked.resume.any","order.create","order.read.all","order.cancel.own","order.cancel.request.any","order.documents.print","discount.apply.within_limit","discount.approve.over_limit","discount.rules.read","customer.read.basic","customer.create","customer.history.read","customer.receivables.read.summary","customer.receivables.read.detail","customer.link.resolve","favorites.products.manage","favorites.customers.manage","transactions.read.all","return.create","return.read","dashboard.cashier.read","sync.status.read","sync.runs.read","sync.run.incremental.limited","sync.run.full","sync.outbox.manage","notifications.read.own","profile.manage.own","session.manage.own","session.revoke.any","users.read","users.manage","users.roles.assign","invitations.manage","settings.discount_limits.update","settings.app.update","settings.app.read","audit.read","reports.sales.read","reports.receivables.read","reports.qr_reconciliation.read","catalog.prices.read.all","customer.create.force","customer.link.read","return.submit","users.pin.reset","system.openapi.read","order.onec_link","settings.public.read","customer.link.conflicts.read","return.approve","users.emergency_code.issue"],
-  owner: ["catalog.read","catalog.prices.read","catalog.cost_price.read","inventory.read","search.read","search.customers","cart.parked.read.all","order.read.all","order.documents.print","payment.read.all","discount.rules.read","customer.read.basic","customer.history.read","customer.receivables.read.summary","customer.receivables.read.detail","favorites.products.manage","transactions.read.all","return.read","dashboard.cashier.read","sync.status.read","sync.runs.read","sync.run.incremental.limited","sync.run.full","notifications.read.own","profile.manage.own","session.manage.own","session.revoke.any","users.read","users.roles.assign","settings.app.read","audit.read","reports.sales.read","reports.receivables.read","reports.qr_reconciliation.read","catalog.prices.read.all","customer.link.read","order.onec_link","settings.public.read"],
+  admin: ["catalog.read","catalog.prices.read","inventory.read","search.read","search.customers","cart.manage.own","cart.parked.read.all","cart.parked.resume.any","order.create","order.read.all","order.cancel.own","order.cancel.request.any","order.documents.print","discount.apply.within_limit","discount.approve.over_limit","discount.rules.read","customer.read.basic","customer.create","customer.history.read","customer.receivables.read.summary","customer.receivables.read.detail","customer.link.resolve","favorites.products.manage","favorites.customers.manage","transactions.read.all","return.create","return.read","dashboard.cashier.read","sync.status.read","sync.runs.read","sync.run.incremental.limited","sync.run.full","sync.outbox.manage","notifications.read.own","profile.manage.own","session.manage.own","session.revoke.any","users.read","users.manage","users.roles.assign","invitations.manage","settings.discount_limits.update","settings.app.update","settings.app.read","audit.read","reports.sales.read","reports.receivables.read","reports.qr_reconciliation.read","catalog.prices.read.all","customer.create.force","customer.link.read","return.submit","users.pin.reset","system.openapi.read","order.onec_link","settings.public.read","customer.link.conflicts.read","return.approve","users.emergency_code.issue","kiosk.read","kiosk.manage"],
+  owner: ["catalog.read","catalog.prices.read","catalog.cost_price.read","inventory.read","search.read","search.customers","cart.parked.read.all","order.read.all","order.documents.print","payment.read.all","discount.rules.read","customer.read.basic","customer.history.read","customer.receivables.read.summary","customer.receivables.read.detail","favorites.products.manage","transactions.read.all","return.read","dashboard.cashier.read","sync.status.read","sync.runs.read","sync.run.incremental.limited","sync.run.full","notifications.read.own","profile.manage.own","session.manage.own","session.revoke.any","users.read","users.roles.assign","settings.app.read","audit.read","reports.sales.read","reports.receivables.read","reports.qr_reconciliation.read","catalog.prices.read.all","customer.link.read","order.onec_link","settings.public.read","kiosk.read"],
   customer: ["catalog.read","catalog.prices.read","inventory.read","search.read","cart.manage.own","order.create","order.read.own","order.cancel.own","order.documents.print","payment.qr.show","discount.rules.read","favorites.products.manage","notifications.read.own","profile.manage.own","session.manage.own","customer.self.read","customer.self.receivables.read","payment.read.own","settings.public.read","customer.link.self_resolve"],
   integration: ["sync.exchange"],
+  kiosk: ["catalog.read","catalog.prices.read","inventory.read","search.read","cart.manage.own","settings.public.read","kiosk.order.submit","kiosk.self.read","kiosk.self.exit"],
 };
 
 /** Атрибутные ограничители ячеек матрицы (role_permissions.constraint_json, 07 §5.6). */
@@ -199,6 +210,7 @@ export const ROLE_CONSTRAINTS: { readonly [R in RbacRole]: Readonly<Partial<Reco
   owner: {},
   customer: {"order.read.own":{"own":true},"order.cancel.own":{"own":true},"order.documents.print":{"own":true},"payment.qr.show":{"own":true},"discount.rules.read":{"own":true},"customer.self.read":{"own":true},"customer.self.receivables.read":{"own":true},"payment.read.own":{"own":true},"customer.link.self_resolve":{"own":true}},
   integration: {},
+  kiosk: {},
 };
 
 /** Псевдо-наборы guard (не роли): например, статус pending_activation (11 §4.2). */

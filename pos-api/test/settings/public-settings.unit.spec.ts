@@ -8,6 +8,7 @@ import {
   PUBLIC_APP_SETTING_KEYS,
   PUBLIC_ENV_SETTINGS,
   PUBLIC_SETTINGS_FEATURES,
+  PUBLIC_SETTINGS_KIOSK,
   PUBLIC_SETTINGS_TOP_LEVEL,
 } from '../../src/settings/public-settings.map.js';
 import { PublicSettingsService } from '../../src/settings/public-settings.service.js';
@@ -201,9 +202,11 @@ describe('RM-D-015 сверка с таблицей 08 §4.18.6 (колонка 
       ...PUBLIC_APP_SETTING_KEYS.flatMap((m) => m.publicFields),
       ...PUBLIC_ENV_SETTINGS.flatMap((m) => m.publicFields),
     ]);
+    // Вложенные объекты `features` и `kiosk` (планшет магазина, ADR-115) — по своим полям.
     const response = [
-      ...PUBLIC_SETTINGS_TOP_LEVEL.filter((k) => k !== 'features'),
+      ...PUBLIC_SETTINGS_TOP_LEVEL.filter((k) => k !== 'features' && k !== 'kiosk'),
       ...PUBLIC_SETTINGS_FEATURES.map((f) => `features.${f}`),
+      ...PUBLIC_SETTINGS_KIOSK.map((f) => `kiosk.${f}`),
     ];
     expect(response.filter((f) => !covered.has(f))).toEqual([]);
     expect([...covered].filter((f) => !response.includes(f))).toEqual([]);

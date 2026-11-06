@@ -11,6 +11,10 @@
 // шаги — migrations/schema_versions.dart (`drift_dev schema steps`), тесты —
 // test/core/database/schema_migration_test.dart. Версия схемы дублируется в
 // `app_meta.schema_version`.
+//
+// Планшет магазина (ADR-115; 11 SEC-133 исключение; 02 SCR-54.9): при подключении устройства планшетом файл БД
+// администратора удаляется — [AppDatabase.deleteUserDatabase] после закрытия ([AppDatabase.close] повторно ждёт того
+// же закрытия).
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:logging/logging.dart';
@@ -20,6 +24,9 @@ import 'package:optomstroy/core/database/daos/favorites_dao.dart';
 import 'package:optomstroy/core/database/migrations/schema_versions.dart';
 import 'package:optomstroy/core/database/tables/catalog_tables.dart';
 import 'package:optomstroy/core/database/tables/local_tables.dart';
+import 'package:optomstroy/core/database/user_database_files.dart'
+    if (dart.library.js_interop) 'package:optomstroy/core/database/user_database_files_web.dart'
+    as user_files;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -58,6 +65,13 @@ class AppDatabase extends _$AppDatabase {
 
   /// Файл БД пользователя [userId] (UUID) — `pos_<user_id>.db` (07 §11.1 п.2).
   factory AppDatabase.forUser(String userId) => AppDatabase(openUserDatabase(userId));
+
+  Future<void>? _closing;
+
+  /// Закрыть БД. Повторный вызов не закрывает второй раз, а ждёт того же закрытия: корень закрывает файл после такта
+  /// (`userDatabase`, app/di/overrides.dart), а подключение планшета ждёт закрытия перед удалением файла.
+  @override
+  Future<void> close() => _closing ??= super.close();
 
   /// Текущая версия схемы.
   static const int latestSchemaVersion = 5;
@@ -131,6 +145,15 @@ class AppDatabase extends _$AppDatabase {
 
   /// Идентификатор пользователя годится для имени файла БД ([fileNameFor]) — UUID.
   static bool isUserId(String userId) => _uuid.hasMatch(userId);
+
+  /// Удалить файл БД пользователя [userId] (Android, Windows — файл и журналы `-wal`/`-shm`/`-journal` в каталоге
+  /// поддержки; браузер — БД drift wasm). Только для закрытой БД: подключение устройства планшетом магазина удаляет
+  /// данные администратора (11 SEC-133, исключение ADR-115). `true` — файлов больше нет.
+  static Future<bool> deleteUserDatabase(String userId) => user_files.deleteUserDatabaseFiles(
+    fileNameFor(userId),
+    sqlite3Wasm: Uri.parse(webSqlite3Wasm),
+    driftWorker: Uri.parse(webDriftWorker),
+  );
 
   /// Исполнитель для файла пользователя в `getApplicationSupportDirectory()`
   /// (фоновый изолят drift_flutter, D-04). В браузере (веб-демо, ADR-113) — [webOptions]: без них `driftDatabase`

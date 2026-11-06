@@ -16,6 +16,7 @@ import 'package:optomstroy/core/network/interceptors/auth_interceptor.dart';
 import 'package:optomstroy/core/session/session_api.dart';
 import 'package:optomstroy/core/session/session_controller.dart';
 import 'package:optomstroy/core/session/session_overlay.dart';
+import 'package:optomstroy/core/session/session_policy.dart';
 import 'package:optomstroy/core/session/session_state.dart';
 import 'package:optomstroy/core/session/session_status.dart';
 import 'package:optomstroy/core/session/step_up_coordinator.dart';
@@ -24,10 +25,39 @@ import 'package:optomstroy/core/storage/secure_storage.dart';
 import '../database/test_database.dart';
 import 'session_harness.dart';
 
+/// Хранилище, которое не отвечает (нет плагина, сбой Keystore).
+final class _HangingStorage implements SecureStorage {
+  @override
+  Future<String?> read(SecureKey key) => Completer<String?>().future;
+
+  @override
+  Future<void> write(SecureKey key, String value) => Completer<void>().future;
+
+  @override
+  Future<void> delete(SecureKey key) => Completer<void>().future;
+}
+
 void main() {
   setUpAll(configureSqliteForTests);
 
   group('восстановление и вход', () {
+    test('SCR-00 паритет (10 KIOSK-029): зависшее хранилище — refresh и признак планшета читаются параллельно, '
+        'холодный старт ждёт не дольше одного storageTimeout, затем вход по телефону', () async {
+      const Duration limit = Duration(milliseconds: 200);
+      final SessionHarness h = SessionHarness(
+        (o) async => json(200, {}),
+        policy: const SessionPolicy(storageTimeout: limit),
+        secureStorage: _HangingStorage(),
+      );
+      addTearDown(h.dispose);
+      final Stopwatch sw = Stopwatch()..start();
+      h.start();
+      expect(await h.container.read(sessionStatusProvider.future), SessionStatus.unauthenticated);
+      sw.stop();
+      expect(sw.elapsed, lessThan(limit * 1.5), reason: 'одно ожидание, а не два подряд (было до 2 × storageTimeout)');
+      expect(h.state.kioskTabletId, isNull);
+    });
+
     test('холодный старт: refresh есть → authenticated + SCR-08 cold; нет → unauthenticated', () async {
       final withSession = SessionHarness((o) async => json(200, {}), refresh: 'r1');
       addTearDown(withSession.dispose);

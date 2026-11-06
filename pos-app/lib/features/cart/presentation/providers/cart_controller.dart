@@ -1007,9 +1007,10 @@ final class CartPermissions {
   final bool readOnlyParked;
 }
 
-/// Права корзины для роли [role] (`null` — как `seller`).
+/// Права корзины для роли [role] (`null` — как `seller`). Планшет магазина (`kiosk`, ADR-115) — как покупатель: своя
+/// корзина без отложенных, скидок, смены склада и выбора клиента (11 §4.4, SEC-137).
 CartPermissions cartPermissionsFor(RoleCode? role) => switch (role) {
-  RoleCode.customer => const CartPermissions(
+  RoleCode.customer || RoleCode.kiosk => const CartPermissions(
     customer: true,
     canPark: false,
     canDiscount: false,

@@ -104,8 +104,9 @@ describe('валидатор: синтетические схемы', () => {
 describe('валидатор: настоящий контракт pos-api.v1.yaml', () => {
   const R = contract();
   const problem = (status, code, extra = {}) => ({ type: `https://api.example/problems/${code.toLowerCase()}`, title: 't', status, code, requestId: 'r', ...extra });
-  test('операции: 141, пути с литералами и параметрами', () => {
-    assert.equal(R.ops.length, 141);
+  // OpenAPI 1.3.0 (планшет магазина, ADR-115): 141 + 10 операций `70_kiosk.yaml` = 151.
+  test('операции: 151, пути с литералами и параметрами', () => {
+    assert.equal(R.ops.length, 151);
     assert.equal(R.matchOperation('GET', '/api/v1/catalog/products/recent').operationId, 'catalog_products_recent_list');
     assert.equal(R.matchOperation('GET', `/api/v1/catalog/products/${id}`).operationId, 'catalog_products_get');
     assert.equal(R.matchOperation('GET', '/health').operationId, 'health_liveness_get');
@@ -137,5 +138,23 @@ describe('валидатор: настоящий контракт pos-api.v1.yam
     assert.ok(R.checkResponse({ method: 'GET', url, status: 200, headers: h, json: { ...good, unexpectedField: 1 }, size: 30 }).errors.some((e) => /unexpectedField: поле вне схемы/.test(e)));
     assert.ok(R.checkResponse({ method: 'GET', url, status: 200, headers: h, json: { status: 'ok', apiVersion: '1.0' }, size: 30 }).errors.some((e) => /serverTime: обязательное/.test(e)));
     assert.ok(R.checkResponse({ method: 'GET', url, status: 200, headers: h, json: { ...good, status: 'down' }, size: 30 }).errors.some((e) => /вне enum/.test(e)));
+  });
+  // Контракт 1.3.0 (08 §3.14, ADR-115): форма планшета GET /me — строгая схема MeKiosk, обязательность полей Me на неё
+  // не распространяется; для staff и customer — по-прежнему Me (как pos-api/test/kiosk/access.spec.ts).
+  test('T-DEMO-003, T-KIOSK-046: GET /me планшета — по MeKiosk, staff — по Me', () => {
+    const url = '/api/v1/me';
+    const h = { 'content-type': 'application/json; charset=utf-8' };
+    const me = (json) => R.checkResponse({ method: 'GET', url, status: 200, headers: h, json, size: 60 });
+    const wh = '0190f3a1-6c3e-7a1b-9f00-2b7c1d3e4f66';
+    const kiosk = { kind: 'kiosk', tablet: { id, name: 'Планшет у входа', warehouseId: wh } };
+    assert.equal(me(kiosk).operationId, 'me_get');
+    assert.deepEqual(me(kiosk).errors, []);
+    const withRoles = me({ ...kiosk, roles: ['kiosk'] }).errors;
+    assert.ok(withRoles.some((e) => /\$\.roles: поле вне схемы/.test(e)), withRoles.join(' | '));
+    const noTablet = me({ kind: 'kiosk' }).errors;
+    assert.ok(noTablet.some((e) => /\$\.tablet: обязательное поле отсутствует/.test(e)), noTablet.join(' | '));
+    const staff = me({ kind: 'staff', status: 'active', roles: ['seller'], permissions: [], permissionsVersion: 1 }).errors;
+    assert.ok(staff.some((e) => /\$\.id: обязательное поле отсутствует/.test(e)), staff.join(' | '));
+    assert.ok(!staff.some((e) => /\$\.tablet/.test(e)), staff.join(' | '));
   });
 });

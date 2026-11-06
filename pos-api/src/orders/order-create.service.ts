@@ -7,7 +7,7 @@ import { CLOCK, type Clock } from '../common/auth/clock.js';
 import type { AuthenticatedPrincipal } from '../common/auth/principal.js';
 import { APP_CONFIG, type AppConfig } from '../common/config/app-config.js';
 import { DRIZZLE, type Database } from '../common/db/database.module.js';
-import type { PaymentMethod } from '../common/enums.js';
+import type { OrderCreatedVia, PaymentMethod } from '../common/enums.js';
 import type { RequestWithContext } from '../common/http/request-context.js';
 import { getIdempotencyState } from '../common/idempotency/idempotency.context.js';
 import { IdempotencyService } from '../common/idempotency/idempotency.service.js';
@@ -21,6 +21,10 @@ import {
   type CreateOrderResult,
   CREDIT_DECISION_SERVICE,
   type CreditDecisionService,
+  type KioskOrderCommand,
+  type KioskOrderCustomer,
+  type KioskOrderPort,
+  type KioskOrderResult,
   NOTIFICATIONS_PORT,
   type NotificationsPort,
   ONEC_OUTBOX_WRITER,
@@ -29,6 +33,7 @@ import {
   PAYMENTS_PORT,
   type PaymentsPort,
   PortNotBoundError,
+  type SalesTx,
 } from '../common/ports/index.js';
 import { ProblemException } from '../common/problem-details/problem.exception.js';
 import { PermissionCatalog } from '../common/rbac/permission-catalog.js';
@@ -41,7 +46,7 @@ import { assertPaymentMethodAllowed } from '../sales-domain/pricing/payment-meth
 import { toProblemException } from '../sales-domain/problem.js';
 import { buildOnecOrderPayload, customerCreateDependency } from './onec-order-payload.js';
 import { creditRecheckRefusal, notifyCreditBlocked, recheckCreditInTx } from './order-credit-recheck.js';
-import type { OrderViewer } from './order-access.js';
+import { type OrderViewer, permissionsOf, salesActorOf } from './order-access.js';
 import { insertOrderTransaction } from './order-projection.js';
 import { OrderViewService } from './order-view.service.js';
 import { confirmedCustomerId, findOrder, insertHistory } from './order.repository.js';
@@ -96,7 +101,25 @@ interface CreateContext {
   readonly req: object | null;
   readonly stepUpMethod: 'pin' | 'otp' | null;
   readonly stepUpVerified: boolean;
+  /** Заявка с планшета магазина (`createForKiosk`); не задан — `POST /orders` и порт `OrderCreator`, как прежде. */
+  readonly kiosk?: KioskCreateContext;
 }
+
+/**
+ * Что сервер задаёт заявке с планшета вместо тела запроса (08 §4.25.2; P-002 §8.5 п. 3.3): клиент — итог поиска
+ * карточки по номеру, получатель — номер кода без имени, имя планшета — для комментария 1С, версия и хэш текста
+ * информирования, погашение кода в транзакции создания.
+ */
+interface KioskCreateContext {
+  readonly customer: KioskOrderCustomer;
+  readonly tabletName: string;
+  readonly receiverPhone: string;
+  readonly notice: { readonly version: string; readonly sha256: string };
+  readonly consumeCode: (tx: SalesTx) => Promise<void>;
+}
+
+/** Получатели уведомления `kiosk_order` о новой заявке с планшета (08 §3.13; 10 KIOSK-018; Р-12 (а)). */
+const KIOSK_ORDER_NOTIFY_ROLES = ['cashier', 'senior_seller'] as const;
 
 export interface CreateHttpResult {
   readonly httpStatus: 201 | 202;
@@ -120,9 +143,10 @@ const CREDIT_REFUSALS: ReadonlySet<string> = new Set(['CREDIT_BLOCKED', 'CREDIT_
  * 3) после COMMIT — пробуждение `outbox.dispatch` и QR начального платежа (`PaymentsPort.afterCommit`).
  * Режим клиента (ядро §24.2): `created_via=customer` ставит сервер, клиент — своя подтверждённая карточка или
  * «Розничный покупатель», только `cash`/`qr_bakai`, без ручной скидки, долга и overrides.
+ * Заявка с планшета магазина (порт `KioskOrderPort`, ADR-115): тот же путь с контекстом `kiosk` — `createForKiosk`.
  */
 @Injectable()
-export class OrderCreateService implements OrderCreator {
+export class OrderCreateService implements OrderCreator, KioskOrderPort {
   private readonly logger = new Logger('orders.create');
 
   constructor(
@@ -253,6 +277,85 @@ export class OrderCreateService implements OrderCreator {
     };
   }
 
+  /**
+   * Порт `KioskOrderPort.createForKiosk` — заявка с планшета магазина после верного кода (08 §4.25.2; P-002 §8.5
+   * п. 3–4; 10 KIOSK-013, KIOSK-015…KIOSK-017; ADR-115). Тот же `createUnsafe`, что и `POST /orders`, с контекстом
+   * `kiosk`: тело задаёт сервер — наличные, самовывоз со склада корзины планшета, получатель `customer` с номером кода
+   * без имени, клиент — найденная карточка или «Розничный покупатель»; проверки корзины — с `channel: 'kiosk'` и
+   * `customerOverride` карточки (цена по карточке только в памяти, Р-05 (а)); `previewToken` сверил вызывающий (шаг
+   * (1), без итога). ORD-022 не выполняется (автор всех заявок планшета один — P-002 §8.5 п. 3).
+   */
+  async createForKiosk(cmd: KioskOrderCommand): Promise<KioskOrderResult> {
+    if (cmd.principal.kind !== 'kiosk') {
+      throw new Error('orders: заявка с планшета — только для субъекта kind=kiosk (ошибка вызывающего кода)');
+    }
+    const viewer: OrderViewer = {
+      actor: salesActorOf(cmd.principal, cmd.requestId),
+      permissions: permissionsOf(this.catalog, cmd.principal),
+      // У планшета нет подтверждённой карточки: клиент заявки — только итог поиска по номеру кода.
+      linkedCustomerId: null,
+    };
+    const r = await this.create(
+      {
+        idempotencyKey: cmd.idempotencyKey,
+        cartId: cmd.cartId,
+        cartRowVersion: cmd.cartRowVersion,
+        customerId: null,
+        paymentMethod: 'cash',
+        discountOverride: null,
+        creditOverride: null,
+        receiver: { kind: 'customer', name: null, phone: cmd.receiverPhoneE164 },
+        delivery: {
+          method: 'pickup',
+          address: null,
+          recipientPhone: null,
+          courierComment: null,
+          desiredDate: null,
+          timeFrom: null,
+          timeTo: null,
+        },
+        printOptions: null,
+        comment: null,
+        confirmDuplicate: false,
+        previewToken: null,
+        items: null,
+      },
+      {
+        viewer,
+        auditCtx: cmd.audit,
+        req: cmd.req,
+        stepUpMethod: null,
+        stepUpVerified: false,
+        kiosk: {
+          customer: cmd.customer,
+          tabletName: cmd.tabletName,
+          receiverPhone: cmd.receiverPhoneE164,
+          notice: cmd.notice,
+          consumeCode: cmd.consumeCode,
+        },
+      },
+    );
+    return { httpStatus: r.httpStatus, orderId: r.orderId, publicNumber: String(r.body.publicNumber) };
+  }
+
+  /**
+   * Порт `KioskOrderPort.findByIdempotencyKey` — `GET /kiosk/orders?idempotencyKey=` (08 §4.25.3): заявка этого
+   * технического пользователя с этим ключом, `created_via='kiosk'`, не старше 15 мин (время БД — источник
+   * `orders.created_at`). Запрос с ключом ещё выполняется — заявки в БД нет (транзакция не зафиксирована) → `null`.
+   */
+  async findByIdempotencyKey(input: {
+    readonly ownerUserId: string;
+    readonly idempotencyKey: string;
+  }): Promise<{ readonly publicNumber: string } | null> {
+    const r = await this.db.execute<{ public_number: string }>(sql`
+      SELECT public_number FROM orders
+       WHERE created_by_user_id = ${input.ownerUserId}::uuid AND idempotency_key = ${input.idempotencyKey}
+         AND created_via = 'kiosk' AND status <> 'draft' AND created_at > now() - interval '15 minutes'
+       LIMIT 1`);
+    const row = r.rows[0];
+    return row ? { publicNumber: row.public_number } : null;
+  }
+
   private async create(input: CreateInput, ctx: CreateContext): Promise<CreateHttpResult> {
     try {
       return await this.createUnsafe(input, ctx);
@@ -301,6 +404,13 @@ export class OrderCreateService implements OrderCreator {
         creditOverride: input.creditOverride,
         stepUpVerified: ctx.stepUpVerified,
         previewToken: input.previewToken,
+        // Заявка с планшета (08 §4.25.2; Р-05 (а)): корзина — по карточке в памяти, `price_changed` не поднимается.
+        ...(ctx.kiosk
+          ? {
+              channel: 'kiosk' as const,
+              customerOverride: ctx.kiosk.customer.customerId ? { customerId: ctx.kiosk.customer.customerId } : null,
+            }
+          : {}),
       });
     } catch (e) {
       // Отказ по долгу из CheckoutPolicy (строгий режим) — тоже `credit.sale_blocked` (11 §7.2).
@@ -346,7 +456,16 @@ export class OrderCreateService implements OrderCreator {
     // карточка или «Розничный покупатель» (CUST-023). `customerId` тела — сверка с корзиной.
     const retailId = (await this.db.execute<{ id: string }>(RETAIL_CUSTOMER_SQL)).rows[0]?.id;
     if (!retailId) throw new Error('orders: нет системного клиента «Розничный покупатель» (seed)');
-    const customerId = customerMode ? (ctx.viewer.linkedCustomerId ?? retailId) : (snap.customerId ?? retailId);
+    // Планшет (10 KIOSK-014): карточка только при `single`, иначе «Розничный покупатель»; снимок корзины оценён по той
+    // же карточке (`customerOverride`), поэтому вид цены и скидка клиента в заказе — из снимка, как у сотрудника.
+    if (ctx.kiosk && snap.customerId !== ctx.kiosk.customer.customerId) {
+      throw new Error('orders: клиент снимка корзины планшета не совпадает с найденной карточкой');
+    }
+    const customerId = ctx.kiosk
+      ? (ctx.kiosk.customer.customerId ?? retailId)
+      : customerMode
+        ? (ctx.viewer.linkedCustomerId ?? retailId)
+        : (snap.customerId ?? retailId);
     if (!customerMode && input.customerId && input.customerId !== customerId) {
       throw new ProblemException('VERSION_CONFLICT', {
         detail: 'Клиент заказа не совпадает с клиентом корзины — обновите оформление.',
@@ -394,7 +513,9 @@ export class OrderCreateService implements OrderCreator {
       }
     }
 
-    // Мягкая защита от дубля (08 §2.7, ORD-022): тот же состав у заказа автора за 60 с.
+    // Мягкая защита от дубля (08 §2.7, ORD-022): тот же состав у заказа автора за 60 с. Для заявки с планшета не
+    // выполняется: автор всех заявок планшета один (P-002 §8.5 п. 3; 12 T-KIOSK-062), от двойной отправки защищают
+    // одноразовый код и `Idempotency-Key`.
     const compositionHash = orderCompositionHash({
       customerId,
       paymentMethod: input.paymentMethod,
@@ -405,7 +526,7 @@ export class OrderCreateService implements OrderCreator {
         quantity: Quantity.of(l.quantity).toString(),
       })),
     });
-    if (!input.confirmDuplicate && actor.userId) {
+    if (!ctx.kiosk && !input.confirmDuplicate && actor.userId) {
       const dup = await this.recentDuplicate(actor.userId, compositionHash);
       if (dup) {
         throw new ProblemException('ORDER_STATE_INVALID', {
@@ -435,6 +556,12 @@ export class OrderCreateService implements OrderCreator {
       customerMode && input.receiver.kind === 'customer' && actor.userId
         ? await this.accountContact(actor.userId)
         : null;
+    // Получатель. Планшет (08 §4.25.2): `receiver_kind='customer'`, номер кода, имени нет — контакт «аккаунта» (это
+    // технический пользователь планшета, имя — имя планшета) не подставляется.
+    const receiverName = ctx.kiosk ? null : (input.receiver.name ?? accountReceiver?.name ?? null);
+    const receiverPhone = ctx.kiosk
+      ? ctx.kiosk.receiverPhone
+      : (input.receiver.phone ?? accountReceiver?.phone ?? null);
     // Скидка сверх лимита — только если подтверждение **применилось** (корзина: `overrideApplied`, подтверждающий —
     // `discountApprovedByUserId`): из этого запроса (`discountOverride` со step-up) или ранее в корзине
     // (POST /cart/discount с override и step-up). Причина, `transactions.kind=discount_override` и аудит по заказу
@@ -445,12 +572,17 @@ export class OrderCreateService implements OrderCreator {
       ? { reason: snap.discountOverrideReason ?? 'подтверждено в корзине', approverUserId: discountApproverId }
       : null;
     const createdVia = customerMode ? 'customer' : 'staff';
+    // Канал `kiosk` ставит только `createForKiosk` (08 §4.25.2); `POST /orders` планшету закрыт (закрытый список).
+    const orderChannel: OrderCreatedVia = ctx.kiosk ? 'kiosk' : createdVia;
     const orderId = newId();
     const now = this.clock.now();
 
     // (2) Одна короткая транзакция (ядро §22.3): внешних вызовов внутри нет.
     const committed = await this.db.transaction(async (tx) => {
       await applyAuditGucs(tx, ctx.auditCtx);
+      // Заявка с планшета: код гасится первым действием (`FOR UPDATE` строки кода, `replayed_at`) — из двух запросов с
+      // одним кодом второй ждёт COMMIT первого и получает `422 OTP_EXPIRED` (P-002 §8.5 п. 9; 12 T-KIOSK-047).
+      if (ctx.kiosk) await ctx.kiosk.consumeCode(tx);
       if (input.paymentMethod === 'credit') {
         // Лимит в долг — повторно в транзакции создания под блокировкой клиента, без 1С (08 API-071, 07 §5.31,
         // DEBT-011; ревью G-credit-3): параллельные заказы в долг одного клиента не превышают лимит вместе.
@@ -484,9 +616,10 @@ export class OrderCreateService implements OrderCreator {
                             delivery_method, receiver_kind, receiver_name, receiver_phone_e164,
                             delivery_recipient_phone_e164, delivery_address, delivery_comment, delivery_date,
                             delivery_time_from, delivery_time_to, print_options, comment, onec_sync_state,
-                            price_check_at, onec_check_result, idempotency_key)
+                            price_check_at, onec_check_result, idempotency_key, kiosk_customer_match,
+                            pd_notice_version, pd_notice_sha256)
         VALUES (${orderId}::uuid, ${publicNumber}, ${snap.cartId}::uuid, 'draft', ${customerId}::uuid,
-                (SELECT name FROM customers WHERE id = ${customerId}::uuid), ${actor.userId}::uuid, ${createdVia},
+                (SELECT name FROM customers WHERE id = ${customerId}::uuid), ${actor.userId}::uuid, ${orderChannel},
                 ${actor.deviceId ? sql`(SELECT id FROM devices WHERE device_key = ${actor.deviceId} AND user_id = ${actor.userId}::uuid LIMIT 1)` : sql`NULL`},
                 ${snap.warehouseId}::uuid, ${snap.priceListId}::uuid, ${snap.subtotal}::numeric,
                 ${snap.manualDiscountPercent}::numeric, ${snap.customerDiscountPercent}::numeric,
@@ -499,15 +632,15 @@ export class OrderCreateService implements OrderCreator {
                 ${creditApproval?.reason ?? null},
                 CASE WHEN ${creditDays}::int IS NULL THEN NULL ELSE current_date + ${creditDays}::int END,
                 ${input.delivery.method}::delivery_method, ${input.receiver.kind}::receiver_kind,
-                ${input.receiver.name ?? accountReceiver?.name ?? null},
-                ${input.receiver.phone ?? accountReceiver?.phone ?? null},
+                ${receiverName}, ${receiverPhone},
                 ${input.delivery.recipientPhone}, ${input.delivery.address}, ${input.delivery.courierComment},
                 ${input.delivery.desiredDate}::date, ${input.delivery.timeFrom}::time, ${input.delivery.timeTo}::time,
                 ${JSON.stringify(input.printOptions ?? { invoice: true, waybill: true, receipt: true })}::jsonb,
                 ${input.comment}, 'unknown',
                 ${validation.onecCheck.at ? validation.onecCheck.at.toISOString() : null}::timestamptz,
                 ${JSON.stringify({ performed: validation.onecCheck.performed, result: validation.onecCheck.result })}::jsonb,
-                ${input.idempotencyKey})`);
+                ${input.idempotencyKey}, ${ctx.kiosk?.customer.match ?? null},
+                ${ctx.kiosk?.notice.version ?? null}, ${ctx.kiosk?.notice.sha256 ?? null})`);
       for (const l of snap.lines) {
         await tx.execute(sql`
           INSERT INTO order_items (order_id, line_no, variant_id, product_id, packaging_id, quantity, base_quantity,
@@ -549,15 +682,16 @@ export class OrderCreateService implements OrderCreator {
         publicNumber,
         createdAt: now,
         createdByUserId: actor.userId ?? 'system',
-        createdVia,
+        createdVia: orderChannel,
+        kioskTabletName: ctx.kiosk?.tabletName ?? null,
         customerId,
         paymentMethod: input.paymentMethod,
         snapshot: snap,
         delivery: {
           method: input.delivery.method,
           address: input.delivery.address,
-          receiverName: input.receiver.name ?? accountReceiver?.name ?? null,
-          receiverPhone: input.delivery.recipientPhone ?? input.receiver.phone ?? accountReceiver?.phone ?? null,
+          receiverName,
+          receiverPhone: input.delivery.recipientPhone ?? receiverPhone,
           desiredDate: input.delivery.desiredDate,
           timeFrom: input.delivery.timeFrom,
           timeTo: input.delivery.timeTo,
@@ -590,7 +724,7 @@ export class OrderCreateService implements OrderCreator {
         paymentMethod: input.paymentMethod,
         statusSnapshot: 'submitting',
         title: `Заказ ${publicNumber} создан`,
-        details: { publicNumber, createdVia, itemsCount: snap.lines.length },
+        details: { publicNumber, createdVia: orderChannel, itemsCount: snap.lines.length },
         dedupeKey: `order_created:${orderId}`,
       });
       if (creditApproval) {
@@ -629,6 +763,21 @@ export class OrderCreateService implements OrderCreator {
 
       await this.cart.markConverted(tx, { cartId: snap.cartId, expectedRowVersion: input.cartRowVersion, orderId });
 
+      // Заявка с планшета — кассирам и старшим продавцам (08 §3.13 «Уведомление kiosk_order»; 10 KIOSK-018): без
+      // телефона и сумм; повтор с тем же `dedupe_key` строки не создаёт. Технический пользователь планшета — не адресат.
+      if (ctx.kiosk && this.notifications) {
+        for (const role of KIOSK_ORDER_NOTIFY_ROLES) {
+          await this.notifications.notifyRole(tx, role, {
+            kind: 'kiosk_order',
+            severity: 'info',
+            title: `Новая заявка с планшета № ${publicNumber}`,
+            body: `Планшет «${ctx.kiosk.tabletName}». Покупатель оплатит заявку на кассе.`,
+            payload: { orderId },
+            dedupeKey: `kiosk_order:${orderId}`,
+          });
+        }
+      }
+
       // Аудит — последним (07 §9.3, B-AR-08).
       await this.audit.write(
         ctx.auditCtx,
@@ -642,9 +791,11 @@ export class OrderCreateService implements OrderCreator {
             total: snap.total,
             paymentMethod: input.paymentMethod,
             customerId,
-            createdVia,
+            createdVia: orderChannel,
             deviceId: actor.deviceId ?? null,
             onecChecked,
+            // Заявка с планшета (11 §7.2): итог поиска карточки — без телефона.
+            ...(ctx.kiosk ? { customerMatch: ctx.kiosk.customer.match } : {}),
           },
         },
         tx,
@@ -683,6 +834,14 @@ export class OrderCreateService implements OrderCreator {
         );
       }
 
+      if (ctx.kiosk) {
+        // Ответ планшету и итог `Idempotency-Key` — только номер (08 §2.7, §3.17 `KioskOrderAccepted`; 11 SEC-141):
+        // без статуса, сумм, клиента, ПДн и `warnings[]`; после COMMIT итог не перезаписывается.
+        const body: Record<string, unknown> = { publicNumber };
+        if (ctx.req)
+          await this.idempotency.recordInTransaction(idempotencyExecutor(tx), ctx.req, httpStatus, body, orderId);
+        return { paymentId: payment.paymentId, body };
+      }
       const row = await findOrder(tx, orderId);
       if (!row) throw new Error('orders: заказ не найден после INSERT');
       const body = await this.views.present(tx, ctx.viewer, row, { warnings });
@@ -698,6 +857,17 @@ export class OrderCreateService implements OrderCreator {
 
     // (3) После COMMIT: «быстрая доставка» в 1С и QR начального платежа (ответ API их не ждёт от 1С-документа).
     await this.outbox.kickAfterCommit().catch((err: unknown) => this.logger.warn({ err }, 'orders.kick_failed'));
+    if (ctx.kiosk) {
+      // Планшет: QR нет (только наличные), представление заказа планшету не отдаётся и итог ключа не перезаписывается.
+      this.logger.log({
+        event: 'order.created',
+        orderId,
+        httpStatus,
+        paymentMethod: input.paymentMethod,
+        createdVia: orderChannel,
+      });
+      return { httpStatus, orderId, body: committed.body };
+    }
     if (input.paymentMethod === 'qr_bakai' && permissions.has('payment.qr.show')) {
       try {
         const qr = await this.payments.afterCommit(committed.paymentId, actor);

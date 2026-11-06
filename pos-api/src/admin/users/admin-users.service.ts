@@ -4,6 +4,7 @@ import { AuditService } from '../../common/audit/audit.service.js';
 import type { DbExecutor } from '../../common/audit/db-executor.js';
 import { AuthStateCache } from '../../common/auth/auth-state.js';
 import { CLOCK, type Clock } from '../../common/auth/clock.js';
+import { switchSubjectKind, toSubjectKind } from '../../common/auth/subject-kind.js';
 import { OtpHmacService } from '../../common/crypto/otp-hmac.service.js';
 import { DRIZZLE } from '../../common/db/database.module.js';
 import type { RequestWithContext } from '../../common/http/request-context.js';
@@ -31,6 +32,7 @@ import {
   canLogoutAll,
   canResetPin,
   canUpdateProfile,
+  canViewTarget,
   isAdminActor,
   type PolicyActor,
   type PolicyTarget,
@@ -61,6 +63,8 @@ function reasonRequired(reason: string | undefined): string {
  * роли, блокировка, отзыв сессий, сброс PIN. Права — RbacGuard (permissions.yaml, deny by default), step-up —
  * AdminStepUpGuard, ограничения целей — target-policy.ts (11 SEC-040, SEC-043; ядро §21 п. 3). Каждое изменение —
  * одна транзакция READ COMMITTED: `applyAuditGucs` первым оператором, аудит — последним (07 §9.3).
+ * Технический пользователь планшета магазина (`kind=kiosk`) в списке не показывается (репозиторий), а любая операция
+ * над ним, включая карточку, — `403 kiosk_target` + `authz.denied` (ADR-115 п. 19; 11 SEC-142).
  */
 @Injectable()
 export class AdminUsersService {
@@ -103,7 +107,9 @@ export class AdminUsersService {
 
   async get(req: Req, id: string): Promise<AdminUserDto> {
     const viewer = principalOf(req);
-    return toAdminUserDto(await this.load(id), isAdminActor(viewer));
+    const record = await this.load(id);
+    await this.authz.enforce(req, canViewTarget(policyTarget(record)), 'users.read', id);
+    return toAdminUserDto(record, isAdminActor(viewer));
   }
 
   /** `PATCH /admin/users/{id}`: только `fullName` с проверкой `rowVersion` (08 §4.18.1). */
@@ -145,6 +151,8 @@ export class AdminUsersService {
    * `PUT /admin/users/{id}/roles` (08 §4.18.2): полная замена набора ролей (R1 — одна роль), `permissions_version++`
    * (старые access → `TOKEN_STALE`), уведомление цели, аудит `user.role_changed` с причиной. Повтор того же набора →
    * 200 без изменений. Клиент → сотрудник (SEC-136 п. 4): `kind=staff`, сессии клиента отзываются (SEC-014).
+   * Планшет магазина (`kind=kiosk`) сотрудником не становится никогда: политика отвечает `403 kiosk_target`, а в
+   * транзакции вид цели разбирается исчерпывающе — `kiosk` и вид вне перечня → отказ (11 SEC-142, ADR-115 п. 19).
    */
   async setRoles(req: Req, id: string, body: AdminUsersRolesSetDto): Promise<AdminUserDto> {
     const actor = principalOf(req);
@@ -158,13 +166,21 @@ export class AdminUsersService {
       await applyAuditGucs(tx, ctx);
       const user = await this.repo.lockUser(id, tx);
       if (!user) throw notFound();
+      // Клиент → сотрудник; планшет (kind=kiosk) и вид вне перечня — отказ до любых изменений (11 SEC-142).
+      const toStaff = switchSubjectKind(toSubjectKind(user.kind), {
+        staff: () => false,
+        customer: () => true,
+        kiosk: () => {
+          throw kioskTarget();
+        },
+      });
       if (!(await this.repo.bumpRowVersion(id, body.rowVersion, tx))) {
         throw this.versionConflict(record, record.rowVersion);
       }
       const before = await this.roles.activeRoleCodes(id, tx);
       await this.roles.assignRole(id, role, actor.userId, tx);
       let revokedIds: string[] = [];
-      if (user.kind !== 'staff') {
+      if (toStaff) {
         await this.repo.setKind(id, 'staff', tx);
         revokedIds = await this.sessions.revokeAllForUser(id, 'role_changed', {}, tx);
       }
@@ -326,6 +342,14 @@ export class AdminUsersService {
 
 function notFound(): ProblemException {
   return new ProblemException('NOT_FOUND', { detail: 'Пользователь не найден.' });
+}
+
+/** Цель `kind=kiosk` в транзакции (защита за политикой целей; 11 SEC-142). */
+function kioskTarget(): ProblemException {
+  return new ProblemException('FORBIDDEN', {
+    detail: 'Планшет магазина управляется в разделе «Планшеты магазина».',
+    reason: 'kiosk_target',
+  });
 }
 
 export type { PolicyActor };

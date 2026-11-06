@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../common/audit/db-executor.js';
 import { DRIZZLE } from '../../common/db/database.module.js';
 import { otpChallenges } from '../../db/schema/index.js';
@@ -94,8 +94,83 @@ export class OtpChallengesRepository {
     return rows.length;
   }
 
+  /**
+   * Перед выпуском кода планшета магазина (09 §5.3 п. 3; ADR-115): действующий код **этого планшета** на любой номер
+   * → `superseded` (или `expired`, если срок вышел) — частичный UNIQUE `otp_challenges_kiosk_active_uq`
+   * (`kiosk_tablet_id`, `purpose='kiosk_order'`, `status='sent'`; миграция 0022) допускает один `sent` на планшет.
+   * На этом держится «Изменить номер»: отказа «код уже есть» нет. Вызывается под блокировкой планшета.
+   */
+  async retireActiveForTablet(tabletId: string, at: Date, ex: DbExecutor = this.db): Promise<number> {
+    const rows = await ex
+      .update(otpChallenges)
+      .set({
+        status: sql`CASE WHEN ${otpChallenges.expiresAt} <= ${at.toISOString()}::timestamptz
+                         THEN 'expired'::otp_status ELSE 'superseded'::otp_status END`,
+        updatedAt: at,
+      })
+      .where(
+        and(
+          eq(otpChallenges.kioskTabletId, tabletId),
+          eq(otpChallenges.purpose, 'kiosk_order'),
+          eq(otpChallenges.status, 'sent'),
+        ),
+      )
+      .returning({ id: otpChallenges.id });
+    return rows.length;
+  }
+
+  /**
+   * Погашение кодов `kiosk_order` планшета (09 §5.3 п. 4; FLOW-045 п. 3; AUTH-054): автосброс `POST /kiosk/reset`,
+   * отключение планшета, аварийный выход со связью и подключение заново. Код `sent` → `superseded`; верный, но ещё не
+   * погашенный код (`verified`, `replayed_at IS NULL`) получает `replayed_at = at` — окно повтора `OtpService.check`
+   * (`allowReplay`) для него закрыто. Ввод погашенного кода → `422 OTP_EXPIRED`. В транзакции вызывающего; поля кода
+   * (`kiosk_tablet_id`, `cart_id`, `notice_version`) не меняются (их проверяет CHECK `otp_challenges_kiosk_chk`).
+   */
+  async gashKioskCodes(
+    ex: DbExecutor,
+    tabletId: string,
+    at: Date,
+  ): Promise<{ readonly superseded: number; readonly replayed: number }> {
+    const superseded = await ex
+      .update(otpChallenges)
+      .set({ status: 'superseded', updatedAt: at })
+      .where(
+        and(
+          eq(otpChallenges.kioskTabletId, tabletId),
+          eq(otpChallenges.purpose, 'kiosk_order'),
+          eq(otpChallenges.status, 'sent'),
+        ),
+      )
+      .returning({ id: otpChallenges.id });
+    const replayed = await ex
+      .update(otpChallenges)
+      .set({ replayedAt: at, updatedAt: at })
+      .where(
+        and(
+          eq(otpChallenges.kioskTabletId, tabletId),
+          eq(otpChallenges.purpose, 'kiosk_order'),
+          eq(otpChallenges.status, 'verified'),
+          isNull(otpChallenges.replayedAt),
+        ),
+      )
+      .returning({ id: otpChallenges.id });
+    return { superseded: superseded.length, replayed: replayed.length };
+  }
+
   /** Блокировка номера на время транзакции (сериализация cooldown/лимитов одного номера). */
   async lockPhone(phoneE164: string, purpose: OtpPurpose, ex: DbExecutor): Promise<void> {
     await ex.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`otp:${purpose}:${phoneE164}`}, 0))`);
+  }
+
+  /**
+   * Блокировка планшета магазина на время транзакции выпуска кода `kiosk_order` (09 §5.4 «до списания квот запрос
+   * кода блокирует сначала планшет, затем номер»): запросы одного планшета на разные номера сериализуются до
+   * `retireActiveForTablet`, и второй не упадёт на `otp_challenges_kiosk_active_uq` (`23505` → 500). Сейчас их
+   * сериализуют и блокировки строк счётчиков `rate_limit_counters` (планшета и глобального), но на них порядок
+   * выпуска кода не опирается — правило не зависит от состава лимитов. Порядок всегда «планшет → номер → строки
+   * счётчиков», поэтому взаимоблокировок нет: запросы разных планшетов на один номер сериализуются блокировкой номера.
+   */
+  async lockKioskTablet(tabletId: string, ex: DbExecutor): Promise<void> {
+    await ex.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`otp:kiosk:${tabletId}`}, 0))`);
   }
 }

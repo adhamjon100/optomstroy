@@ -3,7 +3,9 @@ import { APP_CONFIG, type AppConfig, ConfigError } from '../../common/config/app
 import { createOnecGateway } from '../../integrations/onec/onec-gateway.factory.js';
 import { ONEC_GATEWAY, type OnecGateway } from '../../integrations/onec/onec-gateway.js';
 import { OnecGatewayModule } from '../../integrations/onec/onec.module.js';
+import { CustomerLinksRepository } from '../links/customer-links.repository.js';
 import { CUSTOMER_MATCHING } from './customer-matching.port.js';
+import { KioskCustomerMatcher } from './kiosk-customer-match.js';
 import { PgCustomerMatching } from './pg-customer-matching.js';
 
 export interface CustomerMatchingModuleOptions {
@@ -37,6 +39,10 @@ const optionalOnecGateway: Provider = {
 /**
  * Порт `CUSTOMER_MATCHING` (RM-D-005). Подключение: `CustomerMatchingModule.forRoot({ onec: true })` в модуле
  * `customers` (интеграция — владелец app.module/customers.module).
+ *
+ * `KioskCustomerMatcher` — поиск клиента заявки с планшета магазина поверх того же порта (TAB-1-13; P-002 §8.6;
+ * 10 KIOSK-014; ADR-115). Ему нужно чтение карточки и её привязок, поэтому модуль держит свой экземпляр
+ * `CustomerLinksRepository` (без состояния; наружу не экспортируется — экспорт репозитория у `CustomerLinksModule`).
  */
 @Module({})
 export class CustomerMatchingModule {
@@ -48,8 +54,10 @@ export class CustomerMatchingModule {
         ...(options.onec === 'auto' ? [optionalOnecGateway] : []),
         PgCustomerMatching,
         { provide: CUSTOMER_MATCHING, useExisting: PgCustomerMatching },
+        CustomerLinksRepository,
+        KioskCustomerMatcher,
       ],
-      exports: [CUSTOMER_MATCHING],
+      exports: [CUSTOMER_MATCHING, KioskCustomerMatcher],
     };
   }
 }

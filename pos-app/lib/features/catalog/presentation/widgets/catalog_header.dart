@@ -39,6 +39,7 @@ String catalogRoleLabel(AppLocalizations l10n, RoleCode? role) => switch (role) 
   RoleCode.admin => l10n.role_admin,
   RoleCode.owner => l10n.role_owner,
   RoleCode.customer => l10n.role_customer,
+  RoleCode.kiosk => l10n.role_kiosk,
   RoleCode.integration || null => '',
 };
 

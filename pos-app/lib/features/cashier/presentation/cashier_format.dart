@@ -55,6 +55,7 @@ abstract final class CashierFormat {
     RoleCode.owner => l10n.role_owner,
     RoleCode.customer => l10n.role_customer,
     RoleCode.integration => l10n.role_integration,
+    RoleCode.kiosk => l10n.role_kiosk,
   };
 }
 
@@ -68,6 +69,7 @@ abstract final class CashierRoles {
     RoleCode.admin => l10n.role_admin,
     RoleCode.owner => l10n.role_owner,
     RoleCode.customer => l10n.role_customer,
+    RoleCode.kiosk => l10n.role_kiosk,
     RoleCode.integration || null => '',
   };
 

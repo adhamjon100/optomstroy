@@ -14,6 +14,7 @@ import {
 import { OtpChallengesRepository } from './otp-challenges.repository.js';
 import { OtpCircuitBreaker } from './otp-circuit-breaker.js';
 import { SmsOutboxRepository } from './sms-outbox.repository.js';
+import { textFor } from './sms-texts.js';
 
 /**
  * Порт доставки OTP (D-47; 09 §6.8): `OtpService` генерирует код и хранит HMAC, доставку поручает `OtpProvider`.
@@ -125,7 +126,8 @@ export class SmsOtpProvider implements OtpProvider, OnApplicationShutdown {
     code: string,
     hooks: DeliveryHooks,
   ): Promise<void> {
-    const text = this.config.SMS_OTP_TEMPLATE.replace('{code}', code);
+    // Свой текст кода заявки с планшета (`otp_kiosk_order`, Р-21 (а)), иначе — SMS_OTP_TEMPLATE (09 §6.7).
+    const text = textFor(target.templateKey, code, this.config.SMS_OTP_TEMPLATE);
     const maxAttempts = 1 + this.config.SMSPRO_RETRY_MAX;
     let result: SendResult | undefined;
     let attempt = 0;

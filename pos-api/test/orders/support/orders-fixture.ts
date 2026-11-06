@@ -272,6 +272,9 @@ export class TestCartReader implements CartReader {
     };
   }
 
+  /** Токен предпросмотра планшета (порт `CartReader`, WP-S4B): стенд заказов его не сверяет. */
+  verifyPreviewToken(): void {}
+
   markConverted(_tx: SalesTx, input: { cartId: string; expectedRowVersion: number; orderId: string }): Promise<void> {
     const cart = this.carts.get(input.cartId);
     if (this.failConvert) return Promise.reject(new Error('сбой markConverted (тест)'));

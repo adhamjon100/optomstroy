@@ -59,6 +59,8 @@ import 'package:optomstroy/features/registration/presentation/screens/registrati
 import 'package:optomstroy/features/registration/presentation/screens/registration_security_screen.dart';
 import 'package:optomstroy/features/splash/presentation/screens/splash_screen.dart';
 
+import 'support/clean_start.dart';
+
 /// Тестовый код OTP контура (`AUTH_FIXTURES.otpCode`).
 const String _otpCode = String.fromEnvironment('E2E_OTP_CODE', defaultValue: '246810');
 
@@ -310,7 +312,7 @@ Future<void> _expectCompleteEnabled(WidgetTester tester) => pumpUntilFound(
 );
 
 Future<void> _cleanStart(WidgetTester tester) async {
-  await FlutterSecureStorageAdapter().deleteAll(<SecureKey>[...SecureKey.session, ...SecureKey.registration]);
+  await FlutterSecureStorageAdapter().deleteAll(kCleanStartKeys);
   await bootstrap();
   await tester.pump();
   await pumpUntilFound(tester, find.byKey(SplashScreen.screenKey));
@@ -551,8 +553,13 @@ void main() {
       await _waitCatalogCache(tester);
       await _expectProductPhotoLoaded(tester);
 
-      // Поиск по артикулу (SCR-11) → карточка (SCR-14) якорного товара.
+      // Поиск по артикулу (SCR-11) → карточка (SCR-14) якорного товара. Поиск — из «Все товары» SCR-10, как ниже: со
+      // стартовой категории SCR-12 (ADR-114) он идёт в области «в категории» (02 SCR-11.6), а якорный товар фикстуры
+      // в стартовом корне может не лежать (известная проблема PRT-KI-15 (1); прогон WP-A11).
       final String anchorId = await _productIdBySku(tester, 'F4252');
+      _router(tester)!.go(_allProducts);
+      await pumpUntilFound(tester, find.byKey(_catalogRoot));
+      await _settle(tester);
       await _search(tester, 'F4252', anchorId);
       final List<String> staffBadges = tester
           .widgetList<StockBadge>(find.byType(StockBadge))

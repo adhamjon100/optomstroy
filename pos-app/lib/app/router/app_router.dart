@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:optomstroy/app/router/guards/auth_guard.dart';
 import 'package:optomstroy/app/router/guards/role_guard.dart';
+import 'package:optomstroy/app/router/kiosk_routes.dart';
 import 'package:optomstroy/app/router/routes.dart';
 import 'package:optomstroy/app/router/shells/app_mode.dart';
 import 'package:optomstroy/core/config/environment.dart';
@@ -29,6 +30,8 @@ String homeLocationFor(AppMode mode) => switch (mode) {
   // owner — SCR-48 (navigation.md §2.3, §14.7).
   AppMode.owner => const ReportsRoute().location,
   AppMode.customer => const HomeRoute().location,
+  // Планшет магазина — SCR-51 вне оболочки (navigation.md §2.3; G-15).
+  AppMode.kiosk => KioskPaths.showcase,
 };
 
 /// Режим клиента-покупателя включён (`CUSTOMER_SELF_SERVICE`, по умолчанию `true` — ядро v1.9 §24.2).
@@ -54,8 +57,10 @@ RouteFeatures routeFeaturesFrom(PublicFeatureFlags flags) => RouteFeatures(
   debtPaymentsFromPos: flags.debtPaymentsFromPos,
 );
 
-/// Глобальный redirect: authGuard (сессия; G-5 — блокировка холодного старта [lock]), затем roleGuard (режим и роль,
-/// флаг самообслуживания клиента, флаги функций этапа G).
+/// Глобальный redirect: authGuard (сессия; G-0a — признак планшета без сессии [kioskHold] только на `/kiosk`; G-15 —
+/// сессия планшета `kind=kiosk` только на `/kiosk*`, в том числе вместо гостевых путей; G-5 — блокировка холодного
+/// старта [lock]), затем roleGuard (режим и роль, флаг самообслуживания клиента, флаги функций этапа G; `/kiosk*` для
+/// других режимов — главный экран режима).
 String? appRedirect({
   required SessionStatus status,
   required Uri uri,
@@ -65,9 +70,18 @@ String? appRedirect({
   SessionEndReason? endReason,
   SessionLockReason? lock,
   RouteFeatures features = RouteFeatures.defaults,
+  bool kioskHold = false,
 }) {
   final home = homeLocationFor(mode);
-  final auth = authRedirect(status: status, uri: uri, homeLocation: home, endReason: endReason, lock: lock);
+  final auth = authRedirect(
+    status: status,
+    uri: uri,
+    homeLocation: home,
+    endReason: endReason,
+    lock: lock,
+    kioskSession: mode == AppMode.kiosk,
+    kioskHold: kioskHold,
+  );
   if (auth != null || status != SessionStatus.authenticated || isPublicPath(uri.path)) return auth;
   return roleRedirect(
     mode: mode,
@@ -92,7 +106,10 @@ RoleGuardNotice? appRedirectNotice({
 }) {
   final home = homeLocationFor(mode);
   if (status != SessionStatus.authenticated || isPublicPath(uri.path)) return null;
-  if (authRedirect(status: status, uri: uri, homeLocation: home, lock: lock) != null) return null;
+  final bool kioskSession = mode == AppMode.kiosk;
+  if (authRedirect(status: status, uri: uri, homeLocation: home, lock: lock, kioskSession: kioskSession) != null) {
+    return null;
+  }
   return roleRedirectNotice(
     mode: mode,
     uri: uri,
@@ -145,11 +162,13 @@ typedef GuardInputs = ({
 
 /// Глобальный redirect роутера: [appRedirect]; перенаправление по G-7 сопровождается снекбаром
 /// «Раздел недоступен для вашей роли» / «Приём оплаты выполняет кассир» (navigation.md §4.1, §4.3).
+/// [kioskHold] — вход G-0a (признак планшета без сессии, `kioskRouteHoldProvider`; ADR-115).
 String? guardRedirect(
   BuildContext context,
   GoRouterState state,
   GuardInputs g, {
   RouteFeatures features = RouteFeatures.defaults,
+  bool kioskHold = false,
 }) {
   final target = appRedirect(
     status: g.status,
@@ -160,6 +179,7 @@ String? guardRedirect(
     endReason: g.endReason,
     lock: g.lock,
     features: features,
+    kioskHold: kioskHold,
   );
   if (target == null) return null;
   final notice = appRedirectNotice(
@@ -179,6 +199,8 @@ String? guardRedirect(
 /// со снекбаром про аппаратный сканер (текст — `catalog_scanner_hid_hint`, тот же, что у кнопки сканера
 /// SCR-10 на Windows, UI-10-044).
 OnEnterResult guardOnEnter(BuildContext context, GoRouterState current, GoRouterState next, GuardInputs g) {
+  // Планшет магазина: `/scan` (как любой путь вне `/kiosk*`) возвращает на `/kiosk` guard G-15 — без снекбара сканера.
+  if (g.mode == AppMode.kiosk) return const Allow();
   final blocked = blocksScanWithoutCamera(
     current: current.uri,
     next: next.uri,
@@ -189,8 +211,9 @@ OnEnterResult guardOnEnter(BuildContext context, GoRouterState current, GoRouter
   return Block.then(() => _showGuardSnackbar(context, (l10n) => l10n.catalog_scanner_hid_hint));
 }
 
-/// Единственный `GoRouter` приложения: маршруты `$appRoutes` (routes.dart) и
-/// глобальный redirect (guards/). Пересчитывает redirect при смене сессии/режима.
+/// Единственный `GoRouter` приложения: маршруты `$appRoutes` (routes.dart), маршруты режима планшета
+/// `kioskRoutes()` (kiosk_routes.dart, вне оболочки) и глобальный redirect (guards/). Пересчитывает redirect при смене
+/// сессии/режима.
 @Riverpod(keepAlive: true)
 GoRouter appRouter(Ref ref) {
   final refresh = ValueNotifier<int>(0);
@@ -201,7 +224,9 @@ GoRouter appRouter(Ref ref) {
     ..listen(appModeProvider, (_, _) => refresh.value++)
     ..listen(authSessionProvider.select((s) => s.profile.primaryRole), (_, _) => refresh.value++)
     ..listen(customerSelfServiceEnabledProvider, (_, _) => refresh.value++)
-    ..listen(routeFeaturesProvider, (_, _) => refresh.value++);
+    ..listen(routeFeaturesProvider, (_, _) => refresh.value++)
+    // G-0a: признак планшета без сессии (`SESSION_REVOKED`, отзыв на экране) ↔ SCR-01 после конца режима.
+    ..listen(kioskRouteHoldProvider, (_, _) => refresh.value++);
 
   GuardInputs inputs() => (
     status: ref.read(sessionStatusProvider).value ?? SessionStatus.unknown,
@@ -216,7 +241,8 @@ GoRouter appRouter(Ref ref) {
   final router = GoRouter(
     initialLocation: const SplashRoute().location,
     // `if (kDebugMode)` на месте вызова: в release-AOT ветка выбрасывается вместе с кодом витрины.
-    routes: <RouteBase>[...$appRoutes, if (kDebugMode) ...devRoutes()],
+    // Режим «Планшет магазина» (ADR-115): `/kiosk*` — root-уровень, вне `StatefulShellRoute` (без генерации кода).
+    routes: <RouteBase>[...$appRoutes, ...kioskRoutes(), if (kDebugMode) ...devRoutes()],
     refreshListenable: refresh,
     // G-11: `/scan` без камеры — остаться на исходном экране + снекбар (переход блокируется до redirect).
     // `onEnter` делает разбор каждого перехода асинхронным, поэтому подключается только на платформе без
@@ -227,7 +253,13 @@ GoRouter appRouter(Ref ref) {
     redirect: (context, state) {
       // Витрина дизайн-системы — служебный экран debug-сборки, без сессии и guard-ов (RM-C-003).
       if (kDebugMode && state.uri.path == DsGalleryScreen.routePath) return null;
-      return guardRedirect(context, state, inputs(), features: ref.read(routeFeaturesProvider));
+      return guardRedirect(
+        context,
+        state,
+        inputs(),
+        features: ref.read(routeFeaturesProvider),
+        kioskHold: ref.read(kioskRouteHoldProvider),
+      );
     },
   );
   ref.onDispose(() {

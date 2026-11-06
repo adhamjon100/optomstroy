@@ -53,6 +53,8 @@ paths:
         Ошибки: 400 VALIDATION_FAILED (phone_e164, purpose); 423 OTP_LOCKED; 429 OTP_RATE_LIMITED (retryAfter);
         503 SMS_PROVIDER_ERROR. Rate limit: RL-OTP-SEND, RL-OTP-SEND-IP, RL-OTP-SEND-DEV, RL-OTP-GLOBAL, RL-PUBLIC-IP.
         Аудит: auth.otp.sent (без кода). Кэширование: no-store.
+        purpose=kiosk_order на этом маршруте не принимается (VALIDATION_FAILED rule purpose): код заявки с планшета магазина
+        выдаёт только POST /kiosk/order-otp (08 §4.1.1, §4.25.1; ADR-115).
       security: []
       x-permissions: []
       x-roles: []
@@ -104,6 +106,8 @@ paths:
         422 OTP_INVALID (attemptsLeft), OTP_EXPIRED; 423 OTP_LOCKED (retryAfter); 429 RATE_LIMITED.
         Rate limit: RL-OTP-VERIFY, RL-PUBLIC-IP. Аудит: auth.otp.verified / auth.otp.failed / auth.login; user.created
         (вход по приглашению). Кэширование: no-store.
+        Код заявки с планшета магазина (purpose=kiosk_order) сессию не выдаёт: челлендж другого назначения → 404 NOT_FOUND (08
+        §4.1.2; ADR-115; 12 T-KIOSK-015).
       security: []
       x-permissions: []
       x-roles: []
@@ -141,6 +145,7 @@ paths:
                     registration_required: "#/components/schemas/AuthRegistrationRequired"
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
         "423": { $ref: "#/components/responses/Locked" }
@@ -198,6 +203,10 @@ paths:
         Ошибки: 400 VALIDATION_FAILED; 401 SESSION_REVOKED (неизвестен / отозван / просрочен / reuse / чужой deviceId /
         idle-отзыв), UNLOCK_REQUIRED (staff на Windows без действующего unlocked_until, D-48); 429 RATE_LIMITED.
         Rate limit: RL-AUTH. Кэширование: no-store (токены).
+        Планшет магазина (kind=kiosk; 08 §2.2, §4.1.3; ADR-115): сессия, отозванная с revoke_reason=kiosk_revoked (отключение
+        администратором, аварийный выход), → 401 KIOSK_REVOKED — refresh на этот код не повторяется; прочие отказы сессии
+        планшета — SESSION_REVOKED. Поздний повтор прежнего refresh после потерянного ответа идёт путём грации один раз на
+        ротацию; сроки — AUTH_REFRESH_IDLE_KIOSK_DAYS (7 дней) и AUTH_REFRESH_TTL_KIOSK_DAYS (180 дней).
       security: []
       x-permissions: []
       x-roles: []
@@ -236,6 +245,8 @@ paths:
       description: >
         08 §4.1.4. Отзывает текущую sid (refresh всех kind этой сессии), jti access — в denylist до exp. Повтор → 204.
         Ошибки: общие (401, 403). Rate limit: RL-AUTH. Аудит: auth.logout. Кэширование: no-store.
+        Планшет магазина (kind=kiosk): права session.manage.own у роли kiosk нет, маршрут вне закрытого списка → 403
+        FORBIDDEN; сессию планшета завершают только отключение администратором и POST /kiosk/exit (08 §4.1.4, §4.25).
       x-permissions: [session.manage.own]
       x-roles: [seller, cashier, senior_seller, admin, owner, customer]
       x-step-up: false
@@ -709,13 +720,18 @@ paths:
         08 §4.3.1, §3.14. Источник правды клиента о ролях и правах (permissions[] — для скрытия кнопок, не защита).
         pending_activation — усечённый DTO. Клиент перечитывает после /auth/refresh с новым permissionsVersion.
         Ошибки: только общие (401, 403). Rate limit: RL-READ. Аудит: не пишется. Кэширование: no-store.
-      x-permissions: [profile.manage.own]
-      x-roles: [seller, cashier, senior_seller, admin, owner, customer]
+        Требование: одно из profile.manage.own | kiosk.self.read (08 §4.3.1). Планшет магазина (kind=kiosk; 08 §3.14;
+        ADR-115): по праву kiosk.self.read (засчитывается только при kind=kiosk, 11 SEC-138) ответ — только kind и tablet {id,
+        name, warehouseId} (строгая форма — схема MeKiosk) без телефона, ФИО, ролей, прав, сессий и клиента (12 T-KIOSK-046);
+        маршрут отвечает планшету и при KIOSK_MODE=false; /me/* для планшета → 403 FORBIDDEN.
+      x-permissions: [profile.manage.own, kiosk.self.read]
+      x-roles: [seller, cashier, senior_seller, admin, owner, customer, kiosk]
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
       parameters:
         - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/KioskLock"
         - $ref: "#/components/parameters/AppVersion"
         - $ref: "#/components/parameters/Platform"
         - $ref: "#/components/parameters/RequestId"

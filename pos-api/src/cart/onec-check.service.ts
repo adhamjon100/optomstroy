@@ -17,14 +17,19 @@ export interface OnecCheckResult {
   readonly result: 'ok' | 'unavailable' | 'rejected';
 }
 
-/** Повторное использование результата `/check` (05 SYNC-071: `POST /orders` в пределах 60 с не повторяет проверку). */
+/**
+ * Повторное использование результата `/check` (05 SYNC-071: `POST /orders` в пределах 60 с не повторяет проверку).
+ * Ключ — корзина, `row_version`, способ оплаты, клиент и вид цены (05 §6.8 п. (2)).
+ */
 export const ONEC_CHECK_REUSE_MS = 60_000;
 
 /**
  * Синхронная проверка корзины в 1С `POST /pos/v1/check` (05 §6; 08 §4.7.7 `onecCheck`; RM-F-012 —
  * `ONEC_SYNC_CHECK_TIMEOUT_MS` = 6000). Таймаут, сбой сети, 503/423 → `unavailable` (оформление не блокируется:
  * `POST /orders` → `202`, ядро §22.3); бизнес-отказ 4xx → `rejected`. Корзина при этом не меняется (без побочных
- * эффектов). Порт 1С — `ONEC_GATEWAY` (необязательный: без него проверка не выполняется).
+ * эффектов). Порт 1С — `ONEC_GATEWAY` (необязательный: без него проверка не выполняется). Клиент и вид цены запроса
+ * (`customerRef`, `priceListRef`) — из переданной строки корзины: для заявки с планшета по найденной карточке это
+ * строка, оценённая в памяти (`kioskCardCart`, 10 KIOSK-015; 05 ONEC-110); `agreementRef` у `/check` нет (Q-345).
  */
 @Injectable()
 export class OnecCheckService {
@@ -46,7 +51,9 @@ export class OnecCheckService {
     readonly requestId?: string | null;
   }): Promise<OnecCheckResult> {
     if (!this.onec) return { performed: false, at: null, result: 'unavailable' };
-    const key = `${i.cart.id}:${i.cart.row_version}:${i.paymentMethod}`;
+    // Ключ различает клиента и вид цены (05 §6.8 п. (2), SYNC-071; 08 §4.7.7): корзина планшета, оценённая в памяти по
+    // найденной карточке (Р-05 (а)), не берёт результат `/check` предпросмотра по обычной цене той же версии корзины.
+    const key = `${i.cart.id}:${i.cart.row_version}:${i.paymentMethod}:${i.cart.customer_id ?? '-'}:${i.cart.price_list_id}`;
     const now = this.clock.now();
     const hit = this.cache.get(key);
     if (hit && now.getTime() - hit.at.getTime() < ONEC_CHECK_REUSE_MS) return hit.result;

@@ -1,6 +1,9 @@
 // Негативные ветки WP-T1 (plan §4 WP-T1): OTP_INVALID с attemptsLeft, VERSION_CONFLICT корзины, possible_duplicate,
 // DISCOUNT_LIMIT_EXCEEDED, STEP_UP_REQUIRED → step-up → повтор тем же Idempotency-Key, RETURN_QTY_EXCEEDED; плюс
 // 426 APP_UPDATE_REQUIRED, 401 без токена и с поддельным JWT, 403 по правам, 404, CREDIT_LIMIT_EXCEEDED.
+// Планшет магазина (P-002, ADR-115): kioskClosedList — закрытый список маршрутов планшета на бандле (T-KIOSK-005),
+// вызывается из walkKiosk (walk.mjs) сразу после подключения планшета.
+import { contract } from '../contract/openapi-validate.mjs';
 import { OTP, cashAmount, fillCart, orderBody, placeOrder, qty } from './dsl.mjs';
 
 export async function negatives(w) {
@@ -94,4 +97,177 @@ export async function negatives(w) {
   const sync = await A.withStepUp('POST /sync/runs customers', 'POST', '/sync/runs', { body: { entity: 'customers', mode: 'incremental' }, expect: 202 });
   ctx.check('STEP_UP_REQUIRED (sync.run.full) → PIN → повтор с тем же Idempotency-Key → 202', sync.first.status === 403 && sync.operation === 'sync.run.full' && sync.final.status === 202, { first: sync.first.status, operation: sync.operation, final: sync.final.status });
   w.syncRunId = sync.final.json?.id;
+}
+
+// ---------------------------------------------------------------- планшет магазина: закрытый список на бандле
+/** Маршрут закрытого списка, который отвечает планшету 403 по правилу покупателя (08 §4.25, AC-API-186). */
+const KIOSK_LIST_FORBIDDEN_AS_CUSTOMER = 'GET /catalog/price-lists';
+/** Подстановка параметров пути: случайные id, sha фото — 64 символа, размер — thumb. */
+const fillPath = (template) =>
+  template
+    .replace('{sha}', 'a'.repeat(64))
+    .replace('{size}', 'thumb')
+    .replace(/\{[A-Za-z]+\}/g, () => crypto.randomUUID());
+/** Сравнимая часть ответа (как kiosk-public-routes.e2e-spec.ts): статус, код и причина Problem, поля верхнего уровня. */
+const shape = (r) =>
+  JSON.stringify({
+    status: r.status,
+    code: r.json?.code ?? null,
+    reason: r.json?.reason ?? null,
+    fields: Object.keys(r.json ?? {}).sort(),
+    errors: Array.isArray(r.json?.errors) ? r.json.errors.map((e) => `${e.field}:${e.rule}`) : null,
+  });
+
+/**
+ * Операции контракта для проверки планшета: ключ «МЕТОД /шаблон», публичная ли (`security: []`), роли x-roles.
+ * Закрытый список планшета (P-002 §8.3; 08 §4.25; 11 SEC-137) = операции с `kiosk` в x-roles +
+ * `GET /catalog/price-lists` — так же его выводят pos-api `KIOSK_CLOSED_LIST` (src/kiosk/common/kiosk-routes.ts) и
+ * T-SEC-069 в `pos-api/test/e2e/rbac-matrix.e2e-spec.ts`.
+ */
+export function kioskContractOps() {
+  const C = contract();
+  const ops = C.ops.map((o) => ({
+    key: `${o.method} ${o.template}`,
+    method: o.method,
+    template: o.template,
+    operationId: o.operationId,
+    isPublic: (o.op.security ?? C.doc.security ?? []).length === 0,
+    roles: o.op['x-roles'] ?? [],
+  }));
+  const closed = new Set([...ops.filter((o) => o.roles.includes('kiosk')).map((o) => o.key), KIOSK_LIST_FORBIDDEN_AS_CUSTOMER]);
+  return { ops, closed };
+}
+
+/**
+ * T-KIOSK-005 на бандле веб-демо (12 §3.23; 11 SEC-046, SEC-137, SEC-013; ADR-115): тот же закрытый список, что
+ * проверяют e2e pos-api (`rbac-matrix.e2e-spec.ts`, `kiosk/kiosk-public-routes.e2e-spec.ts`).
+ *  (1) каждая Bearer-операция контракта вне списка — токеном планшета → 403 FORBIDDEN `kiosk_closed_list` или 404
+ *      (обход без записи в ctx.rec: ответы-отказы не засчитываются в покрытие операций приложения и не шумят в отчёте
+ *      контракта; итог — проверкой ниже); сессия планшета после обхода жива; маршруты списка вне `/kiosk/*` — 2xx по
+ *      своему праву, `GET /catalog/price-lists` — 403, как у покупателя (предпросмотр и `/kiosk/*` — шаги walkKiosk);
+ *  (2) `/kiosk/*` токенами сотрудников и покупателя → 403 FORBIDDEN без `reason` (нет права kind=kiosk);
+ *  (3) публичные маршруты (`security: []`) с токеном планшета и без него — один и тот же ответ.
+ * Вызывается из walkKiosk сразу после подключения: корзина планшета пуста и после проверки остаётся пустой.
+ * T — сессия планшета (токен kind=kiosk, X-Device-Id устройства планшета), tablet — StoreTablet ответа подключения.
+ */
+export async function kioskClosedList(w, T, tablet) {
+  const { ctx } = w;
+  const { ops, closed } = kioskContractOps();
+  const publicOps = ops.filter((o) => o.isPublic);
+  const outside = ops.filter((o) => !o.isPublic && !closed.has(o.key));
+  ctx.check(
+    'T-KIOSK-005 закрытый список планшета из контракта: 23 маршрута (x-roles kiosk + GET /catalog/price-lists), публичных 10, пересечения нет',
+    closed.size === 23 && publicOps.length === 10 && publicOps.every((o) => !closed.has(o.key)) && outside.length === ops.length - 33,
+    { closed: closed.size, public: publicOps.length, outside: outside.length, total: ops.length },
+  );
+
+  // (1) вне списка: 403 kiosk_closed_list или 404 (маршрута нет / право проверяет обработчик — как в rbac-matrix)
+  const bad = [];
+  const tally = { closedList: 0, notFound: 0 };
+  for (const o of outside) {
+    const r = await T.call(`вне списка ${o.key}`, o.method, fillPath(o.template), { record: false, ...(o.method === 'GET' ? {} : { body: {}, idem: true }) });
+    if (r.status === 403 && r.json?.code === 'FORBIDDEN' && r.json?.reason === 'kiosk_closed_list') tally.closedList++;
+    else if (r.status === 404) tally.notFound++;
+    else bad.push(`${o.key}: ${r.status} ${r.json?.code ?? ''} ${r.json?.reason ?? ''}`.trim());
+  }
+  const must = ['POST /auth/logout', 'POST /auth/step-up', 'GET /sync/status', 'GET /auth/sessions', 'POST /me/pin'];
+  const me = await T.call('GET /me (планшет после обхода вне списка)', 'GET', '/me');
+  ctx.check(
+    'T-KIOSK-005 (1) каждая Bearer-операция контракта вне списка токеном планшета → 403 kiosk_closed_list или 404 (в т. ч. POST /auth/logout, /auth/sessions, POST /auth/step-up, /me/pin, GET /sync/status); сессия планшета жива',
+    bad.length === 0 && tally.closedList + tally.notFound === outside.length && must.every((k) => outside.some((o) => o.key === k)) && me.status === 200 && me.json?.kind === 'kiosk',
+    { checked: outside.length, ...tally, bad: bad.slice(0, 10), me: me.status },
+  );
+
+  // (1) маршруты списка вне /kiosk/* — 2xx по своему праву (корзина: положить и убрать — остаётся пустой)
+  const p0 = w.p(0);
+  const p1 = w.p(1);
+  const q = encodeURIComponent(String(p0.name ?? p0.sku ?? 'Труба').slice(0, 4));
+  const seen = new Map();
+  const at = async (key, url, o = {}) => {
+    const r = await T.call(`список ${key}`, key.split(' ')[0], url, o);
+    seen.set(key, r);
+    return r;
+  };
+  await at('GET /settings/public', '/settings/public');
+  await at('GET /me', '/me');
+  await at('GET /catalog/categories', '/catalog/categories');
+  await at(KIOSK_LIST_FORBIDDEN_AS_CUSTOMER, '/catalog/price-lists', { expect: 403 });
+  await at('GET /catalog/products', '/catalog/products?limit=20');
+  await at('GET /catalog/products/{id}', `/catalog/products/${p0.id}`);
+  await at('GET /catalog/products/{id}/variants', `/catalog/products/${p0.id}/variants`);
+  await at('GET /catalog/units', '/catalog/units');
+  await at('GET /catalog/warehouses', '/catalog/warehouses');
+  await at('GET /catalog/sync/{entity}', '/catalog/sync/units');
+  await at('GET /search/products', `/search/products?q=${q}`);
+  await at('GET /search/suggest', `/search/suggest?q=${q}`);
+  await at('GET /inventory/balances', `/inventory/balances?variantIds=${p0.defaultVariantId}`);
+  await at('POST /inventory/check', '/inventory/check', { body: { warehouseId: tablet?.warehouseId, items: [{ variantId: p0.defaultVariantId, quantity: qty(p0) }] } });
+  const c0 = (await at('GET /cart', '/cart')).json;
+  await at('PUT /cart/items/{variantId}', `/cart/items/${p1.defaultVariantId}`, { idem: true, body: { quantity: qty(p1), rowVersion: c0?.rowVersion, mode: 'set' } });
+  const del = await at('DELETE /cart/items/{variantId}', `/cart/items/${p1.defaultVariantId}`, { idem: true });
+  const inList = [...seen.keys()].filter((k) => !closed.has(k));
+  const not2xx = [...seen].filter(([k, r]) => k !== KIOSK_LIST_FORBIDDEN_AS_CUSTOMER && (r.status < 200 || r.status >= 300)).map(([k, r]) => `${k}: ${r.status} ${r.json?.code ?? ''}`);
+  const pl = seen.get(KIOSK_LIST_FORBIDDEN_AS_CUSTOMER);
+  // живая сессия покупателя (903 к этому шагу вышел везде — walkAuth): 905 / 101 из README 4 или 903 при прогоне без обхода
+  const isAlive = async (S) => !!S?.token && (await S.call('GET /me (сессия жива?)', 'GET', '/me', { record: false })).status === 200;
+  let buyer = null;
+  for (const S of [w.K, w.L, w.N]) {
+    if (await isAlive(S)) {
+      buyer = S;
+      break;
+    }
+  }
+  const plCustomer = buyer ? await buyer.call('GET /catalog/price-lists (покупатель — для сравнения)', 'GET', '/catalog/price-lists', { expect: 403 }) : null;
+  const rest = [...closed].filter((k) => !seen.has(k)).sort();
+  ctx.check(
+    'T-KIOSK-005 (1) маршруты списка вне /kiosk/* токеном планшета → 2xx по своему праву (корзина пуста после проверки); GET /catalog/price-lists → 403, как у покупателя; предпросмотр и /kiosk/* — шаги обхода планшета',
+    inList.length === 0 &&
+      not2xx.length === 0 &&
+      (del.json?.items ?? []).length === 0 &&
+      pl?.status === 403 &&
+      pl?.json?.reason !== 'kiosk_closed_list' &&
+      !!plCustomer &&
+      shape(plCustomer) === shape(pl) &&
+      JSON.stringify(rest) === JSON.stringify(['GET /kiosk/orders', 'POST /cart/checkout-preview', 'POST /kiosk/exit', 'POST /kiosk/order-otp', 'POST /kiosk/orders', 'POST /kiosk/reset']),
+    { checked: seen.size, inList, not2xx, cartItems: (del.json?.items ?? []).length, priceLists: pl && shape(pl), customer: plCustomer && shape(plCustomer), rest },
+  );
+
+  // (2) /kiosk/* — только kind=kiosk: сотрудники и покупатель → 403 FORBIDDEN без reason
+  const others = [
+    ['админ 901', w.A],
+    ['кассир 906', w.C],
+    ['старший 907', w.SS],
+    ['продавец 902', w.S],
+    ['руководитель 909', w.O],
+    ...(buyer ? [[`покупатель (${buyer.name})`, buyer]] : []),
+  ].filter(([, s]) => s?.token);
+  const kioskOps = ops.filter((o) => o.template.startsWith('/kiosk/'));
+  const bad2 = [];
+  for (const o of kioskOps) {
+    for (const [label, S] of others) {
+      const r = await S.call(`${o.key} не планшету (${label})`, o.method, fillPath(o.template), { ...(o.method === 'GET' ? {} : { body: {}, idem: true }), expect: 403 });
+      if (!(r.status === 403 && r.json?.code === 'FORBIDDEN' && r.json?.reason === undefined)) bad2.push(`${o.key} × ${label}: ${r.status} ${r.json?.code ?? ''} ${r.json?.reason ?? ''}`.trim());
+    }
+  }
+  ctx.check(
+    'T-KIOSK-005 (2) /kiosk/* токенами сотрудников и покупателя → 403 FORBIDDEN без reason (право только у kind=kiosk)',
+    kioskOps.length === 5 && others.length >= 6 && !!buyer && bad2.length === 0,
+    { ops: kioskOps.length, subjects: others.map(([l]) => l), bad: bad2.slice(0, 10) },
+  );
+
+  // (3) публичные маршруты: закрытый список их не проверяет — ответ с Bearer планшета тот же, что без него
+  const diff = [];
+  for (const o of publicOps) {
+    const path = fillPath(o.template);
+    const base = o.method === 'GET' ? {} : { body: {}, idem: true };
+    const without = await T.call(`публичный ${o.key} без токена`, o.method, path, { ...base, record: false, noAuth: true });
+    const withToken = await T.call(`публичный ${o.key} с токеном планшета`, o.method, path, { ...base, record: false });
+    if (without.status >= 500 || withToken.status >= 500 || shape(without) !== shape(withToken) || withToken.json?.reason === 'kiosk_closed_list') diff.push(`${o.key}: ${shape(without)} ≠ ${shape(withToken)}`);
+  }
+  const alive = await T.call('GET /me (планшет после публичных маршрутов)', 'GET', '/me');
+  ctx.check(
+    'T-KIOSK-005 (3) публичные маршруты (security: []) с токеном планшета и без него — один ответ (статус, код, причина, поля); сессия планшета жива',
+    diff.length === 0 && alive.status === 200,
+    { checked: publicOps.length, diff: diff.slice(0, 5), me: alive.status },
+  );
 }

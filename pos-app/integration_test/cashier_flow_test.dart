@@ -98,6 +98,8 @@ import 'package:optomstroy/features/registration/presentation/screens/registrati
 import 'package:optomstroy/features/session_ui/presentation/widgets/step_up_dialog.dart';
 import 'package:optomstroy/features/splash/presentation/screens/splash_screen.dart';
 
+import 'support/clean_start.dart';
+
 /// Тестовый код OTP контура (`AUTH_FIXTURES.otpCode`).
 const String _otpCode = String.fromEnvironment('E2E_OTP_CODE', defaultValue: '246810');
 
@@ -530,7 +532,7 @@ Future<void> _confirm(WidgetTester tester, {String? reason}) async {
 
 Future<void> _cleanStart(WidgetTester tester) async {
   _printer.files.clear();
-  await FlutterSecureStorageAdapter().deleteAll(<SecureKey>[...SecureKey.session, ...SecureKey.registration]);
+  await FlutterSecureStorageAdapter().deleteAll(kCleanStartKeys);
   await bootstrap(overrides: _overrides());
   await tester.pump();
   await pumpUntilFound(tester, find.byKey(SplashScreen.screenKey));
@@ -744,9 +746,33 @@ Future<String> _searchCustomer(WidgetTester tester, String q) async {
   return id;
 }
 
-/// Заявка на возврат кассира (FLOW-031.S1…S5): заказ [orderId] «отгружен» (стенд) → SCR-24 «Заявка на возврат» →
-/// SCR-39 (строка 1, причина «Брак») → сохранить (`draft`) → отправить (step-up PIN) → `submitted`; ID заявки.
+/// Заказ [orderId] принят 1С: `GET /orders/{id}` → `onec.number`. Заказ в 1С передаёт очередь pos-worker (опрос
+/// 2 с); если 1С в этот момент недоступна, следующая попытка — по графику backoff (первая — через 60 с), поэтому
+/// [timeout] больше одного шага backoff. Реализация 1С (отгрузка) бывает только у заказа, известного 1С, и SCR-39
+/// открывает заявку лишь при `onec.number` (RET-001, RET-002; `ReturnRequestController.isReturnable`).
+Future<void> _waitOnecAccepted(
+  WidgetTester tester,
+  String orderId, {
+  required String what,
+  Duration timeout = const Duration(seconds: 120),
+}) => pumpUntil<bool>(
+  tester,
+  () async {
+    final Object? onec = (await _apiMap(tester, '/orders/$orderId'))['onec'];
+    return onec is Map<String, Object?> && onec['number'] != null ? true : null;
+  },
+  what: what,
+  timeout: timeout,
+);
+
+/// Заявка на возврат кассира (FLOW-031.S1…S5): заказ [orderId] принят 1С → «отгружен» (стенд) → SCR-24 «Заявка на
+/// возврат» → SCR-39 (строка 1, причина «Брак») → сохранить (`draft`) → отправить (step-up PIN) → `submitted`; ID
+/// заявки.
 Future<String> _submitReturn(WidgetTester tester, String orderId) async {
+  // Стенд «отгружает» заказ прямо в БД (`orders.status=shipped` + реализация), без проверки, что 1С приняла заказ;
+  // без `onec.number` SCR-24 уже предлагает «Заявка на возврат» (allowedActions смотрит только статус), а SCR-39
+  // показывает «возврат невозможен» — строки `return-line-1` нет. Отгрузка — только после приёма заказа 1С.
+  await _waitOnecAccepted(tester, orderId, what: 'заказ $orderId принят 1С (onec.number) до «отгрузки» стендом');
   await tester.runAsync(() => _stack.ship(orderId));
   _router(tester)!.go('/orders/$orderId');
   await pumpUntilFound(tester, find.byKey(_orderRoot), timeout: const Duration(seconds: 60));
@@ -1187,6 +1213,9 @@ void main() {
     final String incompleteId = await _customerIdByPhone(tester, _incompletePhone);
     final List<_Sku> staleItems = await _sellable(tester, 1, skip: 4);
     await _addFromCatalog(tester, staleItems.single);
+    // «Отказ» 1С — только после приёма ею заказа FLOW-023: иначе передача этого заказа (опрос pos-worker 2 с) попадает
+    // на 503 и ждёт повтора backoff 60 с, а заявка на возврат по нему (ниже) открывается раньше — без `onec.number`.
+    await _waitOnecAccepted(tester, withinLimit, what: 'заказ в долг FLOW-023 принят 1С до её «отказа» (FLOW-025)');
     await tester.runAsync(() => _stack.onecDown(down: true));
     addTearDown(() => _stack.onecDown(down: false));
     _router(tester)!.go('/customers/$incompleteId/receivables');

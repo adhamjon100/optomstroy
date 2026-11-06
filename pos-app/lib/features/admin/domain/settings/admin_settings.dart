@@ -2,7 +2,9 @@
 // `AdminSettingsValues`, `AdminSettingsEnv`; 10 DISC-, D-23; RM-G-003, RM-G-008, RM-G-014). Изменение — только
 // `admin` со step-up (`settings.discount_limits.update`, `settings.app.update`), `owner` — только просмотр (ядро §21
 // п. 3); `env` (`CUSTOMER_SELF_SERVICE`, `DEBT_PAYMENTS_FROM_POS`, …) — только чтение. Лимиты по ролям seed
-// `5/5/10/15` — [НЕ ПОДТВЕРЖДЕНО: Q-015]. Чистый Dart (FL-01).
+// `5/5/10/15` — [НЕ ПОДТВЕРЖДЕНО: Q-015]. Планшет магазина (08 §4.18.6; 07 §5.59; 02 UI-46-018; ADR-115): шесть общих
+// ключей `kiosk*` (умолчания — в коде сервера: 120 / 15 / 60 / 30 / 200 и пустые часы работы — сигнал «планшет не на
+// связи» выключен, Q-341) и env `kioskMode` (`KIOSK_MODE`, только чтение; в SCR-46 не показывается). Чистый Dart (FL-01).
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/models/pos_common.dart';
 import 'package:optomstroy/core/utils/money.dart';
@@ -84,6 +86,12 @@ final class AdminSettingsValues {
     this.qrEnabled,
     this.customerStockDisplay,
     this.supportContacts,
+    this.kioskIdleSeconds,
+    this.kioskIdleWarningSeconds,
+    this.kioskDoneSeconds,
+    this.kioskOtpPerHour,
+    this.kioskOtpPerDay,
+    this.kioskWorkingHours,
   });
 
   final int? lowStockThreshold;
@@ -136,12 +144,32 @@ final class AdminSettingsValues {
   /// «Показ остатков клиенту» (только `admin`, step-up; RM-G-014).
   final CustomerStockDisplay? customerStockDisplay;
   final List<SupportContactValue>? supportContacts;
+
+  /// Планшет магазина: автосброс без касаний, с (30…1800; по умолчанию 120 — Р-09 (а)).
+  final int? kioskIdleSeconds;
+
+  /// Обратный отсчёт «Вы ещё здесь?», с (5…120; 15).
+  final int? kioskIdleWarningSeconds;
+
+  /// Номер заявки на экране SCR-53, с (10…600; 60).
+  final int? kioskDoneSeconds;
+
+  /// Кодов `kiosk_order` с одного планшета в час (1…1000; 30 — Р-14 (а)).
+  final int? kioskOtpPerHour;
+
+  /// То же за сутки (1…10000; 200).
+  final int? kioskOtpPerDay;
+
+  /// Часы работы магазина (07 §5.59: `mon-sat 08:00-20:00;sun 09:00-15:00`, Asia/Bishkek); `''` — сигнал «планшет не
+  /// на связи» выключен (Q-341).
+  final String? kioskWorkingHours;
 }
 
 /// Значения env (`AdminSettingsEnv`) — только чтение в UI.
 final class AdminSettingsEnv {
   const AdminSettingsEnv({
     this.customerSelfService,
+    this.kioskMode,
     this.debtPaymentsFromPos,
     this.qrProvider,
     this.qrTtlMinutes,
@@ -161,6 +189,9 @@ final class AdminSettingsEnv {
   });
 
   final bool? customerSelfService;
+
+  /// `KIOSK_MODE` — режим «Планшет магазина» (только env; публикуется как `features.storeTablet`).
+  final bool? kioskMode;
   final bool? debtPaymentsFromPos;
   final QrProviderMode? qrProvider;
   final int? qrTtlMinutes;

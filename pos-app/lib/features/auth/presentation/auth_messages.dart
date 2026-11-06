@@ -95,5 +95,6 @@ abstract final class AuthMessages {
     AuthEntryReason.pinReset => l10n.auth_entry_pin_reset,
     AuthEntryReason.bioInvalidated => l10n.auth_entry_bio_invalidated,
     AuthEntryReason.deviceMismatch => l10n.auth_entry_device_mismatch,
+    AuthEntryReason.kioskExitOffline => l10n.kiosk_exit_offline_hint,
   };
 }

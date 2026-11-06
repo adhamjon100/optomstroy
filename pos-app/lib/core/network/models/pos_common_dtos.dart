@@ -85,13 +85,15 @@ abstract final class QuantityDto {
 
 /// `Receiver`.
 abstract final class ReceiverDto {
-  static const Set<String> jsonKeys = {'kind', 'name', 'phone'};
+  /// `phoneMasked` — readOnly (OpenAPI 1.3.0, заявка с планшета после маскирования номера; ADR-115).
+  static const Set<String> jsonKeys = {'kind', 'name', 'phone', 'phoneMasked'};
   static const Set<String> requiredKeys = {'kind'};
 
   static Receiver fromJson(JsonMap j) => Receiver(
     kind: jReqEnum(j, 'kind', ReceiverKind.tryParse),
     name: jOpt<String>(j, 'name'),
     phoneE164: jOpt<String>(j, 'phone'),
+    phoneMasked: jOpt<String>(j, 'phoneMasked'),
   );
 
   static Receiver? optional(JsonMap j, String key) {

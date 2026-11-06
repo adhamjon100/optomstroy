@@ -1,8 +1,8 @@
 {
- "$comment": "Операции, которые вызывает pos-app (WP-T1): карта api-surface (D:/optomstroy/.tmp/web_demo/maps/api-surface.json, 2026-10-29) ∩ contracts/openapi/pos-api.v1.yaml (openapi_ops.txt). viaDio=false — мимо Dio: GET /health (DemoHealthProbe → мост) и фото /images/{sha}/{size}.webp (статика сайта). Операций через Dio — 116 из 141.",
- "generatedAt": "2026-10-30",
- "total": 118,
- "viaDio": 116,
+ "$comment": "Операции, которые вызывает pos-app (WP-T1): карта api-surface (D:/optomstroy/.tmp/web_demo/maps/api-surface.json, 2026-10-29) ∩ contracts/openapi/pos-api.v1.yaml (openapi_ops.txt). viaDio=false — мимо Dio: GET /health (DemoHealthProbe → мост) и фото /images/{sha}/{size}.webp (статика сайта). Операций через Dio — 126 из 151. Планшет магазина (P-002, ADR-115; WP-T1 2026-11-04): +10 операций contracts/openapi/parts/70_kiosk.yaml — их вызывают dio_admin_tablets_repository.dart (SCR-54), dio_kiosk_repository.dart и dio_kiosk_lifecycle_repository.dart (SCR-51…53, аварийный выход).",
+ "generatedAt": "2026-11-04",
+ "total": 128,
+ "viaDio": 126,
  "operations": [
   {
    "method": "GET",
@@ -68,6 +68,36 @@
    "method": "PUT",
    "path": "/admin/settings",
    "operationId": "admin_settings_update",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/admin/store-tablets",
+   "operationId": "kiosk_tablets_list",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/admin/store-tablets",
+   "operationId": "kiosk_tablets_enroll",
+   "viaDio": true
+  },
+  {
+   "method": "PATCH",
+   "path": "/admin/store-tablets/{id}",
+   "operationId": "kiosk_tablets_update",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/admin/store-tablets/{id}/reconnect",
+   "operationId": "kiosk_tablets_reconnect",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/admin/store-tablets/{id}/revoke",
+   "operationId": "kiosk_tablets_revoke",
    "viaDio": true
   },
   {
@@ -417,6 +447,36 @@
    "path": "/images/{sha}/{size}",
    "operationId": "catalog_images_get",
    "viaDio": false
+  },
+  {
+   "method": "POST",
+   "path": "/kiosk/exit",
+   "operationId": "kiosk_exit",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/kiosk/order-otp",
+   "operationId": "kiosk_order_otp_request",
+   "viaDio": true
+  },
+  {
+   "method": "GET",
+   "path": "/kiosk/orders",
+   "operationId": "kiosk_orders_find",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/kiosk/orders",
+   "operationId": "kiosk_orders_create",
+   "viaDio": true
+  },
+  {
+   "method": "POST",
+   "path": "/kiosk/reset",
+   "operationId": "kiosk_reset",
+   "viaDio": true
   },
   {
    "method": "GET",

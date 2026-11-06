@@ -20,7 +20,10 @@ import { ProblemException } from '../problem-details/problem.exception.js';
  * механизмами модулей: RL-READ (600/мин), RL-SEARCH (120/мин), RL-CART (300/мин), RL-FIN (60/мин — финансовые
  * операции: заказ, отмена, платежи, возвраты, создание клиента; ревью F-security-2). Состав маршрутов — ровно
  * `x-rate-limit-group` контракта `contracts/openapi/pos-api.v1.yaml` (тест сверяет). RL-ADMIN — `AdminRateLimitModule`
- * (PostgreSQL), OTP/PIN/логин — `RateLimitService` модулей auth. Ревью E-security-2.
+ * (PostgreSQL), OTP/PIN/логин — `RateLimitService` модулей auth. Ревью E-security-2. Планшет магазина (08 §2.9
+ * «Лимиты планшета»; ADR-115): `GET /kiosk/orders` — RL-READ, `POST /kiosk/reset` — RL-CART, `POST /kiosk/orders` —
+ * RL-FIN (ключ — `userId` технического пользователя планшета); `POST /kiosk/order-otp` (RL-OTP-SEND и лимит планшета)
+ * и `POST /kiosk/exit` (RL-PIN) — `RateLimitService`, `/admin/store-tablets*` — RL-ADMIN.
  */
 export type HttpRateLimitGroup = 'RL-READ' | 'RL-SEARCH' | 'RL-CART' | 'RL-FIN';
 
@@ -61,6 +64,7 @@ export const HTTP_RATE_LIMIT_ROUTES: Readonly<Record<HttpRateLimitGroup, readonl
     'PUT /favorites/products/{id}',
     'DELETE /favorites/products/{id}',
     'GET /inventory/balances',
+    'GET /kiosk/orders',
     'GET /me',
     'GET /me/consents',
     'POST /me/consents',
@@ -99,9 +103,11 @@ export const HTTP_RATE_LIMIT_ROUTES: Readonly<Record<HttpRateLimitGroup, readonl
     'DELETE /cart/parked/{id}',
     'POST /cart/parked/{id}/resume',
     'POST /inventory/check',
+    'POST /kiosk/reset',
   ],
   'RL-FIN': [
     'POST /customers',
+    'POST /kiosk/orders',
     'POST /orders',
     'POST /orders/{id}/cancel',
     'POST /orders/{id}/payments',
@@ -201,6 +207,19 @@ export class MemoryWindowCounter {
 }
 
 /**
+ * `429 RATE_LIMITED` лимитов 08 §2.9 с хранилищем `memory`: `Retry-After` (секунды до конца окна) и
+ * `X-RateLimit-Limit` / `X-RateLimit-Remaining: 0`. Общий для интерцептора и общего лимита планшета SEC-015
+ * (`KioskAccessGuard`, шаг 0).
+ */
+export function rateLimitedProblem(limit: number, retryAfterSec: number): ProblemException {
+  return new ProblemException('RATE_LIMITED', {
+    detail: 'Слишком много запросов. Повторите позже.',
+    retryAfter: retryAfterSec,
+    headers: { 'X-RateLimit-Limit': String(limit), 'X-RateLimit-Remaining': '0' },
+  });
+}
+
+/**
  * Лимиты RL-READ / RL-SEARCH / RL-CART / RL-FIN (08 §2.9) — интерцептор приложения после guard'ов (субъект известен);
  * анонимные запросы этих групп до сюда не доходят (AuthGuard → 401). Превышение → 429 `RATE_LIMITED` с
  * `Retry-After` и `X-RateLimit-*`.
@@ -226,13 +245,7 @@ export class HttpRateLimitInterceptor implements NestInterceptor {
     if (!group) return next.handle();
     const limit = this.limits[group];
     const r = this.counter.consume(`${group}:${principal.userId}`, limit, this.clock.now().getTime());
-    if (!r.allowed) {
-      throw new ProblemException('RATE_LIMITED', {
-        detail: 'Слишком много запросов. Повторите позже.',
-        retryAfter: r.retryAfterSec,
-        headers: { 'X-RateLimit-Limit': String(limit), 'X-RateLimit-Remaining': '0' },
-      });
-    }
+    if (!r.allowed) throw rateLimitedProblem(limit, r.retryAfterSec);
     return next.handle();
   }
 }

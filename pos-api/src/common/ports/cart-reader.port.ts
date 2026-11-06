@@ -68,9 +68,34 @@ export interface CheckoutValidationInput {
   /**
    * `previewToken` последнего `POST /cart/checkout-preview` (08 §3.8, §4.8.1; 10 ORD-020). Если передан — подпись,
    * срок, корзина, `cartRowVersion`, способ оплаты и итог сверяются с серверным пересчётом: расхождение или
-   * просроченный/подделанный токен → `422 PRICE_CHANGED` (`conflicts[]`, `reason`).
+   * просроченный/подделанный токен → `422 PRICE_CHANGED` (`conflicts[]`, `reason`). Для канала `kiosk` итог не
+   * сверяется (08 §4.7.7; 10 ORD-007): итог заявки пересчитывается по карточке (Р-05 (а)).
    */
   readonly previewToken?: string | null;
+  /**
+   * Канал оформления (P-002 §8.4 п. 4–5; 10 KIOSK-015; ADR-115): `kiosk` — заявка с планшета магазина. Задаёт только
+   * сервер (`createForKiosk`), из тела запроса не берётся; допустим только для актора `subjectKind = kiosk` (иначе —
+   * ошибка вызывающего кода). Правила канала (конфликт `price_changed` не поднимается — ни против снимка обычной цены,
+   * ни против цены карточки; `previewToken` — без итога; остаток, доступность, кратность и минимум — как прежде)
+   * действуют для актора планшета всегда; для staff и customer поле не задаётся — всё как прежде.
+   */
+  readonly channel?: 'kiosk';
+  /**
+   * Клиент заявки с планшета при `kioskCustomerMatch = single` (Р-05 (а); 10 KIOSK-015; 08 §4.25.2): корзина
+   * оценивается **в памяти** как корзина этого клиента — вид цены карточки (`customers.default_price_list_id`, без
+   * учёта `price_lists.visible_to_roles`; иначе по умолчанию, иначе розничный) и скидка клиента 1С; так же — проверка
+   * наличия, синхронный `/check` 1С (`customerRef`, `priceListRef` карточки) и снимок `cart` (`customerId`,
+   * `priceListId`, цены строк). В корзину планшета ничего не пишется. Только вместе с `channel = 'kiosk'`; задаёт
+   * только сервер.
+   */
+  readonly customerOverride?: { readonly customerId: string } | null;
+}
+
+/** Что сверяет `CartReader.verifyPreviewToken` (без итога — 08 §4.7.7, §4.25.2 шаг (1)). */
+export interface PreviewTokenExpectation {
+  readonly cartId: string;
+  readonly cartRowVersion: number;
+  readonly paymentMethod: PaymentMethod;
 }
 
 export type CheckoutConflict = {
@@ -96,6 +121,14 @@ export interface CheckoutValidation {
   readonly warnings: readonly { readonly code: 'STALE_DATA' | 'QR_UNAVAILABLE'; readonly message: string }[];
 }
 
+/**
+ * Итог `CartReader.restoreFromOrder`: корзина восстановлена (`active`/`parked`) или — для заявки с планшета —
+ * пропущена (`skipped`, `cartId = null`; 10 KIOSK-030).
+ */
+export type RestoreFromOrderResult =
+  | { readonly cartId: string; readonly status: 'active' | 'parked' }
+  | { readonly cartId: null; readonly status: 'skipped' };
+
 export interface CartReader {
   /** Проверки оформления (CheckoutPolicy): цены, остатки, лимит скидки, долг, режим клиента, `/check` 1С. */
   validateForCheckout(
@@ -103,6 +136,14 @@ export interface CartReader {
     actor: SalesActor,
     input: CheckoutValidationInput,
   ): Promise<CheckoutValidation>;
+  /**
+   * Проверка `previewToken` **без итога** — первый шаг `POST /kiosk/orders` (08 §4.25.2 (1); 10 KIOSK-013; P-002 §8.4
+   * п. 4), до проверки кода, без чтения корзины и без запроса в 1С: подпись и срок, `cartId`, `cartRowVersion`, способ
+   * оплаты. Отказ → `422 PRICE_CHANGED` с `reason` `preview_token_invalid` (подделан, повреждён, истёк),
+   * `preview_cart_changed` или `preview_payment_method_changed`, `conflicts: []` — без сумм. Итог не сверяется: заявка
+   * по карточке (Р-05 (а)) пересчитывается сервером. Для `POST /orders` сверка итога — прежняя (`validateForCheckout`).
+   */
+  verifyPreviewToken(token: string, expected: PreviewTokenExpectation): void;
   /** Активная корзина → `converted` (`converted_order_id`), только при совпадении `row_version`. */
   markConverted(
     tx: SalesTx,
@@ -110,12 +151,14 @@ export interface CartReader {
   ): Promise<void>;
   /**
    * Восстановление состава заказа в новую корзину автора (ORD-027): пустая `active` — восстановленная `active`, иначе
-   * `parked` «Восстановлена из заказа № …»; `restored_from_order_id`, `row_version = 1`.
+   * `parked` «Восстановлена из заказа № …»; `restored_from_order_id`, `row_version = 1`. Заявка с планшета
+   * (`orders.created_via='kiosk'`) — ничего не делается, `skipped` (10 KIOSK-030; защита на стороне корзины, если
+   * вызывающий не проверил канал).
    */
   restoreFromOrder(
     tx: SalesTx,
     input: { readonly orderId: string; readonly ownerUserId: string; readonly forceParked?: boolean },
-  ): Promise<{ readonly cartId: string; readonly status: 'active' | 'parked' }>;
+  ): Promise<RestoreFromOrderResult>;
   /**
    * Технический повтор или ручная привязка отклонённого заказа (10 ORD-027, ORD-034): восстановленная из заказа
    * корзина автора, если она не изменялась (`row_version = 1`) и не использована для нового заказа, переводится в

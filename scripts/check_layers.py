@@ -70,6 +70,10 @@ FEATURE_DAG: dict[str, frozenset[str]] = {
     "registration": frozenset({"auth"}),
     "profile": frozenset({"auth"}),
     "settings": frozenset({"auth", "profile"}),
+    # Режим «Планшет магазина» (ADR-115, 06 §6.1, MOD-030; 13 TAB-2-01): тело SCR-51 — в catalog (порт
+    # kioskCatalogBodyProvider), корзина и предпросмотр — cart_providers.dart, сущности оформления — checkout/domain.
+    # kiosk не импортирует orders, customers, auth, admin; kiosk не импортирует ни одна фича.
+    "kiosk": frozenset({"catalog", "cart", "checkout"}),
 }
 
 FL01_PACKAGES = (
@@ -342,6 +346,15 @@ SELF_TEST: list[tuple[str, str, set[str]]] = [
     ("features/cart/cart_providers.dart", "presentation/x.dart", {"FL-07"}),
     ("features/cart/cart_providers.dart", "domain/cart_repository.dart", set()),
     ("features/splash/presentation/s.dart", "package:optomstroy/app/router/routes.dart", {"AP-01"}),
+    # Фича kiosk (ADR-115, AC-MOD-030 п. 1): рёбра kiosk → catalog, cart, checkout; других рёбер и обратных нет.
+    ("features/kiosk/presentation/k.dart", "package:optomstroy/features/catalog/catalog_providers.dart", set()),
+    ("features/kiosk/presentation/k.dart", "package:optomstroy/features/cart/cart_providers.dart", set()),
+    ("features/kiosk/presentation/k.dart", "package:optomstroy/features/checkout/domain/c.dart", set()),
+    ("features/kiosk/presentation/k.dart", "package:optomstroy/features/orders/orders_providers.dart", {"FL-03"}),
+    ("features/kiosk/presentation/k.dart", "package:optomstroy/features/auth/auth_providers.dart", {"FL-03"}),
+    ("features/kiosk/presentation/k.dart", "package:optomstroy/features/catalog/presentation/w.dart", {"FL-03"}),
+    ("features/catalog/presentation/x.dart", "package:optomstroy/features/kiosk/kiosk_providers.dart", {"FL-03"}),
+    ("features/admin/presentation/x.dart", "package:optomstroy/features/kiosk/kiosk_providers.dart", {"FL-03"}),
     ("app/router/routes.dart", "package:optomstroy/features/splash/presentation/screens/splash_screen.dart", set()),
     # DM-01 demo_isolated — T-DEMO-001 (12 §3.22, ADR-113): в демо-код не входят снаружи…
     ("main.dart", "package:optomstroy/app/demo/main_web_demo.dart", {"DM-01"}),

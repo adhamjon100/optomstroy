@@ -259,6 +259,9 @@ export class StubCartReader implements CartReader {
     return Promise.resolve(this.result);
   }
 
+  /** Токен предпросмотра планшета (порт `CartReader`, WP-S4B): заглушка его не сверяет. */
+  verifyPreviewToken(): void {}
+
   markConverted(_tx: unknown, input: { cartId: string; expectedRowVersion: number; orderId: string }): Promise<void> {
     this.converted.push({ cartId: input.cartId, orderId: input.orderId });
     return Promise.resolve();

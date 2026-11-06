@@ -3,11 +3,14 @@ import { StepUpTokenVerifier } from '../auth/step-up/step-up-token.verifier.js';
 import { type AuditContext, auditContextFromRequest } from '../common/audit/audit-context.js';
 import { AuditService } from '../common/audit/audit.service.js';
 import { isAuthenticatedPrincipal } from '../common/auth/principal.js';
+import { isSubjectKind } from '../common/auth/subject-kind.js';
 import type { RequestWithContext } from '../common/http/request-context.js';
 import { Idempotent } from '../common/idempotency/idempotent.decorator.js';
 import { ProblemException } from '../common/problem-details/problem.exception.js';
-import { RequireAnyPermission, RequirePermission } from '../common/rbac/rbac.decorators.js';
-import { CartActorResolver } from './cart-actor.js';
+import { PermissionCatalog } from '../common/rbac/permission-catalog.js';
+import { RequireAnyPermission, RequirePermission, RequirePermissionGroups } from '../common/rbac/rbac.decorators.js';
+import { sanitizeKioskProblem } from '../kiosk/common/kiosk-problem.sanitizer.js';
+import { CartActorResolver, isKioskActor } from './cart-actor.js';
 import { fieldError, singleQuery, UUID_RE, uuidPath, validationFailed } from './cart-common.js';
 import {
   forbiddenPriceFields,
@@ -33,6 +36,10 @@ const NO_STORE = 'no-store';
  * `order.create`; 11 §4.3), только своя корзина; `customer` — режим клиента (ядро §24.2; без отложенных корзин и
  * ручной скидки). Лимит частоты — RL-CART (common/rate-limit). `Cache-Control: no-store`. Цены клиент не передаёт:
  * попытка → `400 VALIDATION_FAILED` (`forbidden_field`) + аудит `price.override_attempt` (10 DISC-011).
+ * Планшет магазина (`kind=kiosk`): ответы-ошибки `PUT`/`DELETE /cart/items/{variantId}` и `POST /cart/checkout-preview`
+ * очищаются в обработчике (`forTablet`; 08 §2.4 «Коды и отказы планшета магазина» п. 3; 11 SEC-141) — копия под ключом
+ * `@Idempotent` уже чистая: в `conflicts[]` только `variantId`, `kind`, `stockLevel`, у `409 VERSION_CONFLICT` нет
+ * `current`.
  */
 @Controller('cart')
 export class CartController {
@@ -42,6 +49,7 @@ export class CartController {
     private readonly actors: CartActorResolver,
     private readonly audit: AuditService,
     private readonly stepUpTokens: StepUpTokenVerifier,
+    private readonly permissions: PermissionCatalog,
   ) {}
 
   @Get()
@@ -86,10 +94,12 @@ export class CartController {
     },
   })
   async putItem(@Req() req: Req, @Param('variantId') variantId: string, @Body() body: unknown): Promise<Dto> {
-    const id = uuidPath(variantId, 'variantId');
-    await this.rejectPriceFields(req, body, ['priceSnapshot']);
-    const r = parsePutItem(body);
-    return this.carts.putItem(await this.actor(req), ctxOf(req), id, r);
+    return forTablet(req, async () => {
+      const id = uuidPath(variantId, 'variantId');
+      await this.rejectPriceFields(req, body, ['priceSnapshot']);
+      const r = parsePutItem(body);
+      return this.carts.putItem(await this.actor(req), ctxOf(req), id, r);
+    });
   }
 
   @Delete('items/:variantId')
@@ -100,14 +110,16 @@ export class CartController {
     @Param('variantId') variantId: string,
     @Query() q: Record<string, unknown>,
   ): Promise<Dto> {
-    const id = uuidPath(variantId, 'variantId');
-    const raw = singleQuery(q, 'packagingId');
-    let packagingId: string | null | undefined;
-    if (raw === undefined) packagingId = undefined;
-    else if (raw === 'null' || raw === '') packagingId = null;
-    else if (UUID_RE.test(raw)) packagingId = raw.toLowerCase();
-    else fieldError('packagingId', 'uuid', 'packagingId — UUID упаковки (или null — базовая единица).');
-    return this.carts.deleteItem(await this.actor(req), ctxOf(req), id, packagingId);
+    return forTablet(req, async () => {
+      const id = uuidPath(variantId, 'variantId');
+      const raw = singleQuery(q, 'packagingId');
+      let packagingId: string | null | undefined;
+      if (raw === undefined) packagingId = undefined;
+      else if (raw === 'null' || raw === '') packagingId = null;
+      else if (UUID_RE.test(raw)) packagingId = raw.toLowerCase();
+      else fieldError('packagingId', 'uuid', 'packagingId — UUID упаковки (или null — базовая единица).');
+      return this.carts.deleteItem(await this.actor(req), ctxOf(req), id, packagingId);
+    });
   }
 
   @Post('customer')
@@ -197,21 +209,39 @@ export class CartController {
     return this.carts.resume(a, ctxOf(req), cartId, r.replaceActive);
   }
 
+  /**
+   * Предпросмотр оформления (08 §4.7.7): `cart.manage.own` **и** одно из `order.create` | `kiosk.order.submit`
+   * (требование «И из ИЛИ», 11 SEC-138; ADR-115) — планшет магазина получает предпросмотр по `kiosk.order.submit`,
+   * сотрудники и покупатель — по `order.create`, как прежде.
+   */
   @Post('checkout-preview')
   @HttpCode(200)
   @Header('Cache-Control', NO_STORE)
-  @RequirePermission('cart.manage.own', 'order.create')
+  @RequirePermissionGroups(['cart.manage.own'], ['order.create', 'kiosk.order.submit'])
   @Idempotent({ required: false })
   async preview(@Req() req: Req, @Body() body: unknown): Promise<Dto> {
-    await this.rejectPriceFields(req, body);
-    const r = parsePreview(body);
-    return this.checkout.preview(await this.actor(req), r);
+    return forTablet(req, async () => {
+      await this.rejectPriceFields(req, body);
+      const r = parsePreview(body);
+      return this.checkout.preview(await this.actor(req), r, this.canSubmitOrder(req));
+    });
   }
 
   // ------------------------------------------------------------------------------------------- помощники
 
   private actor(req: Req) {
     return this.actors.fromPrincipal(req.principal, typeof req.id === 'string' ? req.id : null);
+  }
+
+  /**
+   * Право отправить заказ из этой корзины (`permissions.canCreateOrder` предпросмотра): `order.create` (`POST /orders`)
+   * или `kiosk.order.submit` (`POST /kiosk/orders`). Права — от полного субъекта запроса с видом: код
+   * `kiosk.order.submit` засчитывается только при `kind=kiosk` (11 SEC-138; актор корзины вида не несёт).
+   */
+  private canSubmitOrder(req: Req): boolean {
+    if (!req.principal) return false;
+    const granted = this.permissions.effectivePermissions(req.principal);
+    return granted.has('order.create') || granted.has('kiosk.order.submit');
   }
 
   /** Клиент не передаёт цены и итоги (D-23; 08 §2.14): `forbidden_field` + аудит `price.override_attempt`. */
@@ -247,6 +277,22 @@ export class CartController {
 
 function ctxOf(req: Req): AuditContext {
   return auditContextFromRequest(req);
+}
+
+/**
+ * Обработчик маршрута корзины, который отдаёт планшету Problem с `conflicts[]` или `current`: ошибка для `kind=kiosk`
+ * очищается до выхода из обработчика (08 §2.4 «Коды и отказы планшета магазина» п. 3; 11 SEC-141; 10 KIOSK-016) —
+ * не фильтром исключений, иначе `@Idempotent` сохранил бы неочищенное тело. Вид — из субъекта запроса (тот же, что
+ * у актора корзины, `CartActorResolver`), без второго разрешения актора; порядок проверок обработчика не меняется.
+ * Сотрудник и покупатель получают ошибку без изменений.
+ */
+async function forTablet<T>(req: Req, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (e) {
+    const kind = req.principal?.kind;
+    throw isSubjectKind(kind) && isKioskActor({ subjectKind: kind }) ? sanitizeKioskProblem(e) : e;
+  }
 }
 
 /** Отложенные корзины в режиме клиента недоступны (RM-F-015; 08 §4.7.6–§4.7.9). */

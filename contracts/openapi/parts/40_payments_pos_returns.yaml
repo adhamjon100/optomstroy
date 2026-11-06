@@ -453,6 +453,9 @@ paths:
         customer.receivables.read.summary; favoriteCustomers[] — только при favorites.customers.manage (owner — нет).
         seller, customer → 403 FORBIDDEN. Клиент обновляет при открытии и каждые 60 с. Cache-Control: no-store.
         Аудит receivables.overdue_viewed — при каждом ответе с непустым overdue[] (раз на запрос).
+        Заявки с планшета магазина (ADR-115 п. 24): элемент awaitingPayment[] несёт createdVia — пометка «С планшета» SCR-30
+        (08 §4.10.1; с 1.3.0); фильтр блока по складу (warehouseId, иначе склад пользователя) сохраняется, поэтому склад
+        планшета должен совпадать со складом кассы. Токен планшета (kind=kiosk) → 403 FORBIDDEN (вне закрытого списка).
       security:
         - bearerAuth: []
       x-permissions: [dashboard.cashier.read]
@@ -1151,7 +1154,7 @@ components:
         awaitingPayment:
           type: array
           maxItems: 20
-          description: "Заказы submitting, pending_approval, approved, awaiting_payment с открытым платежом (ядро §22.5, §23 п.7). OrderSummary — схема фрагмента orders (08 §4.8.2)."
+          description: "Заказы submitting, pending_approval, approved, awaiting_payment с открытым платежом (ядро §22.5, §23 п.7). OrderSummary — схема фрагмента orders (08 §4.8.2); элемент несёт createdVia — пометка «С планшета» SCR-30 (08 §4.10.1; ADR-115; с 1.3.0)."
           items: { $ref: "#/components/schemas/OrderSummary" }
         qrPending:
           type: array

@@ -4,8 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { Logger } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import pg from 'pg';
-import { FakeSmsGateway } from '../../src/integrations/sms/fake-sms.gateway.js';
+import { textFor } from '../../src/auth/otp/sms-texts.js';
+import {
+  DEV_OUTBOX_TEMPLATE_KEYS,
+  devOutboxTemplateKey,
+  FakeSmsGateway,
+} from '../../src/integrations/sms/fake-sms.gateway.js';
 import { createSmsGateway } from '../../src/integrations/sms/sms-gateway.factory.js';
+import { SMS_TEMPLATE_KEYS } from '../../src/integrations/sms/sms-gateway.js';
 import { EmbeddedPg } from '../support/embedded-pg.js';
 import { createTestApp, LogCapture, testConfig } from '../support/test-app.js';
 
@@ -116,6 +122,47 @@ describe('FakeSmsGateway → dev_outbox на PostgreSQL 17; код не попа
 
     const dr = await sms.getDeliveryReport(id, PHONE);
     expect(dr).toEqual([expect.objectContaining({ report: 3, state: 'DELIVERED' })]);
+  });
+
+  it('T-KIOSK-037 dev_outbox: код заявки с планшета (otp_kiosk_order) → template_key otp_login и настоящий текст; в логе — настоящий purpose (ADR-115 п. 25)', async () => {
+    const sms = new FakeSmsGateway(pool, { appEnv: 'dev', logger: new Logger('sms') });
+    const id = txId();
+    const text = textFor('otp_kiosk_order', OTP, 'Kod: {code}. Optomstroy');
+    const res = await sms.send({
+      transactionId: id,
+      sender: 'Optomstroy',
+      text,
+      phone: '+996555000417',
+      test: false,
+      purpose: 'otp_kiosk_order',
+    });
+    expect(res).toMatchObject({ outcome: 'ACCEPTED', providerStatus: 0, smsParts: 1 });
+    const row = await pool.query(`SELECT phone_e164, template_key, text FROM dev_outbox WHERE transaction_id = $1`, [
+      id,
+    ]);
+    expect(row.rows).toEqual([{ phone_e164: '+996555000417', template_key: 'otp_login', text }]);
+    expect(String(row.rows[0]?.text)).toContain('для заявки с планшета');
+    const sent = logs.json().filter((e) => e.event === 'sms.fake.send' && e.transactionId === id);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ purpose: 'otp_kiosk_order', providerStatus: 0, smsParts: 1 });
+    expect(logs.text).not.toContain(OTP);
+    expect(logs.text).not.toContain('для заявки с планшета');
+    expect(logs.text).not.toContain('555000417');
+  });
+
+  it('DEV_OUTBOX_TEMPLATE_KEYS = CHECK dev_outbox_template_key_chk dev-миграции; прочие ключи шаблона → otp_login (dev-миграция не меняется)', () => {
+    const devSql = readFileSync(
+      fileURLToPath(new URL('../../db/migrations-dev/0001_dev_outbox.sql', import.meta.url)),
+      'utf8',
+    );
+    const m = /dev_outbox_template_key_chk CHECK \(template_key IN \(([^)]*)\)\)/.exec(devSql);
+    const inCheck = [...(m?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
+    expect(inCheck.length).toBeGreaterThan(0);
+    expect([...DEV_OUTBOX_TEMPLATE_KEYS].sort()).toEqual([...inCheck].sort());
+    for (const key of SMS_TEMPLATE_KEYS) {
+      expect(devOutboxTemplateKey(key), key).toBe(inCheck.includes(key) ? key : 'otp_login');
+    }
+    expect(devOutboxTemplateKey('otp_kiosk_order')).toBe('otp_login');
   });
 
   it('повтор того же transactionId → DUPLICATE_ID (10); test=true → ACCEPTED_TEST (11)', async () => {

@@ -536,6 +536,7 @@ class _Identity extends StatelessWidget {
     RoleCode.owner => l10n.role_owner,
     RoleCode.customer => l10n.role_customer,
     RoleCode.integration => l10n.role_integration,
+    RoleCode.kiosk => l10n.role_kiosk,
   };
 }
 

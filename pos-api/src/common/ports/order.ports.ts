@@ -60,7 +60,8 @@ export interface OrderPaymentView {
   readonly paymentMethod: PaymentMethod;
   readonly customerId: string;
   readonly createdByUserId: string;
-  readonly createdVia: 'staff' | 'customer';
+  /** `orders.created_via`; `kiosk` — заявка с планшета магазина (ADR-115). */
+  readonly createdVia: 'staff' | 'customer' | 'kiosk';
   readonly onecRef: string | null;
   readonly total: MoneyString;
   readonly paidAmount: MoneyString;

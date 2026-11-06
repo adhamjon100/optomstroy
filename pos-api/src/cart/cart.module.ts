@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { OtpChallengesRepository } from '../auth/otp/otp-challenges.repository.js';
 import { StepUpTokenVerifier } from '../auth/step-up/step-up-token.verifier.js';
 import { CART_READER, CATALOG_PRICING_PORT } from '../common/ports/index.js';
 import { OnecGatewayModule } from '../integrations/onec/onec.module.js';
@@ -10,6 +11,8 @@ import { CartRepository } from './cart.repository.js';
 import { CartService } from './cart.service.js';
 import { CatalogPricingService } from './catalog-pricing.service.js';
 import { CheckoutService } from './checkout.service.js';
+import { KioskCartCloser } from './kiosk-cart-closer.js';
+import { KioskResetController } from './kiosk-reset.controller.js';
 import { OnecCheckService } from './onec-check.service.js';
 import { CustomerSearchModule } from '../customers/search/customer-search.module.js';
 
@@ -21,13 +24,19 @@ import { CustomerSearchModule } from '../customers/search/customer-search.module
  * через `INVENTORY_CHECK_PORT`, долг — `CREDIT_DECISION_SERVICE`, уведомления — `NOTIFICATIONS_PORT`; 1С — порт
  * `ONEC_GATEWAY` (необязательный, глобальный провайдер композиционного корня). Фоновые задачи — `CartJobsHandler`
  * (`registerCartJobs` — регистрирует worker).
+ *
+ * Планшет магазина (ADR-115; 06 §7.4, MOD-030): `POST /kiosk/reset` — контроллер этого модуля
+ * (`KioskResetController`, сброс корзины планшета без `rowVersion`, 08 §4.25.4). Погашение кодов `kiosk_order`
+ * планшета в той же транзакции — свой экземпляр `OtpChallengesRepository` (класс без состояния, только `DRIZZLE`;
+ * `AuthModule` его не экспортирует), как `StepUpTokenVerifier`. Экспорт `KioskCartCloser` — закрытие корзины
+ * технического пользователя планшета в транзакции «Подключить заново» (`kiosk/lifecycle`, 08 §4.18.15; MOD-024).
  */
 @Module({
   // Порт 1С (`ONEC_GATEWAY`, по `ONEC_MODE`) для `/check` (OnecCheckService) — тот же модуль, что у orders/payments
   // (интеграция этапа F: без него синхронная проверка 1С в checkout-preview/POST /orders не выполнялась).
   // `GET /search/customers` — модуль `customers` (RM-G-001, GQ-FND-08; ребро `cart → customers` 06 §7.4).
   imports: [OnecGatewayModule, CustomerSearchModule],
-  controllers: [CartController],
+  controllers: [CartController, KioskResetController],
   providers: [
     CartActorResolver,
     CartRepository,
@@ -35,9 +44,11 @@ import { CustomerSearchModule } from '../customers/search/customer-search.module
     OnecCheckService,
     CartJobsHandler,
     StepUpTokenVerifier,
+    OtpChallengesRepository,
+    KioskCartCloser,
     ...bindSalesPort(CATALOG_PRICING_PORT, CatalogPricingService),
     ...bindSalesPort(CART_READER, CheckoutService),
   ],
-  exports: [CartJobsHandler],
+  exports: [CartJobsHandler, KioskCartCloser],
 })
 export class CartModule {}

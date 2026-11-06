@@ -26,6 +26,8 @@ export const STEP_UP_OPERATIONS = [
   'users.roles.assign',
   'users.pin.reset',
   'users.emergency_code.issue',
+  // Планшет магазина (ADR-115; 08 §2.12): подключение, подключение заново и отключение; PATCH — без step-up.
+  'kiosk.manage',
   'session.revoke.any',
   'invitations.manage',
   'settings.app.update',

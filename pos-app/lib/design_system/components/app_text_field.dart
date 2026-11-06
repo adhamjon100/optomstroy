@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/app_progress.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
+import 'package:optomstroy/design_system/components/private_input_scope.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/design_system/tokens/ds_typography.dart';
@@ -36,6 +37,10 @@ enum AppTextFieldSize {
 /// `borderStrong`, радиус `sm` → текст `bodyLg` → суффикс (очистка / спиннер / иконка ошибки /
 /// счётчик) → подсказка или ошибка `caption`. Фокус — обводка 2 px `primaryText` без внешнего
 /// кольца; ошибка — 2 px `error` + текст из ARB (передаёт вызывающий код).
+///
+/// В области «общее устройство» `PrivateInputScope` (03 §9.74, редакция 1.19; DS-099) поле само выключает подсказки,
+/// автоисправление, обучение клавиатуры, `autofillHints`, выделение, контекстное меню и вставку; системная клавиатура
+/// остаётся (количество, фильтры цены). Вне области — как прежде.
 class AppTextField extends StatefulWidget {
   /// Создаёт поле.
   const AppTextField({
@@ -60,6 +65,8 @@ class AppTextField extends StatefulWidget {
     this.keyboardType,
     this.textInputAction,
     this.autofillHints,
+    this.keypadInput = false,
+    this.semanticValueOf,
     this.autofocus = false,
     this.textStyle,
     this.semanticLabel,
@@ -126,8 +133,17 @@ class AppTextField extends StatefulWidget {
   /// Действие клавиатуры (`next`/`done`).
   final TextInputAction? textInputAction;
 
-  /// Подсказки автозаполнения.
+  /// Подсказки автозаполнения (в `PrivateInputScope` не передаются).
   final Iterable<String>? autofillHints;
+
+  /// Ввод только экранной клавиатурой `KioskKeypad` (03 §9.74, DS-101): системная клавиатура не открывается
+  /// (`readOnly` + `TextInputType.none`), значение задаёт владелец [controller]; вид поля — по [variant].
+  /// По умолчанию `false` — как прежде.
+  final bool keypadInput;
+
+  /// Что объявляет диктор вместо значения поля (A11Y-023: у поля номера на планшете — число введённых цифр, а не
+  /// номер); `null` — значение поля, как прежде.
+  final String Function(String text)? semanticValueOf;
 
   /// Автофокус.
   final bool autofocus;
@@ -211,6 +227,8 @@ class _AppTextFieldState extends State<AppTextField> {
     final DsInteractionState? preview = DsStatePreview.maybeOf(context);
     final bool focused = preview?.focused ?? _focused;
     final bool enabled = widget.enabled;
+    // Область «общее устройство» (03 §9.74, DS-099): вне неё значения TextField — прежние.
+    final bool private = PrivateInputScope.of(context);
 
     final Color labelColor = !enabled
         ? c.textSecondary
@@ -238,7 +256,7 @@ class _AppTextFieldState extends State<AppTextField> {
     final Widget? suffix = _buildSuffix(c);
     final Widget? prefix = _buildPrefix(c, t);
 
-    final Widget field = MouseRegion(
+    final Widget input = MouseRegion(
       cursor: enabled ? SystemMouseCursors.text : SystemMouseCursors.basic,
       child: _HoverBorder(
         enabled: enabled && !_readOnly,
@@ -247,25 +265,29 @@ class _AppTextFieldState extends State<AppTextField> {
           controller: _controller,
           focusNode: _focus,
           enabled: enabled,
-          readOnly: _readOnly,
+          readOnly: _readOnly || widget.keypadInput,
           autofocus: widget.autofocus,
           obscureText: widget.variant == AppTextFieldVariant.password,
-          enableSuggestions: widget.variant != AppTextFieldVariant.password,
-          autocorrect: widget.variant != AppTextFieldVariant.password,
+          enableSuggestions: !private && widget.variant != AppTextFieldVariant.password,
+          autocorrect: !private && widget.variant != AppTextFieldVariant.password,
+          enableIMEPersonalizedLearning: !private,
+          enableInteractiveSelection: private ? false : null,
+          contextMenuBuilder: PrivateInputScope.contextMenuBuilderFor(private: private),
           minLines: _multiline ? 2 : 1,
           maxLines: _multiline ? 6 : 1,
           maxLength: widget.maxLength,
           maxLengthEnforcement: MaxLengthEnforcement.enforced,
           inputFormatters: widget.inputFormatters,
-          keyboardType:
-              widget.keyboardType ??
-              switch (widget.variant) {
-                AppTextFieldVariant.number => const TextInputType.numberWithOptions(decimal: true),
-                AppTextFieldVariant.multiline => TextInputType.multiline,
-                _ => TextInputType.text,
-              },
+          keyboardType: widget.keypadInput
+              ? TextInputType.none
+              : widget.keyboardType ??
+                    switch (widget.variant) {
+                      AppTextFieldVariant.number => const TextInputType.numberWithOptions(decimal: true),
+                      AppTextFieldVariant.multiline => TextInputType.multiline,
+                      _ => TextInputType.text,
+                    },
           textInputAction: widget.textInputAction,
-          autofillHints: widget.autofillHints,
+          autofillHints: private ? null : widget.autofillHints,
           style: textStyle,
           cursorColor: c.primaryText,
           onChanged: widget.onChanged,
@@ -294,6 +316,7 @@ class _AppTextFieldState extends State<AppTextField> {
         ),
       ),
     );
+    final Widget field = _announced(input);
 
     final int length = _controller.text.characters.length;
     final bool showCounter = _multiline && widget.maxLength != null;
@@ -345,6 +368,20 @@ class _AppTextFieldState extends State<AppTextField> {
       label: widget.semanticLabel ?? widget.label,
       hint: widget.helper,
       child: widget.expand ? column : IntrinsicWidth(child: column),
+    );
+  }
+
+  /// [AppTextField.semanticValueOf]: диктор слышит его вместо значения поля; без него — поле как есть.
+  Widget _announced(Widget textField) {
+    final String Function(String text)? valueOf = widget.semanticValueOf;
+    if (valueOf == null) return textField;
+    return Semantics(
+      textField: true,
+      readOnly: _readOnly || widget.keypadInput,
+      enabled: widget.enabled,
+      value: valueOf(_controller.text),
+      excludeSemantics: true,
+      child: textField,
     );
   }
 

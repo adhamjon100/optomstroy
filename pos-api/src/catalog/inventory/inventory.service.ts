@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type pg from 'pg';
 import { PG_POOL } from '../../common/db/database.module.js';
-import type { ProblemFieldError } from '../../common/problem-details/problem.exception.js';
+import { ProblemException, type ProblemFieldError } from '../../common/problem-details/problem.exception.js';
 import { dec, isoOf, latest, qtyOf } from '../common/catalog-format.js';
 import { isUuidString, validationFailed } from '../common/catalog-query.js';
 import type { CatalogSnapshot } from '../common/catalog-snapshot.js';
@@ -112,13 +112,23 @@ interface VariantInfo {
 export class InventoryService {
   constructor(@Inject(PG_POOL) private readonly pool: pg.Pool) {}
 
-  /** `GET /inventory/balances`: строка на пару (вариант, склад); вариант без снимка на складе → `unknown`. */
+  /**
+   * `GET /inventory/balances`: строка на пару (вариант, склад); вариант без снимка на складе → `unknown`. Без склада —
+   * все активные склады; у зрителя с закреплённым складом (планшет магазина, ADR-115 п. 23) — только его склад.
+   */
   async balances(
     viewer: CatalogViewer,
     variantIds: readonly string[],
-    warehouseId: string | undefined,
+    requestedWarehouseId: string | undefined,
     snap: CatalogSnapshot,
   ): Promise<{ items: StockBalanceDto[]; asOf?: string; source: 'snapshot' }> {
+    const warehouseId = viewer.warehouseLocked ? viewer.warehouse?.id : requestedWarehouseId;
+    if (
+      viewer.warehouseLocked &&
+      (!warehouseId || (requestedWarehouseId !== undefined && requestedWarehouseId !== warehouseId))
+    ) {
+      throw new ProblemException('FORBIDDEN', { detail: 'На планшете магазина доступен только склад планшета.' });
+    }
     const [variants, warehouses] = await Promise.all([
       this.pool.query<{ id: string; unit_id: string }>(
         `SELECT v.id, p.base_unit_id AS unit_id FROM product_variants v JOIN products p ON p.id = v.product_id

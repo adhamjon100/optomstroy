@@ -2,6 +2,7 @@ import { type CallHandler, type ExecutionContext, Injectable, type NestIntercept
 import { Reflector } from '@nestjs/core';
 import type { Response } from 'express';
 import { type Observable, tap } from 'rxjs';
+import { bySubjectKind, isSubjectKind } from '../../common/auth/subject-kind.js';
 import type { RequestWithContext } from '../../common/http/request-context.js';
 import { RECORDS_RECENT_VIEW } from '../common/recent-view.marker.js';
 import { RecentProductsService } from './recent-products.service.js';
@@ -16,7 +17,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * (`src/catalog/common/recent-view.marker.ts`); интерсептор регистрируется глобально (APP_INTERCEPTOR в
  * `CatalogRecentModule`) и срабатывает только на помеченных обработчиках — так контроллер каталога не импортирует
  * модуль «Недавних» (интеграция этапа E, EQ-CSYNC-06). Отметка — после успешного ответа (2xx/304), параметр пути
- * `id`. Ошибка карточки (404 для `customer`, 403) отметку не создаёт.
+ * `id`. Ошибка карточки (404 для `customer`, 403) отметку не создаёт. Планшету магазина (`kind=kiosk`) «Недавних» нет:
+ * запись `recent_products` для него пропускается (10 KIOSK-005; 08 §4.25 — между покупателями ничего не запоминается);
+ * вид вне `staff | customer | kiosk` — тоже без записи (отказ по умолчанию, 06 ARCH-065).
  */
 @Injectable()
 export class RecentViewInterceptor implements NestInterceptor {
@@ -40,9 +43,14 @@ export class RecentViewInterceptor implements NestInterceptor {
         const id = req.params?.id;
         const principal = req.principal;
         if (!principal || typeof id !== 'string' || !UUID_RE.test(id)) return;
-        if (res.statusCode >= 400) return;
+        if (res.statusCode >= 400 || !recordsRecentViews(principal.kind)) return;
         this.recent.recordViewInBackground(principal.userId, id.toLowerCase());
       }),
     );
   }
+}
+
+/** Пишет ли субъект «Недавние»: сотрудник и покупатель — да, планшет магазина — нет (10 KIOSK-005). */
+export function recordsRecentViews(kind: unknown): boolean {
+  return isSubjectKind(kind) && bySubjectKind(kind, { staff: true, customer: true, kiosk: false });
 }

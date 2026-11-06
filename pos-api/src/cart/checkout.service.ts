@@ -15,6 +15,8 @@ import {
   type CreditDecisionService,
   INVENTORY_CHECK_PORT,
   type InventoryCheckPort,
+  type PreviewTokenExpectation,
+  type RestoreFromOrderResult,
   type SalesActor,
   type SalesTx,
 } from '../common/ports/index.js';
@@ -30,15 +32,16 @@ import {
   percentToHundredths,
   SalesDomainError,
 } from '../sales-domain/index.js';
-import { type CartActor, CartActorResolver, can } from './cart-actor.js';
+import { type CartActor, CartActorResolver, can, isKioskActor } from './cart-actor.js';
 import { iso, moneyDto, qty3, rows } from './cart-common.js';
 import { cartDto } from './cart-dto.js';
 import { conflictDto, type EvaluatedCart, type EvaluatedLine } from './cart-evaluator.js';
 import type { PreviewRequest } from './cart-requests.js';
 import { type CartRow, CartRepository } from './cart.repository.js';
 import { assertDomain, CartService, requiresRoleExt } from './cart.service.js';
+import { kioskCardCart } from './kiosk-card-price-list.js';
 import { type OnecCheckResult, OnecCheckService } from './onec-check.service.js';
-import { signPreviewToken, verifyPreviewToken } from './preview-token.js';
+import { signPreviewToken, verifyPreviewToken as readPreviewToken } from './preview-token.js';
 
 /** Срок действия предпросмотра (08 §3.8: `previewToken` — 5 мин). */
 export const PREVIEW_TTL_MS = 5 * 60_000;
@@ -104,7 +107,16 @@ export class CheckoutService implements CartReader {
 
   // =========================================================================================== POST /cart/checkout-preview
 
-  async preview(a: CartActor, r: PreviewRequest): Promise<Record<string, unknown>> {
+  /**
+   * `canSubmitOrder` — право отправить заказ из корзины (`permissions.canCreateOrder`): `order.create` или, у планшета
+   * магазина, `kiosk.order.submit` (cart.controller считает его по полному субъекту с видом — 11 SEC-138); по
+   * умолчанию — `order.create` актора, как прежде.
+   */
+  async preview(
+    a: CartActor,
+    r: PreviewRequest,
+    canSubmitOrder: boolean = can(a, 'order.create'),
+  ): Promise<Record<string, unknown>> {
     if (a.isCustomer && r.manualDiscountPercent !== null && percentToHundredths(r.manualDiscountPercent) > 0n) {
       throw new ProblemException('FORBIDDEN', { detail: 'Ручная скидка в режиме клиента недоступна.' });
     }
@@ -130,7 +142,7 @@ export class CheckoutService implements CartReader {
       // не создать (10 ORD-007, ORD-006; ревью F-money-rules-8): POST /orders ответит 422 CREDIT_*.
       const creditRefused = r.paymentMethod === 'credit' && o.credit?.allowed !== true;
       const canCreateOrder =
-        can(a, 'order.create') &&
+        canSubmitOrder &&
         o.conflicts.length === 0 &&
         o.needsOverride.length === 0 &&
         !creditRefused &&
@@ -228,12 +240,17 @@ export class CheckoutService implements CartReader {
     if (items.length === 0) throw new ProblemException('CART_EMPTY', { detail: 'Корзина пуста.' });
     const strict = i.strict || i.mode === 'order';
     const canCredit = !a.isCustomer && can(a, 'credit.sale.create');
-    const allowed = allowedPaymentMethods({
-      isCustomerMode: a.isCustomer,
-      qrProvider: this.config.QR_PROVIDER,
-      canSellOnCredit: canCredit,
-    });
-    if (i.paymentMethod === 'qr_bakai' && a.isCustomer && this.config.QR_PROVIDER === 'none') {
+    // Планшет магазина — только «Оплата на кассе» при любом `QR_PROVIDER` (08 §4.7.7: `allowedPaymentMethods =
+    // ["cash"]`; 10 KIOSK-010: QR — у кассира); `qr_bakai` с планшета — как у покупателя при `QR_PROVIDER=none`.
+    const kiosk = isKioskActor(a);
+    const allowed: readonly PaymentMethod[] = kiosk
+      ? ['cash']
+      : allowedPaymentMethods({
+          isCustomerMode: a.isCustomer,
+          qrProvider: this.config.QR_PROVIDER,
+          canSellOnCredit: canCredit,
+        });
+    if (i.paymentMethod === 'qr_bakai' && a.isCustomer && (this.config.QR_PROVIDER === 'none' || kiosk)) {
       throw new ProblemException('VALIDATION_FAILED', {
         status: 422,
         detail: 'Оплата QR сейчас недоступна.',
@@ -499,12 +516,30 @@ export class CheckoutService implements CartReader {
 
   // =========================================================================================== CartReader (порт)
 
+  /**
+   * Проверки оформления для `POST /orders` и заявки с планшета (строгий режим). Канал `kiosk` (только актор
+   * `subjectKind = kiosk`; P-002 §8.4 п. 4–5; 10 KIOSK-015; 08 §4.25.2): при `customerOverride` корзина оценивается в
+   * памяти как корзина найденной карточки (`kioskCardCart`: клиент и вид цены карточки) — пересчёт цен и скидки
+   * клиента 1С, проверка наличия, синхронный `/check` 1С и снимок `cart`; в корзину ничего не пишется (версия
+   * сверяется по самой корзине — до подмены). Конфликт `price_changed` для канала `kiosk` отбрасывается (заявка — по
+   * цене на момент создания); `previewToken`, если передан, сверяется без итога. Для staff и customer — как прежде.
+   */
   async validateForCheckout(
     tx: SalesTx | null,
     actor: SalesActor,
     input: CheckoutValidationInput,
   ): Promise<CheckoutValidation> {
     const a = await this.actors.fromSalesActor(actor);
+    const kioskChannel = isKioskActor(a);
+    // Канал и карточку задаёт только сервер и только для планшета (отказ по умолчанию: ошибка вызывающего кода).
+    if (!kioskChannel && (input.channel === 'kiosk' || input.customerOverride)) {
+      throw new Error(
+        'cart: channel=kiosk и customerOverride допустимы только для актора планшета (subjectKind=kiosk)',
+      );
+    }
+    if (input.customerOverride && input.channel !== 'kiosk') {
+      throw new Error('cart: customerOverride задаётся только вместе с channel=kiosk');
+    }
     const run = async (ex: DbExecutor): Promise<CheckoutValidation> => {
       const cart = await this.loadOwnActive(ex, a, input.cartId, tx !== null);
       if (input.expectedRowVersion !== undefined) await this.carts.assertVersion(ex, a, cart, input.expectedRowVersion);
@@ -515,7 +550,9 @@ export class CheckoutService implements CartReader {
       ) {
         throw new ProblemException('FORBIDDEN', { detail: 'Ручная скидка в режиме клиента недоступна.' });
       }
-      const o = await this.evaluateCheckout(ex, a, cart, {
+      // Корзина планшета «как корзина карточки» — только в памяти (Р-05 (а)); без карточки — сама корзина.
+      const priced = input.customerOverride ? await kioskCardCart(ex, cart, input.customerOverride.customerId) : cart;
+      const o = await this.evaluateCheckout(ex, a, priced, {
         paymentMethod: input.paymentMethod ?? 'cash',
         manualDiscountPercent: input.manualDiscountPercent ?? null,
         discountOverride: input.discountOverride ?? null,
@@ -525,17 +562,19 @@ export class CheckoutService implements CartReader {
         mode: 'order',
         syncCheckWithOnec: true,
       });
-      if (o.conflicts.length === 0 && input.previewToken) {
-        this.assertPreviewToken(input.previewToken, {
-          cartId: cart.id,
-          cartRowVersion: cart.row_version,
-          paymentMethod: input.paymentMethod ?? 'cash',
-          total: o.e.priced.total.toString(),
-        });
+      // Канал `kiosk`: `price_changed` не поднимается — ни против снимка обычной цены, ни против цены карточки
+      // (P-002 §8.4 п. 5.4); иначе `oldPrice`/`newPrice` раскрыли бы цену соглашения.
+      const conflicts = kioskChannel ? o.conflicts.filter((c) => c.kind !== 'price_changed') : o.conflicts;
+      if (conflicts.length === 0 && input.previewToken) {
+        this.assertPreviewToken(
+          input.previewToken,
+          { cartId: cart.id, cartRowVersion: cart.row_version, paymentMethod: input.paymentMethod ?? 'cash' },
+          kioskChannel ? { checkTotal: false } : { checkTotal: true, total: o.e.priced.total.toString() },
+        );
       }
       return {
-        ok: o.conflicts.length === 0,
-        conflicts: o.conflicts.map((c): CheckoutConflict => ({
+        ok: conflicts.length === 0,
+        conflicts: conflicts.map((c): CheckoutConflict => ({
           ...conflictDto(
             c,
             o.e.lines.find((l) => l.item.variant_id === c.variantId),
@@ -544,7 +583,7 @@ export class CheckoutService implements CartReader {
           variantId: c.variantId,
           kind: c.kind,
         })),
-        cart: this.snapshot(cart, o),
+        cart: this.snapshot(priced, o),
         allowedPaymentMethods: o.allowed,
         onecCheck: o.onecCheck,
         credit: o.credit,
@@ -555,15 +594,25 @@ export class CheckoutService implements CartReader {
   }
 
   /**
+   * `CartReader.verifyPreviewToken` — токен предпросмотра без итога (08 §4.7.7, §4.25.2 шаг (1); 10 KIOSK-013): подпись,
+   * срок, `cartId`, `cartRowVersion`, способ оплаты; без БД и без 1С. Отказ — `422 PRICE_CHANGED` `preview_*`.
+   */
+  verifyPreviewToken(token: string, expected: PreviewTokenExpectation): void {
+    this.assertPreviewToken(token, expected, { checkTotal: false });
+  }
+
+  /**
    * Сверка `previewToken` с серверным пересчётом (10 ORD-020, AC-ORD-020; 04 AC-FLOW-014-04; 08 §3.8, §4.8.1):
    * подделанный, повреждённый или просроченный токен, другая корзина/версия/способ оплаты или другой итог →
    * `422 PRICE_CHANGED` (заказ не создаётся, корзина сохраняется; клиент повторяет `checkout-preview`).
+   * `checkTotal = false` — канал `kiosk` (08 §4.7.7; 10 ORD-007): итог не сверяется и в ответ не попадает.
    */
   private assertPreviewToken(
     token: string,
-    actual: { cartId: string; cartRowVersion: number; paymentMethod: PaymentMethod; total: string },
+    actual: PreviewTokenExpectation,
+    opts: { readonly checkTotal: true; readonly total: string } | { readonly checkTotal: false },
   ): void {
-    const t = verifyPreviewToken(this.hmac, token, this.clock.now());
+    const t = readPreviewToken(this.hmac, token, this.clock.now());
     const priceChanged = (reason: string, extra: Record<string, unknown> = {}) =>
       new ProblemException('PRICE_CHANGED', {
         detail: 'Итоги изменились после предпросмотра — обновите оформление.',
@@ -576,10 +625,10 @@ export class CheckoutService implements CartReader {
       throw priceChanged('preview_cart_changed');
     }
     if (t.paymentMethod !== actual.paymentMethod) throw priceChanged('preview_payment_method_changed');
-    if (t.total !== actual.total) {
+    if (opts.checkTotal && t.total !== opts.total) {
       throw priceChanged('preview_total_changed', {
         previewTotal: moneyDto(t.total),
-        total: moneyDto(actual.total),
+        total: moneyDto(opts.total),
       });
     }
   }
@@ -654,13 +703,13 @@ export class CheckoutService implements CartReader {
    * Восстановление состава заказа в новую корзину автора (10 ORD-027; 08 `Cart.restoredFromOrderId`): пустая
    * активная (или её отсутствие) — восстановленная `active`, иначе (или `forceParked`) — `parked` «Восстановлена из
    * заказа № …». Цены-снимки — цены заказа (предупреждение `price_changed` при изменении). Повтор — та же корзина.
+   * Заявка с планшета (`created_via='kiosk'`) — `skipped` без изменений: корзина планшета — только для следующего
+   * покупателя, номер и состав чужой заявки на планшет не попадают (10 KIOSK-030; P-002 §8.7 п. 9).
    */
   async restoreFromOrder(
     tx: SalesTx,
     input: { readonly orderId: string; readonly ownerUserId: string; readonly forceParked?: boolean },
-  ): Promise<{ readonly cartId: string; readonly status: 'active' | 'parked' }> {
-    const existing = await this.repo.findRestored(tx, input.orderId, input.ownerUserId);
-    if (existing) return { cartId: existing.id, status: existing.status === 'active' ? 'active' : 'parked' };
+  ): Promise<RestoreFromOrderResult> {
     const order = (
       await rows<{
         customer_id: string | null;
@@ -668,13 +717,21 @@ export class CheckoutService implements CartReader {
         price_list_id: string;
         discount_percent: string;
         public_number: string;
+        created_via: string;
       }>(
         tx,
-        sql`SELECT customer_id, warehouse_id, price_list_id, discount_percent::text AS discount_percent, public_number
+        sql`SELECT customer_id, warehouse_id, price_list_id, discount_percent::text AS discount_percent, public_number,
+                   created_via
               FROM orders WHERE id = ${input.orderId}::uuid`,
       )
     )[0];
     if (!order) throw new ProblemException('NOT_FOUND', { detail: 'Заказ не найден.' });
+    if (order.created_via === 'kiosk') {
+      this.logger.log({ event: 'cart.restore_skipped', orderId: input.orderId, reason: 'kiosk_order' });
+      return { cartId: null, status: 'skipped' };
+    }
+    const existing = await this.repo.findRestored(tx, input.orderId, input.ownerUserId);
+    if (existing) return { cartId: existing.id, status: existing.status === 'active' ? 'active' : 'parked' };
     const lines = await rows<{
       variant_id: string;
       packaging_id: string | null;

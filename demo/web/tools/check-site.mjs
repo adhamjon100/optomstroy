@@ -18,7 +18,9 @@
 //      сайта; ссылки «Лицензии» в панели и на demo-closed.html;
 //   9. размеры: всего, файлы больше 10 МБ (предупреждение: лимит Netlify Drop), оценка сжатого трафика;
 //  10. pdf.js (fix:pdfcsp): pdfjs/ — файлы pdfjs-dist с закреплёнными sha256 (tools/pdfjs-files.mjs), загрузчик = исходнику,
-//      demo-boot.js задаёт dartPdfJsBaseUrl, main.dart.js его читает (пакет printing не пойдёт на unpkg.com).
+//      demo-boot.js задаёт dartPdfJsBaseUrl, main.dart.js его читает (пакет printing не пойдёт на unpkg.com);
+//  11. планшет магазина (P-002 TAB-3-02): имена ключей хранилища приложения, на которые опирается demo-kiosk.js
+//      (`kiosk.tablet_id`, `device.id`, префикс `FlutterSecureStorage` в localStorage), есть в main.dart.js этой сборки.
 // Код выхода: 0 — можно выкладывать; 1 — есть ошибки (перечислены).
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -52,7 +54,7 @@ const read = (f) => readFileSync(`${SITE}/${f}`, 'utf8');
 
 // ---------------------------------------------------------------- 1. состав
 const REQUIRED = [
-  'index.html', 'demo-closed.html', 'demo-boot.js', 'demo-bridge.js', 'demo-panel.js', 'demo-lock.js', 'demo-reset.js', 'demo-env.js', 'demo-data.js',
+  'index.html', 'demo-closed.html', 'demo-boot.js', 'demo-bridge.js', 'demo-panel.js', 'demo-lock.js', 'demo-reset.js', 'demo-kiosk.js', 'demo-env.js', 'demo-data.js',
   'demo-tokens.css', 'demo-screen.css', 'demo-panel.css', 'api-unavailable.json', 'robots.txt', '_headers', '_redirects',
   'flutter_bootstrap.js', 'main.dart.js', 'manifest.json', 'favicon.png', 'canvaskit/canvaskit.js', 'canvaskit/canvaskit.wasm', 'canvaskit/chromium/canvaskit.js', 'canvaskit/chromium/canvaskit.wasm',
   'assets/NOTICES', 'assets/FontManifest.json', 'assets/AssetManifest.bin', 'assets/fonts/MaterialIcons-Regular.otf',
@@ -239,6 +241,28 @@ if (has('THIRD_PARTY_NOTICES.txt') && has('assets/NOTICES')) {
   const baseSet = new RegExp(`dartPdfJsBaseUrl = '${PDFJS.baseUrl.replace(/[/.]/g, '\\$&')}'`).test(boot);
   const honoured = /"dartPdfJsBaseUrl" in [\w$.]+\)[\w$.]+=[\w$.]+\.dartPdfJsBaseUrl/.test(main);
   add(`pdf.js с сайта: demo-boot.js задаёт dartPdfJsBaseUrl = '${PDFJS.baseUrl}', пакет printing в main.dart.js его читает (не unpkg.com)`, baseSet && honoured, { baseSet, honoured, cdnDefault: /https:\/\/unpkg\.com\/pdfjs-dist@/.test(main) ? 'в main.dart.js — адрес по умолчанию пакета (не используется: задан dartPdfJsBaseUrl; CSP его не пропустит)' : null });
+}
+
+// ---------------------------------------------------------------- 11. планшет магазина (P-002 TAB-3-02)
+// «Вернуться к обычному входу» / «Планшет магазина» переносят данные приложения по именам ключей
+// flutter_secure_storage_web (WebOptions по умолчанию: localStorage, префикс FlutterSecureStorage) и SecureKey pos-app
+// (признак планшета kiosk.tablet_id; device.id не переносится). Тихое переименование в приложении сломало бы
+// переключение (device.id уехал бы вместе с данными планшета) — имена сверяются с main.dart.js этой сборки.
+if (has('main.dart.js') && has('demo-kiosk.js') && has('index.html')) {
+  const main = read('main.dart.js');
+  const page = read('demo-kiosk.js');
+  const html = read('index.html');
+  const at = (f) => html.indexOf(`<script defer src="${f}"></script>`);
+  const lit = {
+    tabletIdInApp: main.includes('"kiosk.tablet_id"'),
+    deviceIdInApp: main.includes('"device.id"'),
+    prefixInApp: /"publicKey","FlutterSecureStorage"/.test(main),
+    localStorageInApp: /"useSessionStorage",(?:String\(!1\)|"false"|!1)\]/.test(main),
+    page: page.includes("'FlutterSecureStorage'") && page.includes("'device.id'") && page.includes("'kiosk.tablet_id'"),
+    panel: read('demo-panel.js').includes("'FlutterSecureStorage.kiosk.tablet_id'"),
+    scriptOrder: at('demo-env.js') >= 0 && at('demo-env.js') < at('demo-kiosk.js') && at('demo-kiosk.js') < at('demo-panel.js') && at('demo-kiosk.js') < at('demo-boot.js'),
+  };
+  add('планшет магазина (TAB-3-02): main.dart.js содержит kiosk.tablet_id, device.id и префикс FlutterSecureStorage в localStorage — те же имена, что в demo-kiosk.js и панели; demo-kiosk.js подключён до панели и demo-boot.js', Object.values(lit).every(Boolean), lit);
 }
 
 // ---------------------------------------------------------------- 9. размеры

@@ -21,7 +21,8 @@ import { findOrder, findOrderOutbox, insertHistory, type OrderRow } from './orde
  * §23 п. 2). Общая процедура для ответа воркера outbox (`orders.onec-confirmed`/`-failed`), ручной привязки
  * (`onec-link`), синхронизации статусов (`sync.order_status`, `refreshFromOnec`) и приёма оплаты (`applyReceived`).
  * Сам статус решает чистая функция `planOrderStatusChange`; здесь — запись `orders`, `order_status_history`,
- * `transactions (order_cancelled)` и уведомление `order_status` автору заказа (D-41) в транзакции вызывающего.
+ * `transactions (order_cancelled)` и уведомление `order_status` автору заказа (D-41) в транзакции вызывающего; у
+ * заявки с планшета (`created_via='kiosk'`) вместо автора — роли `cashier` и `senior_seller` (10 KIOSK-030).
  */
 
 /** Сырые значения документа «Заказ клиента» из ответа 1С (`POST /pos/v1/orders`, `/orders/{uuid}/status`, пакет). */
@@ -244,12 +245,15 @@ export class OrderProjector {
   /**
    * «Итог уточнён 1С» (10 DISC-006; 05 ONEC-039, SYNC-047; ТЗ для 1С §6.6): уведомление `order_status` автору заказа,
    * когда итог 1С впервые отличается от итога POS. Один раз на заказ (`dedupe_key` `order_totals_differ:<id>`).
+   * Заявка с планшета (`created_via='kiosk'`): автор — технический пользователь, уведомление не создаётся; пометку
+   * «итог уточнён 1С» кассир видит в SCR-24 (10 KIOSK-030; P-002 §8.7 п. 8).
    */
   async notifyTotalsDiffer(
     tx: SalesTx,
-    o: Pick<OrderRow, 'id' | 'public_number' | 'created_by_user_id' | 'total'>,
+    o: Pick<OrderRow, 'id' | 'public_number' | 'created_by_user_id' | 'created_via' | 'total'>,
     onecTotal: string,
   ): Promise<void> {
+    if (isKioskOrder(o)) return;
     const pos = Money.of(o.total).toString();
     const onec = Money.of(onecTotal).toString();
     await this.send(tx, o.id, {
@@ -263,13 +267,33 @@ export class OrderProjector {
     });
   }
 
-  /** Уведомление `order_status` автору заказа (10 ORD-040, D-41); дубль по `dedupe_key` не создаётся. */
+  /**
+   * Уведомление `order_status` автору заказа (10 ORD-040, D-41); дубль по `dedupe_key` не создаётся. Заявка с планшета
+   * (`created_via='kiosk'`; 10 KIOSK-030; 08 §3.13, §4.8.4): автору (техническому пользователю) — ничего; об отмене
+   * и отклонении 1С (`cancelled`, `submit_failed`) — ролям `cashier` и `senior_seller` (`notifyKioskStaff`), о прочих
+   * переходах — никому.
+   */
   async notifyOwner(
     tx: SalesTx | null,
-    o: Pick<OrderRow, 'id' | 'public_number' | 'created_by_user_id'>,
+    o: Pick<OrderRow, 'id' | 'public_number' | 'created_by_user_id' | 'created_via'>,
     to: OrderStatus,
     extra = '',
   ): Promise<void> {
+    if (isKioskOrder(o)) {
+      if (to !== 'cancelled' && to !== 'submit_failed') return;
+      await this.notifyKioskStaff(tx, o.id, {
+        kind: 'order_status',
+        severity: 'warning',
+        title: `Заявка с планшета ${o.public_number}: ${ORDER_STATUS_TITLE_RU[to]}`,
+        body:
+          `Статус заявки с планшета ${o.public_number} — «${ORDER_STATUS_TITLE_RU[to]}».` +
+          ' Товары в корзину планшета не возвращаются.' +
+          (extra ? ` ${extra}` : ''),
+        payload: { orderId: o.id, status: to },
+        dedupeKey: `kiosk_order_status:${o.id}:${to}`,
+      });
+      return;
+    }
     await this.send(tx, o.id, {
       userId: o.created_by_user_id,
       kind: 'order_status',
@@ -279,6 +303,24 @@ export class OrderProjector {
       payload: { orderId: o.id, status: to },
       dedupeKey: `order_status:${o.id}:${to}`,
     });
+  }
+
+  /**
+   * Уведомление о заявке с планшета вместо автора — всем активным пользователям ролей `cashier` и `senior_seller`
+   * (08 §3.13 «Уведомление kiosk_order», §4.8.4; 10 KIOSK-030; P-002 §8.7 п. 8): отмена, отклонение 1С, `dead`
+   * задачи outbox. Без телефона и сумм; повтор с тем же `dedupe_key` строк не создаёт (`UNIQUE (user_id, dedupe_key)`).
+   */
+  async notifyKioskStaff(tx: SalesTx | null, orderId: string, input: Omit<NotificationInput, 'userId'>): Promise<void> {
+    if (!this.notifications) return;
+    try {
+      for (const role of KIOSK_STAFF_ROLES) await this.notifications.notifyRole(tx, role, input);
+    } catch (e) {
+      if (e instanceof PortNotBoundError) {
+        this.warn('orders.notify.skipped: NotificationsPort не привязан', { orderId });
+        return;
+      }
+      throw e;
+    }
   }
 
   private async send(tx: SalesTx | null, orderId: string, input: NotificationInput): Promise<void> {
@@ -293,6 +335,21 @@ export class OrderProjector {
       throw e;
     }
   }
+}
+
+/**
+ * Получатели уведомлений о заявке с планшета вместо её автора — технического пользователя (08 §3.13, §4.8.4; 10
+ * KIOSK-018, KIOSK-030; Р-12 (а)): кассир и старший продавец.
+ */
+export const KIOSK_STAFF_ROLES = ['cashier', 'senior_seller'] as const;
+
+/**
+ * Заявка с планшета магазина (`orders.created_via='kiosk'`, ADR-115): автор — технический пользователь планшета, у
+ * которого нет ни читателя уведомлений, ни корзины покупателя — состав в корзину автора не восстанавливается, автору
+ * уведомления не создаются (10 KIOSK-030; P-002 §8.7 п. 8–9).
+ */
+export function isKioskOrder(o: Pick<OrderRow, 'created_via'>): boolean {
+  return o.created_via === 'kiosk';
 }
 
 export interface OrderTransactionInput {

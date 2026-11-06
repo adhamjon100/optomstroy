@@ -53,6 +53,10 @@ export const envShape = {
   MIN_APP_VERSION: platformVersions,
   RECOMMENDED_APP_VERSION: platformVersions.optional(),
   CUSTOMER_SELF_SERVICE: bool(true),
+  // Планшет магазина (P-002, ADR-115; 16 §4.3): флаг режима не зависит от CUSTOMER_SELF_SERVICE; список IP/CIDR через
+  // запятую разбирает потребитель (пусто — проверки нет), как SMSPRO_DLR_ALLOWED_IPS.
+  KIOSK_MODE: bool(false),
+  KIOSK_ALLOWED_CIDRS: optStr(),
   RECEIVABLES_MAX_AGE_MIN: int(60, 1),
 
   // --- База данных ---
@@ -88,8 +92,10 @@ export const envShape = {
   AUTH_ACCESS_TTL_SECONDS: int(900, 60),
   AUTH_REFRESH_TTL_STAFF_DAYS: int(7, 1),
   AUTH_REFRESH_TTL_CUSTOMER_DAYS: int(30, 1),
+  AUTH_REFRESH_TTL_KIOSK_DAYS: int(180, 1),
   AUTH_REFRESH_IDLE_STAFF_HOURS: int(24, 1),
   AUTH_REFRESH_IDLE_CUSTOMER_DAYS: int(14, 1),
+  AUTH_REFRESH_IDLE_KIOSK_DAYS: int(7, 1),
   AUTH_REFRESH_GRACE_SECONDS: int(30, 0),
   AUTH_BACKGROUND_LOCK_MINUTES: int(5, 0),
   AUTH_BIO_AUTO_PROMPT: bool(true),

@@ -11,6 +11,7 @@ export * from './customer-reader.port.js';
 export * from './discount-policy.port.js';
 export * from './documents.port.js';
 export * from './inventory-check.port.js';
+export * from './kiosk-order.port.js';
 export * from './notifications.port.js';
 export * from './onec-outbox-writer.port.js';
 export * from './order.ports.js';

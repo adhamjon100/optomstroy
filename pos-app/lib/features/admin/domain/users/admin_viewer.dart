@@ -24,7 +24,7 @@ final class AdminViewer {
   String toString() => 'AdminViewer(${roles.map((r) => r.value).toList()})';
 }
 
-/// Коды прав 11 §4.3, которые использует SCR-45.
+/// Коды прав 11 §4.3, которые использует SCR-45 (и SCR-54 «Планшеты магазина» — `kiosk.*`, ADR-115).
 abstract final class AdminPermissions {
   static const String usersRead = 'users.read';
   static const String usersManage = 'users.manage';
@@ -35,4 +35,10 @@ abstract final class AdminPermissions {
   static const String invitationsManage = 'invitations.manage';
   static const String linkConflictsRead = 'customer.link.conflicts.read';
   static const String linkResolve = 'customer.link.resolve';
+
+  /// SCR-54: список планшетов (11 №77 — `admin`, `owner`).
+  static const String kioskRead = 'kiosk.read';
+
+  /// SCR-54: подключение, подключение заново, изменение, отключение (11 №78 — только `admin`, step-up).
+  static const String kioskManage = 'kiosk.manage';
 }

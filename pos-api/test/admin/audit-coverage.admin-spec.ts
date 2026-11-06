@@ -9,6 +9,8 @@ import { AUDIT_ACTIONS, RESERVED_AUDIT_ACTIONS } from '../../src/common/audit/au
  * `AuditService.write` с литералом имени в `src/**` или триггер в `migrations/*.sql`. Исключения — с причиной:
  * события вне R1 / вне приложения (EXEMPT) и события других агентов этапа G (PENDING_G — пока не написаны; после
  * их реализации тест остаётся зелёным). Словарь кода (`audit-actions.ts`) сверяется со словарём 11 §7.2/§7.2.1.
+ * События планшета магазина (11 §7.2.1, ADR-115) исключений не имеют: у каждого из семи `kiosk.*` есть писатель
+ * (KIOSK_ACTIONS; карта ожидания пакетов-писателей P-002 закрыта в WP-S7).
  */
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const SPEC_11 = fileURLToPath(new URL('../../../docs/specification/11_SECURITY_PRIVACY.md', import.meta.url));
@@ -46,6 +48,20 @@ const PENDING_G: Readonly<Record<string, string>> = {
   'return.updated': 'G-be-txn-returns: PATCH /returns/{id}',
   'transaction.viewed_all': 'G-be-txn-returns: GET /transactions с чужими данными',
 };
+
+/**
+ * События планшета магазина (11 §7.2.1, ADR-115; P-002 TAB-1-02, TAB-1-04, TAB-1-09, TAB-1-11, TAB-1-15): все семь
+ * пишутся кодом `src/**` — ни одно не исключено и не ожидает пакета.
+ */
+const KIOSK_ACTIONS = [
+  'kiosk.enrolled',
+  'kiosk.reconnected',
+  'kiosk.updated',
+  'kiosk.revoked',
+  'kiosk.exit_code_used',
+  'kiosk.limit_reached',
+  'kiosk.network_denied',
+] as const;
 
 /** События агента G-be-admin-reports (RM-G-006): обязаны быть покрыты. */
 const MINE = [
@@ -155,5 +171,12 @@ describe('аудит D-36: полнота событий словаря 11 §7.2
     const stillPending = missing.filter((a) => a in PENDING_G);
     // Сводка для отчёта этапа: события других агентов G, которых в коде ещё нет.
     console.error(`[audit-coverage] ожидают других агентов G: ${stillPending.join(', ') || '—'}`);
+  });
+
+  it('планшет магазина (11 §7.2.1): все семь событий kiosk.* — в словаре и пишутся, исключений и ожидающих нет', () => {
+    const kioskInDictionary = AUDIT_ACTIONS.filter((a) => a.startsWith('kiosk.'));
+    expect([...kioskInDictionary].sort()).toEqual([...KIOSK_ACTIONS].sort());
+    expect(KIOSK_ACTIONS.filter((a) => a in EXEMPT || a in PENDING_G)).toEqual([]);
+    expect(KIOSK_ACTIONS.filter((a) => (found.get(a) ?? []).length === 0)).toEqual([]);
   });
 });

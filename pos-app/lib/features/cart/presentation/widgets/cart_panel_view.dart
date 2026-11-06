@@ -12,6 +12,11 @@
 // открыли (`CartDrawerIntent`); при закрытом drawer `F4`/`F8`/`F9` обрабатывает кнопка-итог шапки.
 // Результат `POST /orders` неизвестен — оверлей UI-20-020 поверх зон D–G (порт корня `cartSubmissionOverlayProvider`),
 // все изменяющие действия недоступны (02 SCR-20.3 «H — оверлеи»).
+// Планшет магазина (роль `kiosk`; 02 UI-51-012, UI-51-013; ADR-115): вариант покупателя без «Очистить» (очистка —
+// сброс FLOW-045), без смены варианта и перехода в SCR-14 (маршрут закрыт G-15), под итогом — «Договорные цены применит
+// кассир»; CTA «Оформить заявку» → SCR-52 (`cartCheckoutLocationProvider`), drawer остаётся под SCR-52 («Назад» —
+// SCR-51 с открытым drawer); без связи drawer только для чтения; после отказа заявки по остатку или количеству — баннер
+// «Товара стало меньше…» над строками (UI-51-018); `F4`/`F8`/`F9` не действуют (navigation.md §9).
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
@@ -56,6 +61,7 @@ import 'package:optomstroy/features/cart/cart_providers.dart';
 import 'package:optomstroy/features/cart/domain/entities/cart.dart';
 import 'package:optomstroy/features/cart/domain/sync/cart_sync.dart';
 import 'package:optomstroy/features/cart/presentation/cart_formats.dart';
+import 'package:optomstroy/features/cart/presentation/kiosk_cart_rejection.dart';
 import 'package:optomstroy/features/cart/presentation/providers/cart_banner_port.dart';
 import 'package:optomstroy/features/cart/presentation/providers/cart_controller.dart';
 import 'package:optomstroy/features/cart/presentation/providers/cart_step_up_port.dart';
@@ -234,6 +240,9 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
     return s == OnlineStatus.offline || s == OnlineStatus.serverDown;
   }
 
+  /// Корзина планшета магазина (ADR-115).
+  bool get _kiosk => ref.read(cartViewerRoleProvider) == RoleCode.kiosk;
+
   // ---------------------------------------------------------------------------
   // Клавиатура
   // ---------------------------------------------------------------------------
@@ -253,6 +262,8 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
 
   bool _onGlobalKey(KeyEvent e) {
     if (e is! KeyDownEvent || !_keysActive) return false;
+    // Планшет магазина: клавиши сотрудника `F4`/`F8`/`F9` не действуют (navigation.md §9; 12 T-KIOSK-042).
+    if (_kiosk) return false;
     if (e.logicalKey == LogicalKeyboardKey.f4) {
       // F4 — фокус в корзину (03 A11Y-009, §9.27); строка выбирается стрелками.
       _panelFocus.requestFocus();
@@ -321,7 +332,29 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
 
   void _onSyncEvent(CartSyncEvent e) {
     if (e is! CartSyncRejected || !cartShown) return;
-    _snackError(e.failure);
+    final Failure f = e.failure;
+    if (_kiosk) {
+      // Планшет: изменение не дошло до сервера — «Корзина не сохранена», количество уже возвращено (02 UI-51-010);
+      // отказ по количеству и остатку — без чисел сервера (в `conflicts[]` планшету их нет, 08 §2.4): минимум и
+      // кратность — из данных строки на устройстве, иначе подпись без числа.
+      final CartLineKey? key = e.key;
+      CartLineView? line;
+      for (final CartLineView l in ref.read(cartControllerProvider).lines) {
+        if (l.key == key) line = l;
+      }
+      final String? text = kioskCartRejectionText(
+        AppLocalizations.of(context),
+        f,
+        minQuantity: line?.minQuantity,
+        multiple: line == null || line.step.milli <= 0 ? null : line.step,
+        unit: line?.unitLabel ?? '',
+      );
+      if (text != null) {
+        AppSnackbar.show(context, message: text, variant: AppSnackbarVariant.error);
+        return;
+      }
+    }
+    _snackError(f);
   }
 
   void _snackError(Failure f) {
@@ -450,7 +483,9 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
   }
 
   bool _ctaEnabled(CartState s) =>
-      _ctaReason(AppLocalizations.of(context), s, offline: _offline) == null && s.conflict == null;
+      _ctaReason(AppLocalizations.of(context), s, offline: _offline) == null &&
+      s.conflict == null &&
+      !ref.read(cartOrderingBlockedProvider);
 
   /// «Создать заказ →» / «Отправить заявку» (UI-20-016, F9): изменения отправляются, затем SCR-21; повтор во время
   /// подготовки игнорируется. Предпроверку `POST /cart/checkout-preview` выполняет SCR-21 (FQ-CART-01).
@@ -467,7 +502,14 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
     if (again != null && DateTime.now().difference(again) < _checkoutGuard) return;
     _checkoutOpenedAt = DateTime.now();
     final String? cartId = ref.read(cartControllerProvider).server?.id;
-    _pushClosingDrawer(CartPaths.checkout(cartId));
+    final CartCheckoutLocation? location = ref.read(cartCheckoutLocationProvider);
+    if (_kiosk && location != null) {
+      // SCR-52 — маршрут корневого навигатора над SCR-51: drawer остаётся под ним, «Назад» возвращает к открытому
+      // drawer (02 SCR-51.6).
+      unawaited(GoRouter.of(context).push<void>(location(cartId)));
+      return;
+    }
+    _pushClosingDrawer(location?.call(cartId) ?? CartPaths.checkout(cartId));
   }
 
   /// Переход из корзины: drawer сначала закрывается — маршруты веток (SCR-14, SCR-24) открылись бы под ним.
@@ -710,7 +752,14 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
     final CartState s = ref.watch(cartControllerProvider);
     final OnlineStatus online = ref.watch(cartOnlineStatusProvider);
     final bool offline = online == OnlineStatus.offline || online == OnlineStatus.serverDown;
-    final CartPermissions can = cartPermissionsFor(ref.watch(cartViewerRoleProvider));
+    final RoleCode? role = ref.watch(cartViewerRoleProvider);
+    final CartPermissions can = cartPermissionsFor(role);
+    // Планшет магазина (02 UI-51-012): без «Очистить», смены варианта и перехода в SCR-14; без связи — только чтение.
+    final bool kiosk = role == RoleCode.kiosk;
+    // Планшет: возврат из SCR-52 по отказу остатка или количества — «Товара стало меньше…» (02 UI-51-018).
+    final bool stockChanged = kiosk && ref.watch(kioskCartStockChangedProvider);
+    // Оформление недоступно по состоянию режима (планшет: `426`, метка сброса без сети — 02 UI-51-013).
+    ref.watch(cartOrderingBlockedProvider);
     final int? parkedCount = can.canPark ? ref.watch(cartParkedCountProvider).value : null;
     final bool locked = ref.watch(cartSubmissionLockedProvider);
     final CartSubmissionOverlayBuilder? lockOverlay = ref.watch(cartSubmissionOverlayProvider);
@@ -746,15 +795,17 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
           onPressed: locked ? null : () => unawaited(_openParked()),
           badge: parkedCount == null || parkedCount == 0 ? null : _CountBadge(count: parkedCount),
         ),
-      AppIconButton(
-        key: CartKeys.clear,
-        icon: Icons.delete_sweep_outlined,
-        semanticLabel: l10n.cart_clear_tooltip,
-        tooltip: offline ? l10n.parked_offline_tooltip : null,
-        onPressed: empty || offline || locked || server == null || s.isBusy(CartOp.clear)
-            ? null
-            : () => unawaited(_clear()),
-      ),
+      // Планшет: `DELETE /cart` вне закрытого списка (08 §4.25) — корзину очищает сброс «Начать заново» (KIOSK-020).
+      if (!kiosk)
+        AppIconButton(
+          key: CartKeys.clear,
+          icon: Icons.delete_sweep_outlined,
+          semanticLabel: l10n.cart_clear_tooltip,
+          tooltip: offline ? l10n.parked_offline_tooltip : null,
+          onPressed: empty || offline || locked || server == null || s.isBusy(CartOp.clear)
+              ? null
+              : () => unawaited(_clear()),
+        ),
     ];
     final String? counter = empty
         ? null
@@ -763,7 +814,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
     // Зона C — баннер (один, по приоритету): собственный баннер корзины, иначе — уведомление центра (RM-F-008).
     final CartNotificationBannerBuilder? notificationBanner = ref.watch(cartNotificationBannerProvider);
     final Widget? banner =
-        _banner(l10n, s, offline: offline) ??
+        _banner(l10n, s, offline: offline, kiosk: kiosk, stockChanged: stockChanged) ??
         (notificationBanner == null || server == null ? null : notificationBanner(context, server.id));
 
     // Зона B — клиент и склад (не для клиента).
@@ -827,6 +878,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
           stepperSize: stepperSize,
           offline: offline,
           can: can,
+          kiosk: kiosk,
         ),
       );
     }
@@ -865,8 +917,9 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
                 loading: server == null && s.refreshing,
                 large: widget.variant == CartPanelVariant.panel,
                 preliminaryLabel: s.preliminary || offline ? l10n.cart_summary_preliminary : null,
-                // UI-20-034: итог — из ответа сервера и пересчитывается им при оформлении (MNY-001, D-23).
-                note: l10n.cart_summary_server_note,
+                // UI-20-034: итог — из ответа сервера и пересчитывается им при оформлении (MNY-001, D-23). Планшет
+                // (UI-51-012): «Договорные цены применит кассир» — цены на планшете только обычные (KIOSK-006).
+                note: kiosk ? l10n.kiosk_price_note : l10n.cart_summary_server_note,
                 drawer: _drawer,
                 // Прототип: `padding: 16px 20px 20px`, строки через 12; низ — у зоны G (`CartPanel.drawerFooterPadding`).
                 padding: _drawer
@@ -934,7 +987,9 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
                 Expanded(
                   child: AppButton(
                     key: CartKeys.createOrder,
-                    label: can.customer
+                    label: kiosk
+                        ? l10n.kiosk_checkout_button
+                        : can.customer
                         ? l10n.cart_customer_submit
                         : (cartHotkeyHints ? l10n.cart_cta_create_order_hotkey : l10n.cart_cta_create_order),
                     size: AppButtonSize.drawer,
@@ -963,7 +1018,9 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
           if (!empty)
             AppButton(
               key: CartKeys.createOrder,
-              label: can.customer ? l10n.cart_customer_submit : l10n.cart_cta_create_order,
+              label: kiosk
+                  ? l10n.kiosk_checkout_button
+                  : (can.customer ? l10n.cart_customer_submit : l10n.cart_cta_create_order),
               trailingIcon: Icons.arrow_forward_rounded,
               size: AppButtonSize.l,
               expand: true,
@@ -987,7 +1044,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
         count: s.positions,
         countLabel: l10n.cart_a11y_positions(s.positions),
         counter: counter,
-        counterTrailing: _saveState(l10n, c, s, offline: offline, empty: empty),
+        counterTrailing: _saveState(l10n, c, s, offline: offline && !kiosk, empty: empty),
         actions: actions,
         banner: banner,
         top: top,
@@ -1025,9 +1082,29 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
     return Text(l10n.cart_save_state_saved, key: CartKeys.saveState, style: style);
   }
 
-  Widget? _banner(AppLocalizations l10n, CartState s, {required bool offline}) {
+  Widget? _banner(
+    AppLocalizations l10n,
+    CartState s, {
+    required bool offline,
+    bool kiosk = false,
+    bool stockChanged = false,
+  }) {
     if (offline) {
-      return _CartBanner(tone: ErrorStateTone.warning, icon: Icons.cloud_off_rounded, text: l10n.cart_banner_offline);
+      // Планшет: изменения без связи не сохраняются и не встают в очередь (02 UI-51-012, KIOSK-025).
+      return _CartBanner(
+        tone: ErrorStateTone.warning,
+        icon: Icons.cloud_off_rounded,
+        text: kiosk ? l10n.kiosk_offline : l10n.cart_banner_offline,
+      );
+    }
+    if (stockChanged) {
+      // Планшет (02 UI-51-018): отказ заявки по остатку или количеству — строки отмечены по ответу сервера; баннер
+      // снимают изменение корзины и сброс (KioskCartSync).
+      return _CartBanner(
+        tone: ErrorStateTone.warning,
+        icon: Icons.warning_amber_rounded,
+        text: l10n.kiosk_stock_changed,
+      );
     }
     final Cart? server = s.server;
     final int prices = s.lines.where((CartLineView l) => l.priceChanged).length;
@@ -1394,8 +1471,11 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
     required QuantityStepperSize stepperSize,
     required bool offline,
     required CartPermissions can,
+    bool kiosk = false,
   }) {
     final String unit = line.unitLabel ?? '';
+    // Планшет без связи: drawer только для чтения — изменение не дойдёт до сервера и в очередь не встаёт (UI-51-012).
+    final bool readOnly = kiosk && offline;
     final List<String> meta = <String>[
       if (line.sku != null) l10n.catalog_card_sku(line.sku!),
       if (line.unitPrice != null) '${PriceText.format(line.unitPrice!)} ${l10n.product_price_unit(unit)}'.trim(),
@@ -1416,7 +1496,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
           label: l10n.cart_line_remove_unavailable,
           variant: AppButtonVariant.text,
           size: AppButtonSize.s,
-          onPressed: () => _remove(line),
+          onPressed: readOnly ? null : () => _remove(line),
         ),
       );
     } else if (line.stockInsufficient) {
@@ -1454,15 +1534,17 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
       increaseLabel: l10n.ds_qty_increase_a11y,
       decreaseLabel: l10n.ds_qty_decrease_a11y,
       error: line.stockInsufficient,
-      onIncrement: line.canIncrement ? () => unawaited(_cart.increment(line)) : null,
-      onDecrement: line.unavailable ? null : () => unawaited(_decrement(line)),
-      onValueTap: line.unavailable ? null : () => unawaited(_numpad(line)),
+      onIncrement: line.canIncrement && !readOnly ? () => unawaited(_cart.increment(line)) : null,
+      onDecrement: line.unavailable || readOnly ? null : () => unawaited(_decrement(line)),
+      onValueTap: line.unavailable || readOnly ? null : () => unawaited(_numpad(line)),
     );
     final String? productId = line.productId;
     // UI-20-007: «Вариант» — только у товара с вариантами (подпись варианта есть) и при наличии порта SCR-15;
     // офлайн и при блокировке UI-20-020 — disabled (смена — онлайн-операция, CART-005).
     final CartVariantPicker? picker = ref.watch(cartVariantPickerProvider);
-    final bool variantChangeable = picker != null && productId != null && line.variantName != null && !line.unavailable;
+    // Планшет: смены варианта нет — лист SCR-15 запросил бы варианты со складом корзины (`warehouseId` → `403`).
+    final bool variantChangeable =
+        picker != null && !kiosk && productId != null && line.variantName != null && !line.unavailable;
     Widget tile = ds.CartLine(
       key: CartKeys.line(line.key),
       title: line.title,
@@ -1486,10 +1568,11 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
       tone: tone,
       message: message,
       actions: actions,
-      onOpen: productId == null
+      // Планшет: маршрута SCR-14 нет (G-15; карточка — слой SCR-51, ADR-115 п. 22).
+      onOpen: productId == null || kiosk
           ? null
           : () => _pushClosingDrawer(CartPaths.product(productId, variantId: line.key.variantId)),
-      onRemove: () => _remove(line),
+      onRemove: readOnly ? null : () => _remove(line),
       removeLabel: l10n.qty_delete,
       selected: selected,
       dense: dense,
@@ -1497,7 +1580,7 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
       // Степпер-группа (expanded/large): поле её целей касания — в зазоре перед ней, обводка — на месте прототипа.
       stepperInset: stepperSize == QuantityStepperSize.group ? QuantityStepper.groupOuterInset : 0,
     );
-    if (widget.variant != CartPanelVariant.panel) {
+    if (widget.variant != CartPanelVariant.panel && !readOnly) {
       // Свайп удаления на тач-экранах (UI-20-018, A11Y-017).
       tile = Dismissible(
         key: ValueKey<String>('swipe-${line.key.variantId}-${line.key.packagingId ?? ''}'),

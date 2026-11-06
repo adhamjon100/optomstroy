@@ -15,6 +15,15 @@ export interface SalesActor {
   readonly roles: readonly string[];
   /** Режим клиента-покупателя (`kind=customer`). */
   readonly isCustomer: boolean;
+  /**
+   * Вид субъекта `SubjectKind` (common/auth/subject-kind.ts; 06 ARCH-065, ADR-115) рядом с `isCustomer`: без него
+   * адаптеры теряют третий вид (`isCustomer` не отличает планшет от покупателя режима клиента). `kiosk` — планшет
+   * магазина: покупатель без привязки (`isCustomer = true`), но флаг `CUSTOMER_SELF_SERVICE` к нему не относится
+   * (06 ARCH-067). Актор планшета задаёт `'kiosk'` всегда; не задан — актор сотрудника или покупателя из построителей
+   * до ADR-115 либо системный. Литерал, а не импорт: правило lint `common/**` запрещает путь `../auth/*`; совпадение
+   * с `SubjectKind` сверяет subject-kind.spec.ts.
+   */
+  readonly subjectKind?: 'staff' | 'customer' | 'kiosk';
   readonly sessionId?: string | null;
   readonly deviceId?: string | null;
   readonly requestId?: string | null;

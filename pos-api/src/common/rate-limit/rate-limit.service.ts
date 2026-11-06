@@ -7,7 +7,7 @@ import { CLOCK, type Clock } from '../../common/auth/clock.js';
 import { DRIZZLE } from '../db/database.module.js';
 
 /**
- * Области лимитов — ровно перечень CHECK `rate_limit_counters_scope_chk` (07 §5.12; миграции 0001 и 0003 — DQ-01) с
+ * Области лимитов — ровно перечень CHECK `rate_limit_counters_scope_chk` (07 §5.12; миграции 0001, 0003 — DQ-01, 0022) с
  * длиной фиксированного окна. Лимиты (числа) задаёт вызывающий из env/`app_settings` (09 §5.4; 08 §2.6, §2.9).
  */
 export const RATE_LIMIT_WINDOWS = {
@@ -26,6 +26,9 @@ export const RATE_LIMIT_WINDOWS = {
   otp_verify_ip_10m: 10 * 60,
   pin_user_device_10m: 10 * 60,
   admin_user_1m: 60,
+  // 0022_kiosk_schema.sql: RL-OTP-KIOSK — коды планшета магазина, subject = store_tablets.id (08 §2.9; ADR-115).
+  otp_kiosk_tablet_1h: 3600,
+  otp_kiosk_tablet_24h: 24 * 3600,
 } as const satisfies Record<string, number>;
 
 export type RateLimitScope = keyof typeof RATE_LIMIT_WINDOWS;

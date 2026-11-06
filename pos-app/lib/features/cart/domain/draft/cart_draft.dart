@@ -64,6 +64,7 @@ final class CartDraftAdd {
     this.packagingId,
     this.priceSnapshot,
     this.stockSnapshot,
+    this.unitId,
   });
 
   final String variantId;
@@ -73,6 +74,11 @@ final class CartDraftAdd {
   final Qty quantity;
   final Money? priceSnapshot;
   final Qty? stockSnapshot;
+
+  /// Единица строки (`Quantity.unitId`), если её знает вызывающий (карточка товара). Черновик drift её не хранит —
+  /// берёт из кэша каталога при отправке; корзина планшета (ADR-115) отправляет сразу и берёт её, если варианта ещё
+  /// нет ни в корзине, ни в кэше каталога.
+  final String? unitId;
 }
 
 /// Черновик недоступен: БД пользователя не открыта или пользователь сессии неизвестен.

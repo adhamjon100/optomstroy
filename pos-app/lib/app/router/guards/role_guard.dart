@@ -1,3 +1,4 @@
+import 'package:optomstroy/app/router/kiosk_routes.dart';
 import 'package:optomstroy/app/router/routes.dart';
 import 'package:optomstroy/app/router/shells/app_mode.dart';
 import 'package:optomstroy/core/enums.dart';
@@ -82,8 +83,10 @@ final RegExp _customerFinancePath = RegExp(r'^/customers/[^/]+/(history|receivab
 /// Разрешён ли путь роли сотрудника [role] (navigation.md G-7: ветки §2.2, корневые маршруты §3, кассовые
 /// маршруты по итогу §14.2, набор веток `owner` §14.7). UX-ограничение: права проверяет сервер (D-15).
 /// Permissions access-токена клиент не разбирает, поэтому кассовые маршруты сверяются с итогом §14.2 по ролям
-/// (11 §4.4). `null`-роль (профиль ещё не загружен) — ограничений сверх режима нет.
+/// (11 §4.4). `null`-роль (профиль ещё не загружен) — ограничений сверх режима нет. Техническая роль планшета
+/// `kiosk` — только маршруты режима планшета (G-15, KIOSK-005).
 bool isPathAllowedForRole(RoleCode? role, String path) {
+  if (role == RoleCode.kiosk) return isKioskModePath(path);
   if (role == null || role == RoleCode.customer || role == RoleCode.integration) return true;
   bool under(String prefix) => path == prefix || path.startsWith('$prefix/');
   const Set<RoleCode> all = <RoleCode>{
@@ -145,7 +148,11 @@ bool isPathAllowedForRole(RoleCode? role, String path) {
 /// - сотрудник на пути ветки/маршрута, не разрешённого его роли [role] (G-7, [isPathAllowedForRole]) →
 ///   [homeLocation];
 /// - сотрудник на пути, закрытом выключенной функцией [features] (G-8 этапа G, [isPathDisabledByFeature]:
-///   `returns_enabled=false`, `debtPaymentsFromPos=false`) → [homeLocation].
+///   `returns_enabled=false`, `debtPaymentsFromPos=false`) → [homeLocation];
+/// - G-15, вторая половина (navigation.md §4.1; P-002 §9, ADR-115): сотрудник и `customer` на `/kiosk*` → [homeLocation]
+///   без снекбара (как сотрудник на `/home`: путь закрыт видом сессии, а не ролью); сотрудник с блокировкой холодного
+///   старта сначала проходит SCR-08 (`from=/kiosk`, G-5), затем попадает сюда. Сессию планшета ([mode] `kiosk`) вне
+///   `/kiosk*` уже вернул на `/kiosk` authGuard (первая половина G-15); здесь — та же проверка для полноты.
 ///
 /// Возвращает адрес перенаправления или `null`.
 String? roleRedirect({
@@ -157,6 +164,10 @@ String? roleRedirect({
   RouteFeatures features = RouteFeatures.defaults,
 }) {
   final path = uri.path;
+  if (mode == AppMode.kiosk) {
+    return isKioskModePath(path) ? null : KioskPaths.showcase;
+  }
+  if (isKioskPath(path)) return homeLocation == path ? null : homeLocation;
   if (mode == AppMode.customer) {
     if (!customerSelfService && isCustomerSelfServicePath(path)) {
       return const PendingActivationRoute().location;
@@ -184,7 +195,8 @@ enum RoleGuardNotice {
 /// Снекбар показывается, только если путь закрыт **ролью**: `customer` на пути сотрудника, сотрудник
 /// с известной ролью на пути, не разрешённом [isPathAllowedForRole]. Без снекбара: G-8 (выключенное
 /// самообслуживание → SCR-07), сотрудник на `/home` (главный экран клиента — уход на свой главный экран),
-/// роль ещё не загружена, путь закрыт выключенной функцией (G-8 этапа G — точки входа скрыты, не роль).
+/// роль ещё не загружена, путь закрыт выключенной функцией (G-8 этапа G — точки входа скрыты, не роль), G-15
+/// (планшет вне `/kiosk*`, другой вид сессии на `/kiosk*` — путь закрыт видом сессии).
 RoleGuardNotice? roleRedirectNotice({
   required AppMode mode,
   required Uri uri,
@@ -194,6 +206,7 @@ RoleGuardNotice? roleRedirectNotice({
   RouteFeatures features = RouteFeatures.defaults,
 }) {
   final path = uri.path;
+  if (mode == AppMode.kiosk || isKioskPath(path)) return null;
   final target = roleRedirect(
     mode: mode,
     uri: uri,

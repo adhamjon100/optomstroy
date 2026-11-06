@@ -3,15 +3,17 @@ import type { Request, Response } from 'express';
 import { auditContextFromRequest } from '../common/audit/audit-context.js';
 import { CurrentUser } from '../common/auth/auth.decorators.js';
 import type { AuthenticatedPrincipal } from '../common/auth/principal.js';
+import { switchSubjectKind } from '../common/auth/subject-kind.js';
 import {
   MIN_APP_VERSION_HEADER,
   RECOMMENDED_APP_VERSION_HEADER,
 } from '../common/app-version/app-version.middleware.js';
 import type { RequestWithContext } from '../common/http/request-context.js';
-import { RequirePermission } from '../common/rbac/rbac.decorators.js';
+import { RequireAnyPermission, RequirePermission } from '../common/rbac/rbac.decorators.js';
+import { kioskTabletOf } from '../kiosk/common/kiosk-tablet.reader.js';
 import { type ConsentDto } from './consents/consents.service.js';
 import { type MeConsentList, MeConsentsService } from './consents/me-consents.service.js';
-import { type MeDto, MeService, type ProfileDto } from './me/me.service.js';
+import { type MeDto, type MeKioskDto, MeService, type ProfileDto } from './me/me.service.js';
 import type { SettingsDto } from './me/settings.projection.js';
 import { PROFILE_STEP_UP } from './profile.constants.js';
 import { MeConsentUpdateRequest, MeProfilePatchRequest, MeSettingsPutRequest } from './profile.dto.js';
@@ -35,6 +37,9 @@ function isPersonalDataRevocation(req: RequestWithContext): boolean {
 /**
  * Модуль `profile` (08 §4.3): `GET /me`, `PATCH /me/profile`, `PUT /me/settings`, `GET/POST /me/consents`. Право —
  * `profile.manage.own` (все роли и псевдо-набор `pending_activation`, 11 §4.2–§4.3); объект — только свой.
+ * `GET /me` — одно из `profile.manage.own` | `kiosk.self.read` (11 SEC-138; ADR-115): планшет магазина (`kind=kiosk`)
+ * получает только форму `MeKiosk` (`{kind, tablet}`, 12 T-KIOSK-046); `/me/*` планшету закрыты (права нет, закрытый
+ * список 08 §4.25).
  */
 @Controller('me')
 @UseGuards(ProfileStepUpGuard)
@@ -46,14 +51,26 @@ export class MeController {
   ) {}
 
   @Get()
-  @RequirePermission('profile.manage.own')
-  async get(@CurrentUser() p: AuthenticatedPrincipal, @Res({ passthrough: true }) res: Response): Promise<MeDto> {
-    const min = versionHeader(res, MIN_APP_VERSION_HEADER);
-    const recommended = versionHeader(res, RECOMMENDED_APP_VERSION_HEADER);
-    return this.me.build(p.userId, {
-      sessionId: p.sessionId,
-      deviceKey: p.deviceId,
-      ...(min ? { appVersion: { min, recommended: recommended ?? null } } : {}),
+  @RequireAnyPermission('profile.manage.own', 'kiosk.self.read')
+  async get(
+    @CurrentUser() p: AuthenticatedPrincipal,
+    @Req() req: Req,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<MeDto | MeKioskDto> {
+    const full = (): Promise<MeDto> => {
+      const min = versionHeader(res, MIN_APP_VERSION_HEADER);
+      const recommended = versionHeader(res, RECOMMENDED_APP_VERSION_HEADER);
+      return this.me.build(p.userId, {
+        sessionId: p.sessionId,
+        deviceKey: p.deviceId,
+        ...(min ? { appVersion: { min, recommended: recommended ?? null } } : {}),
+      });
+    };
+    return switchSubjectKind<Promise<MeDto | MeKioskDto>>(p.kind, {
+      staff: full,
+      customer: full,
+      // Планшет — из контекста KioskAccessGuard (`req.kiosk`), без чтения профиля и ПДн.
+      kiosk: () => Promise.resolve(this.me.buildKiosk(kioskTabletOf(req))),
     });
   }
 

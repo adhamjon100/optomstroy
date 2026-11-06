@@ -2,9 +2,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { type AuditContext, applyAuditGucs, toRbacRole } from '../../common/audit/audit-context.js';
 import { AuditService } from '../../common/audit/audit.service.js';
 import type { DbExecutor } from '../../common/audit/db-executor.js';
-import { AuthStateCache } from '../../common/auth/auth-state.js';
+import { AuthStateCache, KIOSK_REVOKED_REASON } from '../../common/auth/auth-state.js';
 import { CLOCK, type Clock } from '../../common/auth/clock.js';
 import type { AmrValue } from '../../common/auth/jwt.service.js';
+import { bySubjectKind } from '../../common/auth/subject-kind.js';
 import { generateOpaqueToken, sha256 } from '../../common/crypto/random.js';
 import { DRIZZLE, type Database } from '../../common/db/database.module.js';
 import { ProblemException } from '../../common/problem-details/problem.exception.js';
@@ -48,6 +49,7 @@ type Path = 'current' | 'grace' | 'replay' | 'reuse';
 
 type Failure =
   | { readonly kind: 'revoked'; readonly reason?: string }
+  | { readonly kind: 'kiosk_revoked' }
   | { readonly kind: 'unlock_required'; readonly reason?: string }
   | { readonly kind: 'validation'; readonly rule: string; readonly field: string; readonly message: string }
   | { readonly kind: 'pin'; readonly check: Exclude<PinCheck, { kind: 'ok' }> };
@@ -61,6 +63,11 @@ type TxResult = { readonly ok: true; readonly body: TokenPairBody } | { readonly
  * ротацию), иначе отзыв только этой сессии; повторное использование (`reuse_detected`) — отзыв всей семьи и аудит;
  * чужой `X-Device-Id` — отзыв сессии (`device_mismatch`); staff на Windows без `unlocked_until > now` →
  * `UNLOCK_REQUIRED` (D-48). Ошибки бросаются после COMMIT (отзыв и счётчики PIN сохраняются).
+ *
+ * Планшет магазина (`kind=kiosk`; 08 §4.1.3 «Сессия планшета магазина»; 09 §8.3, §8.9 п. 3, п. 8; 11 SEC-139;
+ * ADR-115): поздний повтор прежнего refresh после потерянного ответа идёт путём грации (ротация в сторону, отметка
+ * `grace_used_at`) — один раз на ротацию; второй поздний повтор подряд — `reuse`. Сессия, отозванная с
+ * `revoke_reason='kiosk_revoked'`, — `401 KIOSK_REVOKED`. Для `staff` и `customer` правила не меняются.
  */
 @Injectable()
 export class RefreshService {
@@ -108,7 +115,12 @@ export class RefreshService {
       }
     }
     if (!s) return fail({ kind: 'revoked' });
-    if (s.revokedAt !== null) return fail({ kind: 'revoked' });
+    // Найден по любому из трёх хэшей (текущий, предыдущий, вытесненный), а сессия отозвана: отключение планшета,
+    // аварийный выход или подключение заново (`kiosk_revoked`) → `401 KIOSK_REVOKED`; прочее — SESSION_REVOKED
+    // (09 §8.9 п. 8 (а)). Причину `kiosk_revoked` пишет только жизненный цикл планшета (src/kiosk/lifecycle).
+    if (s.revokedAt !== null) {
+      return fail(s.revokeReason === KIOSK_REVOKED_REASON ? { kind: 'kiosk_revoked' } : { kind: 'revoked' });
+    }
 
     const user = await this.users.findById(s.userId, tx);
     const device = await this.devices.findById(s.deviceId, tx);
@@ -143,6 +155,19 @@ export class RefreshService {
         tx,
       );
       return fail({ kind: 'revoked', reason: 'reuse_detected' });
+    }
+    // Планшет магазина: потерянный ответ `/auth/refresh` (P-002 §8.2 п. 5; 09 §8.9 п. 3) — поздний повтор прежнего
+    // токена при неиспользованном новом (`last_used_at IS NULL`) и непотраченной грации (`grace_used_at IS NULL`,
+    // иначе `classifyPrevious` уже дал `reuse`) идёт путём грации: `rotateAside` ставит `grace_used_at`, поэтому
+    // второй поздний повтор подряд — `reuse_detected`. Сроки, устройство и статус проверены выше. `refresh_replay`
+    // у планшета не возникает; staff и customer — прежние ветки (UNLOCK_REQUIRED / refresh_replay).
+    if (
+      path === 'replay' &&
+      input.mode === 'refresh' &&
+      bySubjectKind(user.kind, { staff: false, customer: false, kiosk: true })
+    ) {
+      path = 'grace';
+      this.logger.warn({ event: 'auth.refresh.kiosk_late_grace', sid: s.id }, 'auth.refresh.kiosk_late_grace');
     }
 
     // Вид токена ↔ эндпоинт (08 §4.1.3, §4.1.8; ядро §19.3).
@@ -343,6 +368,8 @@ function toProblem(f: Failure): ProblemException {
             : 'Сессия завершена. Войдите снова.',
         ...(f.reason ? { reason: f.reason } : {}),
       });
+    case 'kiosk_revoked':
+      return new ProblemException('KIOSK_REVOKED', { detail: 'Планшет отключён администратором.' });
     case 'unlock_required':
       return new ProblemException('UNLOCK_REQUIRED', {
         detail: 'Разблокируйте приложение PIN-кодом.',

@@ -4,7 +4,8 @@
 // durable: в конце единицы состояние имитатора 1С сохраняется в demo_meta, том сбрасывается на диск.
 //
 // Действия:
-//   GET  state                                — роли и телефоны, эпоха, ожидающие QR, последние заказы, «1С», сид, счётчики
+//   GET  state                                — роли и телефоны, эпоха, ожидающие QR, последние заказы (с каналом
+//                                               createdVia), «1С», планшеты магазина (только чтение), сид, счётчики
 //   GET  logs {n}                             — кольцевой журнал воркера
 //   POST qr/<paymentId>/pay {amount?}         — оплатить QR в имитаторе «1С»; следующий опрос → received
 //   POST qr/<paymentId>/expire                — истечь QR
@@ -97,10 +98,21 @@ export function createControl(ctx) {
         );
         const orders = await q(
           `SELECT o.id::text AS id, o.public_number, o.onec_number, o.onec_status_raw, o.status::text AS status, o.total::text AS total,
-                  o.shipped_at, o.created_at, o.onec_sync_state::text AS sync_state,
+                  o.shipped_at, o.created_at, o.onec_sync_state::text AS sync_state, o.created_via,
                   EXISTS (SELECT 1 FROM shipments s WHERE s.order_id = o.id) AS has_shipment
              FROM orders o ORDER BY o.created_at DESC LIMIT 10`,
         );
+        // Планшеты магазина (P-002 TAB-3-01): только чтение — id, имя, статус, связь; без хэша аварийного кода, счётчиков
+        // и ключа устройства. to_regclass — панель работает и с бэкендом, собранным до миграции 0022.
+        const hasTablets = (await q(`SELECT to_regclass('public.store_tablets') IS NOT NULL AS ok`)).rows[0]?.ok === true;
+        const tablets = hasTablets
+          ? (await q(
+              `SELECT st.id::text AS id, p.full_name AS name, st.status, st.last_seen_at, st.enrolled_at
+                 FROM store_tablets st JOIN user_profiles p ON p.user_id = st.user_id
+                ORDER BY st.enrolled_at, st.id`,
+            )).rows
+          : [];
+        const iso = (t) => (t ? new Date(t).toISOString() : null);
         const rets = await q(
           `SELECT r.id::text AS id, r.order_id::text AS order_id, r.public_number, r.status::text AS status FROM return_requests r ORDER BY r.created_at DESC LIMIT 20`,
         );
@@ -128,6 +140,8 @@ export function createControl(ctx) {
             shipped: !!o.shipped_at || o.status === 'shipped' || o.status === 'partially_returned',
             status: o.status,
             syncState: o.sync_state,
+            // канал создания: staff | customer | kiosk («С планшета» в разделе «1С» панели, 08 §3.13)
+            createdVia: o.created_via ?? null,
             total: o.total,
             manualOnecNumber: ov.manualDocs.get(o.id)?.number ?? null,
             actions,
@@ -150,6 +164,10 @@ export function createControl(ctx) {
           onec: { down: f.down, orderMode: f.orderMode, failNext: f.failNext, checkMode: ov.check.mode, checkRemaining: ov.check.remaining, orderSeq: f.orderSeq },
           orders: ordersOut,
           returns,
+          kiosk: {
+            enabled: ctx.be.config?.KIOSK_MODE === true,
+            tablets: tablets.map((t) => ({ id: t.id, name: t.name, status: t.status, lastSeenAt: iso(t.last_seen_at), enrolledAt: iso(t.enrolled_at) })),
+          },
           seed: ctx.seed?.state() ?? null,
           counters: ctx.counters(),
         };

@@ -1,7 +1,8 @@
 // Секции фильтров SCR-13 (02 SCR-13.3 UI-13-002…013): цена «от/до» (целые сомы, проверка «от ≤ до»),
-// «Только в наличии», склад (staff; `customer` — секции нет, AC-UI-13-009), бренд (первые 5 +
-// «Показать все»), характеристики из фасетов (секция — только при наличии значений, AC-UI-13-001),
-// «Только избранное», «Только с фото». Секции — для листа SCR-13 (compact); встроенная панель SCR-10/11/12 на
+// «Только в наличии», склад (staff; у покупателя — `customer` и планшета магазина `kiosk` — секции нет, AC-UI-13-009,
+// 02 UI-51-009), бренд (первые 5 + «Показать все»), характеристики из фасетов (секция — только при наличии значений,
+// AC-UI-13-001), «Только избранное» (у планшета нет — избранного на общем устройстве нет, 02 UI-51-009), «Только с
+// фото». Секции — для листа SCR-13 (compact); встроенная панель SCR-10/11/12 на
 // medium и шире (прототип 2026-10-29, ADR-112) — [buildCatalogFilterInline] с теми же ключами и правилами.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -38,6 +39,13 @@ Money? parseSomInput(String text) {
 
 /// Ошибка диапазона цены «от > до» (AC-UI-13-002).
 bool priceRangeInvalid(CatalogFilter f) => f.priceMin != null && f.priceMax != null && f.priceMin! > f.priceMax!;
+
+/// Секция «Склад» — только у сотрудника: покупатель (`customer`, планшет магазина `kiosk`) склад не выбирает
+/// (AC-UI-13-009; 02 UI-51-009 — `warehouseId` планшета отклоняется `403`).
+bool _warehouseFilterFor(RoleCode? role) => role != RoleCode.customer && role != RoleCode.kiosk;
+
+/// «Только избранное» — у всех, кроме планшета магазина (02 UI-51-009: избранного на общем устройстве нет).
+bool _favoritesFilterFor(RoleCode? role) => role != RoleCode.kiosk;
 
 /// Секции формы фильтров. Каждое изменение — [onUpdate] с функцией правки **текущего** черновика
 /// (быстрые нажатия до перестроения не теряют друг друга); применение — у вызывающего.
@@ -131,7 +139,7 @@ List<Widget> buildCatalogFilterSections({
         onChanged: (bool v) => onUpdate((CatalogFilter f) => rebuildFilter(f, inStock: v ? true : null)),
       ),
     ),
-    if (role != RoleCode.customer && warehouses.isNotEmpty)
+    if (_warehouseFilterFor(role) && warehouses.isNotEmpty)
       FilterSection(
         key: const ValueKey<String>('filter-section-warehouse'),
         title: l10n.filters_warehouse_title,
@@ -221,15 +229,16 @@ List<Widget> buildCatalogFilterSections({
             ],
           ),
         ),
-    Padding(
-      padding: EdgeInsets.symmetric(horizontal: context.space.s4, vertical: context.space.s1),
-      child: AppSwitch(
-        key: const ValueKey<String>('filter-favorites'),
-        value: filter.favorite == true,
-        label: l10n.filters_favorites_only,
-        onChanged: (bool v) => onUpdate((CatalogFilter f) => rebuildFilter(f, favorite: v ? true : null)),
+    if (_favoritesFilterFor(role))
+      Padding(
+        padding: EdgeInsets.symmetric(horizontal: context.space.s4, vertical: context.space.s1),
+        child: AppSwitch(
+          key: const ValueKey<String>('filter-favorites'),
+          value: filter.favorite == true,
+          label: l10n.filters_favorites_only,
+          onChanged: (bool v) => onUpdate((CatalogFilter f) => rebuildFilter(f, favorite: v ? true : null)),
+        ),
       ),
-    ),
     Padding(
       padding: EdgeInsets.symmetric(horizontal: context.space.s4, vertical: context.space.s1),
       child: AppSwitch(
@@ -250,7 +259,8 @@ List<Widget> buildCatalogFilterSections({
 ///   (`filter-with-photo`) — флажки прототипа ([CatalogFilterCheck]: квадрат 18 `primary`, зазор 8, подпись 14);
 /// - цена от / до (`filter-price-from` / `-to`, поля 120, целые сомы ≤ 9 цифр; «от > до» — ошибка, применение
 ///   блокирует вызывающий через [priceRangeInvalid]);
-/// - склад — только staff (AC-UI-13-009), склад корзины по умолчанию — с пометкой «· склад корзины»;
+/// - склад — только staff (AC-UI-13-009; у планшета магазина — тоже нет, 02 UI-51-009), склад корзины по умолчанию —
+///   с пометкой «· склад корзины»; у планшета нет и «Только избранное»;
 /// - бренды: первые 5 + «Показать все» (`filter-brand-*`), бренд с 0 товаров недоступен (если не выбран);
 ///   характеристики — только при наличии значений, ≤ 10 пар
 ///   (`filter-attr-*`);
@@ -355,12 +365,13 @@ Widget buildCatalogFilterInline({
       filter.inStock == true,
       (CatalogFilter f, bool on) => rebuildFilter(f, inStock: on ? true : null),
     ),
-    check(
-      'filter-favorites',
-      l10n.filters_favorites_only,
-      filter.favorite == true,
-      (CatalogFilter f, bool on) => rebuildFilter(f, favorite: on ? true : null),
-    ),
+    if (_favoritesFilterFor(role))
+      check(
+        'filter-favorites',
+        l10n.filters_favorites_only,
+        filter.favorite == true,
+        (CatalogFilter f, bool on) => rebuildFilter(f, favorite: on ? true : null),
+      ),
     check(
       'filter-with-photo',
       l10n.filters_with_photo_only,
@@ -402,7 +413,7 @@ Widget buildCatalogFilterInline({
           ),
       ],
     ),
-    if (role != RoleCode.customer && warehouses.isNotEmpty)
+    if (_warehouseFilterFor(role) && warehouses.isNotEmpty)
       Row(
         key: const ValueKey<String>('filter-section-warehouse'),
         mainAxisSize: MainAxisSize.min,

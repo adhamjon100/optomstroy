@@ -441,6 +441,11 @@ RouteBase get $appShellRoute => StatefulShellRouteData.$route(
           hasOverriddenOnExit: false,
           factory: $AdminAuditRoute._fromState,
         ),
+        GoRouteData.$route(
+          path: '/admin/tablets',
+          hasOverriddenOnExit: false,
+          factory: $AdminTabletsRoute._fromState,
+        ),
       ],
     ),
     StatefulShellBranchData.$branch(
@@ -1147,6 +1152,27 @@ mixin $AdminAuditRoute on GoRouteData {
       if (_self.result != null) 'result': _self.result,
     },
   );
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+mixin $AdminTabletsRoute on GoRouteData {
+  static AdminTabletsRoute _fromState(GoRouterState state) =>
+      const AdminTabletsRoute();
+
+  @override
+  String get location => GoRouteData.$location('/admin/tablets');
 
   @override
   void go(BuildContext context) => context.go(location);

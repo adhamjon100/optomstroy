@@ -2,7 +2,11 @@
  * Оптомстрой POS · веб-демо · панель «ДЕМО» поверх приложения (WP-S1; plan §3.6; ADR-113 п. 9).
  *
  * HTML поверх Flutter, вне ARB и 02: строки только русские. Цвета — CSS-переменные из contracts/design-tokens
- * (demo-tokens.css, генерирует build-site.mjs). Разделы: «Как войти», «Оплата QR», «1С», «Сеть», «Сервис».
+ * (demo-tokens.css, генерирует build-site.mjs). Разделы: «Как войти», «Планшет магазина», «Оплата QR», «1С», «Сеть»,
+ * «Сервис». «Планшет магазина» (P-002 TAB-3-01, ADR-115) — подсказка и список планшетов из GET state: первое
+ * подключение идёт через настоящий интерфейс приложения (вход администратором, SCR-54), новых точек входа нет.
+ * Переключение «Вернуться к обычному входу» / «Планшет магазина» / «Подключить этот браузер заново» (TAB-3-02) —
+ * перенос данных приложения в хранилище страницы при перезагрузке (demo-kiosk.js, P.boot.kioskSwitch).
  *
  * Клавиатура (critic «ввод в HTML-панели перехватывают горячие клавиши Flutter»): Flutter слушает keydown/keyup на window
  * в фазе захвата. Слушатель этой панели регистрируется на window в той же фазе РАНЬШЕ Flutter (скрипт выполняется до
@@ -29,6 +33,11 @@
     hint: null,
     qrBox: null,
     onecBox: null,
+    kioskBox: null,
+    kioskMode: null,
+    kioskSwitch: null,
+    kioskSwitchSig: null,
+    netNote: null,
     serviceInfo: null,
     devBox: null,
     offlineToggle: null,
@@ -193,6 +202,50 @@
     ];
   }
 
+  // ---------------------------------------------------------------- «Планшет магазина» (P-002 TAB-3-01, TAB-3-02)
+  // Признак режима планшета в этом браузере: ключ хранилища приложения `kiosk.tablet_id` (SecureKey.kioskTabletId,
+  // pos-app/lib/core/storage/secure_storage.dart) в localStorage под префиксом flutter_secure_storage_web. Значение
+  // зашифровано — панель смотрит только, есть ли ключ, и ничего не расшифровывает (demo-kiosk.js).
+  var KIOSK_FLAG_KEY = 'FlutterSecureStorage.kiosk.tablet_id';
+  function isKioskDevice() {
+    if (P.kiosk) return P.kiosk.isTablet();
+    try {
+      return global.localStorage.getItem(KIOSK_FLAG_KEY) !== null;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function buildKiosk() {
+    var K = D.kiosk || {};
+    var admin = K.adminPhone || '+996777000901';
+    var code = D.otpCode || '246810';
+    var step = function () {
+      return el('li', null, Array.prototype.slice.call(arguments));
+    };
+    ui.kioskMode = el('p', { class: 'pd-note', id: 'pd-kiosk-mode' });
+    ui.kioskSwitch = el('div', { class: 'pd-dyn', id: 'pd-kiosk-switch' });
+    ui.kioskSwitchSig = null;
+    ui.kioskBox = el('div', { class: 'pd-dyn', id: 'pd-kiosk-tablets' }, el('p', { class: 'pd-muted', text: 'Загрузка…' }));
+    return [
+      el('p', { class: 'pd-note', text: 'Режим для торгового зала: покупатель сам выбирает товары и отправляет заявку, оплата — на кассе. Подключение — в настоящем интерфейсе приложения.' }),
+      // режим этого браузера и переключение — сразу под вводным текстом (TAB-3-02)
+      ui.kioskMode,
+      ui.kioskSwitch,
+      el('ol', { class: 'pd-steps', id: 'pd-kiosk-steps' },
+        step('Войдите администратором: ', el('b', { text: formatPhone(admin) }), ', код ', el('b', { text: code }), '. При первом входе задайте PIN из 6 цифр, например ', el('b', { text: D.pinExample || '715382' }), '.'),
+        step('Меню разделов «☰» → «Администратор» → в шапке экрана «Пользователи» кнопка разделов → «Планшеты магазина».'),
+        step('«Сделать это устройство планшетом магазина» → имя, например «', el('b', { text: K.tabletName || 'Планшет у входа' }), '», склад → «Сделать это устройство планшетом магазина» → PIN администратора.'),
+        step('Появится аварийный код выхода — один раз. ', K.exitCodeNote || 'Аварийный код выхода в демо можно не записывать.', ' «Готово» — откроется витрина планшета.'),
+        step('Заявка: «+ Добавить» → кнопка корзины → «Оформить заявку» → номер на экранной клавиатуре, например ', el('b', { text: formatPhone(K.buyerPhone || '+996700000101') }), ' (карточка «1С») или любой другой → код ', el('b', { text: code }), ' → «Отправить заявку».'),
+        step('Заявка — в разделе «1С» ниже с пометкой «С планшета». Кассир (', el('b', { text: formatPhone(K.cashierPhone || '+996777000906') }), ') видит её в «Ожидают оплаты»: «Вернуться к обычному входу» ниже → войдите кассиром. Кнопка «Планшет магазина» вернёт тот же планшет без подключения заново.')),
+      el('div', { class: 'pd-inline' }, copyButton(admin, 'Скопировать номер администратора', 'Номер ' + formatPhone(admin) + ' скопирован.', 'Скопировать номер администратора ' + formatPhone(admin))),
+      el('p', { class: 'pd-note', text: 'В браузере планшет не закрепляется на экране (на планшете Android закрепление обязательно). Повторный код — через 10 с, а не 60 с. Оповещение «планшет не на связи» в демо выключено. «Сбросить демо» удаляет и планшет: после сброса — только новое подключение (шаги 1–4).' }),
+      el('h3', { class: 'pd-subtitle', text: 'Планшеты магазина' }),
+      ui.kioskBox,
+    ];
+  }
+
   function control(action, args, okText) {
     return B.control(action, args).then(function (data) {
       if (okText) setStatus(okText, 'ok');
@@ -257,10 +310,18 @@
       setStatus(t.checked ? 'Сеть «отключена»: приложение работает в офлайн-режиме.' : 'Сеть снова есть.', 'ok');
     });
     ui.offlineToggle = t;
+    ui.netNote = el('p', { class: 'pd-note', id: 'pd-net-note', text: networkNote() });
     return [
       el('label', { class: 'pd-toggle' }, t, el('span', null, 'Нет сети (имитация)')),
-      el('p', { class: 'pd-note', text: 'Приложение покажет «Нет сети»: каталог открывается из памяти, изменения корзины уйдут на сервер, когда сеть вернётся.' }),
+      ui.netNote,
     ];
+  }
+
+  // Подсказка «Сеть»: на планшете магазина корзина только на сервере (P-002 §15) — без сети заявку не оформить.
+  function networkNote() {
+    return isKioskDevice()
+      ? 'Планшет магазина покажет «Нет связи»: товары смотреть можно, «В корзину» и отправка заявки недоступны, пока сеть не вернётся.'
+      : 'Приложение покажет «Нет сети»: каталог открывается из памяти, изменения корзины уйдут на сервер, когда сеть вернётся.';
   }
 
   function buildService() {
@@ -402,9 +463,12 @@
       var btn = function (label, act, enabled, fn) {
         return el('button', { type: 'button', class: 'pd-btn pd-btn-small', text: label, disabled: !enabled, dataset: { act: act }, on: { click: fn } });
       };
-      list.appendChild(el('li', { class: 'pd-row pd-row-col', dataset: { order: o.id } },
+      list.appendChild(el('li', { class: 'pd-row pd-row-col', dataset: { order: o.id, createdVia: o.createdVia || '' } },
         el('div', { class: 'pd-row-main' },
-          el('span', { text: 'Заказ ' + (o.number || o.id) }),
+          el('span', null,
+            'Заказ ' + (o.number || o.id),
+            // заявка с планшета магазина (orders.created_via = kiosk; пометка как у кассира, 02 §7 order_badge_kiosk)
+            o.createdVia === 'kiosk' ? el('span', { class: 'pd-badge pd-badge-kiosk', text: 'С планшета' }) : null),
           el('span', { class: 'pd-muted', text: meta })),
         el('div', { class: 'pd-actions-row' },
           btn('Согласовать', 'approve', can('approve'), function () { control('POST orders/' + o.id + '/onec-status', { status: 'КВыполнению', approved: true }, 'Заказ согласован в «1С».').catch(function () {}); }),
@@ -413,6 +477,125 @@
           btn('Выполнить возврат', 'return', !!ret && can('return'), function () {
             if (ret) control('POST returns/' + ret.externalId + '/status', { status: 'completed' }, 'Возврат проведён в «1С».').catch(function () {});
           }))));
+    });
+    box.appendChild(list);
+  }
+
+  var TABLET_STATUS = { active: 'подключён', revoked: 'отключён' };
+
+  function formatTime(iso) {
+    if (!iso) return null;
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return p(d.getDate()) + '.' + p(d.getMonth() + 1) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  // ---- переключение «планшет ↔ обычный вход» (P-002 TAB-3-02; 12 T-KIOSK-051)
+  var KIOSK_SWITCH_STATUS = {
+    normal: 'Возвращаемся к обычному входу…',
+    kiosk: 'Возвращаем планшет магазина…',
+    reconnect: 'Готовим подключение заново…',
+  };
+
+  function requestSwitch(to) {
+    setStatus(KIOSK_SWITCH_STATUS[to], 'info');
+    if (!P.boot || typeof P.boot.kioskSwitch !== 'function' || !P.boot.kioskSwitch(to)) {
+      setStatus('Переключить не удалось: браузер не даёт хранилище страницы.', 'error');
+    }
+  }
+
+  function switchButton(id, text, kind, to, aria) {
+    return el('button', { type: 'button', class: 'pd-btn' + (kind ? ' pd-btn-' + kind : ''), id: id, text: text, 'aria-label': aria || text, dataset: { kioskSwitch: to }, on: { click: function () { requestSwitch(to); } } });
+  }
+
+  function formatAt(ms) {
+    return (ms ? formatTime(new Date(ms).toISOString()) : null) || '—';
+  }
+
+  function reconnectBlock(lead) {
+    return el('div', { id: 'pd-kiosk-reconnect-box' },
+      el('p', { class: 'pd-note', text: lead }),
+      el('div', { class: 'pd-actions-row' }, switchButton('pd-kiosk-reconnect', 'Подключить этот браузер заново', '', 'reconnect')),
+      el('p', { class: 'pd-muted', text: 'Затем войдите администратором → «Планшеты магазина» → «Подключить заново этот планшет» → выберите планшет → PIN: тот же планшет (история заявок сохраняется), новый аварийный код.' + (isKioskDevice() ? '' : ' Текущий вход сохранится и вернётся кнопкой «Вернуться к обычному входу».') }));
+  }
+
+  // Что предложить — по режиму браузера, отложенным данным (P.kiosk.slotInfo, без значений) и списку планшетов сервера;
+  // итог последнего переключения — P.kiosk.result. Перерисовка — только при изменении (кнопки не теряют фокус).
+  function renderKioskSwitch(st) {
+    var box = ui.kioskSwitch;
+    if (!box) return;
+    var kiosk = P.kiosk || null;
+    var ok = !!(kiosk && kiosk.available());
+    var tablet = isKioskDevice();
+    var slotK = ok ? kiosk.slotInfo('kiosk') : null;
+    var slotN = ok ? kiosk.slotInfo('normal') : null;
+    var res = kiosk ? kiosk.result : null;
+    var tablets = st && st.kiosk && Array.isArray(st.kiosk.tablets) ? st.kiosk.tablets.length : null;
+    var sig = JSON.stringify([ok, tablet, slotK, slotN, res && [res.to, res.ok, res.reason], tablets === null ? null : tablets > 0]);
+    if (sig === ui.kioskSwitchSig) return;
+    ui.kioskSwitchSig = sig;
+    clear(box);
+    if (!ok) {
+      box.appendChild(el('p', { class: 'pd-muted', text: 'Переключение «планшет ↔ обычный вход» недоступно: браузер не даёт хранилище страницы.' }));
+      return;
+    }
+    if (res && res.to === 'kiosk' && !res.ok) {
+      box.appendChild(el('p', { class: 'pd-badge pd-badge-warn', id: 'pd-kiosk-notice', dataset: { reason: res.reason || '' }, text: 'Планшет магазина вернуть не удалось: ' + kiosk.reasonText(res.reason) + '. Подключите этот браузер заново.' }));
+    }
+    if (tablet) {
+      box.appendChild(el('p', { class: 'pd-note', text: '«Вернуться к обычному входу»: данные планшета останутся в этом браузере — кнопка «Планшет магазина» вернёт тот же планшет без подключения заново. Корзина планшета очистится, как при гашении экрана. ' + (slotN && !slotN.broken ? 'Вернётся прежний вход (отложен ' + formatAt(slotN.at) + ').' : 'Затем откроется экран входа.') }));
+      box.appendChild(el('div', { class: 'pd-actions-row' }, switchButton('pd-kiosk-to-normal', 'Вернуться к обычному входу', 'primary', 'normal')));
+      box.appendChild(reconnectBlock('Планшет просит подключить заново или данные не вернулись? «Подключить этот браузер заново» удалит данные планшета в этом браузере (идентификатор браузера сохранится).'));
+      return;
+    }
+    if (slotK && !slotK.broken) {
+      box.appendChild(el('p', { class: 'pd-note', text: 'Планшет магазина отложен ' + formatAt(slotK.at) + ': кнопка вернёт его без подключения заново, корзина будет пустой. Текущий вход сохранится и вернётся кнопкой «Вернуться к обычному входу».' + (slotK.stale ? ' Прошло больше 7 дней: планшет может попросить подключить заново.' : '') }));
+      box.appendChild(el('div', { class: 'pd-actions-row' }, switchButton('pd-kiosk-to-kiosk', 'Планшет магазина', 'primary', 'kiosk', 'Планшет магазина: вернуть этот браузер в режим планшета')));
+      return;
+    }
+    if (tablets === null) return;
+    if (tablets > 0) {
+      box.appendChild(reconnectBlock('Данных планшета в этом браузере нет. Подключите этот браузер к планшету из списка «Планшеты магазина» внизу раздела:'));
+      return;
+    }
+    box.appendChild(el('p', { class: 'pd-note', id: 'pd-kiosk-first', text: 'Планшет в этом браузере ещё не подключён: шаги 1–4 ниже. После «Сбросить демо» подключение только новое — прежний планшет удалён вместе с данными демо.' }));
+  }
+
+  function renderKiosk(st) {
+    if (ui.kioskMode) {
+      ui.kioskMode.textContent = isKioskDevice()
+        ? 'Этот браузер сейчас — планшет магазина.'
+        : 'Этот браузер сейчас — обычный вход.';
+    }
+    renderKioskSwitch(st);
+    if (ui.netNote) ui.netNote.textContent = networkNote();
+    var box = ui.kioskBox;
+    if (!box) return;
+    clear(box);
+    if (!st) {
+      box.appendChild(el('p', { class: 'pd-muted', text: lastStateError ? 'Управление демо недоступно: ' + lastStateError : 'Загрузка…' }));
+      return;
+    }
+    var k = st.kiosk || null;
+    if (!k) {
+      box.appendChild(el('p', { class: 'pd-muted', text: 'Сервер демо не сообщает о планшетах.' }));
+      return;
+    }
+    if (!k.enabled) box.appendChild(el('p', { class: 'pd-badge pd-badge-warn', text: 'Режим планшета на сервере демо выключен' }));
+    var tablets = k.tablets || [];
+    if (!tablets.length) {
+      box.appendChild(el('p', { class: 'pd-muted', text: 'Планшетов пока нет.' }));
+      return;
+    }
+    var list = el('ul', { class: 'pd-list' });
+    tablets.forEach(function (t) {
+      var seen = formatTime(t.lastSeenAt);
+      var meta = [TABLET_STATUS[t.status] || t.status, seen ? 'связь ' + seen : 'связи ещё не было', 'id ' + String(t.id || '').slice(0, 8)].join(' · ');
+      list.appendChild(el('li', { class: 'pd-row pd-row-compact', dataset: { tablet: t.id, status: t.status } },
+        el('div', { class: 'pd-row-main' },
+          el('span', { text: t.name || 'Планшет' }),
+          el('span', { class: 'pd-muted', text: meta }))));
     });
     box.appendChild(list);
   }
@@ -457,6 +640,7 @@
   }
 
   function render() {
+    renderKiosk(lastState);
     renderQr(lastState);
     renderOnec(lastState);
     renderService(lastState);
@@ -632,6 +816,7 @@
         el('button', { type: 'button', class: 'pd-icon-btn', id: 'pd-close', 'aria-label': 'Закрыть демо-панель', title: 'Закрыть (Esc)', text: '✕', on: { click: function () { closePanel(true); } } })),
       el('div', { class: 'pd-panel-body' },
         section('login', 'Как войти', true, buildLogin()),
+        section('kiosk', 'Планшет магазина', false, buildKiosk()),
         section('qr', 'Оплата QR', false, buildQr()),
         section('onec', '«1С»', false, buildOnec()),
         section('net', 'Сеть', false, buildNetwork()),

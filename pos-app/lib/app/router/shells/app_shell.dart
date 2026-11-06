@@ -53,14 +53,18 @@ List<ShellTab> shellTabsFor(AppMode mode) => switch (mode) {
   AppMode.admin => adminShellTabs,
   AppMode.owner => ownerShellTabs,
   AppMode.customer => customerShellTabs,
+  // Планшет магазина живёт вне оболочки (`/kiosk*`, G-15) и вкладок не видит; на кадр перехода при смене сессии
+  // (подключение в SCR-54) — набор покупателя: без служебных разделов, HID-сканера и drawer сотрудника.
+  AppMode.kiosk => customerShellTabs,
 };
 
-/// HID-сканер в оболочке: только режимы сотрудников (02 §2.2.11; клиенту сканер не положен — 10 CUST-021).
-bool hidScannerEnabledFor(AppMode mode) => mode != AppMode.customer;
+/// HID-сканер в оболочке: только режимы сотрудников (02 §2.2.11; клиенту сканер не положен — 10 CUST-021; планшету
+/// магазина — тоже, P-002 §8.8).
+bool hidScannerEnabledFor(AppMode mode) => isStaffMode(mode);
 
 /// Навигация оболочки сотрудника без rail — drawer по «бургеру» шапки (D3, ADR-112): режим сотрудника на medium+.
 bool shellDrawerNavigationFor(AppMode mode, WindowClass windowClass) =>
-    mode != AppMode.customer && windowClass != WindowClass.compact;
+    isStaffMode(mode) && windowClass != WindowClass.compact;
 
 /// Оболочка `StatefulShellRoute` (D-18, ADR-112; 03 §9.54–§9.57; 02 §2 «Оболочка», §3.1, §3.2, §3.8).
 ///
@@ -295,7 +299,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     final StatefulNavigationShell shell = widget.navigationShell;
     final int current = tabs.indexWhere((ShellTab tab) => tab.branch.index == shell.currentIndex);
     final WindowClass wc = context.windowClass;
-    final bool staff = mode != AppMode.customer;
+    final bool staff = isStaffMode(mode);
     final bool drawerNav = shellDrawerNavigationFor(mode, wc);
     // На ветке «Каталог» шапку рисует `CatalogWorkspace` (ADR-110): вторая шапка дала бы два поля поиска.
     final bool shellHeader = drawerNav && shell.currentIndex != ShellBranch.catalog.index;

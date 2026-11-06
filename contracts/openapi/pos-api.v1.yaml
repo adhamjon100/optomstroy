@@ -2,14 +2,14 @@
 # ФАЙЛ СОБРАН АВТОМАТИЧЕСКИ — НЕ РЕДАКТИРОВАТЬ ВРУЧНУЮ.
 # Источник: contracts/openapi/parts/*.yaml; сборщик: scripts/build_openapi.py (RM-B-003).
 # Правила частей и решения авторов — contracts/openapi/NOTES.md и комментарии в шапках частей.
-# Части: 00_root.yaml, 10_auth.yaml, 20_catalog.yaml, 30_cart_orders.yaml, 40_payments_pos_returns.yaml, 50_customers.yaml, 60_sync_admin_ops.yaml
+# Части: 00_root.yaml, 10_auth.yaml, 20_catalog.yaml, 30_cart_orders.yaml, 40_payments_pos_returns.yaml, 50_customers.yaml, 60_sync_admin_ops.yaml, 70_kiosk.yaml
 # =====================================================================================
 openapi: 3.0.3
 info:
   title: Optomstroy POS API
-  version: 1.2.0
+  version: 1.3.0
   description: |
-    REST/JSON API pos-api (NestJS) для pos-app (Flutter: Android, Windows, iOS) — сотрудники и (R1, ядро §24.2) клиенты-покупатели, а также входящий обмен 1С (вариант C-2) и вебхук банка (только QR_PROVIDER=bakai, R2). Ошибки — RFC 9457 application/problem+json с машинным полем code (закрытый перечень 08 §2.4). Деньги — строки с 2 знаками + currency KGS; количества — строки с точностью единицы (≤ 3 знаков); время — UTC ISO-8601 с суффиксом Z; идентификаторы — UUID в нижнем регистре. Клиент никогда не передаёт цены, суммы и итоги (08 §2.14). Права проверяются сервером (deny by default).
+    REST/JSON API pos-api (NestJS) для pos-app (Flutter: Android, Windows, iOS) — сотрудники и (R1, ядро §24.2) клиенты-покупатели, общий планшет магазина в торговом зале (технический пользователь kind=kiosk, флаг KIOSK_MODE, по умолчанию false — 08 §4.25, ADR-115), а также входящий обмен 1С (вариант C-2) и вебхук банка (только QR_PROVIDER=bakai, R2). Ошибки — RFC 9457 application/problem+json с машинным полем code (закрытый перечень 08 §2.4). Деньги — строки с 2 знаками + currency KGS; количества — строки с точностью единицы (≤ 3 знаков); время — UTC ISO-8601 с суффиксом Z; идентификаторы — UUID в нижнем регистре. Клиент никогда не передаёт цены, суммы и итоги (08 §2.14). Права проверяются сервером (deny by default).
   contact:
     name: Optomstroy POS team
 servers:
@@ -94,6 +94,9 @@ tags:
 - name: settings
   description: 'Публичные настройки и флаги функций /settings/public (08 §4.23). Модуль D-06: admin (settings).'
   x-module: admin
+- name: kiosk
+  description: 'Планшет магазина: подключение, список, изменение, отключение и подключение заново /admin/store-tablets* (08 §4.18.11–§4.18.15), код и заявка с планшета, сброс и аварийный выход /kiosk/* (08 §4.25; ADR-115). Модуль D-06: kiosk (06 MOD-030).'
+  x-module: kiosk
 paths:
   /admin/audit-logs:
     get:
@@ -705,7 +708,7 @@ paths:
       - admin
       operationId: admin_settings_get
       summary: Настройки системы (app_settings) и env только для чтения
-      description: '08 §4.18.6 и таблица соответствия ключей; ядро §19.2, §24.2, §24.4. settings.app.read (admin, owner; для owner SCR-46 — только просмотр, ядро §21 п.3). Ключи app_settings — camelCase-проекция snake_case-ключей 07 §5.59 (каждый сегмент через точку отдельно); блок env — значения переменных окружения только для чтения; секреты (SMSPro, 1С, ключи) не отдаются. Ошибки: 401; 403 FORBIDDEN. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      description: '08 §4.18.6 и таблица соответствия ключей; ядро §19.2, §24.2, §24.4. settings.app.read (admin, owner; для owner SCR-46 — только просмотр, ядро §21 п.3). Ключи app_settings — camelCase-проекция snake_case-ключей 07 §5.59 (каждый сегмент через точку отдельно); блок env — значения переменных окружения только для чтения; секреты (SMSPro, 1С, ключи) не отдаются. Ошибки: 401; 403 FORBIDDEN. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store. Ключи планшета магазина (08 §4.18.6; ADR-115; с 1.3.0): kioskIdleSeconds, kioskIdleWarningSeconds, kioskDoneSeconds (публичны — объект kiosk GET /settings/public), kioskOtpPerHour, kioskOtpPerDay, kioskWorkingHours; env kioskMode (KIOSK_MODE, только чтение; публикуется как features.storeTablet).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
       - $ref: '#/components/parameters/AppVersion'
@@ -747,7 +750,7 @@ paths:
       - admin
       operationId: admin_settings_update
       summary: Изменить настройки системы (частичный объект)
-      description: '08 §4.18.6. settings.app.update — только admin, step-up (operation settings.app.update). Тело — частичный объект settings (только ключи таблицы соответствия с отметкой «запись») + rowVersion; ключи блока env (в т. ч. customerSelfService — только env, ядро §19.2) и неизвестные ключи → VALIDATION_FAILED (rule read_only_setting / unknown_setting). Повтор того же тела → 200 без изменений. Ошибки: 400 VALIDATION_FAILED (схема, read_only_setting, unknown_setting); 401; 403 FORBIDDEN, STEP_UP_REQUIRED; 409 VERSION_CONFLICT; 422 VALIDATION_FAILED (customerStockDisplay вне status|quantity — rule enum; диапазоны: lowStockThreshold ≥ 0, syncInterval.<entity> 60…86400, parkedCartTtlDays 1…30, receivables.maxAgeMinutes 5…1440, otp.ttlSeconds 180…600). Аудит settings.changed (по ключам, before/after). Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      description: '08 §4.18.6. settings.app.update — только admin, step-up (operation settings.app.update). Тело — частичный объект settings (только ключи таблицы соответствия с отметкой «запись») + rowVersion; ключи блока env (в т. ч. customerSelfService — только env, ядро §19.2) и неизвестные ключи → VALIDATION_FAILED (rule read_only_setting / unknown_setting). Повтор того же тела → 200 без изменений. Ошибки: 400 VALIDATION_FAILED (схема, read_only_setting, unknown_setting); 401; 403 FORBIDDEN, STEP_UP_REQUIRED; 409 VERSION_CONFLICT; 422 VALIDATION_FAILED (customerStockDisplay вне status|quantity — rule enum; диапазоны: lowStockThreshold ≥ 0, syncInterval.<entity> 60…86400, parkedCartTtlDays 1…30, receivables.maxAgeMinutes 5…1440, otp.ttlSeconds 180…600, kioskIdleSeconds 30…1800, kioskIdleWarningSeconds 5…120, kioskDoneSeconds 10…600, kioskOtpPerHour 1…1000, kioskOtpPerDay 1…10000 — границы ключей планшета — предложение 08 [НЕ ПОДТВЕРЖДЕНО]; kioskWorkingHours — формат 07 §5.59, rule format; kioskMode — read_only_setting). Аудит settings.changed (по ключам, before/after). Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -804,13 +807,327 @@ paths:
       - settings.app.update
       x-idempotent: true
       x-rate-limit-group: RL-ADMIN
+  /admin/store-tablets:
+    get:
+      tags:
+      - kiosk
+      operationId: kiosk_tablets_list
+      summary: Список планшетов магазина
+      description: |
+        08 §4.18.12; ADR-115; SCR-54. Имя, склад, статус, последняя связь, закрепление, версия приложения и срок подключения каждого планшета (напоминание SCR-54 за 30 дней до expiresAt, Р-22 (а)). lockTaskEnabled — true | false | null (null — сигнала X-Kiosk-Lock ещё не было); SCR-54 показывает «Закрепление не включено» для false и null (12 T-KIOSK-068). Без пагинации — планшетов в магазине единицы; порядок — по имени. Работает и при KIOSK_MODE=false. kiosk.read — admin, owner; прочие роли → 403 FORBIDDEN. Ошибки: 400 VALIDATION_FAILED (status); 401; 403 FORBIDDEN. Rate limit: RL-ADMIN. Аудит: не пишется. Кэширование: no-store.
+      security:
+      - bearerAuth: []
+      x-permissions:
+      - kiosk.read
+      x-roles:
+      - admin
+      - owner
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-ADMIN
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - name: status
+        in: query
+        required: false
+        description: Фильтр по статусу (active | revoked); без параметра — все планшеты.
+        schema:
+          $ref: '#/components/schemas/StoreTabletStatus'
+      responses:
+        '200':
+          description: Планшеты магазина.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KioskTabletsListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      tags:
+      - kiosk
+      operationId: kiosk_tablets_enroll
+      summary: Подключить это устройство как планшет магазина
+      description: |
+        08 §4.18.11; ADR-115; FLOW-043, SCR-54 «Сделать это устройство планшетом магазина». Администратор, вошедший на самом планшете (тот же X-Device-Id), подключает устройство. Одна транзакция: технический пользователь kind=kiosk (phone_e164 = NULL, status=active) с профилем (имя планшета, склад) и ролью kiosk; строка devices с тем же device_key; одна сессия планшета (amr ["pin"], сроки AUTH_REFRESH_IDLE_KIOSK_DAYS и AUTH_REFRESH_TTL_KIOSK_DAYS — 08 §2.2, 09 §8.9); строка store_tablets (status=active, хэш аварийного кода Argon2id(pepper ∥ код ∥ tablet_id) с версией pepper — 11 SEC-140; lock_task_enabled = NULL); сессии администратора на этом устройстве отзываются, его access jti — в token_denylist. Технический пользователь kind=kiosk создаётся только здесь (11 SEC-136). Ответ — токены планшета и аварийный код выхода exitCode (8 цифр CSPRNG): показывается один раз и не пишется в логи, аудит, уведомления и хранилище идемпотентности. Ширину экрана сервер не проверяет — подключение на compact отклоняет приложение. kiosk.manage — только admin, step-up (operation kiosk.manage, область admin_users); owner и прочие → 403 FORBIDDEN. Идемпотентность (08 §2.7 «Подключение и подключение заново планшета»): в idempotency_keys — только идентификаторы; повтор с тем же ключом и телом допускается один раз и только пока сессия планшета не использовалась — тот же статус, новые токены и новый аварийный код (прежний перестаёт действовать); иначе 422 IDEMPOTENCY_KEY_REUSED reason replay_used. Ошибки: 400 VALIDATION_FAILED (name 2…150, warehouseId, forbidden_field, idempotency_key_required); 401; 403 KIOSK_DISABLED (KIOSK_MODE=false), STEP_UP_REQUIRED, FORBIDDEN; 404 NOT_FOUND (склад не существует или неактивен); 409 IDEMPOTENCY_IN_PROGRESS (Retry-After); 422 IDEMPOTENCY_KEY_REUSED; 429 RATE_LIMITED. Rate limit: RL-ADMIN. Аудит: kiosk.enrolled (актор, tabletId, имя, склад; без токенов и кода). Кэширование: no-store.
+      security:
+      - bearerAuth: []
+        stepUpToken: []
+      x-permissions:
+      - kiosk.manage
+      x-roles:
+      - admin
+      x-step-up: true
+      x-step-up-operation:
+      - kiosk.manage
+      x-idempotent: required
+      x-feature-flag: KIOSK_MODE
+      x-rate-limit-group: RL-ADMIN
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/StepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KioskTabletsEnrollRequest'
+      responses:
+        '201':
+          description: Планшет подключён; токены планшета и аварийный код (показывается один раз).
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KioskTokens'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /admin/store-tablets/{id}:
+    patch:
+      tags:
+      - kiosk
+      operationId: kiosk_tablets_update
+      summary: Изменить имя и склад планшета
+      description: |
+        08 §4.18.13; ADR-115; SCR-54 «Изменить». Имя (user_profiles.full_name) и склад (user_profiles.home_warehouse_id) технического пользователя планшета; тело — хотя бы одно поле. Новый склад действует со следующей корзины — после ближайшего POST /kiosk/reset; каталог и остатки планшета — сразу. Автосброс здесь не задаётся: он общий для всех планшетов (app_settings kiosk_*, PUT /admin/settings; Р-09). kiosk.manage — только admin, без step-up (P-002 §12). Тот же состав → 200 без изменений и без аудита; rowVersion не используется — последнее изменение побеждает, аудит хранит было/стало. Работает и при KIOSK_MODE=false и у отключённого планшета. Ошибки: 400 VALIDATION_FAILED (name 2…150, пустое тело, forbidden_field); 401; 403 FORBIDDEN; 404 NOT_FOUND (планшет; склад не существует или неактивен). Rate limit: RL-ADMIN. Аудит: kiosk.updated (было/стало: имя, склад; без ПДн). Кэширование: no-store.
+      security:
+      - bearerAuth: []
+      x-permissions:
+      - kiosk.manage
+      x-roles:
+      - admin
+      x-step-up: false
+      x-idempotent: true
+      x-rate-limit-group: RL-ADMIN
+      parameters:
+      - $ref: '#/components/parameters/IdPath'
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - $ref: '#/components/parameters/IdempotencyKeyOptional'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KioskTabletsUpdateRequest'
+      responses:
+        '200':
+          description: Планшет после изменения.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreTablet'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /admin/store-tablets/{id}/reconnect:
+    post:
+      tags:
+      - kiosk
+      operationId: kiosk_tablets_reconnect
+      summary: Подключить заново тот же планшет
+      description: |
+        08 §4.18.15; ADR-115; SCR-54 «Подключить заново этот планшет» на самом планшете (FLOW-043 A2): срок сессии вышел, планшет отключён для обновления, приложение переустановлено или устройство заменено. Тот же технический пользователь и та же строка store_tablets — имя, склад, история заявок и код автора в 1С (createdByUserCode) не меняются. Одна транзакция: status=active, reconnected_at, reconnected_by_user_id, поля отключения очищаются; прежние сессии технического пользователя отзываются с revoke_reason=kiosk_revoked (копия на заменённом устройстве получает 401 KIOSK_REVOKED); строка devices для текущего device_key и store_tablets.device_id на неё; новая сессия планшета; новый аварийный код (прежний перестаёт действовать, счётчик и пауза неверных кодов обнуляются); коды kiosk_order планшета гасятся; lock_task_enabled = NULL; сессии администратора на устройстве отзываются, его access jti — в token_denylist. Тело — пустой объект. kiosk.manage — только admin, step-up (operation kiosk.manage). Новый пользователь kind=kiosk этой операцией не создаётся. Идемпотентность — как у POST /admin/store-tablets (08 §2.7). Ошибки: 400 VALIDATION_FAILED (forbidden_field, idempotency_key_required); 401; 403 KIOSK_DISABLED (KIOSK_MODE=false), STEP_UP_REQUIRED, FORBIDDEN; 404 NOT_FOUND; 409 IDEMPOTENCY_IN_PROGRESS (Retry-After); 422 IDEMPOTENCY_KEY_REUSED (reason replay_used); 429 RATE_LIMITED. Rate limit: RL-ADMIN. Аудит: kiosk.reconnected (актор, tabletId; без токенов и кода). Кэширование: no-store.
+      security:
+      - bearerAuth: []
+        stepUpToken: []
+      x-permissions:
+      - kiosk.manage
+      x-roles:
+      - admin
+      x-step-up: true
+      x-step-up-operation:
+      - kiosk.manage
+      x-idempotent: required
+      x-feature-flag: KIOSK_MODE
+      x-rate-limit-group: RL-ADMIN
+      parameters:
+      - $ref: '#/components/parameters/IdPath'
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/StepUpToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KioskTabletsReconnectRequest'
+      responses:
+        '200':
+          description: Планшет подключён заново; новые токены и новый аварийный код (показывается один раз).
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KioskTokens'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /admin/store-tablets/{id}/revoke:
+    post:
+      tags:
+      - kiosk
+      operationId: kiosk_tablets_revoke
+      summary: Отключить планшет
+      description: |
+        08 §4.18.14; ADR-115; SCR-54 «Отключить» с любого устройства администратора (FLOW-043 п. 6). Одна транзакция: все сессии технического пользователя отзываются с revoke_reason=kiosk_revoked; действующие коды kiosk_order планшета гасятся (sent → superseded, проверенный, но не погашенный — replayed_at); store_tablets.status=revoked, revoked_at, revoked_by_user_id, revoke_reason='kiosk.revoked' (07 §5.65). Следующий запрос планшета и его POST /auth/refresh получают 401 KIOSK_REVOKED → «Планшет отключён администратором», закрепление снимается. Запись, история заявок и технический пользователь сохраняются для подключения заново. Необязательный reason пишется только в аудит. kiosk.manage — только admin, step-up (operation kiosk.manage); owner и прочие → 403 FORBIDDEN (12 T-KIOSK-002). Повтор для уже отключённого планшета → 200 с текущим состоянием, без повторного аудита. Работает и при KIOSK_MODE=false (откат P-002 §23). Ошибки: 400 VALIDATION_FAILED (reason); 401; 403 FORBIDDEN, STEP_UP_REQUIRED; 404 NOT_FOUND. Rate limit: RL-ADMIN. Аудит: kiosk.revoked (актор, tabletId, reason, число отозванных сессий). Кэширование: no-store.
+      security:
+      - bearerAuth: []
+        stepUpToken: []
+      x-permissions:
+      - kiosk.manage
+      x-roles:
+      - admin
+      x-step-up: true
+      x-step-up-operation:
+      - kiosk.manage
+      x-idempotent: true
+      x-rate-limit-group: RL-ADMIN
+      parameters:
+      - $ref: '#/components/parameters/IdPath'
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - $ref: '#/components/parameters/IdempotencyKeyOptional'
+      - $ref: '#/components/parameters/StepUpToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KioskTabletsRevokeRequest'
+      responses:
+        '200':
+          description: Планшет отключён (status revoked).
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreTablet'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
   /admin/users:
     get:
       tags:
       - admin
       operationId: admin_users_list
       summary: Список пользователей (сотрудники и клиенты)
-      description: '08 §4.18.1. users.read (admin, owner). Ответ — Page<AdminUser>. Ошибки: 400 VALIDATION_FAILED (role/status/kind вне enum, limit, cursor); 401; 403 FORBIDDEN. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      description: '08 §4.18.1. users.read (admin, owner). Ответ — Page<AdminUser>. Ошибки: 400 VALIDATION_FAILED (role/status/kind вне enum, limit, cursor); 401; 403 FORBIDDEN. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store. Технический пользователь планшета магазина (kind=kiosk) в списке не показывается, в том числе при фильтрах kind=kiosk и role=kiosk (08 §4.18, ADR-115 п. 19); планшеты — GET /admin/store-tablets.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
       - $ref: '#/components/parameters/AppVersion'
@@ -949,7 +1266,7 @@ paths:
       - admin
       operationId: admin_users_get
       summary: Карточка пользователя
-      description: '08 §4.18.1. users.read (admin, owner). Ошибки: 401; 403 FORBIDDEN; 404 NOT_FOUND. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      description: '08 §4.18.1. users.read (admin, owner). Ошибки: 401; 403 FORBIDDEN; 404 NOT_FOUND. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store. Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9; ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
       - $ref: '#/components/parameters/AppVersion'
@@ -994,7 +1311,7 @@ paths:
       - admin
       operationId: admin_users_update
       summary: Изменить ФИО сотрудника
-      description: '08 §4.18.1. users.manage (только admin), step-up (operation users.manage). Тело — fullName и rowVersion; роли и статус — отдельными операциями; discountLimitPercent, warehouseIds не принимаются (forbidden_field). Ограничения цели — 11 SEC-043. Ошибки: 400 VALIDATION_FAILED; 401; 403 FORBIDDEN (цель owner, SEC-043), STEP_UP_REQUIRED; 404 NOT_FOUND; 409 VERSION_CONFLICT (current), IDEMPOTENCY_IN_PROGRESS; 422 VALIDATION_FAILED. Аудит user.updated. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      description: '08 §4.18.1. users.manage (только admin), step-up (operation users.manage). Тело — fullName и rowVersion; роли и статус — отдельными операциями; discountLimitPercent, warehouseIds не принимаются (forbidden_field). Ограничения цели — 11 SEC-043. Ошибки: 400 VALIDATION_FAILED; 401; 403 FORBIDDEN (цель owner, SEC-043), STEP_UP_REQUIRED; 404 NOT_FOUND; 409 VERSION_CONFLICT (current), IDEMPOTENCY_IN_PROGRESS; 422 VALIDATION_FAILED. Аудит user.updated. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store. Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9; ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -1060,7 +1377,7 @@ paths:
       - admin
       operationId: admin_users_block
       summary: Заблокировать или разблокировать пользователя
-      description: '08 §4.18.3; 11 SEC-043. users.manage (только admin), step-up (operation users.manage). blocked=true → status=blocked, все сессии отозваны, приглашение аннулировано; blocked=false → active. Повтор с тем же значением blocked → 200 без изменений. Ошибки: 400 VALIDATION_FAILED; 401; 403 FORBIDDEN (цель — сам субъект; цель с ролью owner — SEC-043; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND. Аудит user.blocked / user.unblocked. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      description: '08 §4.18.3; 11 SEC-043. users.manage (только admin), step-up (operation users.manage). blocked=true → status=blocked, все сессии отозваны, приглашение аннулировано; blocked=false → active. Повтор с тем же значением blocked → 200 без изменений. Ошибки: 400 VALIDATION_FAILED; 401; 403 FORBIDDEN (цель — сам субъект; цель с ролью owner — SEC-043; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND. Аудит user.blocked / user.unblocked. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store. Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9; ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -1122,7 +1439,7 @@ paths:
       - admin
       operationId: admin_users_emergency_login_code_issue
       summary: Выдать аварийный одноразовый код входа сотруднику
-      description: '08 §4.18.10; ядро §22.13 п.2, §23 п.8; 09 SMS-035, §6.13; 11 №76, SEC-043, SEC-131. Приоритет R1 — should (Q-168). Только admin со step-up (operation users.emergency_code.issue). Сервер создаёт otp_challenges (purpose=login_or_register, без sms_outbox): 6 цифр CSPRNG, хранится только HMAC, TTL 10 мин, одноразовый; предыдущий живой челлендж номера → superseded. Код показывается администратору один раз и не пишется в логи, аудит, уведомления и хранилище идемпотентности. Намеренно НЕ идемпотентна: Idempotency-Key игнорируется, каждый вызов выдаёт новый код и аннулирует прежний. Ошибки: 400 VALIDATION_FAILED (схема; comment обязателен при reason=other); 401; 403 FORBIDDEN (роль; себе; цель с ролью admin/owner), STEP_UP_REQUIRED; 404 NOT_FOUND; 422 VALIDATION_FAILED (цель не kind=staff или не status=active); 429 RATE_LIMITED (не более 3 кодов на пользователя и 20 на администратора за сутки — 09 §6.13). Аудит auth.emergency_code.issued (без кода); при входе — auth.emergency_code.used; уведомление цели и всем owner; алерт. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      description: '08 §4.18.10; ядро §22.13 п.2, §23 п.8; 09 SMS-035, §6.13; 11 №76, SEC-043, SEC-131. Приоритет R1 — should (Q-168). Только admin со step-up (operation users.emergency_code.issue). Сервер создаёт otp_challenges (purpose=login_or_register, без sms_outbox): 6 цифр CSPRNG, хранится только HMAC, TTL 10 мин, одноразовый; предыдущий живой челлендж номера → superseded. Код показывается администратору один раз и не пишется в логи, аудит, уведомления и хранилище идемпотентности. Намеренно НЕ идемпотентна: Idempotency-Key игнорируется, каждый вызов выдаёт новый код и аннулирует прежний. Ошибки: 400 VALIDATION_FAILED (схема; comment обязателен при reason=other); 401; 403 FORBIDDEN (роль; себе; цель с ролью admin/owner), STEP_UP_REQUIRED; 404 NOT_FOUND; 422 VALIDATION_FAILED (цель не kind=staff или не status=active); 429 RATE_LIMITED (не более 3 кодов на пользователя и 20 на администратора за сутки — 09 §6.13). Аудит auth.emergency_code.issued (без кода); при входе — auth.emergency_code.used; уведомление цели и всем owner; алерт. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store. Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9; ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -1185,7 +1502,7 @@ paths:
       - admin
       operationId: admin_users_logout_all
       summary: Отозвать все сессии пользователя
-      description: '08 §4.18.3; ядро §17.4, §21 п.3; 11 SEC-043. session.revoke.any, step-up (operation session.revoke.any): admin — любые цели, кроме owner; owner — только цели с ролью admin/owner. Тела запроса нет. Повтор → 204. Ошибки: 401; 403 FORBIDDEN (цель — сам субъект; цель owner при субъекте admin; owner над целью без ролей admin/owner; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND. Аудит session.revoked (actor, reason, число отозванных сессий в after). Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      description: '08 §4.18.3; ядро §17.4, §21 п.3; 11 SEC-043. session.revoke.any, step-up (operation session.revoke.any): admin — любые цели, кроме owner; owner — только цели с ролью admin/owner. Тела запроса нет. Повтор → 204. Ошибки: 401; 403 FORBIDDEN (цель — сам субъект; цель owner при субъекте admin; owner над целью без ролей admin/owner; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND. Аудит session.revoked (actor, reason, число отозванных сессий в after). Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store. Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9; ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -1236,7 +1553,7 @@ paths:
       - admin
       operationId: admin_users_pin_reset
       summary: Сбросить PIN приложения сотрудника
-      description: '08 §4.18.9; D-48; 11 №69, SEC-043, SEC-076; 09 BIO-021. users.pin.reset — только admin, step-up (operation users.pin.reset). app_pins удаляется, счётчик неверных попыток и PIN_LOCKED снимаются; активные сессии не отзываются, но /auth/unlock и step-up method=pin до установки нового PIN → 403 FORBIDDEN reason pin_not_set. Тело — reason (≥ 5 символов). DELETE идемпотентен: повтор → 204; Idempotency-Key не требуется (вне перечня 08 §2.7). Ошибки: 400 VALIDATION_FAILED (reason); 401; 403 FORBIDDEN (цель — сам администратор, customer-аккаунт или пользователь с ролью owner; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND. Аудит auth.pin.reset (цель, reason; без PIN). Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      description: '08 §4.18.9; D-48; 11 №69, SEC-043, SEC-076; 09 BIO-021. users.pin.reset — только admin, step-up (operation users.pin.reset). app_pins удаляется, счётчик неверных попыток и PIN_LOCKED снимаются; активные сессии не отзываются, но /auth/unlock и step-up method=pin до установки нового PIN → 403 FORBIDDEN reason pin_not_set. Тело — reason (≥ 5 символов). DELETE идемпотентен: повтор → 204; Idempotency-Key не требуется (вне перечня 08 §2.7). Ошибки: 400 VALIDATION_FAILED (reason); 401; 403 FORBIDDEN (цель — сам администратор, customer-аккаунт или пользователь с ролью owner; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND. Аудит auth.pin.reset (цель, reason; без PIN). Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store. Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9; ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -1291,7 +1608,7 @@ paths:
       - admin
       operationId: admin_users_roles_set
       summary: Назначить роли пользователя (полная замена набора)
-      description: '08 §4.18.2; ядро §21 п.3; 11 SEC-040, SEC-043. users.roles.assign, step-up обязателен (operation users.roles.assign): admin — любые роли, кроме owner; owner — только назначение и снятие ролей admin/owner. Эффект: user_roles заменяются, permissionsVersion++ → активные access-токены цели получают 401 TOKEN_STALE ≤ 60 с; in-app уведомление. Применяется к active/blocked; для pending_activation → 422 VALIDATION_FAILED rule user_pending_activation (активация — POST /admin/users). Повтор того же набора → 200 без изменения permissionsVersion. Ошибки: 400 VALIDATION_FAILED (роль вне role_code); 401; 403 FORBIDDEN (reason: owner_role_reserved — admin назначает/снимает owner; owner назначает/снимает seller/cashier/senior_seller; цель owner при субъекте admin), STEP_UP_REQUIRED; 404 NOT_FOUND; 409 VERSION_CONFLICT; 422 VALIDATION_FAILED (roles содержит integration; rule self_demotion — снять admin с себя; rule user_pending_activation). Аудит user.role_changed (before/after, reason); отказ по SEC-040 — authz.denied. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store.'
+      description: '08 §4.18.2; ядро §21 п.3; 11 SEC-040, SEC-043. users.roles.assign, step-up обязателен (operation users.roles.assign): admin — любые роли, кроме owner; owner — только назначение и снятие ролей admin/owner. Эффект: user_roles заменяются, permissionsVersion++ → активные access-токены цели получают 401 TOKEN_STALE ≤ 60 с; in-app уведомление. Применяется к active/blocked; для pending_activation → 422 VALIDATION_FAILED rule user_pending_activation (активация — POST /admin/users). Повтор того же набора → 200 без изменения permissionsVersion. Ошибки: 400 VALIDATION_FAILED (роль вне role_code); 401; 403 FORBIDDEN (reason: owner_role_reserved — admin назначает/снимает owner; owner назначает/снимает seller/cashier/senior_seller; цель owner при субъекте admin), STEP_UP_REQUIRED; 404 NOT_FOUND; 409 VERSION_CONFLICT; 422 VALIDATION_FAILED (roles содержит integration; rule self_demotion — снять admin с себя; rule user_pending_activation). Аудит user.role_changed (before/after, reason); отказ по SEC-040 — authz.denied. Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store. Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9; ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -1359,7 +1676,7 @@ paths:
       operationId: auth_logout
       summary: Завершить текущую сессию
       description: |
-        08 §4.1.4. Отзывает текущую sid (refresh всех kind этой сессии), jti access — в denylist до exp. Повтор → 204. Ошибки: общие (401, 403). Rate limit: RL-AUTH. Аудит: auth.logout. Кэширование: no-store.
+        08 §4.1.4. Отзывает текущую sid (refresh всех kind этой сессии), jti access — в denylist до exp. Повтор → 204. Ошибки: общие (401, 403). Rate limit: RL-AUTH. Аудит: auth.logout. Кэширование: no-store. Планшет магазина (kind=kiosk): права session.manage.own у роли kiosk нет, маршрут вне закрытого списка → 403 FORBIDDEN; сессию планшета завершают только отключение администратором и POST /kiosk/exit (08 §4.1.4, §4.25).
       x-permissions:
       - session.manage.own
       x-roles:
@@ -1518,7 +1835,7 @@ paths:
       operationId: auth_otp_request
       summary: Запросить одноразовый код (нейтральный ответ)
       description: |
-        08 §4.1.1. Создаёт otp_challenge (purpose=login_or_register) и отправляет SMS через SmsGateway. Нейтральный ответ: форма, статус и время ответа одинаковы для зарегистрированного и незарегистрированного номера (D-10). Повтор в cooldown → 429 OTP_RATE_LIMITED; повтор после cooldown создаёт новый код и аннулирует прежний. Ошибки: 400 VALIDATION_FAILED (phone_e164, purpose); 423 OTP_LOCKED; 429 OTP_RATE_LIMITED (retryAfter); 503 SMS_PROVIDER_ERROR. Rate limit: RL-OTP-SEND, RL-OTP-SEND-IP, RL-OTP-SEND-DEV, RL-OTP-GLOBAL, RL-PUBLIC-IP. Аудит: auth.otp.sent (без кода). Кэширование: no-store.
+        08 §4.1.1. Создаёт otp_challenge (purpose=login_or_register) и отправляет SMS через SmsGateway. Нейтральный ответ: форма, статус и время ответа одинаковы для зарегистрированного и незарегистрированного номера (D-10). Повтор в cooldown → 429 OTP_RATE_LIMITED; повтор после cooldown создаёт новый код и аннулирует прежний. Ошибки: 400 VALIDATION_FAILED (phone_e164, purpose); 423 OTP_LOCKED; 429 OTP_RATE_LIMITED (retryAfter); 503 SMS_PROVIDER_ERROR. Rate limit: RL-OTP-SEND, RL-OTP-SEND-IP, RL-OTP-SEND-DEV, RL-OTP-GLOBAL, RL-PUBLIC-IP. Аудит: auth.otp.sent (без кода). Кэширование: no-store. purpose=kiosk_order на этом маршруте не принимается (VALIDATION_FAILED rule purpose): код заявки с планшета магазина выдаёт только POST /kiosk/order-otp (08 §4.1.1, §4.25.1; ADR-115).
       security: []
       x-permissions: []
       x-roles: []
@@ -1572,7 +1889,7 @@ paths:
       operationId: auth_otp_verify
       summary: Проверить код; ветвление «вход / сотрудник по приглашению / регистрация клиента / ожидание активации»
       description: |
-        08 §4.1.2; ядро §24.2. Проверка кода (constant-time), атомарное потребление, регистрация устройства, затем ветвление: аккаунт active → authenticated; номер с действующим приглашением → учётная запись сотрудника и authenticated с roleSource=invitation, nextStep=set_pin (без регистрационной формы); нет аккаунта и приглашения → registration_required (регистрация клиента); pending_activation — только при CUSTOMER_SELF_SERVICE=false; blocked → 403 FORBIDDEN. До установки PIN сессия сотрудника по приглашению ограничена (/me*, /auth/*, GET /settings/public; прочее → 403 FORBIDDEN reason pin_not_set). Повторный verify того же кода → 422 OTP_EXPIRED. Ошибки: 400 VALIDATION_FAILED; 403 FORBIDDEN (blocked); 409 DEVICE_MISMATCH (X-Device-Id ≠ устройству челленджа); 422 OTP_INVALID (attemptsLeft), OTP_EXPIRED; 423 OTP_LOCKED (retryAfter); 429 RATE_LIMITED. Rate limit: RL-OTP-VERIFY, RL-PUBLIC-IP. Аудит: auth.otp.verified / auth.otp.failed / auth.login; user.created (вход по приглашению). Кэширование: no-store.
+        08 §4.1.2; ядро §24.2. Проверка кода (constant-time), атомарное потребление, регистрация устройства, затем ветвление: аккаунт active → authenticated; номер с действующим приглашением → учётная запись сотрудника и authenticated с roleSource=invitation, nextStep=set_pin (без регистрационной формы); нет аккаунта и приглашения → registration_required (регистрация клиента); pending_activation — только при CUSTOMER_SELF_SERVICE=false; blocked → 403 FORBIDDEN. До установки PIN сессия сотрудника по приглашению ограничена (/me*, /auth/*, GET /settings/public; прочее → 403 FORBIDDEN reason pin_not_set). Повторный verify того же кода → 422 OTP_EXPIRED. Ошибки: 400 VALIDATION_FAILED; 403 FORBIDDEN (blocked); 409 DEVICE_MISMATCH (X-Device-Id ≠ устройству челленджа); 422 OTP_INVALID (attemptsLeft), OTP_EXPIRED; 423 OTP_LOCKED (retryAfter); 429 RATE_LIMITED. Rate limit: RL-OTP-VERIFY, RL-PUBLIC-IP. Аудит: auth.otp.verified / auth.otp.failed / auth.login; user.created (вход по приглашению). Кэширование: no-store. Код заявки с планшета магазина (purpose=kiosk_order) сессию не выдаёт: челлендж другого назначения → 404 NOT_FOUND (08 §4.1.2; ADR-115; 12 T-KIOSK-015).
       security: []
       x-permissions: []
       x-roles: []
@@ -1621,6 +1938,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
@@ -1640,7 +1959,7 @@ paths:
       operationId: auth_refresh
       summary: Ротация пары access/refresh
       description: |
-        08 §4.1.3, §2.2. Только обычная ротация по непрозрачному refresh (тело); аутентификация — по refresh и X-Device-Id. biometric_refresh здесь не принимается (400 VALIDATION_FAILED rule use_unlock) — только POST /auth/unlock. Поля kind и amr → 400 rule forbidden_field. Окно грации 30 с: повтор с предыдущим refresh возвращает ту же новую пару; позже — reuse → отзыв семьи + аудит session.reuse_detected. Ошибки: 400 VALIDATION_FAILED; 401 SESSION_REVOKED (неизвестен / отозван / просрочен / reuse / чужой deviceId / idle-отзыв), UNLOCK_REQUIRED (staff на Windows без действующего unlocked_until, D-48); 429 RATE_LIMITED. Rate limit: RL-AUTH. Кэширование: no-store (токены).
+        08 §4.1.3, §2.2. Только обычная ротация по непрозрачному refresh (тело); аутентификация — по refresh и X-Device-Id. biometric_refresh здесь не принимается (400 VALIDATION_FAILED rule use_unlock) — только POST /auth/unlock. Поля kind и amr → 400 rule forbidden_field. Окно грации 30 с: повтор с предыдущим refresh возвращает ту же новую пару; позже — reuse → отзыв семьи + аудит session.reuse_detected. Ошибки: 400 VALIDATION_FAILED; 401 SESSION_REVOKED (неизвестен / отозван / просрочен / reuse / чужой deviceId / idle-отзыв), UNLOCK_REQUIRED (staff на Windows без действующего unlocked_until, D-48); 429 RATE_LIMITED. Rate limit: RL-AUTH. Кэширование: no-store (токены). Планшет магазина (kind=kiosk; 08 §2.2, §4.1.3; ADR-115): сессия, отозванная с revoke_reason=kiosk_revoked (отключение администратором, аварийный выход), → 401 KIOSK_REVOKED — refresh на этот код не повторяется; прочие отказы сессии планшета — SESSION_REVOKED. Поздний повтор прежнего refresh после потерянного ответа идёт путём грации один раз на ротацию; сроки — AUTH_REFRESH_IDLE_KIOSK_DAYS (7 дней) и AUTH_REFRESH_TTL_KIOSK_DAYS (180 дней).
       security: []
       x-permissions: []
       x-roles: []
@@ -1994,7 +2313,7 @@ paths:
       operationId: cart_get
       summary: Активная корзина с актуализацией цен и остатков
       description: |
-        200: при отсутствии активной корзины сервер создаёт пустую `active` и возвращает её с `items: []` (одна `active` на пользователя). Исключение — 503 ONEC_UNAVAILABLE reason=catalog_not_loaded с Retry-After: 60, если реплика каталога 1С ещё не загружена (нет склада или вида цены по умолчанию; 08 §4.7.1 «Уточнения» п. 2, FIX-F-07; с 1.2.0). Только своя корзина. Для `customer` (R1, ядро §24.2; при CUSTOMER_SELF_SERVICE=true) цены — по виду цены своей `confirmed`-карточки, иначе розничный; остатки — по `customer_stock_display` (08 §3.6). 08 §4.7.1.
+        200: при отсутствии активной корзины сервер создаёт пустую `active` и возвращает её с `items: []` (одна `active` на пользователя). Исключение — 503 ONEC_UNAVAILABLE reason=catalog_not_loaded с Retry-After: 60, если реплика каталога 1С ещё не загружена (нет склада или вида цены по умолчанию; 08 §4.7.1 «Уточнения» п. 2, FIX-F-07; с 1.2.0). Только своя корзина. Для `customer` (R1, ядро §24.2; при CUSTOMER_SELF_SERVICE=true) цены — по виду цены своей `confirmed`-карточки, иначе розничный; остатки — по `customer_stock_display` (08 §3.6). 08 §4.7.1. Планшет магазина (kiosk; 08 §4.7, §4.25; ADR-115): маршрут закрытого списка; корзина технического пользователя живёт только на сервере, Cart.customer = null, обычная цена, склад — склад планшета; цена соглашения карточки в ответ не попадает.
       security:
       - bearerAuth: []
       x-permissions:
@@ -2005,11 +2324,13 @@ paths:
       - senior_seller
       - admin
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-CART
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -2063,7 +2384,7 @@ paths:
       operationId: cart_clear
       summary: Очистить активную корзину
       description: |
-        200 Cart с `items: []`, `status: active`; отложенные корзины не затрагиваются. Повтор для уже пустой корзины → 200 без проверки rowVersion. Ошибки: 409 VERSION_CONFLICT; 400 VALIDATION_FAILED. Аудит `cart.cleared`. 08 §4.7.3.
+        200 Cart с `items: []`, `status: active`; отложенные корзины не затрагиваются. Повтор для уже пустой корзины → 200 без проверки rowVersion. Ошибки: 409 VERSION_CONFLICT; 400 VALIDATION_FAILED. Аудит `cart.cleared`. 08 §4.7.3. Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль kiosk держит cart.manage.own (11 SEC-137; ADR-115). Новую пустую корзину планшета создаёт POST /kiosk/reset.
       security:
       - bearerAuth: []
       x-permissions:
@@ -2122,7 +2443,7 @@ paths:
       operationId: cart_update
       summary: Сменить склад активной корзины с пересчётом доступности
       description: |
-        Единственное изменяемое поле — `warehouseId` (иные поля → 400 VALIDATION_FAILED, rule forbidden_field). Склад должен быть активным. Сервер пересчитывает available/remainingAvailable/stockLevel/warnings; позиции не удаляются. Тот же warehouseId → 200 без изменения rowVersion. Ошибки: 409 VERSION_CONFLICT (current: Cart); 404 NOT_FOUND (склад не существует/неактивен); 403 FORBIDDEN (склад недоступен); 400 VALIDATION_FAILED. 08 §4.7.8 [ядро §19.2].
+        Единственное изменяемое поле — `warehouseId` (иные поля → 400 VALIDATION_FAILED, rule forbidden_field). Склад должен быть активным. Сервер пересчитывает available/remainingAvailable/stockLevel/warnings; позиции не удаляются. Тот же warehouseId → 200 без изменения rowVersion. Ошибки: 409 VERSION_CONFLICT (current: Cart); 404 NOT_FOUND (склад не существует/неактивен); 403 FORBIDDEN (склад недоступен); 400 VALIDATION_FAILED. 08 §4.7.8 [ядро §19.2]. Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль kiosk держит cart.manage.own (11 SEC-137; ADR-115).
       security:
       - bearerAuth: []
       x-permissions:
@@ -2186,24 +2507,27 @@ paths:
       operationId: cart_checkout_preview
       summary: Полная серверная проверка корзины без создания заказа
       description: |
-        Перепроверка цен, остатков, прав, скидок, способа оплаты (долг — fail-closed, порядок ядра §22.4 / 08 §5.5), доставки/получателя; итоги и previewToken (5 мин). Конфликты — 200 с ok=false и conflicts[] (не ошибка). Строгие коды долга (RECEIVABLES_STALE, CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED; 403 FORBIDDEN при forbidden_role) — только при strict=true, иначе — paymentChecks.creditReason. `customer`: credit → creditAllowed:false (forbidden_role; при strict=true — 403); qr_bakai при QR_PROVIDER=none → 422 VALIDATION_FAILED (rule payment_method_unavailable); manualDiscountPercent ≠ 0 → 403. Побочных эффектов нет; синхронная проверка 1С (syncCheckWithOnec, 6 с) — в onecCheck. Ошибки: 422 CART_EMPTY, CUSTOMER_NOT_IDENTIFIED, RECEIVABLES_STALE, CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED, VALIDATION_FAILED; 409 VERSION_CONFLICT; 403 FORBIDDEN; 400 VALIDATION_FAILED (forbidden_field — попытка передать цену, аудит price.override_attempt). 08 §4.7.7.
+        Перепроверка цен, остатков, прав, скидок, способа оплаты (долг — fail-closed, порядок ядра §22.4 / 08 §5.5), доставки/получателя; итоги и previewToken (5 мин). Конфликты — 200 с ok=false и conflicts[] (не ошибка). Строгие коды долга (RECEIVABLES_STALE, CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED; 403 FORBIDDEN при forbidden_role) — только при strict=true, иначе — paymentChecks.creditReason. `customer`: credit → creditAllowed:false (forbidden_role; при strict=true — 403); qr_bakai при QR_PROVIDER=none → 422 VALIDATION_FAILED (rule payment_method_unavailable); manualDiscountPercent ≠ 0 → 403. Побочных эффектов нет; синхронная проверка 1С (syncCheckWithOnec, 6 с) — в onecCheck. Ошибки: 422 CART_EMPTY, CUSTOMER_NOT_IDENTIFIED, RECEIVABLES_STALE, CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED, VALIDATION_FAILED; 409 VERSION_CONFLICT; 403 FORBIDDEN; 400 VALIDATION_FAILED (forbidden_field — попытка передать цену, аудит price.override_attempt). 08 §4.7.7. Требование прав: cart.manage.own и одно из order.create | kiosk.order.submit (форма «И из ИЛИ», ADR-115; kiosk.order.submit засчитывается только при kind=kiosk — 11 SEC-138); x-permissions перечисляет все три кода (NOTES §4). Предпросмотр на планшете (kiosk; 08 §4.7.7): тело — cartId, cartRowVersion, paymentMethod cash, delivery {method: pickup}, receiver {kind: customer} без имени и телефона, manualDiscountPercent 0.00, syncCheckWithOnec false; суммы — по обычной цене корзины планшета; permissions.allowedPaymentMethods = [cash], canCreateOrder — по kiosk.order.submit; иные способ оплаты, доставка, скидка и creditOverride — как у customer (403/422). Планшет вызывает предпросмотр при открытии шага «Телефон» и сразу перед каждым POST /kiosk/orders.
       security:
       - bearerAuth: []
       x-permissions:
       - cart.manage.own
       - order.create
+      - kiosk.order.submit
       x-roles:
       - seller
       - cashier
       - senior_seller
       - admin
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: true
       x-feature-flag: QR_PROVIDER
       x-rate-limit-group: RL-CART
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -2252,7 +2576,7 @@ paths:
       operationId: cart_customer_set
       summary: Привязать клиента к корзине (пересчёт вида цены, скидки 1С, флагов долга)
       description: |
-        Цены пересчитываются по priceListId клиента; warnings при изменении цен. `customer` — только своя `confirmed`-карточка (чужая → 403 FORBIDDEN). Ошибки: 404 NOT_FOUND (клиент); 409 VERSION_CONFLICT; 403 FORBIDDEN; 400 VALIDATION_FAILED (other_person без name/phone). 08 §4.7.4; «Розничный клиент» — Q-026.
+        Цены пересчитываются по priceListId клиента; warnings при изменении цен. `customer` — только своя `confirmed`-карточка (чужая → 403 FORBIDDEN). Ошибки: 404 NOT_FOUND (клиент); 409 VERSION_CONFLICT; 403 FORBIDDEN; 400 VALIDATION_FAILED (other_person без name/phone). 08 §4.7.4; «Розничный клиент» — Q-026. Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль kiosk держит cart.manage.own (11 SEC-137; ADR-115).
       security:
       - bearerAuth: []
       x-permissions:
@@ -2314,7 +2638,7 @@ paths:
       - cart
       operationId: cart_customer_unset
       summary: Отвязать клиента от корзины
-      description: Идемпотентен по семантике. 08 §4.7.4 [ядро §17.4].
+      description: 'Идемпотентен по семантике. 08 §4.7.4 [ядро §17.4]. Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль kiosk держит cart.manage.own (11 SEC-137; ADR-115).'
       security:
       - bearerAuth: []
       x-permissions:
@@ -2432,7 +2756,7 @@ paths:
       operationId: cart_items_put
       summary: Установить или увеличить количество/упаковку позиции (0 = удалить)
       description: |
-        mode=set — установить value; mode=increment — прибавить value к текущему («+ Добавить» без гонок). Idempotency-Key ОБЯЗАТЕЛЕН при mode=increment (08 §2.7; без ключа → 400 VALIDATION_FAILED rule idempotency_key_required), при mode=set — допускается. Клиент не передаёт цены: price/unitPrice → 400 forbidden_field + аудит price.override_attempt; priceSnapshot — цена, которую видел пользователь (только для предупреждения). Превышение остатка — не ошибка, а warnings: [stock_insufficient]; увеличение при неизвестном остатке → 422 STOCK_INSUFFICIENT (conflicts[].available: null, reason: stock_unknown). Ошибки: 409 VERSION_CONFLICT (current: Cart), IDEMPOTENCY_IN_PROGRESS; 422 VARIANT_UNAVAILABLE, QTY_NOT_MULTIPLE, QTY_BELOW_MIN, STOCK_INSUFFICIENT, IDEMPOTENCY_KEY_REUSED; 400 VALIDATION_FAILED (forbidden_field, max_items — 201-я строка, idempotency_key_required). 08 §4.7.2.
+        mode=set — установить value; mode=increment — прибавить value к текущему («+ Добавить» без гонок). Idempotency-Key ОБЯЗАТЕЛЕН при mode=increment (08 §2.7; без ключа → 400 VALIDATION_FAILED rule idempotency_key_required), при mode=set — допускается. Клиент не передаёт цены: price/unitPrice → 400 forbidden_field + аудит price.override_attempt; priceSnapshot — цена, которую видел пользователь (только для предупреждения). Превышение остатка — не ошибка, а warnings: [stock_insufficient]; увеличение при неизвестном остатке → 422 STOCK_INSUFFICIENT (conflicts[].available: null, reason: stock_unknown). Ошибки: 409 VERSION_CONFLICT (current: Cart), IDEMPOTENCY_IN_PROGRESS; 422 VARIANT_UNAVAILABLE, QTY_NOT_MULTIPLE, QTY_BELOW_MIN, STOCK_INSUFFICIENT, IDEMPOTENCY_KEY_REUSED; 400 VALIDATION_FAILED (forbidden_field, max_items — 201-я строка, idempotency_key_required). 08 §4.7.2. Планшет магазина (kiosk; 08 §4.7, §4.25; ADR-115): маршрут закрытого списка; корзина технического пользователя живёт только на сервере, Cart.customer = null, обычная цена, склад — склад планшета; цена соглашения карточки в ответ не попадает.
       security:
       - bearerAuth: []
       x-permissions:
@@ -2443,12 +2767,14 @@ paths:
       - senior_seller
       - admin
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: true
       x-rate-limit-group: RL-CART
       parameters:
       - $ref: '#/components/parameters/CartVariantIdPath'
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -2496,7 +2822,7 @@ paths:
       operationId: cart_items_delete
       summary: Удалить позицию корзины
       description: |
-        С packagingId удаляется строка варианта с этой упаковкой; без параметра — все строки варианта [ядро §19.2]. Удаление отсутствующей строки → 200 с текущей корзиной. Ошибки: 400 VALIDATION_FAILED (packagingId не uuid). 08 §4.7.3.
+        С packagingId удаляется строка варианта с этой упаковкой; без параметра — все строки варианта [ядро §19.2]. Удаление отсутствующей строки → 200 с текущей корзиной. Ошибки: 400 VALIDATION_FAILED (packagingId не uuid). 08 §4.7.3. Планшет магазина (kiosk; 08 §4.7, §4.25; ADR-115): маршрут закрытого списка; корзина технического пользователя живёт только на сервере, Cart.customer = null, обычная цена, склад — склад планшета; цена соглашения карточки в ответ не попадает.
       security:
       - bearerAuth: []
       x-permissions:
@@ -2507,12 +2833,14 @@ paths:
       - senior_seller
       - admin
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-CART
       parameters:
       - $ref: '#/components/parameters/CartVariantIdPath'
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -2555,7 +2883,7 @@ paths:
       operationId: cart_park
       summary: Отложить активную корзину и создать новую пустую
       description: |
-        Idempotency-Key обязателен (08 §2.7: операция создаёт новую active корзину). `customer` → 403 FORBIDDEN. Срок хранения expiresAt = 7 дней [НЕ ПОДТВЕРЖДЕНО]. Ошибки: 409 VERSION_CONFLICT, IDEMPOTENCY_IN_PROGRESS; 422 IDEMPOTENCY_KEY_REUSED; 400 VALIDATION_FAILED. Аудит cart.parked. 08 §4.7.6.
+        Idempotency-Key обязателен (08 §2.7: операция создаёт новую active корзину). `customer` → 403 FORBIDDEN. Срок хранения expiresAt = 7 дней [НЕ ПОДТВЕРЖДЕНО]. Ошибки: 409 VERSION_CONFLICT, IDEMPOTENCY_IN_PROGRESS; 422 IDEMPOTENCY_KEY_REUSED; 400 VALIDATION_FAILED. Аудит cart.parked. 08 §4.7.6. Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль kiosk держит cart.manage.own (11 SEC-137; ADR-115).
       security:
       - bearerAuth: []
       x-permissions:
@@ -2618,7 +2946,7 @@ paths:
       operationId: cart_parked_list
       summary: Список отложенных корзин (свои или все)
       description: |
-        scope=own (по умолчанию) — cart.manage.own; scope=all — cart.parked.read.all (senior_seller, admin, owner — только чтение). Элементы — корзина без items (CartParkedSummary). Ошибки: 403 FORBIDDEN (scope=all без права); 400 VALIDATION_FAILED (limit, cursor). 08 §4.7.6.
+        scope=own (по умолчанию) — cart.manage.own; scope=all — cart.parked.read.all (senior_seller, admin, owner — только чтение). Элементы — корзина без items (CartParkedSummary). Ошибки: 403 FORBIDDEN (scope=all без права); 400 VALIDATION_FAILED (limit, cursor). 08 §4.7.6. Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль kiosk держит cart.manage.own (11 SEC-137; ADR-115).
       security:
       - bearerAuth: []
       x-permissions:
@@ -2689,7 +3017,7 @@ paths:
       operationId: cart_parked_delete
       summary: Удалить отложенную корзину
       description: |
-        Мягкое удаление (carts.status=cleared). Своя — cart.manage.own; чужая — cart.parked.resume.any (senior_seller, admin); owner и customer → 403 FORBIDDEN; чужая без права → 404 NOT_FOUND (существование не раскрывается). Повтор для уже удалённой → 204. Ошибки: 404 NOT_FOUND; 409 ORDER_STATE_INVALID (resource: cart, reason: not_parked). Аудит cart.cleared (parked: true; foreign: true для чужой). 08 §4.7.9 [ядро §19.2].
+        Мягкое удаление (carts.status=cleared). Своя — cart.manage.own; чужая — cart.parked.resume.any (senior_seller, admin); owner и customer → 403 FORBIDDEN; чужая без права → 404 NOT_FOUND (существование не раскрывается). Повтор для уже удалённой → 204. Ошибки: 404 NOT_FOUND; 409 ORDER_STATE_INVALID (resource: cart, reason: not_parked). Аудит cart.cleared (parked: true; foreign: true для чужой). 08 §4.7.9 [ядро §19.2]. Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль kiosk держит cart.manage.own (11 SEC-137; ADR-115).
       security:
       - bearerAuth: []
       x-permissions:
@@ -2737,7 +3065,7 @@ paths:
       operationId: cart_parked_resume
       summary: Возобновить отложенную корзину
       description: |
-        Своя — cart.manage.own; чужая — cart.parked.resume.any (senior_seller, admin; аудит cart.resumed_foreign). Текущая active не пуста и replaceActive=false → 409 ORDER_STATE_INVALID (resource: cart, reason: active_not_empty); replaceActive=true — текущая паркуется как «Автосохранение <время>». Возобновлённая проходит полную перепроверку цен/остатков (warnings[]). Resume уже активной → 200 с текущей корзиной. Объединение корзин (merge) — R2, параметра нет. Ошибки: 404 NOT_FOUND (чужая без права); 409 VERSION_CONFLICT / ORDER_STATE_INVALID. 08 §4.7.6.
+        Своя — cart.manage.own; чужая — cart.parked.resume.any (senior_seller, admin; аудит cart.resumed_foreign). Текущая active не пуста и replaceActive=false → 409 ORDER_STATE_INVALID (resource: cart, reason: active_not_empty); replaceActive=true — текущая паркуется как «Автосохранение <время>». Возобновлённая проходит полную перепроверку цен/остатков (warnings[]). Resume уже активной → 200 с текущей корзиной. Объединение корзин (merge) — R2, параметра нет. Ошибки: 404 NOT_FOUND (чужая без права); 409 VERSION_CONFLICT / ORDER_STATE_INVALID. 08 §4.7.6. Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль kiosk держит cart.manage.own (11 SEC-137; ADR-115).
       security:
       - bearerAuth: []
       x-permissions:
@@ -2801,9 +3129,10 @@ paths:
       tags:
       - catalog
       summary: Дерево категорий со счётчиками
-      description: 'Сайдбар «Категории товаров» (SCR-10, SCR-12): дерево с productCount и iconKey (Q-022). Реплика 1С, только чтение (D-28). ETag = sha256(snapshotVersion), Cache-Control: private, max-age=300 (08 §2.8). Аудит не пишется (08 §4.4.1).'
+      description: 'Сайдбар «Категории товаров» (SCR-10, SCR-12): дерево с productCount и iconKey (Q-022). Реплика 1С, только чтение (D-28). ETag = sha256(snapshotVersion), Cache-Control: private, max-age=300 (08 §2.8). Аудит не пишется (08 §4.4.1). Планшет магазина (kiosk; 08 §4.25, ADR-115): маршрут закрытого списка, ответ — как у customer без привязки.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -2887,6 +3216,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -2896,7 +3226,7 @@ paths:
       tags:
       - catalog
       summary: Справочник видов цен (только staff)
-      description: 'Справочник для параметра priceListId и меток prices[] (08 §4.4.6; 11 §4.3.1: список видов цен — catalog.prices.read, кроме customer). customer → 403 FORBIDDEN. ETag, Cache-Control: private, max-age=300 (08 §2.8).'
+      description: 'Справочник для параметра priceListId и меток prices[] (08 §4.4.6; 11 §4.3.1: список видов цен — catalog.prices.read, кроме customer). customer → 403 FORBIDDEN. ETag, Cache-Control: private, max-age=300 (08 §2.8). Планшет магазина (kiosk): маршрут в закрытом списке 08 §4.25, но, как для customer, ответ 403 FORBIDDEN — справочник видов цен покупателю не отдаётся; поэтому kiosk в x-roles не входит (ADR-115).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
       - $ref: '#/components/parameters/AppVersion'
@@ -2958,9 +3288,10 @@ paths:
       tags:
       - catalog
       summary: 'Список товаров: фильтры, сортировка, курсор'
-      description: 'Сетка/список SCR-10/12 («Найдено: 124 товара», «Загружаем ещё…»). Товары с deletionMark=true не возвращаются; товар без цены в выбранном виде цены — price: null и stockLevel (в корзину нельзя — VARIANT_UNAVAILABLE). Для hasVariants=true — priceRange и суммарный stock по вариантам. Сортировка popularity — [НЕ ПОДТВЕРЖДЕНО, Q-023]. ETag = хэш (max(updated_at), count, priceListId, warehouseId), Cache-Control: private, max-age=60 (08 §2.8). Для офлайн-кэша не используется — только GET /catalog/sync/{entity} (ядро §22.7). customer (R1, ядро §24.2): цена — по виду цены клиента, остатки — по app_settings.customer_stock_display (status — только stockLevel, quantity — плюс available; 08 §3.6). x-permissions: catalog.read — обязательный код операции; catalog.prices.read — цена по правилам роли; catalog.prices.read.all — prices[] всех видов и параметр priceListId (08 §3.15, 11 §4.3).'
+      description: 'Сетка/список SCR-10/12 («Найдено: 124 товара», «Загружаем ещё…»). Товары с deletionMark=true не возвращаются; товар без цены в выбранном виде цены — price: null и stockLevel (в корзину нельзя — VARIANT_UNAVAILABLE). Для hasVariants=true — priceRange и суммарный stock по вариантам. Сортировка popularity — [НЕ ПОДТВЕРЖДЕНО, Q-023]. ETag = хэш (max(updated_at), count, priceListId, warehouseId), Cache-Control: private, max-age=60 (08 §2.8). Для офлайн-кэша не используется — только GET /catalog/sync/{entity} (ядро §22.7). customer (R1, ядро §24.2): цена — по виду цены клиента, остатки — по app_settings.customer_stock_display (status — только stockLevel, quantity — плюс available; 08 §3.6). x-permissions: catalog.read — обязательный код операции; catalog.prices.read — цена по правилам роли; catalog.prices.read.all — prices[] всех видов и параметр priceListId (08 §3.15, 11 §4.3). Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): маршрут закрытого списка, как customer без привязки — обычная цена, остатки по customer_stock_display и только по складу планшета (user_profiles.home_warehouse_id; не задан или неактивен → 403 FORBIDDEN reason kiosk_warehouse_unavailable); priceListId, warehouseId → 403 FORBIDDEN.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -3053,6 +3384,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -3062,7 +3394,7 @@ paths:
       tags:
       - catalog
       summary: Недавние товары пользователя
-      description: 'Блок «Недавние товары» (SCR-10); только собственный список (recent_products). Cache-Control: no-store. Аудит не пишется (08 §4.4.5).'
+      description: 'Блок «Недавние товары» (SCR-10); только собственный список (recent_products). Cache-Control: no-store. Аудит не пишется (08 §4.4.5). Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль kiosk держит catalog.read (11 SEC-137; ADR-115).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
       - $ref: '#/components/parameters/AppVersion'
@@ -3131,7 +3463,7 @@ paths:
       tags:
       - catalog
       summary: Очистить недавние товары
-      description: 'Кнопка «Очистить» (SCR-10; ядро §17.4). Идемпотентен по семантике: повтор → 204. Аудит не пишется (08 §4.4.5).'
+      description: 'Кнопка «Очистить» (SCR-10; ядро §17.4). Идемпотентен по семантике: повтор → 204. Аудит не пишется (08 §4.4.5). Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль kiosk держит catalog.read (11 SEC-137; ADR-115).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
       - $ref: '#/components/parameters/AppVersion'
@@ -3183,9 +3515,10 @@ paths:
       tags:
       - catalog
       summary: Карточка товара
-      description: 'SCR-14: фото, описание, характеристики (Q-021), варианты, упаковки, штрихкоды, цены по роли, остатки по складам, минимальная партия. Для customer товар с deletionMark → 404; staff получает его с deletionMark=true. Побочный эффект — асинхронная запись в recent_products (не аудит). ETag, Cache-Control: private, max-age=60 (08 §2.8). customer (R1, ядро §24.2): цена — по виду цены клиента, остатки — по app_settings.customer_stock_display (status — только stockLevel, quantity — плюс available; 08 §3.6). x-permissions: catalog.read — обязательный код операции; catalog.prices.read — цена по правилам роли; catalog.prices.read.all — prices[] всех видов и параметр priceListId (08 §3.15, 11 §4.3).'
+      description: 'SCR-14: фото, описание, характеристики (Q-021), варианты, упаковки, штрихкоды, цены по роли, остатки по складам, минимальная партия. Для customer товар с deletionMark → 404; staff получает его с deletionMark=true. Побочный эффект — асинхронная запись в recent_products (не аудит). ETag, Cache-Control: private, max-age=60 (08 §2.8). customer (R1, ядро §24.2): цена — по виду цены клиента, остатки — по app_settings.customer_stock_display (status — только stockLevel, quantity — плюс available; 08 §3.6). x-permissions: catalog.read — обязательный код операции; catalog.prices.read — цена по правилам роли; catalog.prices.read.all — prices[] всех видов и параметр priceListId (08 §3.15, 11 §4.3). Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): маршрут закрытого списка, как customer без привязки — обычная цена, остатки по customer_stock_display и только по складу планшета (user_profiles.home_warehouse_id; не задан или неактивен → 403 FORBIDDEN reason kiosk_warehouse_unavailable); priceListId, warehouseId → 403 FORBIDDEN. Открытие карточки планшетом не пишет recent_products.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -3262,6 +3595,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -3271,9 +3605,10 @@ paths:
       tags:
       - catalog
       summary: Варианты товара с ценами и остатками
-      description: 'SCR-15 VariantSelector: варианты, остаток и цена каждого на выбранном складе; характеристики 1С — [ТИПОВО, Q-021]. Товар отсутствует или снят (для customer) → 404. ETag, Cache-Control: private, max-age=60 (08 §2.8). customer (R1, ядро §24.2): цена — по виду цены клиента, остатки — по app_settings.customer_stock_display (status — только stockLevel, quantity — плюс available; 08 §3.6). x-permissions: catalog.read — обязательный код операции; catalog.prices.read — цена по правилам роли; catalog.prices.read.all — prices[] всех видов и параметр priceListId (08 §3.15, 11 §4.3).'
+      description: 'SCR-15 VariantSelector: варианты, остаток и цена каждого на выбранном складе; характеристики 1С — [ТИПОВО, Q-021]. Товар отсутствует или снят (для customer) → 404. ETag, Cache-Control: private, max-age=60 (08 §2.8). customer (R1, ядро §24.2): цена — по виду цены клиента, остатки — по app_settings.customer_stock_display (status — только stockLevel, quantity — плюс available; 08 §3.6). x-permissions: catalog.read — обязательный код операции; catalog.prices.read — цена по правилам роли; catalog.prices.read.all — prices[] всех видов и параметр priceListId (08 §3.15, 11 §4.3). Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): маршрут закрытого списка, как customer без привязки — обычная цена, остатки по customer_stock_display и только по складу планшета (user_profiles.home_warehouse_id; не задан или неактивен → 403 FORBIDDEN reason kiosk_warehouse_unavailable); priceListId, warehouseId → 403 FORBIDDEN.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -3339,6 +3674,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -3348,9 +3684,10 @@ paths:
       tags:
       - catalog
       summary: Выгрузка и инкремент офлайн-кэша каталога
-      description: 'Первичная загрузка — вызовы без since страницами до hasMore=false; инкремент — since = последний сохранённый nextCursor сущности (08 §4.24, ядро §22.7). Курсор непрозрачный (base64url, HMAC) и монотонный по (updated_at, id); подделанный → 400 VALIDATION_FAILED rule cursor; старше срока хранения удалений (30 дней, 07 §11.4) → 409 VERSION_CONFLICT reason cursor_expired — клиент повторяет загрузку сущности без since. Рекомендуемый порядок: units → categories → attributes → warehouses → price_lists → products → variants → packagings → barcodes → prices → stock → images; не более 2 параллельных запросов. Права: catalog.read — все сущности; prices, price_lists — дополнительно catalog.prices.read, только виды цен из price_lists.visible_to_roles (все — при catalog.prices.read.all); stock — дополнительно inventory.read (customer — по customer_stock_display). Токен integration → 403. ETag = хэш (entity, since, nextCursor), Cache-Control: private, no-cache; If-None-Match → 304 — изменений после since нет. Повтор с тем же since → те же строки. Аудит не пишется.'
+      description: 'Первичная загрузка — вызовы без since страницами до hasMore=false; инкремент — since = последний сохранённый nextCursor сущности (08 §4.24, ядро §22.7). Курсор непрозрачный (base64url, HMAC) и монотонный по (updated_at, id); подделанный → 400 VALIDATION_FAILED rule cursor; старше срока хранения удалений (30 дней, 07 §11.4) → 409 VERSION_CONFLICT reason cursor_expired — клиент повторяет загрузку сущности без since. Рекомендуемый порядок: units → categories → attributes → warehouses → price_lists → products → variants → packagings → barcodes → prices → stock → images; не более 2 параллельных запросов. Права: catalog.read — все сущности; prices, price_lists — дополнительно catalog.prices.read, только виды цен из price_lists.visible_to_roles (все — при catalog.prices.read.all); stock — дополнительно inventory.read (customer — по customer_stock_display). Токен integration → 403. ETag = хэш (entity, since, nextCursor), Cache-Control: private, no-cache; If-None-Match → 304 — изменений после since нет. Повтор с тем же since → те же строки. Аудит не пишется. Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): маршрут закрытого списка, как customer без привязки — обычная цена, остатки по customer_stock_display и только по складу планшета (user_profiles.home_warehouse_id; не задан или неактивен → 403 FORBIDDEN reason kiosk_warehouse_unavailable); priceListId, warehouseId → 403 FORBIDDEN.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -3437,6 +3774,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -3446,9 +3784,10 @@ paths:
       tags:
       - catalog
       summary: Справочник единиц измерения
-      description: 'Единицы с qtyPrecision (08 §4.4.6). ETag = sha256(snapshotVersion), Cache-Control: private, max-age=300 (08 §2.8).'
+      description: 'Единицы с qtyPrecision (08 §4.4.6). ETag = sha256(snapshotVersion), Cache-Control: private, max-age=300 (08 §2.8). Планшет магазина (kiosk; 08 §4.25, ADR-115): маршрут закрытого списка, ответ — как у customer без привязки.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -3500,6 +3839,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -3509,9 +3849,10 @@ paths:
       tags:
       - catalog
       summary: Справочник складов
-      description: 'Склады 1С (08 §4.4.6). ETag, Cache-Control: private, max-age=300 (08 §2.8).'
+      description: 'Склады 1С (08 §4.4.6). ETag, Cache-Control: private, max-age=300 (08 §2.8). Планшет магазина (kiosk; 08 §4.25, ADR-115): маршрут закрытого списка, ответ — как у customer без привязки.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -3563,6 +3904,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -5290,9 +5632,10 @@ paths:
       tags:
       - inventory
       summary: Актуальные остатки по вариантам
-      description: 'Остатки по списку вариантов (D-22, D-29). customer — по app_settings.customer_stock_display (status — только stockLevel, quantity — плюс available; ядро §24.2). live=true — только staff, синхронная проверка 1С ≤ 2 с; customer → 403. Массовая загрузка в офлайн-кэш — GET /catalog/sync/stock, не этот эндпоинт. Cache-Control: no-store; X-Data-As-Of.'
+      description: 'Остатки по списку вариантов (D-22, D-29). customer — по app_settings.customer_stock_display (status — только stockLevel, quantity — плюс available; ядро §24.2). live=true — только staff, синхронная проверка 1С ≤ 2 с; customer → 403. Массовая загрузка в офлайн-кэш — GET /catalog/sync/stock, не этот эндпоинт. Cache-Control: no-store; X-Data-As-Of. Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): по customer_stock_display и только склад планшета — параметр warehouseId → 403 FORBIDDEN, тело POST /inventory/check — только склад планшета (другой → 403).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -5368,6 +5711,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -5377,9 +5721,10 @@ paths:
       tags:
       - inventory
       summary: Пакетная проверка доступности для корзины
-      description: 'Чистая проверка без побочных эффектов, ничего не резервирует (SRC-C-076, D-22); Idempotency-Key не требуется, автоматический повтор допустим (08 §4.6.2). customer — по customer_stock_display (по умолчанию status: в shortages[] только variantId и stockLevel). Cache-Control: no-store. Аудит не пишется.'
+      description: 'Чистая проверка без побочных эффектов, ничего не резервирует (SRC-C-076, D-22); Idempotency-Key не требуется, автоматический повтор допустим (08 §4.6.2). customer — по customer_stock_display (по умолчанию status: в shortages[] только variantId и stockLevel). Cache-Control: no-store. Аудит не пишется. Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): по customer_stock_display и только склад планшета — параметр warehouseId → 403 FORBIDDEN, тело POST /inventory/check — только склад планшета (другой → 403).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -5441,9 +5786,334 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: true
       x-rate-limit-group: RL-CART
+  /kiosk/exit:
+    post:
+      tags:
+      - kiosk
+      operationId: kiosk_exit
+      summary: Аварийный выход со связью
+      description: |
+        08 §4.25.5; ADR-115; P-002 §8.9 п. 2. Аварийный выход на месте (долгое нажатие на логотип → экранные кнопки → аварийный код из 8 цифр, выданный при подключении). Сервер сверяет код с store_tablets.exit_code_hash (Argon2id(pepper ∥ код ∥ tablet_id), 11 SEC-140). Верный и не использованный код: код погашается (exit_code_used_at, одноразовый), сессии планшета отзываются с revoke_reason=kiosk_revoked, коды kiosk_order гасятся, запись store_tablets → revoked (revoked_by_user_id = NULL, revoke_reason='kiosk.exit_code_used', 07 §5.65; вернуть планшет — POST /admin/store-tablets/{id}/reconnect); приложение удаляет токены и признак планшета и снимает закрепление. Без связи (сеть, таймаут, 426, 401 SESSION_REVOKED, 403 KIOSK_DISABLED, 403 KIOSK_NETWORK_DENIED) приложение проверяет код на устройстве; сервер о таком выходе не знает — администратор затем отключает планшет в SCR-54. Ключ идемпотентности не применяется: повтор после потерянного 200 получает 401 KIOSK_REVOKED — приложение завершает выход так же. kiosk.self.exit — только kind=kiosk; приоритет — should (10 KIOSK-004). Ошибки: 400 VALIDATION_FAILED (код не из 8 цифр); 401 KIOSK_REVOKED; 403 KIOSK_DISABLED, KIOSK_NETWORK_DENIED, FORBIDDEN; 422 KIOSK_EXIT_CODE_INVALID (attemptsLeft; неверный, уже использованный или прежний код — код на устройстве тогда не проверяется); 423 KIOSK_EXIT_LOCKED (retryAfter; 5 неверных подряд — пауза 15 мин, exit_failed_attempts, exit_locked_until). Rate limit: RL-PIN (счётчик — store_tablets.exit_failed_attempts, не rate_limit_counters). Аудит: kiosk.exit_code_used (при успехе; без кода). Кэширование: no-store.
+      security:
+      - bearerAuth: []
+      x-permissions:
+      - kiosk.self.exit
+      x-roles:
+      - kiosk
+      x-step-up: false
+      x-idempotent: false
+      x-feature-flag: KIOSK_MODE
+      x-rate-limit-group: RL-PIN
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KioskExitRequest'
+      responses:
+        '200':
+          description: Выход выполнен — пустой объект.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KioskExitResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '423':
+          $ref: '#/components/responses/Locked'
+        default:
+          $ref: '#/components/responses/Problem'
+  /kiosk/order-otp:
+    post:
+      tags:
+      - kiosk
+      operationId: kiosk_order_otp_request
+      summary: Код для отправки заявки с планшета
+      description: |
+        08 §4.25.1; ADR-115; FLOW-044, SCR-52 «Получить код». Выдаёт код purpose=kiosk_order (09 §5.3) на номер покупателя; в строку кода пишутся kiosk_tablet_id (планшет по токену), cart_id, notice_version, device_key планшета, user_id = NULL (07 §5.11). Прежний действующий код этого планшета (на любой номер) → superseded — один sent-код на планшет («Изменить номер»); код kiosk_order на тот же номер с другого планшета тоже вытесняется. SMS — шаблон otp_kiosk_order (Р-21 (а)). Код никогда не выдаёт сессию: POST /auth/otp/verify его не принимает (404), а код входа не принимает POST /kiosk/orders. Ответ одинаков по форме, статусу и времени для любого номера (нейтральный, 11 SEC-017; 12 T-KIOSK-012), номер в ответе не повторяется; статус доставки SMS — GET /auth/otp/challenges/{challengeId} с X-Device-Id планшета. noticeVersion — версия текста информирования, показанного над кнопкой «Получить код» (раздел kiosk_order_notice файла contracts/legal/notices_ru.md, 11 PRIV-032); это информирование, а не согласие. Номер — только в теле, никогда в адресе. kiosk.order.submit — только kind=kiosk (11 SEC-138); токен сотрудника или покупателя → 403 FORBIDDEN. Ключ идемпотентности не применяется: новый запрос — новый код. Ошибки: 400 VALIDATION_FAILED (phone_e164, forbidden_field); 401; 403 KIOSK_DISABLED, KIOSK_NETWORK_DENIED, FORBIDDEN; 422 CART_EMPTY (корзина cartId пуста или не активная корзина планшета; SMS не отправляется), VALIDATION_FAILED (rule notice_version — неизвестная версия текста, проверяется до отправки SMS); 423 OTP_LOCKED; 429 OTP_RATE_LIMITED (тот же номер раньше 60 с или лимиты номера; retryAfter), KIOSK_RATE_LIMITED (лимит планшета RL-OTP-KIOSK — kiosk_otp_per_hour, kiosk_otp_per_day; retryAfter); 503 SMS_PROVIDER_ERROR. Rate limit: RL-OTP-SEND (номер, общий с другими назначениями кода), RL-OTP-KIOSK (планшет — store_tablets.id, вместо RL-OTP-SEND-IP и RL-OTP-SEND-DEV), RL-OTP-GLOBAL. Тестовый код — по AUTH_OTP_TEST_PHONES (ADR-109). Аудит: auth.otp.sent (challengeId, phoneMasked, after.kioskId, after.noticeVersion; без кода); kiosk.limit_reached (без телефона) и алерт. Кэширование: no-store.
+      security:
+      - bearerAuth: []
+      x-permissions:
+      - kiosk.order.submit
+      x-roles:
+      - kiosk
+      x-step-up: false
+      x-idempotent: false
+      x-feature-flag: KIOSK_MODE
+      x-rate-limit-group: RL-OTP-SEND
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KioskOrderOtpRequest'
+      responses:
+        '202':
+          description: Код отправлен (ответ одинаков для любого номера).
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KioskOrderOtpResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '423':
+          $ref: '#/components/responses/Locked'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Problem'
+  /kiosk/orders:
+    get:
+      tags:
+      - kiosk
+      operationId: kiosk_orders_find
+      summary: Номер заявки по ключу последней попытки
+      description: |
+        08 §4.25.3; ADR-115; FLOW-044 A4. Восстановление после обрыва сети или таймаута POST /kiosk/orders: заявка, созданная этим планшетом (технический пользователь вызывающего, created_via=kiosk) с этим ключом идемпотентности не раньше чем 15 мин назад. Ответ — только номер. Если за 15 мин связь не вернулась — «Обратитесь к продавцу», кассир находит заявку в «Ожидают оплаты». kiosk.order.submit — только kind=kiosk. Ошибки: 400 VALIDATION_FAILED (ключ не uuid или отсутствует); 401; 403 KIOSK_DISABLED, KIOSK_NETWORK_DENIED, FORBIDDEN; 404 NOT_FOUND (нет заявки с этим ключом у этого планшета, ключ старше 15 мин или запрос с этим ключом ещё выполняется). Rate limit: RL-READ. Аудит: не пишется. Кэширование: no-store.
+      security:
+      - bearerAuth: []
+      x-permissions:
+      - kiosk.order.submit
+      x-roles:
+      - kiosk
+      x-step-up: false
+      x-idempotent: false
+      x-feature-flag: KIOSK_MODE
+      x-rate-limit-group: RL-READ
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - name: idempotencyKey
+        in: query
+        required: true
+        description: Idempotency-Key последней попытки POST /kiosk/orders этого планшета (08 §2.7, §4.25.3); хранится только в памяти планшета.
+        schema:
+          $ref: '#/components/schemas/IdempotencyKeyValue'
+      responses:
+        '200':
+          description: Заявка найдена — только номер.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KioskOrderAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      tags:
+      - kiosk
+      operationId: kiosk_orders_create
+      summary: Отправить заявку с планшета
+      description: |
+        08 §4.25.2; ADR-115; FLOW-044, SCR-52 «Отправить заявку». Порядок проверок один (P-002 §8.5 п. 4): (1) previewToken — подпись, срок, cartId, cartRowVersion, способ оплаты cash (итог не сверяется); (2) челлендж challengeId существует и purpose=kiosk_order; (3) код выдан этому планшету; (4) cart_id кода = cartId тела — на шагах (1)–(4) код не проверяется и попытка не тратится; (5) проверка кода — своя транзакция: неверный код фиксирует попытку всегда; повтор того же верного кода после отказа шага корзины в окне 60 с проходит без новой попытки. Затем вне транзакции: поиск карточки 1С по номеру (реплика и синхронный запрос в 1С; клиент заявки — найденная карточка только при kioskCustomerMatch=single, иначе «Розничный покупатель» с номером в получателе; новая карточка и customer_links не создаются), проверки корзины и синхронный /check 1С, как в POST /orders (цена карточки — только на сервере; конфликт price_changed для канала kiosk не поднимается). Короткая транзакция создания: погашение кода (один верный код — ровно одна заявка), orders.created_via=kiosk, payment_method=cash, delivery_method=pickup со склада планшета, получатель kind=customer с номером кода, kiosk_customer_match, pd_notice_version и pd_notice_sha256, outbox order/create (комментарий «Заявка с планшета «{имя}»», createdByUserCode технического пользователя), уведомление kiosk_order ролям cashier и senior_seller; мягкая защита от дублей ORD-022 не выполняется. Тело — только идентификаторы и код: клиент, получатель, оплата, доставка, скидка, цены, итоги и noticeVersion → 400 VALIDATION_FAILED forbidden_field (цены — и аудит price.override_attempt). Ответ — только номер (KioskOrderAccepted): 201 — заявка создана; 202 — синхронная проверка 1С не выполнена (1С недоступна, таймаут, вариант C-2), заявка submitting, outbox повторяет; warnings[] планшету не передаются. Idempotency-Key — новый на каждую попытку, тот же — только для повтора той же попытки после обрыва; под ключом хранятся только {publicNumber} или очищенный Problem, правило «повтор после COMMIT» не применяется (08 §2.7); восстановление после таймаута — GET /kiosk/orders?idempotencyKey=. Ответы планшету очищаются (08 §2.4 «Коды и отказы планшета магазина» п. 3): conflicts[] — только variantId, kind, stockLevel; VERSION_CONFLICT без current; ONEC_REJECTED без onec и текста 1С; 409 DEVICE_MISMATCH и ORDER_STATE_INVALID (possible_duplicate) планшету не отдаются. kiosk.order.submit — только kind=kiosk. Ошибки: 400 VALIDATION_FAILED; 401; 403 KIOSK_DISABLED, KIOSK_NETWORK_DENIED, FORBIDDEN; 404 NOT_FOUND (шаги 2–4: неизвестный код, код другого назначения — в том числе код входа, код другого планшета, код чужой корзины); 409 VERSION_CONFLICT, IDEMPOTENCY_IN_PROGRESS (Retry-After); 422 PRICE_CHANGED (reason preview_token_invalid | preview_cart_changed, conflicts []), OTP_INVALID (attemptsLeft), OTP_EXPIRED, STOCK_INSUFFICIENT, VARIANT_UNAVAILABLE, QTY_NOT_MULTIPLE, QTY_BELOW_MIN, ONEC_REJECTED, CART_EMPTY, IDEMPOTENCY_KEY_REUSED; 423 OTP_LOCKED; 429 RATE_LIMITED. Бюджет ответа — до ≈ 19 с, меньше таймаута клиента 30 с (08 §2.10). Rate limit: RL-FIN. Аудит: order.created (after.createdVia = kiosk, after.customerMatch; без телефона), auth.otp.verified / auth.otp.failed (after.kioskId). Кэширование: no-store.
+      security:
+      - bearerAuth: []
+      x-permissions:
+      - kiosk.order.submit
+      x-roles:
+      - kiosk
+      x-step-up: false
+      x-idempotent: required
+      x-feature-flag: KIOSK_MODE
+      x-rate-limit-group: RL-FIN
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KioskOrdersCreateRequest'
+      responses:
+        '201':
+          description: Заявка создана — только номер.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KioskOrderAccepted'
+        '202':
+          description: Заявка создана, синхронная проверка 1С не выполнена (outbox повторяет) — только номер.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KioskOrderAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '423':
+          $ref: '#/components/responses/Locked'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /kiosk/reset:
+    post:
+      tags:
+      - kiosk
+      operationId: kiosk_reset
+      summary: Сброс планшета — новая пустая корзина
+      description: |
+        08 §4.25.4; ADR-115; FLOW-045: автосброс (kiosk_idle_seconds, kiosk_done_seconds), «Начать заново», гашение экрана, уход в фон. Одна транзакция: корзина cartId планшета закрывается (cleared), если ещё активна; создаётся новая пустая активная корзина (новый id) — даже если прежняя была пуста; коды kiosk_order планшета гасятся (sent → superseded, проверенный, но не погашенный — replayed_at); аудит cart.cleared (after.reason = kiosk_reset), журнал kiosk.session_reset. rowVersion не нужен: сбросить корзину планшета может только сам планшет (DELETE /cart для этого не годится — требует rowVersion и возвращает корзину с тем же id). Требование прав: cart.manage.own И kiosk.order.submit — оба кода вместе (x-permissions перечисляет оба, NOTES §4); второй есть только у роли kiosk и засчитывается только kind=kiosk (11 SEC-138). Повтор с id уже закрытой корзины этого планшета → 200 с текущей активной корзиной (новая корзина и повторное гашение не выполняются). Сброс без сети приложение помечает локально (только id корзины) и повторяет при связи (через 5, 15, 60 с, затем раз в минуту). Ответ — Cart: склад — текущий склад планшета, customer = null. Ошибки: 400 VALIDATION_FAILED (cartId); 401; 403 KIOSK_DISABLED, KIOSK_NETWORK_DENIED, FORBIDDEN; 404 NOT_FOUND (cartId не существует или не корзина этого планшета). Rate limit: RL-CART. Аудит: cart.cleared (after.reason = kiosk_reset, itemsCount). Кэширование: no-store.
+      security:
+      - bearerAuth: []
+      x-permissions:
+      - cart.manage.own
+      - kiosk.order.submit
+      x-roles:
+      - kiosk
+      x-step-up: false
+      x-idempotent: true
+      x-feature-flag: KIOSK_MODE
+      x-rate-limit-group: RL-CART
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      - $ref: '#/components/parameters/IdempotencyKeyOptional'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KioskResetRequest'
+      responses:
+        '200':
+          description: Новая пустая корзина планшета.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
   /me:
     get:
       tags:
@@ -5451,9 +6121,10 @@ paths:
       operationId: me_get
       summary: Текущий пользователь, роли, permissions, настройки, безопасность, привязка
       description: |
-        08 §4.3.1, §3.14. Источник правды клиента о ролях и правах (permissions[] — для скрытия кнопок, не защита). pending_activation — усечённый DTO. Клиент перечитывает после /auth/refresh с новым permissionsVersion. Ошибки: только общие (401, 403). Rate limit: RL-READ. Аудит: не пишется. Кэширование: no-store.
+        08 §4.3.1, §3.14. Источник правды клиента о ролях и правах (permissions[] — для скрытия кнопок, не защита). pending_activation — усечённый DTO. Клиент перечитывает после /auth/refresh с новым permissionsVersion. Ошибки: только общие (401, 403). Rate limit: RL-READ. Аудит: не пишется. Кэширование: no-store. Требование: одно из profile.manage.own | kiosk.self.read (08 §4.3.1). Планшет магазина (kind=kiosk; 08 §3.14; ADR-115): по праву kiosk.self.read (засчитывается только при kind=kiosk, 11 SEC-138) ответ — только kind и tablet {id, name, warehouseId} (строгая форма — схема MeKiosk) без телефона, ФИО, ролей, прав, сессий и клиента (12 T-KIOSK-046); маршрут отвечает планшету и при KIOSK_MODE=false; /me/* для планшета → 403 FORBIDDEN.
       x-permissions:
       - profile.manage.own
+      - kiosk.self.read
       x-roles:
       - seller
       - cashier
@@ -5461,11 +6132,13 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -6053,7 +6726,7 @@ paths:
       - notifications
       operationId: notifications_list
       summary: Список in-app уведомлений текущего пользователя
-      description: '08 §4.16.1. Только свои уведомления (notifications.read.own — все роли, 08 §9, 11 §4.4). Клиент опрашивает при старте, при возврате в foreground и каждые 60 с (push — R2, Q-036). Ответ — Page<Notification> + unreadCount (бейдж колокольчика). Ошибки: 400 VALIDATION_FAILED (неизвестный kind, limit > 100, подделанный cursor); 401; 403 FORBIDDEN (токен integration). Аудит не пишется.'
+      description: '08 §4.16.1. Только свои уведомления (notifications.read.own — все роли, 08 §9, 11 §4.4). Клиент опрашивает при старте, при возврате в foreground и каждые 60 с (push — R2, Q-036). Ответ — Page<Notification> + unreadCount (бейдж колокольчика). Ошибки: 400 VALIDATION_FAILED (неизвестный kind, limit > 100, подделанный cursor); 401; 403 FORBIDDEN (токен integration). Аудит не пишется. kind=kiosk_order — «Новая заявка с планшета № {number}» ролям cashier и senior_seller, переход SCR-44 → SCR-24 по payload.orderId (08 §3.13, §4.16.1; ADR-115; с 1.3.0). Токен планшета (kind=kiosk) → 403 FORBIDDEN (права notifications.read.own у роли kiosk нет).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
       - $ref: '#/components/parameters/AppVersion'
@@ -6314,7 +6987,7 @@ paths:
       operationId: orders_list
       summary: Список заказов
       description: |
-        order.read.own — seller (созданные им), customer (созданные аккаунтом и заказы своей карточки при customer_links.status=confirmed); order.read.all — cashier, senior_seller, admin, owner. idempotencyKey — поиск заказа по ключу POST /orders после перезапуска приложения (только заказы текущего пользователя; 0 или 1 элемент; ядро §22.6). include=statusCounts — счётчики по order_status при всех фильтрах, кроме status, в пределах видимости роли [ядро §19.2]; totalEstimate — точное число по фильтру. Ошибки: 400 VALIDATION_FAILED (sort_field, date_range, limit, cursor); 403 FORBIDDEN (createdBy без order.read.all). 08 §4.8.2.
+        order.read.own — seller (созданные им), customer (созданные аккаунтом и заказы своей карточки при customer_links.status=confirmed); order.read.all — cashier, senior_seller, admin, owner. idempotencyKey — поиск заказа по ключу POST /orders после перезапуска приложения (только заказы текущего пользователя; 0 или 1 элемент; ядро §22.6). include=statusCounts — счётчики по order_status при всех фильтрах, кроме status, в пределах видимости роли [ядро §19.2]; totalEstimate — точное число по фильтру. Ошибки: 400 VALIDATION_FAILED (sort_field, date_range, limit, cursor); 403 FORBIDDEN (createdBy без order.read.all). 08 §4.8.2. createdVia — канал заказа staff | customer | kiosk (одно значение, в пределах видимости роли; чип «С планшета» SCR-25; 08 §4.8.2, ADR-115; с 1.3.0). Заявки с планшета видны держателям order.read.all (Р-12 (а)); у сотрудников элементы несут kioskCustomerMatch, после маскирования номера — receiver.phone = null и receiver.phoneMasked.
       security:
       - bearerAuth: []
       x-permissions:
@@ -6380,6 +7053,12 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: createdVia
+        in: query
+        required: false
+        description: Канал заказа (orders.created_via; одно значение) — чип «С планшета» SCR-25 (08 §4.8.2; ADR-115). С 1.3.0.
+        schema:
+          $ref: '#/components/schemas/OrderCreatedVia'
       - name: include
         in: query
         required: false
@@ -6444,7 +7123,7 @@ paths:
       operationId: orders_create
       summary: Создать заказ из корзины (Idempotency-Key обязателен; цены клиент не передаёт)
       description: |
-        Сервер повторяет проверки checkout-preview, вне транзакции БД — синхронная проверка 1С /check (6000 мс), затем одна короткая транзакция (orders submitting + order_items + начальный платёж + onec_outbox pending + история + transactions + audit + корзина converted). Документ 1С создаёт воркер из outbox; 503 ONEC_UNAVAILABLE не возвращается. 201 — /check выполнен; 202 — /check не выполнен (1С недоступна или вариант C-2), warnings[STALE_DATA], Location. Начальный платёж: cash → cash_pending; qr_bakai → qr_shown с QrInfo при payment.qr.show (QR_PROVIDER=onec — QR от 1С, autoConfirm: true; недоступность 1С → qr_pending без qr + warnings[QR_UNAVAILABLE]; QR_PROVIDER=none — elqr_static/none, autoConfirm: false), без payment.qr.show (admin; customer при QR_PROVIDER≠onec) — qr_pending без поля qr; credit → credit. Права по способу: credit — дополнительно credit.sale.create (иначе 403, creditReason: forbidden_role); creditOverride — credit.sale.approve + step-up (только senior_seller); discountOverride — discount.approve.over_limit + step-up. Режим клиента (customer, R1, ядро §24.2; CUSTOMER_SELF_SERVICE=true): paymentMethod cash | qr_bakai (только при QR_PROVIDER=onec, иначе 422 VALIDATION_FAILED rule payment_method_unavailable); credit, manualDiscountPercent ≠ "0.00", discountOverride, creditOverride, чужой customerId → 403 FORBIDDEN; delivery обязателен. Ошибки: 422 CART_EMPTY, PRICE_CHANGED / STOCK_INSUFFICIENT / VARIANT_UNAVAILABLE / QTY_NOT_MULTIPLE (conflicts[] — все конфликты одним ответом; корзина не конвертируется), DISCOUNT_LIMIT_EXCEEDED, CUSTOMER_NOT_IDENTIFIED, CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED, RECEIVABLES_STALE, ONEC_REJECTED, IDEMPOTENCY_KEY_REUSED, VALIDATION_FAILED; 409 VERSION_CONFLICT (current: Cart; items не совпадают с корзиной), ORDER_STATE_INVALID (reason: possible_duplicate, possibleDuplicateOrderId; обход — confirmDuplicate=true), IDEMPOTENCY_IN_PROGRESS; 403 FORBIDDEN, STEP_UP_REQUIRED; 400 VALIDATION_FAILED (forbidden_field — price/unitPrice/total/subtotal/amount, аудит price.override_attempt). 08 §4.8.1 [ядро §22.3, §22.4, §24.4]. Повтор с тем же Idempotency-Key (Idempotent-Replayed: true) возвращает текущее представление созданного заказа с тем же статусом 201/202, в том числе QR начального платежа, сформированный после COMMIT (B-AR-04).
+        Сервер повторяет проверки checkout-preview, вне транзакции БД — синхронная проверка 1С /check (6000 мс), затем одна короткая транзакция (orders submitting + order_items + начальный платёж + onec_outbox pending + история + transactions + audit + корзина converted). Документ 1С создаёт воркер из outbox; 503 ONEC_UNAVAILABLE не возвращается. 201 — /check выполнен; 202 — /check не выполнен (1С недоступна или вариант C-2), warnings[STALE_DATA], Location. Начальный платёж: cash → cash_pending; qr_bakai → qr_shown с QrInfo при payment.qr.show (QR_PROVIDER=onec — QR от 1С, autoConfirm: true; недоступность 1С → qr_pending без qr + warnings[QR_UNAVAILABLE]; QR_PROVIDER=none — elqr_static/none, autoConfirm: false), без payment.qr.show (admin; customer при QR_PROVIDER≠onec) — qr_pending без поля qr; credit → credit. Права по способу: credit — дополнительно credit.sale.create (иначе 403, creditReason: forbidden_role); creditOverride — credit.sale.approve + step-up (только senior_seller); discountOverride — discount.approve.over_limit + step-up. Режим клиента (customer, R1, ядро §24.2; CUSTOMER_SELF_SERVICE=true): paymentMethod cash | qr_bakai (только при QR_PROVIDER=onec, иначе 422 VALIDATION_FAILED rule payment_method_unavailable); credit, manualDiscountPercent ≠ "0.00", discountOverride, creditOverride, чужой customerId → 403 FORBIDDEN; delivery обязателен. Ошибки: 422 CART_EMPTY, PRICE_CHANGED / STOCK_INSUFFICIENT / VARIANT_UNAVAILABLE / QTY_NOT_MULTIPLE (conflicts[] — все конфликты одним ответом; корзина не конвертируется), DISCOUNT_LIMIT_EXCEEDED, CUSTOMER_NOT_IDENTIFIED, CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED, RECEIVABLES_STALE, ONEC_REJECTED, IDEMPOTENCY_KEY_REUSED, VALIDATION_FAILED; 409 VERSION_CONFLICT (current: Cart; items не совпадают с корзиной), ORDER_STATE_INVALID (reason: possible_duplicate, possibleDuplicateOrderId; обход — confirmDuplicate=true), IDEMPOTENCY_IN_PROGRESS; 403 FORBIDDEN, STEP_UP_REQUIRED; 400 VALIDATION_FAILED (forbidden_field — price/unitPrice/total/subtotal/amount, аудит price.override_attempt). 08 §4.8.1 [ядро §22.3, §22.4, §24.4]. Повтор с тем же Idempotency-Key (Idempotent-Replayed: true) возвращает текущее представление созданного заказа с тем же статусом 201/202, в том числе QR начального платежа, сформированный после COMMIT (B-AR-04). Планшет магазина (kiosk): права order.create у роли kiosk нет, маршрут вне закрытого списка → 403 FORBIDDEN; заявку с планшета создаёт POST /kiosk/orders (08 §4.8.1, §4.25.2; ADR-115).
       security:
       - bearerAuth: []
       - bearerAuth: []
@@ -6615,7 +7294,7 @@ paths:
       operationId: orders_cancel
       summary: Отменить заказ или запросить отмену в 1С
       description: |
-        (а) Немедленная отмена → status: cancelled — заказ submitting, документ 1С ещё не создан (outbox create в pending/dead); неполученные платежи → voided, состав восстанавливается в корзину. (б) Запрос отмены → прежний статус + cancelRequested: true — outbox create в sending/sent или заказ уже в 1С (pending_approval, awaiting_payment, approved, awaiting_shipment); cancelled — только по ответу 1С. order.cancel.own — создатель, свой заказ в submitting/pending_approval/awaiting_payment без полученных платежей, без step-up (seller, cashier, senior_seller, admin, customer); order.cancel.request.any + step-up (operation order.cancel.request.any) — чужой заказ, approved/awaiting_shipment или с платежами received (cashier, senior_seller, admin). refundIntent обязателен при полученных платежах. Ошибки: 409 ORDER_STATE_INVALID (resource: order; reason: invalid_transition — submit_failed, shipped, closed, cancelled, partially_returned; cancel_already_requested; allowedActions), PAYMENT_STATE_INVALID (reason: open_payment_exists, openPaymentId — платёж в manual_confirm), IDEMPOTENCY_IN_PROGRESS; 404 NOT_FOUND (заказ не виден по order.read.*); 403 FORBIDDEN, STEP_UP_REQUIRED; 422 IDEMPOTENCY_KEY_REUSED; 400 VALIDATION_FAILED (reason ≤ 500, refundIntent). ONEC_UNAVAILABLE не возвращается (запрос уходит в outbox). 08 §4.8.4 [ядро §22.9]; Q-012.
+        (а) Немедленная отмена → status: cancelled — заказ submitting, документ 1С ещё не создан (outbox create в pending/dead); неполученные платежи → voided, состав восстанавливается в корзину. (б) Запрос отмены → прежний статус + cancelRequested: true — outbox create в sending/sent или заказ уже в 1С (pending_approval, awaiting_payment, approved, awaiting_shipment); cancelled — только по ответу 1С. order.cancel.own — создатель, свой заказ в submitting/pending_approval/awaiting_payment без полученных платежей, без step-up (seller, cashier, senior_seller, admin, customer); order.cancel.request.any + step-up (operation order.cancel.request.any) — чужой заказ, approved/awaiting_shipment или с платежами received (cashier, senior_seller, admin). refundIntent обязателен при полученных платежах. Ошибки: 409 ORDER_STATE_INVALID (resource: order; reason: invalid_transition — submit_failed, shipped, closed, cancelled, partially_returned; cancel_already_requested; allowedActions), PAYMENT_STATE_INVALID (reason: open_payment_exists, openPaymentId — платёж в manual_confirm), IDEMPOTENCY_IN_PROGRESS; 404 NOT_FOUND (заказ не виден по order.read.*); 403 FORBIDDEN, STEP_UP_REQUIRED; 422 IDEMPOTENCY_KEY_REUSED; 400 VALIDATION_FAILED (reason ≤ 500, refundIntent). ONEC_UNAVAILABLE не возвращается (запрос уходит в outbox). 08 §4.8.4 [ядро §22.9]; Q-012. Заявка с планшета (createdVia=kiosk): для кассира это чужой заказ — order.cancel.request.any со step-up; при отмене и отклонении 1С состав в корзину планшета не возвращается (08 §4.8.4; ADR-115).
       security:
       - bearerAuth: []
       - bearerAuth: []
@@ -7509,7 +8188,7 @@ paths:
       operationId: pos_dashboard_get
       summary: Дашборд кассира (SCR-30)
       description: |
-        08 §4.10.1: сводка смены — суммы за день по способам оплаты, ожидающие оплаты заказы (submitting, pending_approval, approved, awaiting_payment с открытым платежом — ядро §22.5, §23 п.7), QR в ожидании, платежи manual_confirm, просроченные долги (топ), избранные клиенты, последние операции, свежесть данных 1С. Состав ответа — field-level по кодам (11 SEC-031, SEC-036; allowlist — поле, не разрешённое роли, ОТСУТСТВУЕТ): qrPending[], manualConfirm[] и платёжные поля recentTransactions[] (externalRef, суммы платежей) — только при payment.read.all (без него, у admin — только счётчики qrPendingCount, manualConfirmCount); overdue[] — только при customer.receivables.read.summary; favoriteCustomers[] — только при favorites.customers.manage (owner — нет). seller, customer → 403 FORBIDDEN. Клиент обновляет при открытии и каждые 60 с. Cache-Control: no-store. Аудит receivables.overdue_viewed — при каждом ответе с непустым overdue[] (раз на запрос).
+        08 §4.10.1: сводка смены — суммы за день по способам оплаты, ожидающие оплаты заказы (submitting, pending_approval, approved, awaiting_payment с открытым платежом — ядро §22.5, §23 п.7), QR в ожидании, платежи manual_confirm, просроченные долги (топ), избранные клиенты, последние операции, свежесть данных 1С. Состав ответа — field-level по кодам (11 SEC-031, SEC-036; allowlist — поле, не разрешённое роли, ОТСУТСТВУЕТ): qrPending[], manualConfirm[] и платёжные поля recentTransactions[] (externalRef, суммы платежей) — только при payment.read.all (без него, у admin — только счётчики qrPendingCount, manualConfirmCount); overdue[] — только при customer.receivables.read.summary; favoriteCustomers[] — только при favorites.customers.manage (owner — нет). seller, customer → 403 FORBIDDEN. Клиент обновляет при открытии и каждые 60 с. Cache-Control: no-store. Аудит receivables.overdue_viewed — при каждом ответе с непустым overdue[] (раз на запрос). Заявки с планшета магазина (ADR-115 п. 24): элемент awaitingPayment[] несёт createdVia — пометка «С планшета» SCR-30 (08 §4.10.1; с 1.3.0); фильтр блока по складу (warehouseId, иначе склад пользователя) сохраняется, поэтому склад планшета должен совпадать со складом кассы. Токен планшета (kind=kiosk) → 403 FORBIDDEN (вне закрытого списка).
       security:
       - bearerAuth: []
       x-permissions:
@@ -8441,7 +9120,7 @@ paths:
       tags:
       - search
       summary: Точное совпадение штрихкода для сканера
-      description: 'HID-сканер/камера (SCR-17, D-42): ровно один товар/вариант/упаковка для немедленного добавления в корзину. Нет совпадения → 404 NOT_FOUND (клиент предлагает текстовый поиск). Штрихкод у двух товаров → 200 с более новым DataVersion и предупреждением ambiguous_barcode (sync_errors BARCODE_CONFLICT). Cache-Control: private, max-age=30.'
+      description: 'HID-сканер/камера (SCR-17, D-42): ровно один товар/вариант/упаковка для немедленного добавления в корзину. Нет совпадения → 404 NOT_FOUND (клиент предлагает текстовый поиск). Штрихкод у двух товаров → 200 с более новым DataVersion и предупреждением ambiguous_barcode (sync_errors BARCODE_CONFLICT). Cache-Control: private, max-age=30. Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 (Р-15) → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль kiosk держит search.read (11 SEC-137; ADR-115).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
       - $ref: '#/components/parameters/AppVersion'
@@ -8606,9 +9285,10 @@ paths:
       tags:
       - search
       summary: Поиск товаров по названию, артикулу, штрихкоду
-      description: 'Строка поиска SCR-10/11; алгоритм D-31: штрихкод (точно) → артикул (prefix) → FTS (russian + unaccent) → триграммы; matchType в каждом элементе. Те же фильтры, что GET /catalog/products (ядро §19.2). Cache-Control: private, max-age=30, без ETag (08 §2.8). NFR: p95 ≤ 300 мс при 50 000 SKU. Клиент — debounce 300 мс. Ошибки: VALIDATION_FAILED (q_too_short, sort_field, cursor_sort_mismatch), FORBIDDEN (priceListId без catalog.prices.read.all). x-permissions: search.read — обязательный код; catalog.prices.read / catalog.prices.read.all — цена и priceListId.'
+      description: 'Строка поиска SCR-10/11; алгоритм D-31: штрихкод (точно) → артикул (prefix) → FTS (russian + unaccent) → триграммы; matchType в каждом элементе. Те же фильтры, что GET /catalog/products (ядро §19.2). Cache-Control: private, max-age=30, без ETag (08 §2.8). NFR: p95 ≤ 300 мс при 50 000 SKU. Клиент — debounce 300 мс. Ошибки: VALIDATION_FAILED (q_too_short, sort_field, cursor_sort_mismatch), FORBIDDEN (priceListId без catalog.prices.read.all). x-permissions: search.read — обязательный код; catalog.prices.read / catalog.prices.read.all — цена и priceListId. Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): маршрут закрытого списка, как customer без привязки — обычная цена, остатки по customer_stock_display и только по складу планшета (user_profiles.home_warehouse_id; не задан или неактивен → 403 FORBIDDEN reason kiosk_warehouse_unavailable); priceListId, warehouseId → 403 FORBIDDEN.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -8710,6 +9390,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-SEARCH
@@ -8719,9 +9400,10 @@ paths:
       tags:
       - search
       summary: Подсказки поиска
-      description: 'Подсказки к строке поиска (08 §4.5.3). Cache-Control: private, max-age=30. VALIDATION_FAILED rule q_too_short.'
+      description: 'Подсказки к строке поиска (08 §4.5.3). Cache-Control: private, max-age=30. VALIDATION_FAILED rule q_too_short. Планшет магазина (kiosk; 08 §3.6, §4.25; ADR-115): маршрут закрытого списка, как customer без привязки — обычная цена, остатки по customer_stock_display и только по складу планшета (user_profiles.home_warehouse_id; не задан или неактивен → 403 FORBIDDEN reason kiosk_warehouse_unavailable); priceListId, warehouseId → 403 FORBIDDEN.'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -8786,6 +9468,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-SEARCH
@@ -8795,9 +9478,10 @@ paths:
       tags:
       - settings
       summary: Публичные настройки и флаги функций
-      description: 'Несекретные настройки для клиента всех ролей (ядро §19.2, §24.2, §24.4; 08 §4.23.1): слоты доставки, контакты поддержки и ПДн, порог «мало», минимальная/рекомендуемая версии, customerStockDisplay, features. Скрытие действий по флагам — не защита. Пользователь user_status=pending_activation (статус, не роль) допускается как «*» по правилу profile.manage.own; токен integration → 403 FORBIDDEN; без access JWT → 401 (клиент использует встроенные значения по умолчанию). Секреты, параметры OTP/лимиты и внутренние адреса не отдаются. ETag (хэш значений), Cache-Control: private, max-age=300.'
+      description: 'Несекретные настройки для клиента всех ролей (ядро §19.2, §24.2, §24.4; 08 §4.23.1): слоты доставки, контакты поддержки и ПДн, порог «мало», минимальная/рекомендуемая версии, customerStockDisplay, kiosk, features. Скрытие действий по флагам — не защита. Пользователь user_status=pending_activation (статус, не роль) допускается как «*» по правилу profile.manage.own; токен integration → 403 FORBIDDEN; без access JWT → 401 (клиент использует встроенные значения по умолчанию). Секреты, параметры OTP/лимиты и внутренние адреса не отдаются. ETag (хэш значений), Cache-Control: private, max-age=300. Планшет магазина (kiosk; 08 §4.23.1, §4.25; ADR-115): маршрут закрытого списка, отвечает и при KIOSK_MODE=false; планшет обращается не реже раза в 5 мин — это отметка связи (store_tablets.last_seen_at) вместо GET /sync/status. features.storeTablet — env KIOSK_MODE; kiosk {idleSeconds, idleWarningSeconds, doneSeconds} — всем ролям при любом KIOSK_MODE (с 1.3.0).'
       parameters:
       - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/KioskLock'
       - $ref: '#/components/parameters/AppVersion'
       - $ref: '#/components/parameters/Platform'
       - $ref: '#/components/parameters/RequestId'
@@ -8847,6 +9531,7 @@ paths:
       - admin
       - owner
       - customer
+      - kiosk
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-READ
@@ -9790,6 +10475,9 @@ components:
         customerSelfService:
           type: boolean
           description: CUSTOMER_SELF_SERVICE — только env, по умолчанию true (ядро §24.2, §19.2).
+        kioskMode:
+          type: boolean
+          description: KIOSK_MODE — режим «Планшет магазина», только env, по умолчанию false; от CUSTOMER_SELF_SERVICE не зависит (08 §4.18.6, §4.25; ADR-115). Публикуется как features.storeTablet. С 1.3.0.
         debtPaymentsFromPos:
           type: boolean
           description: DEBT_PAYMENTS_FROM_POS (Q-152).
@@ -10076,6 +10764,35 @@ components:
           items:
             $ref: '#/components/schemas/SupportContact'
           description: support_contacts (json; kind phone|telegram|email). Публичный.
+        kioskIdleSeconds:
+          type: integer
+          minimum: 30
+          maximum: 1800
+          description: kiosk_idle_seconds; 120 — автосброс планшета магазина без касаний, секунды (Р-09 (а); значение по умолчанию — в коде). Границы — предложение 08 §4.18.6 [НЕ ПОДТВЕРЖДЕНО]. Публичный (kiosk.idleSeconds). С 1.3.0.
+        kioskIdleWarningSeconds:
+          type: integer
+          minimum: 5
+          maximum: 120
+          description: kiosk_idle_warning_seconds; 15 — обратный отсчёт «Вы ещё здесь?» перед сбросом, секунды. Публичный (kiosk.idleWarningSeconds). С 1.3.0.
+        kioskDoneSeconds:
+          type: integer
+          minimum: 10
+          maximum: 600
+          description: kiosk_done_seconds; 60 — номер заявки на экране SCR-53 до сброса, секунды. Публичный (kiosk.doneSeconds). С 1.3.0.
+        kioskOtpPerHour:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          description: kiosk_otp_per_hour; 30 — кодов с одного планшета в час (RL-OTP-KIOSK, 08 §2.9; Р-14 (а)). Не публичный. С 1.3.0.
+        kioskOtpPerDay:
+          type: integer
+          minimum: 1
+          maximum: 10000
+          description: kiosk_otp_per_day; 200 — кодов с одного планшета в сутки (Р-14 (а)). Не публичный. С 1.3.0.
+        kioskWorkingHours:
+          type: string
+          maxLength: 200
+          description: 'kiosk_working_hours — часы работы магазина по дням недели, Asia/Bishkek, формат 07 §5.59 (mon-sat 08:00-20:00;sun 09:00-15:00); по умолчанию пусто — алерт «планшет не на связи» выключен [ТРЕБУЕТ РЕШЕНИЯ ЗАКАЗЧИКА: Q-341]. Не публичный. С 1.3.0.'
     AdminUser:
       type: object
       required:
@@ -10227,7 +10944,7 @@ components:
           uniqueItems: true
           items:
             $ref: '#/components/schemas/RoleCode'
-          description: 'R1: ровно одна роль (07 §5.7: одна активная роль, user_roles_one_active_uq) — больше одной → 400 VALIDATION_FAILED по схеме, а не 500 из БД; расширение maxItems — после решения Q-005 (expand-изменение; B-AR-02). Me.roles и AdminUser.roles остаются массивами. integration → 422 VALIDATION_FAILED (ядро §18.2 п.4); ограничения по owner — 11 SEC-040, ядро §21 п.3.'
+          description: 'R1: ровно одна роль (07 §5.7: одна активная роль, user_roles_one_active_uq) — больше одной → 400 VALIDATION_FAILED по схеме, а не 500 из БД; расширение maxItems — после решения Q-005 (expand-изменение; B-AR-02). Me.roles и AdminUser.roles остаются массивами. integration → 422 VALIDATION_FAILED (ядро §18.2 п.4); ограничения по owner — 11 SEC-040, ядро §21 п.3. kiosk — неназначаемая роль планшета магазина (is_assignable=false): назначить её нельзя (403/422 по 08 §4.18.2; ADR-115).'
         reason:
           type: string
           maxLength: 500
@@ -13476,6 +14193,219 @@ components:
       - accepted
       - revoked
       - expired
+    KioskCustomerMatch:
+      type: string
+      enum:
+      - single
+      - ambiguous
+      - none
+      description: |
+        orders.kiosk_customer_match (07 §5.37, §6.1.1): итог поиска карточки по номеру покупателя при создании заявки с планшета — single (одна надёжная карточка), ambiguous (карточек несколько, кассир выбирает), none (карточки нет, новый покупатель); 08 §3.9, §4.25.2.
+    KioskExitRequest:
+      type: object
+      required:
+      - code
+      additionalProperties: false
+      description: Тело POST /kiosk/exit (08 §4.25.5).
+      properties:
+        code:
+          type: string
+          pattern: ^\d{8}$
+          description: Аварийный код — ровно 8 цифр (иное → 400 VALIDATION_FAILED).
+    KioskExitResponse:
+      type: object
+      additionalProperties: false
+      description: '200 POST /kiosk/exit — пустой объект {}: выход выполнен (08 §4.25.5).'
+    KioskOrderAccepted:
+      type: object
+      required:
+      - publicNumber
+      additionalProperties: false
+      description: |
+        Ответ планшету о заявке (08 §3.17, §4.25.2, §4.25.3): только номер — без статуса, сумм, клиента и ПДн (статус мог бы различаться по найденной карточке и сказать стоящим рядом больше нужного, P-002 §12).
+      properties:
+        publicNumber:
+          type: string
+          example: POS-2026-000123
+    KioskOrderOtpRequest:
+      type: object
+      required:
+      - phone
+      - cartId
+      - noticeVersion
+      additionalProperties: false
+      description: Тело POST /kiosk/order-otp (08 §4.25.1); иные поля → 400 VALIDATION_FAILED (forbidden_field).
+      properties:
+        phone:
+          $ref: '#/components/schemas/PhoneE164'
+        cartId:
+          type: string
+          format: uuid
+          description: Активная корзина планшета.
+        noticeVersion:
+          type: string
+          minLength: 1
+          maxLength: 32
+          example: '2026-11-04'
+          description: |
+            Версия текста информирования, показанного над кнопкой «Получить код» (раздел kiosk_order_notice файла contracts/legal/notices_ru.md, 11 PRIV-032); неизвестная версия → 422 VALIDATION_FAILED (rule notice_version).
+      example:
+        phone: '+996700000101'
+        cartId: 0192f3a1-6c3e-7a1b-9f00-000000000201
+        noticeVersion: '2026-11-04'
+    KioskOrderOtpResponse:
+      type: object
+      required:
+      - challengeId
+      - resendAfterSec
+      additionalProperties: false
+      description: '202 POST /kiosk/order-otp (08 §4.25.1): одинаков для любого номера; номер не повторяется.'
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+        resendAfterSec:
+          type: integer
+          minimum: 0
+          example: 60
+    KioskOrdersCreateRequest:
+      type: object
+      required:
+      - challengeId
+      - code
+      - cartId
+      - cartRowVersion
+      - previewToken
+      additionalProperties: false
+      description: |
+        Тело POST /kiosk/orders (08 §4.25.2). Клиент, получатель, способ оплаты, доставка, скидка, цены, итоги и noticeVersion в теле не принимаются → 400 VALIDATION_FAILED (forbidden_field; цены — и аудит price.override_attempt).
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+        code:
+          type: string
+          pattern: ^\d{6}$
+          description: Код из SMS purpose=kiosk_order — ровно 6 цифр (rule otp_format).
+        cartId:
+          type: string
+          format: uuid
+        cartRowVersion:
+          type: integer
+          minimum: 0
+        previewToken:
+          type: string
+          maxLength: 512
+          description: Из POST /cart/checkout-preview, сделанного сразу перед отправкой (08 §4.7.7 «Предпросмотр на планшете»).
+      example:
+        challengeId: 0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4f55
+        code: '004512'
+        cartId: 0192f3a1-6c3e-7a1b-9f00-000000000201
+        cartRowVersion: 18
+        previewToken: v1.9f3c
+    KioskResetRequest:
+      type: object
+      required:
+      - cartId
+      additionalProperties: false
+      description: Тело POST /kiosk/reset (08 §4.25.4).
+      properties:
+        cartId:
+          type: string
+          format: uuid
+          description: Корзина планшета, которую нужно закрыть.
+    KioskTabletsEnrollRequest:
+      type: object
+      required:
+      - name
+      - warehouseId
+      additionalProperties: false
+      description: Тело POST /admin/store-tablets (08 §4.18.11); иные поля → 400 VALIDATION_FAILED (forbidden_field).
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 150
+          example: Планшет у входа
+        warehouseId:
+          type: string
+          format: uuid
+          description: Активный склад (warehouses.is_active); иначе 404 NOT_FOUND.
+      example:
+        name: Планшет у входа
+        warehouseId: 0192f3a1-6c3e-7a1b-9f00-000000000101
+    KioskTabletsListResponse:
+      type: object
+      required:
+      - items
+      description: '200 GET /admin/store-tablets (08 §4.18.12): без пагинации, порядок — по имени.'
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoreTablet'
+    KioskTabletsReconnectRequest:
+      type: object
+      additionalProperties: false
+      description: Тело POST /admin/store-tablets/{id}/reconnect — пустой объект (08 §4.18.15); любое поле → 400 VALIDATION_FAILED (forbidden_field).
+    KioskTabletsRevokeRequest:
+      type: object
+      additionalProperties: false
+      description: Тело POST /admin/store-tablets/{id}/revoke (08 §4.18.14), необязательно.
+      properties:
+        reason:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: Пишется только в аудит kiosk.revoked, не в store_tablets (revoke_reason = kiosk.revoked, 07 §5.65).
+    KioskTabletsUpdateRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      description: 'Тело PATCH /admin/store-tablets/{id} (08 §4.18.13): хотя бы одно поле; иные поля → 400 VALIDATION_FAILED (forbidden_field).'
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 150
+          example: Планшет у кассы
+        warehouseId:
+          type: string
+          format: uuid
+    KioskTokens:
+      type: object
+      required:
+      - tablet
+      - accessToken
+      - accessExpiresIn
+      - refreshToken
+      - refreshExpiresAt
+      - sid
+      - exitCode
+      description: |
+        Ответ подключения (201) и подключения заново (200) — 08 §3.17, §4.18.11, §4.18.15. Токены и exitCode не пишутся в логи, аудит, уведомления и хранилище идемпотентности (08 §2.7); приложение хранит токены планшета в secure storage, аварийный код показывает администратору один раз.
+      properties:
+        tablet:
+          $ref: '#/components/schemas/StoreTablet'
+        accessToken:
+          type: string
+          description: Access JWT планшета (kind=kiosk, amr ["pin"]).
+        accessExpiresIn:
+          type: integer
+          example: 900
+        refreshToken:
+          type: string
+        refreshExpiresAt:
+          type: string
+          format: date-time
+        sid:
+          type: string
+          format: uuid
+        exitCode:
+          type: string
+          pattern: ^\d{8}$
+          example: '12345678'
+          description: Аварийный код выхода — 8 цифр CSPRNG; показывается один раз; новый при каждом подключении заново.
     LinkMatchMethod:
       type: string
       enum:
@@ -13498,13 +14428,18 @@ components:
       - roles
       - permissions
       - permissionsVersion
-      description: GET /me — источник правды клиента о ролях и правах; permissions[] — для скрытия кнопок, НЕ защита (SRC-C-133).
+      description: |
+        GET /me — источник правды клиента о ролях и правах; permissions[] — для скрытия кнопок, НЕ защита (SRC-C-133). Планшет магазина (kind=kiosk; 08 §3.14, §4.3.1; ADR-115; с 1.3.0): ответ — только kind и tablet (строгая форма — схема MeKiosk), без id, телефона, ФИО, ролей, прав, сессий, настроек, согласий и клиента (11 SEC-141; 12 T-KIOSK-046); обязательность прочих полей (required) на эту форму не распространяется. oneOf намеренно не вводится: изменение аддитивное (08 §2.11), для staff и customer состав Me не меняется.
       properties:
         id:
           type: string
           format: uuid
         kind:
           $ref: '#/components/schemas/UserKind'
+        tablet:
+          allOf:
+          - $ref: '#/components/schemas/MeKioskTablet'
+          description: 'Только kind=kiosk (08 §3.14; ADR-115): планшет вызывающего технического пользователя. У staff и customer поля нет. С 1.3.0.'
         status:
           $ref: '#/components/schemas/UserStatus'
         roles:
@@ -13725,6 +14660,44 @@ components:
           format: uuid
         displayName:
           type: string
+    MeKiosk:
+      type: object
+      required:
+      - kind
+      - tablet
+      additionalProperties: false
+      description: |
+        Строгая форма ответа GET /me для kind=kiosk (08 §3.14, §4.3.1; 12 T-KIOSK-046): только kind и tablet. В ответе операции схема — Me (без oneOf, аддитивно); MeKiosk — эталон для контрактных тестов, как CustomerView* (NOTES §5 п.4, §9). С 1.3.0.
+      properties:
+        kind:
+          type: string
+          enum:
+          - kiosk
+        tablet:
+          $ref: '#/components/schemas/MeKioskTablet'
+    MeKioskTablet:
+      type: object
+      required:
+      - id
+      - name
+      - warehouseId
+      additionalProperties: false
+      description: 'Me.tablet (08 §3.14): планшет магазина вызывающего технического пользователя kind=kiosk (ADR-115). С 1.3.0.'
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: store_tablets.id.
+        name:
+          type: string
+          minLength: 2
+          maxLength: 150
+          example: Планшет у входа
+          description: user_profiles.full_name технического пользователя.
+        warehouseId:
+          type: string
+          format: uuid
+          description: Склад планшета — user_profiles.home_warehouse_id.
     MePhoneChangeConfirmRequest:
       type: object
       required:
@@ -13981,6 +14954,8 @@ components:
       - system
       - payment_status
       - return_status
+      - kiosk_order
+      description: notification_kind 07 §6.1; kiosk_order — «Новая заявка с планшета № {number}» ролям cashier и senior_seller, payload {orderId} (08 §3.13; ADR-115), с 1.3.0.
     NotificationSeverity:
       type: string
       enum:
@@ -14041,6 +15016,24 @@ components:
           type: object
           nullable: true
           description: Ролевое представление Customer без сумм долга (только флаги).
+        createdVia:
+          allOf:
+          - $ref: '#/components/schemas/OrderCreatedVia'
+          description: |
+            Канал заказа — orders.created_via (07 §5.37): сервер отдаёт всем ролям с этапа G (order-presenter), в контракт внесено в 1.3.0 вместе со значением kiosk (08 §3.9; ADR-115).
+        kioskCustomerMatch:
+          allOf:
+          - $ref: '#/components/schemas/KioskCustomerMatch'
+          type: string
+          nullable: true
+          x-roles:
+          - seller
+          - cashier
+          - senior_seller
+          - admin
+          - owner
+          description: |
+            Подсказка кассиру SCR-24 по заявке с планшета — orders.kiosk_customer_match: single — «Клиент найден по номеру», ambiguous — «Клиент не определён — выберите карточку», none — «Новый покупатель». Задан только у createdVia=kiosk, у других каналов — null. Только сотрудникам (staff); покупателю (customer) поле не отдаётся (08 §3.9; ADR-115). С 1.3.0.
         receiver:
           $ref: '#/components/schemas/Receiver'
         delivery:
@@ -14140,6 +15133,13 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Warning'
+    OrderCreatedVia:
+      type: string
+      enum:
+      - staff
+      - customer
+      - kiosk
+      description: 'orders.created_via (CHECK orders_created_via_chk, 07 §5.37, §6.1.1 order_created_via): канал заказа — сотрудник, покупатель в приложении, планшет магазина.'
     OrderDocumentAvailability:
       type: object
       required:
@@ -14275,7 +15275,7 @@ components:
       - total
       - paymentMethod
       description: |
-        Элемент GET /orders (08 §4.8.2): Order без items/history/payments, с itemsCount и paymentsSummary. Поля — подмножество Order (08 §3.9). Состав paymentsSummary 08 не раскрывает — открытый объект до уточнения владельцем DTO.
+        Элемент GET /orders (08 §4.8.2): Order без items/history/payments, с itemsCount и paymentsSummary. Поля — подмножество Order (08 §3.9). Состав paymentsSummary 08 не раскрывает — открытый объект до уточнения владельцем DTO. С 1.3.0 — createdVia и kioskCustomerMatch (ADR-115); тот же элемент — awaitingPayment[] GET /pos/dashboard.
       properties:
         id:
           type: string
@@ -14302,6 +15302,22 @@ components:
           type: object
           nullable: true
           description: Ролевое представление Customer без сумм долга (только флаги).
+        createdVia:
+          allOf:
+          - $ref: '#/components/schemas/OrderCreatedVia'
+          description: Канал заказа — orders.created_via, как Order.createdVia (08 §3.9; ADR-115). С 1.3.0.
+        kioskCustomerMatch:
+          allOf:
+          - $ref: '#/components/schemas/KioskCustomerMatch'
+          type: string
+          nullable: true
+          x-roles:
+          - seller
+          - cashier
+          - senior_seller
+          - admin
+          - owner
+          description: 'Как Order.kioskCustomerMatch: только у createdVia=kiosk (иначе null), только сотрудникам (08 §3.9; ADR-115). С 1.3.0.'
         receiver:
           $ref: '#/components/schemas/Receiver'
         delivery:
@@ -14609,6 +15625,9 @@ components:
       - phone_change_old
       - phone_change_new
       - customer_link
+      - kiosk_order
+      description: |
+        otp_purpose 07 §6.1; kiosk_order — код заявки с планшета магазина (с 1.3.0, ADR-115): выдаёт только POST /kiosk/order-otp, принимает только POST /kiosk/orders; сессию не выдаёт (POST /auth/otp/verify → 404).
     OtpVerifyRequest:
       type: object
       required:
@@ -15103,7 +16122,7 @@ components:
       example: '5.00'
     PermissionCode:
       type: string
-      description: 'Канонический словарь permissions — 11 §4.3 (77 кодов: №1–76 и 42a). customer.update и reports.export в R1 зарезервированы.'
+      description: 'Канонический словарь permissions — 11 §4.3 (82 кода: №1–81 и 42a; №77–81 — планшет магазина, ADR-115, с 1.3.0). customer.update и reports.export в R1 зарезервированы.'
       enum:
       - catalog.read
       - catalog.prices.read
@@ -15182,6 +16201,11 @@ components:
       - return.approve
       - customer.link.self_resolve
       - users.emergency_code.issue
+      - kiosk.read
+      - kiosk.manage
+      - kiosk.order.submit
+      - kiosk.self.read
+      - kiosk.self.exit
     PhoneE164:
       type: string
       pattern: ^\+996\d{9}$
@@ -15214,7 +16238,7 @@ components:
         awaitingPayment:
           type: array
           maxItems: 20
-          description: Заказы submitting, pending_approval, approved, awaiting_payment с открытым платежом (ядро §22.5, §23 п.7). OrderSummary — схема фрагмента orders (08 §4.8.2).
+          description: Заказы submitting, pending_approval, approved, awaiting_payment с открытым платежом (ядро §22.5, §23 п.7). OrderSummary — схема фрагмента orders (08 §4.8.2); элемент несёт createdVia — пометка «С планшета» SCR-30 (08 §4.10.1; ADR-115; с 1.3.0).
           items:
             $ref: '#/components/schemas/OrderSummary'
         qrPending:
@@ -15405,7 +16429,7 @@ components:
       - code
       - requestId
       description: |
-        RFC 9457 problem+json (08 §2.4, §3.3). type — https://api.<домен>/problems/<code-kebab>; instance — urn:request:<requestId>. errors[] — только VALIDATION_FAILED и бизнес-валидации; conflicts[] — только PRICE_CHANGED/STOCK_INSUFFICIENT/VARIANT_UNAVAILABLE. Стек-трейсы, SQL, имена таблиц — никогда. Прочие поля — по коду ошибки (08 §2.4).
+        RFC 9457 problem+json (08 §2.4, §3.3). type — https://api.<домен>/problems/<code-kebab>; instance — urn:request:<requestId>. errors[] — только VALIDATION_FAILED и бизнес-валидации; conflicts[] — только PRICE_CHANGED/STOCK_INSUFFICIENT/VARIANT_UNAVAILABLE. Стек-трейсы, SQL, имена таблиц — никогда. Прочие поля — по коду ошибки (08 §2.4). Ответы планшету магазина (kind=kiosk) очищаются до записи в хранилище идемпотентности (08 §2.4 «Коды и отказы планшета магазина» п. 3; 11 SEC-141): conflicts[] — только variantId, kind, stockLevel; VERSION_CONFLICT — без current; ONEC_REJECTED — без onec и текста 1С в detail.
       properties:
         type:
           type: string
@@ -15441,7 +16465,7 @@ components:
         attemptsLeft:
           type: integer
           minimum: 0
-          description: OTP_INVALID, PIN_INVALID.
+          description: OTP_INVALID, PIN_INVALID, KIOSK_EXIT_CODE_INVALID.
         stepUp:
           type: object
           description: 'STEP_UP_REQUIRED: клиент передаёт operation в POST /auth/step-up без изменений (08 §2.12).'
@@ -15472,7 +16496,7 @@ components:
         reason:
           type: string
           description: |
-            Машинная причина (cancel_already_requested, possible_duplicate, open_payment_exists, owner_role_reserved, cursor_expired, …). Для 422 PRICE_CHANGED по previewToken — preview_token_invalid, preview_cart_changed, preview_payment_method_changed, preview_total_changed (08 §2.4 «Уточнения … этапа F» п. 1); для 503 ONEC_UNAVAILABLE корзины — catalog_not_loaded (08 §4.7.1 «Уточнения» п. 2). Значения перечислены справочно (с 1.2.0); поле остаётся строкой. Для 401 UNLOCK_REQUIRED (08 §2.4, «Расширения Problem по реализации»; 09 §8.3, §8.8, §6.13): idle_lock — idle-блокировка staff на Windows; refresh_replay — поздний повтор refresh у пользователя с PIN (standard-сессия; пользователю без PIN приходит 401 SESSION_REVOKED с reason refresh_replay и сессия отзывается, 09 §8.3); emergency_code — сессия аварийного кода (первый запрос до разблокировки PIN). Клиент на любое значение показывает SCR-08 и вызывает POST /auth/unlock; неизвестное значение обрабатывается так же (совместимость вперёд). Список — x-unlock-required-reasons.
+            Машинная причина (cancel_already_requested, possible_duplicate, open_payment_exists, owner_role_reserved, cursor_expired, …). Для 422 PRICE_CHANGED по previewToken — preview_token_invalid, preview_cart_changed, preview_payment_method_changed, preview_total_changed (08 §2.4 «Уточнения … этапа F» п. 1); для 503 ONEC_UNAVAILABLE корзины — catalog_not_loaded (08 §4.7.1 «Уточнения» п. 2). Значения перечислены справочно (с 1.2.0); поле остаётся строкой. Планшет магазина (08 §2.4 «Коды и отказы планшета магазина», §2.7; с 1.3.0): 403 FORBIDDEN — kiosk_closed_list (маршрут вне закрытого списка 08 §4.25), kiosk_warehouse_unavailable (склад планшета не задан или неактивен), kiosk_target (операция /admin/users/* над пользователем kind=kiosk); 422 IDEMPOTENCY_KEY_REUSED подключения и подключения заново планшета — replay_used (повтор после использования сессии планшета). Для 401 UNLOCK_REQUIRED (08 §2.4, «Расширения Problem по реализации»; 09 §8.3, §8.8, §6.13): idle_lock — idle-блокировка staff на Windows; refresh_replay — поздний повтор refresh у пользователя с PIN (standard-сессия; пользователю без PIN приходит 401 SESSION_REVOKED с reason refresh_replay и сессия отзывается, 09 §8.3); emergency_code — сессия аварийного кода (первый запрос до разблокировки PIN). Клиент на любое значение показывает SCR-08 и вызывает POST /auth/unlock; неизвестное значение обрабатывается так же (совместимость вперёд). Список — x-unlock-required-reasons.
           x-unlock-required-reasons:
           - idle_lock
           - refresh_replay
@@ -15548,7 +16572,7 @@ components:
     ProblemCode:
       type: string
       description: |
-        Машинный код ошибки — ПОЛНЫЙ закрытый перечень 08 §2.4 (ядро §7, §16 п.4, §17.4, §18.2 п.5 + [НОВОЕ ИМЯ] RETURN_QTY_EXCEEDED, WEBHOOK_SIGNATURE_INVALID, QR_UNAVAILABLE). Клиент ветвится только по code и status; неизвестный code обрабатывается как INTERNAL того же HTTP-класса (совместимость вперёд).
+        Машинный код ошибки — ПОЛНЫЙ закрытый перечень 08 §2.4 (ядро §7, §16 п.4, §17.4, §18.2 п.5 + [НОВОЕ ИМЯ] RETURN_QTY_EXCEEDED, WEBHOOK_SIGNATURE_INVALID, QR_UNAVAILABLE; с 1.3.0 — шесть кодов планшета магазина KIOSK_* [НОВОЕ ИМЯ — ADR-115], 56 кодов). Клиент ветвится только по code и status; неизвестный code обрабатывается как INTERNAL того же HTTP-класса (совместимость вперёд).
       enum:
       - VALIDATION_FAILED
       - OTP_INVALID
@@ -15600,6 +16624,12 @@ components:
       - QR_UNAVAILABLE
       - CONSENT_REQUIRED
       - APP_READ_ONLY
+      - KIOSK_REVOKED
+      - KIOSK_DISABLED
+      - KIOSK_NETWORK_DENIED
+      - KIOSK_RATE_LIMITED
+      - KIOSK_EXIT_CODE_INVALID
+      - KIOSK_EXIT_LOCKED
     ProblemFieldError:
       type: object
       required:
@@ -15790,6 +16820,33 @@ components:
           nullable: true
         customerStockDisplay:
           $ref: '#/components/schemas/CustomerStockDisplay'
+        kiosk:
+          type: object
+          required:
+          - idleSeconds
+          - idleWarningSeconds
+          - doneSeconds
+          description: |
+            Общие для всех планшетов магазина настройки автосброса (08 §4.18.6, §4.23.1; ADR-115, Р-09 (а)): ключи kiosk_idle_seconds, kiosk_idle_warning_seconds, kiosk_done_seconds, иначе значения по умолчанию из кода (120, 15, 60 с). Отдаётся всем ролям при любом KIOSK_MODE; лимиты кодов и часы работы планшету не отдаются. С 1.3.0.
+          properties:
+            idleSeconds:
+              type: integer
+              minimum: 30
+              maximum: 1800
+              example: 120
+              description: Автосброс планшета без касаний, секунды.
+            idleWarningSeconds:
+              type: integer
+              minimum: 5
+              maximum: 120
+              example: 15
+              description: Обратный отсчёт «Вы ещё здесь?» перед сбросом, секунды.
+            doneSeconds:
+              type: integer
+              minimum: 10
+              maximum: 600
+              example: 60
+              description: Номер заявки на экране SCR-53 до сброса, секунды.
         features:
           type: object
           properties:
@@ -15807,6 +16864,10 @@ components:
             debtPaymentsFromPos:
               type: boolean
               description: env DEBT_PAYMENTS_FROM_POS (Q-152).
+            storeTablet:
+              type: boolean
+              description: |
+                env KIOSK_MODE — режим «Планшет магазина» (только env, по умолчанию false; от CUSTOMER_SELF_SERVICE не зависит; 08 §4.23.1, ADR-115). До входа (без Bearer) клиент считает false. С 1.3.0.
     QrInfo:
       type: object
       required:
@@ -16050,7 +17111,8 @@ components:
       required:
       - kind
       additionalProperties: false
-      description: Получатель; ПДн получателя клиент не сохраняет в checkout_draft (ядро §19.4).
+      description: |
+        Получатель; ПДн получателя клиент не сохраняет в checkout_draft (ядро §19.4). Заявка с планшета магазина (createdVia=kiosk; 08 §3.9, ADR-115): kind=customer, name=null, phone — номер, подтверждённый кодом kiosk_order; после маскирования номера (через 90 дней — 07 §13.3, 11 PRIV-015) phone=null и phoneMasked.
       properties:
         kind:
           $ref: '#/components/schemas/ReceiverKind'
@@ -16063,6 +17125,14 @@ components:
           - $ref: '#/components/schemas/PhoneE164'
           type: string
           nullable: true
+          description: null — в том числе после маскирования номера покупателя заявки с планшета (тогда есть phoneMasked); формат PhoneE164 не ослабляется.
+        phoneMasked:
+          allOf:
+          - $ref: '#/components/schemas/PhoneMasked'
+          type: string
+          readOnly: true
+          description: |
+            Только в ответах и только после маскирования номера покупателя заявки с планшета — orders.receiver_phone_masked (08 §3.9; ADR-115); в теле запроса не передаётся. С 1.3.0.
     ReceiverKind:
       type: string
       enum:
@@ -16469,6 +17539,9 @@ components:
       - owner
       - customer
       - integration
+      - kiosk
+      description: |
+        role_code 07 §6.1; kiosk — неназначаемая техническая роль планшета магазина (is_assignable=false; ADR-115, 11 §4.2), с 1.3.0; выдаётся только при подключении планшета (POST /admin/store-tablets). Встречается и в UserRef.role (audit.createdBy заявки с планшета).
     SearchBarcodeResult:
       type: object
       required:
@@ -16694,6 +17767,7 @@ components:
       - users.roles.assign
       - users.pin.reset
       - users.emergency_code.issue
+      - kiosk.manage
       - session.revoke.any
       - invitations.manage
       - settings.app.update
@@ -16755,6 +17829,79 @@ components:
       - out
       - unknown
       description: in_stock — available ≥ порога low_stock_threshold; low — 0 < available < порог; out — ≤ 0; unknown — нет снимка (08 §3.6).
+    StoreTablet:
+      type: object
+      required:
+      - id
+      - name
+      - warehouseId
+      - status
+      - enrolledAt
+      - reconnectedAt
+      - revokedAt
+      - lastSeenAt
+      - lockTaskEnabled
+      - appVersion
+      - expiresAt
+      additionalProperties: false
+      description: |
+        Запись планшета магазина (08 §3.17; SCR-54; 07 §5.65 store_tablets + user_profiles технического пользователя). Не содержит ПДн покупателей, хэша и счётчиков аварийного кода и device_key. Все поля присутствуют всегда, nullable — как null (NOTES §9).
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: store_tablets.id.
+        name:
+          type: string
+          minLength: 2
+          maxLength: 150
+          example: Планшет у входа
+          description: Имя планшета — user_profiles.full_name технического пользователя.
+        warehouseId:
+          type: string
+          format: uuid
+          description: Склад планшета — user_profiles.home_warehouse_id (запасного склада нет, ADR-115 п. 23).
+        status:
+          $ref: '#/components/schemas/StoreTabletStatus'
+        enrolledAt:
+          type: string
+          format: date-time
+        reconnectedAt:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastSeenAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Последняя связь: обновляет каждый аутентифицированный запрос планшета не чаще раза в 60 с (приложение обращается к серверу не реже раза в 5 мин — GET /settings/public, ADR-115 п. 21). По нему — алерт «планшет не на связи» в часы kiosk_working_hours (пусто — алерта нет).
+        lockTaskEnabled:
+          type: boolean
+          nullable: true
+          description: |
+            Закрепление устройства по заголовку X-Kiosk-Lock (08 §2.3; store_tablets.lock_task_enabled): true — on, false — off, null — сигнала ещё не было (после подключения и подключения заново). SCR-54 показывает «Закрепление не включено» для false и null (12 T-KIOSK-068).
+        appVersion:
+          type: string
+          nullable: true
+          maxLength: 64
+          example: 1.4.2+87
+          description: Версия приложения планшета — X-App-Version (store_tablets.last_app_version; P-002 §8.11).
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Абсолютный срок действующей сессии планшета; null — сессии нет. Для напоминания SCR-54 за 30 дней (Р-22 (а)).
+    StoreTabletStatus:
+      type: string
+      enum:
+      - active
+      - revoked
+      description: store_tablets.status (07 §5.65, §6.1.1 store_tablet_status).
     SupportContact:
       type: object
       required:
@@ -17210,6 +18357,8 @@ components:
       enum:
       - staff
       - customer
+      - kiosk
+      description: user_kind 07 §6.1; kiosk — технический пользователь планшета магазина (ADR-115; 08 §2.2, §4.25), с 1.3.0.
     UserRef:
       type: object
       required:
@@ -17333,7 +18482,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Forbidden:
-      description: 403 — FORBIDDEN (нет permission, чужой объект, роль не допускает поле/действие) или STEP_UP_REQUIRED (stepUp.operation, stepUp.allowedMethods).
+      description: 403 — FORBIDDEN (нет permission, чужой объект, роль не допускает поле/действие; у планшета магазина — reason kiosk_closed_list, kiosk_warehouse_unavailable, kiosk_target — 08 §2.4), STEP_UP_REQUIRED (stepUp.operation, stepUp.allowedMethods), KIOSK_DISABLED (KIOSK_MODE=false), KIOSK_NETWORK_DENIED (адрес вне KIOSK_ALLOWED_CIDRS).
       headers:
         X-Request-Id:
           $ref: '#/components/headers/XRequestId'
@@ -17355,7 +18504,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Locked:
-      description: 423 — OTP_LOCKED, PIN_LOCKED (retryAfter — до разблокировки; PIN_LOCKED несёт until — 08 §2.4).
+      description: 423 — OTP_LOCKED, PIN_LOCKED (retryAfter — до разблокировки; PIN_LOCKED несёт until — 08 §2.4), KIOSK_EXIT_LOCKED (retryAfter; 5 неверных аварийных кодов подряд — пауза 15 мин).
       headers:
         X-Request-Id:
           $ref: '#/components/headers/XRequestId'
@@ -17438,7 +18587,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     TooManyRequests:
-      description: 429 — RATE_LIMITED (группа 08 §2.9) или OTP_RATE_LIMITED (RL-OTP-SEND*); Retry-After обязателен.
+      description: 429 — RATE_LIMITED (группа 08 §2.9), OTP_RATE_LIMITED (RL-OTP-SEND*) или KIOSK_RATE_LIMITED (лимит кодов планшета RL-OTP-KIOSK); Retry-After обязателен.
       headers:
         X-Request-Id:
           $ref: '#/components/headers/XRequestId'
@@ -17457,7 +18606,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Unauthorized:
-      description: '401 — UNAUTHENTICATED, TOKEN_STALE, SESSION_REVOKED, REGISTRATION_TOKEN_INVALID, PIN_INVALID, UNLOCK_REQUIRED (reason: idle_lock | refresh_replay | emergency_code — 08 §2.4), WEBHOOK_SIGNATURE_INVALID.'
+      description: '401 — UNAUTHENTICATED, TOKEN_STALE, SESSION_REVOKED, REGISTRATION_TOKEN_INVALID, PIN_INVALID, UNLOCK_REQUIRED (reason: idle_lock | refresh_replay | emergency_code — 08 §2.4), WEBHOOK_SIGNATURE_INVALID, KIOSK_REVOKED (сессия планшета магазина отозвана администратором или аварийным выходом — 08 §2.2).'
       headers:
         X-Request-Id:
           $ref: '#/components/headers/XRequestId'
@@ -17470,7 +18619,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     UnprocessableEntity:
-      description: '422 — бизнес-валидация: VALIDATION_FAILED (семантика), OTP_INVALID, OTP_EXPIRED, IDEMPOTENCY_KEY_REUSED, PRICE_CHANGED, STOCK_INSUFFICIENT, VARIANT_UNAVAILABLE, QTY_NOT_MULTIPLE, QTY_BELOW_MIN, DISCOUNT_LIMIT_EXCEEDED, CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED, RECEIVABLES_STALE, ONEC_REJECTED, CUSTOMER_NOT_IDENTIFIED, CART_EMPTY, RETURN_QTY_EXCEEDED, CONSENT_REQUIRED.'
+      description: '422 — бизнес-валидация: VALIDATION_FAILED (семантика), OTP_INVALID, OTP_EXPIRED, IDEMPOTENCY_KEY_REUSED, PRICE_CHANGED, STOCK_INSUFFICIENT, VARIANT_UNAVAILABLE, QTY_NOT_MULTIPLE, QTY_BELOW_MIN, DISCOUNT_LIMIT_EXCEEDED, CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED, RECEIVABLES_STALE, ONEC_REJECTED, CUSTOMER_NOT_IDENTIFIED, CART_EMPTY, RETURN_QTY_EXCEEDED, CONSENT_REQUIRED, KIOSK_EXIT_CODE_INVALID (attemptsLeft).'
       headers:
         X-Request-Id:
           $ref: '#/components/headers/XRequestId'
@@ -17728,6 +18877,17 @@ components:
         type: string
         maxLength: 50
         example: POS
+    KioskLock:
+      name: X-Kiosk-Lock
+      in: header
+      required: false
+      description: |
+        Состояние закрепления планшета магазина (08 §2.3; ADR-115 п. 26): on — приложение — владелец устройства (Device Owner) и режим lock task включён; off — иначе (веб, Windows, Android без Device Owner). Приложение передаёт заголовок на каждом запросе сессии планшета (kind=kiosk); у других субъектов сервер его не читает. Нет заголовка или иное значение — сохранённое значение не меняется (запрос не отклоняется). Сервер пишет значение в store_tablets.lock_task_enabled не чаще раза в 60 с вместе с last_seen_at; SCR-54 показывает его как StoreTablet.lockTaskEnabled. С 1.3.0.
+      schema:
+        type: string
+        enum:
+        - 'on'
+        - 'off'
     Limit:
       name: limit
       in: query
@@ -17874,7 +19034,7 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: |
-        Access JWT (EdDSA/ES256, kid; TTL 15 мин для всех ролей; iss=optomstroy-pos, aud=optomstroy-api). Нет/невалиден → 401 UNAUTHENTICATED; отозванная сессия → 401 SESSION_REVOKED; устаревшие права → 401 TOKEN_STALE (08 §2.2).
+        Access JWT (EdDSA/ES256, kid; TTL 15 мин для всех ролей; iss=optomstroy-pos, aud=optomstroy-api). Нет/невалиден → 401 UNAUTHENTICATED; отозванная сессия → 401 SESSION_REVOKED; устаревшие права → 401 TOKEN_STALE (08 §2.2). Сессия планшета магазина (kind=kiosk), отозванная администратором или аварийным выходом (revoke_reason=kiosk_revoked), → 401 KIOSK_REVOKED (08 §2.2; ADR-115).
     integrationToken:
       type: http
       scheme: bearer

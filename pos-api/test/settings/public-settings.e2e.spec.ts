@@ -82,12 +82,15 @@ describe('RM-D-015 GET /settings/public (08 §4.23.1, API-157; embedded PG17 + s
       minAppVersion: 'android=1.2.0,windows=1.2.0',
       recommendedAppVersion: 'android=1.3.0,windows=1.3.0',
       customerStockDisplay: 'status',
+      // Планшет магазина (ADR-115): тайминги по умолчанию кода; KIOSK_MODE по умолчанию false.
+      kiosk: { idleSeconds: 120, idleWarningSeconds: 15, doneSeconds: 60 },
       features: {
         customerSelfService: true,
         returnsFromPos: true,
         qrProvider: 'onec',
         qrWebhook: false,
         debtPaymentsFromPos: true,
+        storeTablet: false,
       },
     });
   });

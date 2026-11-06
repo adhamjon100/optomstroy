@@ -78,6 +78,13 @@
         "note": "без долга"
       }
     ],
+    "kiosk": {
+      "adminPhone": "+996777000901",
+      "tabletName": "Планшет у входа",
+      "buyerPhone": "+996700000101",
+      "cashierPhone": "+996777000906",
+      "exitCodeNote": "Аварийный код выхода в демо можно не записывать."
+    },
     "qrDefaultPolls": 5,
     "qrPollSeconds": 3.6
   };

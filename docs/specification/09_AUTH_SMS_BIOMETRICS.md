@@ -1,6 +1,6 @@
 # 09. Аутентификация, SMS (SMSPro), регистрация, сессии, биометрия и PIN — POS «Оптомстрой»
 
-Версия 1.10 · Дата 2026-10-22 (ревью закрытия этапа E — журнал §22; ред. 1.9 — 2026-10-22; технические уточнения по реализации этапов D–E — §21, ADR-088, ADR-096; сверка с ядром R0 v1.9: §24.2 «кто регистрируется», §24.5 — ответы заказчика 2026-10-21; ранее — v1.8: §21 п.2, §22.12, §22.13 п.2, §23 п.8–п.9; независимая проверка, волна 4; журналы — в конце документа) · Статус: черновик для утверждения заказчиком
+Версия 1.11 · Дата 2026-11-04 (режим «Планшет магазина» по утверждённому P-002, ADR-115 — журнал §23; ред. 1.10 — 2026-10-22, ревью закрытия этапа E — журнал §22; ред. 1.9 — 2026-10-22; технические уточнения по реализации этапов D–E — §21, ADR-088, ADR-096; сверка с ядром R0 v1.9: §24.2 «кто регистрируется», §24.5 — ответы заказчика 2026-10-21; ранее — v1.8: §21 п.2, §22.12, §22.13 п.2, §23 п.8–п.9; независимая проверка, волна 4; журналы — в конце документа) · Статус: черновик для утверждения заказчиком
 
 **Владелец документа:** Authentication and Security Engineer (агент 6) + SMS-специалист. Префиксы требований: `AUTH-`, `REG-`, `BIO-`, `SMS-`, `SESS-` (ядро §10); условный модуль сканирования лица — `FACE-` `[РЕШЕНИЕ: ядро §17]`; критерии приёмки — `AC-AUTH-NNN`.
 
@@ -16,6 +16,7 @@
 | `docs/research/R7_POS_BUSINESS_RESEARCH.md` §12 | кто регистрируется (два прочтения промта) |
 | Мастер-промт `docs/specification/source/MASTER_PROMPT_extracted.md` | строки 176–252 (персонаж, вход по лицу, вход по телефону, SMSPro, регистрация, регистрация и клиентская база 1С), 451–460 (тесты авторизации), 676–687 (п. 4.5), 852–857 (персонаж, сканирование лица) |
 | Реестры `REQ_REGISTER_B.md` (SRC-B-069…149), `REQ_REGISTER_D.md` (SRC-D-092…101, SRC-D-082a), `REQ_REGISTER_E.md` (SRC-E-121…136c), `REQ_REGISTER_F.md` (SRC-F-021…027) | трассировка |
+| `docs/specification/proposals/P-002_STORE_TABLET.md` (ред. 5; утверждено владельцем 2026-11-04 — ADR-115) | режим «Планшет магазина»: технический пользователь `kind=kiosk`, код `kiosk_order` без сессии, лимиты планшета, текст SMS (Р-21), сессия, отзыв и подключение заново планшета (§8.2, §8.5, §8.9, §14.2) |
 
 **Связанные документы:** 01_PRODUCT_REQUIREMENTS (ROLE-, NFR-), 02_SCREEN_SPECIFICATION (SCR-01…SCR-08, UI-), 03_UX_UI_DESIGN_SYSTEM (`Mascot`, `PhoneField`, `OtpField`, `PinField`, ANIM-), 04_USER_FLOWS (FLOW- вход/регистрация), 05_ONEC_INTEGRATION (поиск клиента 1С по телефону), 07_DATA_MODEL (`users`, `sessions`, `otp_challenges`, …), 08_API_SPECIFICATION (`/auth/*`, `/registration/*`, `/me/*`), 10_POS_BUSINESS_RULES (CUST-, DEBT-), 11_SECURITY_PRIVACY (SEC-, PRIV-), 12_TEST_PLAN (T-AUTH-), 14_OPEN_QUESTIONS, 15_DECISION_LOG.
 
@@ -35,6 +36,7 @@
 8. Биометрия: «системная биометрия + безопасно хранимый токен с криптопривязкой» (Android Keystore + `CryptoObject`, iOS Keychain `biometryCurrentSet`); Windows — Windows Hello только как UX-гейт + обязательный PIN приложения; `local_auth` — только гейт/fallback; биометрические данные приложением не собираются и не хранятся `[РЕШЕНИЕ: D-13]`. Отказ биометрии → вход по телефону. PIN приложения проверяется только на сервере (`app_pins`, Argon2id + `PIN_PEPPER_FILE`), обязателен для всех `staff` на всех платформах, для `customer` — обязателен, если не включена биометрия (хотя бы один способ защиты входа — ядро §24.2); офлайн-разблокировка — вне R1 (Q-241) `[РЕШЕНИЕ: D-48]`.
 9. «Сканирование лица с поворотами» (прямо → влево → вправо → вверх) — **условный модуль R2 «FACE-SCAN»** (SCR-05): спецификация написана полностью (§10), но вне R1 до решения Q-003 и юридического заключения по ст. 80 Цифрового кодекса КР `[РЕШЕНИЕ: D-14]`. Серия фотографий не является защитой от подделки; liveness и распознавание личности требуют коммерческого SDK.
 10. Персонаж авторизации — 6 состояний Rive (`idle`, `typing`, `verifying`, `success`, `error`, `retry`); визуальный слой независим от результата проверки, который всегда приходит с сервера `[РЕШЕНИЕ: D-40]`.
+11. Режим «Планшет магазина» (P-002, утверждён владельцем 2026-11-04): планшет — технический пользователь `kind=kiosk` без телефона, PIN и биометрии; он создаётся только `POST /admin/store-tablets`. Покупатель на планшете подтверждает номер кодом `kiosk_order`, но этот код никогда не выдаёт сессию (§5.3). У кода свои лимиты планшета (§5.4) и свой текст SMS (§6.7). У планшета одна сессия: 7 дней простоя, 180 дней всего. Отзыв даёт `401 KIOSK_REVOKED`, есть подключение заново (§8.9) `[РЕШЕНИЕ: ADR-115]`.
 
 ---
 
@@ -44,21 +46,22 @@
 
 | Сущность (ядро §6) | Назначение в этом документе | Источник истины |
 |---|---|---|
-| `users` | Учётная запись приложения: `id`, `phone_e164` (UNIQUE), `kind` (`staff` / `customer`), `status` (`pending` / `pending_activation` / `active` / `blocked` / `deleted`), `permissions_version` (int), `created_at`, `last_login_at` | backend |
+| `users` | Учётная запись приложения: `id`, `phone_e164` (UNIQUE; `NULL` у технического пользователя планшета `kind=kiosk` — §2.2, 07), `kind` (`staff` / `customer` / `kiosk` — `kiosk` с ред. 1.11, ADR-115), `status` (`pending` / `pending_activation` / `active` / `blocked` / `deleted`), `permissions_version` (int), `created_at`, `last_login_at` | backend |
 | `user_profiles` | ФИО (`full_name`), год рождения (`birth_year`), сфера деятельности (столбец `activity_sphere`, nullable; в API — поле `activitySphere`, код справочника `[РЕШЕНИЕ: ядро §19.3]`; прежнее DTO-имя `occupation` не используется), язык интерфейса; **отдельно от карточки клиента 1С** (SRC-B-140) | backend |
 | `user_invitations` | Приглашения сотрудников: `phone_e164`, `role` (тип `role_code`), `invited_by_user_id`, `status` (enum `invitation_status`: `pending` / `accepted` / `revoked` / `expired`), `expires_at` (`INVITATION_TTL_DAYS`, Q-141), `accepted_at`; создаёт `admin` (SCR-45). При первом OTP-входе по приглашённому номеру учётная запись сотрудника создаётся с ролью и ФИО отсюда, без регистрационной формы (§2.2, §4.3, §7.6) `[РЕШЕНИЕ: D-07; ядро §24.2]` | backend |
-| `roles`, `permissions`, `role_permissions`, `user_roles` | RBAC, deny by default; роли `seller`, `cashier`, `senior_seller`, `admin`, `owner`, `customer` (R1 — ядро §24.2), технический `integration` `[РЕШЕНИЕ: D-15]`; роль `integration` — только таблица `integration_tokens` (хэш токена, `scope`, срок 180 дней), без строки в `users` и без выпуска через `POST /admin/users` `[РЕШЕНИЕ: ядро §18.2 п.4]` | backend |
+| `roles`, `permissions`, `role_permissions`, `user_roles` | RBAC, deny by default; роли `seller`, `cashier`, `senior_seller`, `admin`, `owner`, `customer` (R1 — ядро §24.2), технический `integration` `[РЕШЕНИЕ: D-15]`; роль `integration` — только таблица `integration_tokens` (хэш токена, `scope`, срок 180 дней), без строки в `users` и без выпуска через `POST /admin/users` `[РЕШЕНИЕ: ядро §18.2 п.4]`; техническая роль `kiosk` (планшет магазина, `is_assignable=false`) — у пользователя `kind=kiosk` со строкой в `users`, назначается только при подключении планшета (§8.9) `[РЕШЕНИЕ: ADR-115]` | backend |
 | `devices` | Устройство пользователя (имена — 07 §5.8, §19 п.14): `id` (собственный PK, UUID v7), `user_id`, `device_key` (UUID v4, генерируется приложением при первом запуске; UNIQUE в паре с `user_id`; в API и заголовке — `deviceId` / `X-Device-Id`) `[РЕШЕНИЕ: ядро §18.2 п.3]`, `platform` (enum `device_platform`: `android` / `ios` / `windows`), `model`, `os_version`, `app_version`, `display_name` (в API — `deviceName`), `biometric_enrolled_at` (в API — вычисляемое `biometricEnabled`), `last_seen_at`, `revoked_at`; признак PIN (`pinSet` в API) — наличие строки `app_pins` | backend |
 | `sessions` | Сессии/refresh-токены (§8); `kind` — enum `session_kind` (`standard` / `biometric`); `step_up_until` / `step_up_method` — enum `step_up_method` (`pin` / `biometric` / `otp`) | backend |
-| `otp_challenges` | Одноразовые коды (§5); `purpose` — enum `otp_purpose`, `status` — enum `otp_status` (значения — 07 §6, см. ниже) | backend |
-| `rate_limit_counters` | Счётчики лимитов OTP по номеру/IP/устройству (§5.4) | backend |
+| `otp_challenges` | Одноразовые коды (§5); `purpose` — enum `otp_purpose`, `status` — enum `otp_status` (значения — 07 §6, см. ниже); у кода `kiosk_order` — ещё `kiosk_tablet_id`, `cart_id`, `notice_version` (§5.3; столбцы — 07) | backend |
+| `rate_limit_counters` | Счётчики лимитов OTP по номеру/IP/устройству и по планшету магазина (§5.4) | backend |
+| `store_tablets` | Планшет магазина (§8.9; карточка — 07 §5.65): технический пользователь `user_id` (UNIQUE), устройство `device_id`, статус `active` / `revoked`, хэш аварийного кода выхода и счётчик попыток, `last_seen_at`, сведения о подключении и отзыве; имя и склад планшета — в `user_profiles` технического пользователя `[РЕШЕНИЕ: ADR-115]` | backend |
 | `app_pins` | PIN приложения: `user_id`, `pin_hash` (Argon2id с pepper из `PIN_PEPPER_FILE`), `pepper_version`, `pin_length`, `failed_attempts`, `locked_until`, `changed_at` (§9.6); проверка только на сервере `[РЕШЕНИЕ: D-48]` | backend |
 | `consents` | Доказательство согласия или факта ознакомления (имена — 07 §5.14; `personal_data` — отметка «Я ознакомлен(а)» с информированием, а не согласие, §7.1; `sms` — только необязательное согласие на информационные SMS, Q-038/R2, при регистрации не запрашивается): `user_id`, `kind` (enum `consent_kind`: `personal_data` / `sms` / `biometrics_device` / `activity_sphere` / `face_scan`; `activity_sphere` — `[РЕШЕНИЕ: ядро §19.3]`, 07 добавляет в CHECK), `version`, `text_sha256`, `granted_at`, `revoked_at`, `device_id`, `otp_challenge_id` (§9.8, Q-027) | backend |
 | `customers`, `customer_links` | Карточка клиента 1С (реплика) и связь `user ↔ customer` со статусами `proposed` / `confirmed` / `rejected` / `conflict` (§7.9) `[РЕШЕНИЕ: D-08]` | 1С (карточка) / backend (связь) |
 | `sms_outbox` | Журнал SMS-отправок без текста и кода (§6.9); `status` — enum `sms_status` (`queued` / `sent` / `delivered` / `failed` / `expired`) | backend |
 | `audit_logs` | Append-only журнал событий аутентификации и чувствительных операций `[РЕШЕНИЕ: D-36]` | backend |
 
-Полную структуру полей фиксирует 07_DATA_MODEL.md; здесь перечислены поля, необходимые для требований этого документа. Значения enum-ов — **только канонические значения 07_DATA_MODEL §6** (ядро §17.3; при расхождении действуют значения 07); документ использует их напрямую `[РЕШЕНИЕ: ядро §17]`: `otp_challenges.purpose` (`otp_purpose`) — `login_or_register` (вход со SCR-01; ветка «вход / регистрация» в enum не хранится, признак существования аккаунта — `otp_challenges.user_id`), `step_up` (step-up по OTP, в том числе сброс PIN «Забыли PIN?»), `phone_change_new` (код на новый номер при смене номера); `phone_change_old` и `customer_link` этим документом в R1 не используются; `otp_challenges.status` (`otp_status`) — `sent` / `verified` / `expired` / `locked` / `failed_delivery` / `superseded`; `sms_outbox.status` (`sms_status`) — `queued` / `sent` / `delivered` / `failed` / `expired` (маппинг — §6.9); `consents.kind` (`consent_kind`) — `personal_data` / `sms` / `biometrics_device` / `activity_sphere` / `face_scan` (`activity_sphere` — ядро §19.3); `devices.platform` (`device_platform`) — `android` / `ios` / `windows`; `sessions.kind` (`session_kind`) — `standard` / `biometric`; `sessions.step_up_method` и `audit_logs.step_up_method` (`step_up_method`) — `pin` / `biometric` / `otp`. Методы запроса `POST /auth/step-up` (`pin` / `otp` / `bio+pin` / `bio+otp`, §8.8) — значения DTO API, а не enum БД: в `step_up_method` записывается фактор, проверенный сервером (`pin` и `bio+pin` → `pin`; `otp` и `bio+otp` → `otp`), биометрический UX-гейт клиента фиксируется в `amr` и в деталях события аудита; значение `biometric` зарезервировано для криптопривязанного `biometricAssertion` (R2). В R1 клиент формирует только методы `pin` и `otp`: кнопка биометрии в `StepUpDialog` скрыта, биометрия без криптопривязки как второй фактор не принимается; `bio+pin` / `bio+otp` — R2 `[РЕШЕНИЕ: ядро §19.3]`. Значения черновика документа (`login` / `register`, `change_phone`, `pin_reset`, `failed_delivery`, `test_mode`, `accepted` / `undelivered`, `biometric_login`, `sms_notifications`) не используются.
+Полную структуру полей фиксирует 07_DATA_MODEL.md; здесь перечислены поля, необходимые для требований этого документа. Значения enum-ов — **только канонические значения 07_DATA_MODEL §6** (ядро §17.3; при расхождении действуют значения 07); документ использует их напрямую `[РЕШЕНИЕ: ядро §17]`: `otp_challenges.purpose` (`otp_purpose`) — `login_or_register` (вход со SCR-01; ветка «вход / регистрация» в enum не хранится, признак существования аккаунта — `otp_challenges.user_id`), `step_up` (step-up по OTP, в том числе сброс PIN «Забыли PIN?»), `phone_change_new` (код на новый номер при смене номера), `kiosk_order` (код заявки покупателя на планшете магазина; сессию не выдаёт — §5.3; ред. 1.11, ADR-115); `phone_change_old` и `customer_link` этим документом в R1 не используются; `otp_challenges.status` (`otp_status`) — `sent` / `verified` / `expired` / `locked` / `failed_delivery` / `superseded`; `sms_outbox.status` (`sms_status`) — `queued` / `sent` / `delivered` / `failed` / `expired` (маппинг — §6.9); `consents.kind` (`consent_kind`) — `personal_data` / `sms` / `biometrics_device` / `activity_sphere` / `face_scan` (`activity_sphere` — ядро §19.3); `devices.platform` (`device_platform`) — `android` / `ios` / `windows`; `sessions.kind` (`session_kind`) — `standard` / `biometric`; `sessions.step_up_method` и `audit_logs.step_up_method` (`step_up_method`) — `pin` / `biometric` / `otp`. Методы запроса `POST /auth/step-up` (`pin` / `otp` / `bio+pin` / `bio+otp`, §8.8) — значения DTO API, а не enum БД: в `step_up_method` записывается фактор, проверенный сервером (`pin` и `bio+pin` → `pin`; `otp` и `bio+otp` → `otp`), биометрический UX-гейт клиента фиксируется в `amr` и в деталях события аудита; значение `biometric` зарезервировано для криптопривязанного `biometricAssertion` (R2). В R1 клиент формирует только методы `pin` и `otp`: кнопка биометрии в `StepUpDialog` скрыта, биометрия без криптопривязки как второй фактор не принимается; `bio+pin` / `bio+otp` — R2 `[РЕШЕНИЕ: ядро §19.3]`. Значения черновика документа (`login` / `register`, `change_phone`, `pin_reset`, `failed_delivery`, `test_mode`, `accepted` / `undelivered`, `biometric_login`, `sms_notifications`) не используются.
 
 ### 2.2. Режимы и правило назначения роли `[РЕШЕНИЕ: D-07, пересмотрено ядром §24.2 — ответ заказчика на Q-001, 2026-10-21]`
 
@@ -79,6 +82,13 @@ flowchart TD
 - **Привязка клиента к карточке 1С** по подтверждённому телефону (§7.8, §7.9; правило ядра §22.12) — **основной сценарий R1**: выполняется при каждой регистрации клиента; финансы клиента — только после `customer_links.confirmed`.
 - Пользователь со статусом `pending_activation` получает токены сессии (чтобы администратор мог активировать его без повторного OTP), но все эндпоинты, кроме `/me`, `/me/profile`, `/me/consents`, `/me/pin` (установка PIN), `/me/biometrics` (включение/выключение биометрии), `/auth/*`, отвечают `403 FORBIDDEN` — так шаг «защита входа» (§7.3, §9.5, §9.6) завершается и до активации; экран SCR-07 опрашивает `/me` не чаще раза в 30 с и переходит в рабочий режим при `status = active`.
 - Смена роли/прав администратором инкрементирует `users.permissions_version`; сервер отвергает access-токен с устаревшим `permissionsVersion` (§8.7).
+- **Технический пользователь планшета магазина (`kind=kiosk`)** `[РЕШЕНИЕ: ADR-115; P-002 §8.2; ред. 1.11]` в схему выше не входит. Его создаёт только подключение планшета `POST /admin/store-tablets` (§8.9; SEC-136): не OTP-вход, не регистрация, не приглашение. Свойства:
+  - `phone_e164 = NULL`, PIN и биометрии нет;
+  - роль `kiosk`, назначить её через `/admin/users/*` нельзя;
+  - статус `active` задаётся явно;
+  - имя планшета — в `user_profiles.full_name`, склад планшета — в `user_profiles.home_warehouse_id`;
+  - одно устройство и одна сессия (§8.9);
+  - покупатель на планшете учётной записи не получает: код `kiosk_order` подтверждает только номер для заявки (§5.3).
 
 ### 2.3. Что хранится и что нет
 
@@ -98,6 +108,8 @@ flowchart TD
 ---
 
 **`/me` (уточнено на этапе D (D PR-03)).** Состав ответа `GET /me` — по OpenAPI `Me` (08 — владелец DTO): полный номер — `profile.phone`, клиентская привязка — `customerLink.displayNameMasked`/`displayName`; поля `phoneMasked` и `security.stepUpUntil` не возвращаются.
+
+**`/me` планшета магазина (ред. 1.11, ADR-115).** С токеном планшета (`kind=kiosk`) `GET /me` доступен по праву `kiosk.self.read`. Ответ — только `{kind: "kiosk", tablet: {id, name, warehouseId}}`: без телефона, ФИО, ролей, сессий и клиента (P-002 §8.3; DTO — 08). Маршруты `/me/*` планшету недоступны.
 
 ## 3. Поле номера телефона (`PhoneField`)
 
@@ -320,7 +332,7 @@ sequenceDiagram
 | Длина | 6 десятичных цифр; ведущие нули сохраняются (`004512`); 4 цифры недопустимы | `[ПОДТВЕРЖДЕНО: NIST SP 800-63B-4 §3.1.3.2 «at least six decimal digits»; ASVS 5.0 6.5.3 CSPRNG]` |
 | Источник случайности | CSPRNG платформы backend (`crypto.randomInt(0, 1_000_000)` в Node.js) | `[ТИПОВО: Node 24 crypto, требует проверки на этапе Foundation]` |
 | Привязка | Код действителен только для своего `challenge_id`, `phone_e164`, `purpose` и `device_id`, с которым создан | `[ПОДТВЕРЖДЕНО: ASVS 5.0 6.6.2]` |
-| Назначения (`purpose`, enum `otp_purpose` 07 §6) | `login_or_register` (вход со SCR-01; ветку вход/регистрация определяет сервер, §4.1), `step_up` (в том числе сброс PIN), `phone_change_new` (смена номера); `phone_change_old`, `customer_link` — резерв 07 | `[РЕШЕНИЕ: R6 §1.2; ядро §17]` |
+| Назначения (`purpose`, enum `otp_purpose` 07 §6) | `login_or_register` (вход со SCR-01; ветку вход/регистрация определяет сервер, §4.1), `step_up` (в том числе сброс PIN), `phone_change_new` (смена номера), `kiosk_order` (заявка покупателя на планшете магазина: выдаётся `POST /kiosk/order-otp`, принимается только `POST /kiosk/orders`, сессию не выдаёт — §5.3); `phone_change_old`, `customer_link` — резерв 07 | `[РЕШЕНИЕ: R6 §1.2; ядро §17]`; `kiosk_order` — `[РЕШЕНИЕ: ADR-115]` |
 
 ### 5.2. Хранение
 
@@ -341,6 +353,41 @@ sequenceDiagram
 | Cooldown повторной отправки | **60 с** (`OTP_RESEND_COOLDOWN_SECONDS=60`) | 30–120 с | `[РЕШЕНИЕ: D-10]` |
 | Счётчик попыток | Инкрементируется до сравнения (чтобы падение процесса после сравнения не давало бесплатную попытку) | — | проектное |
 
+**Код `kiosk_order` — заявка с планшета магазина (ред. 1.11)** `[РЕШЕНИЕ: ADR-115; P-002 §8.5]`. TTL, число попыток, cooldown, HMAC-хранение и тестовый режим (§5.8; `*` — только `dev`, ADR-109) — общие с другими назначениями. Отличия:
+
+1. **Сессию не выдаёт.** Код запрашивает планшет своим токеном: `POST /kiosk/order-otp`, только при непустой корзине. Ответ `202 {challengeId, resendAfterSec}` одинаков для любого номера (SEC-017). Принимает код только `POST /kiosk/orders`:
+   - `/auth/otp/verify` на код `kiosk_order` отвечает `404 NOT_FOUND`: назначение не совпадает (`pos-api/src/auth/otp/otp.service.ts:327-328`). Код входа в `/kiosk/orders` тоже даёт `404`.
+   - Для покупателя не создаются `users`, `devices`, `sessions`, `customer_links`, `consents` и `registration_token`. В строке кода `user_id IS NULL`.
+   - Карточку клиента сервер ищет только после верного кода (§7.8 (в)), поэтому перебор номеров не вызывает 1С.
+2. **Привязка.** Код привязан к планшету, номеру и корзине:
+   - планшет — `kiosk_tablet_id` и `device_key` планшета;
+   - номер — `phone_e164`;
+   - корзина — `cart_id`;
+   - в строку кода пишется ещё версия текста информирования `notice_version` (11 §10.3; столбцы — 07).
+
+   Порядок проверок `POST /kiosk/orders`:
+   1. подпись, срок и корзина `previewToken`;
+   2. код существует и его `purpose='kiosk_order'`;
+   3. `kiosk_tablet_id` кода — планшет вызывающего;
+   4. `cart_id` кода — `cartId` тела;
+   5. только затем `OtpService.check`.
+
+   На шагах 1–4 код не проверяется и попытка не тратится:
+   - отказ шага 1 — `422 PRICE_CHANGED` с `reason` `preview_*` (08);
+   - несовпадение на шагах 2–4 — `404 NOT_FOUND`;
+   - `409 DEVICE_MISMATCH` планшету не отдаётся (08; AUTH-054).
+
+   Шаг 3 нужен потому, что `OtpService.check` при чужом устройстве тратит попытку (`otp.service.ts:330-341`). Без него один планшет мог бы израсходовать попытки кода другого.
+3. **Один действующий код на планшет.** Новый запрос кода с того же планшета на любой номер переводит прежний код планшета в `superseded`. На этом держится «Изменить номер»; отказа «код уже есть» нет. Повтор на тот же номер раньше cooldown — `429 OTP_RATE_LIMITED {retryAfterSec}`, на планшете это таймер. Код на тот же номер с другого планшета тоже вытесняет этот: один `sent`-код на номер и назначение (07).
+4. **Погашение.** Действующие коды планшета гасятся:
+   - автосбросом `POST /kiosk/reset`;
+   - отзывом планшета;
+   - аварийным выходом со связью `POST /kiosk/exit`;
+   - подключением заново (§8.9).
+
+   Код `sent` переходит в `superseded`. У верного, но ещё не погашенного кода ставится `replayed_at`. Ввод такого кода → `422 OTP_EXPIRED`.
+5. **Окно повтора.** Верный код гасится в короткой транзакции создания заявки (`allowReplay`, окно повтора 60 с — как §5.6). Один верный код даёт ровно одну заявку. Если заявку отклонили проверки корзины или 1С (`409`/`422`), код не гасится: после исправления корзины тот же код годен в окне повтора (P-002 §8.5 п. 3).
+
 ### 5.4. Лимиты отправки (антизлоупотребление SMS, SRC-B-105, SRC-B-117)
 
 | Ключ лимита | Лимит | Поведение при превышении | Статус |
@@ -348,12 +395,25 @@ sequenceDiagram
 | Номер (E.164) | **3 отправки / 15 мин**, **10 / 24 ч** (`OTP_MAX_SENDS_PER_PHONE_15M=3`, `OTP_MAX_SENDS_PER_PHONE_24H=10`) | `429 OTP_RATE_LIMITED {retryAfterSec}`; аудит `auth.otp.rate_limited` | `[РЕШЕНИЕ: D-10]` |
 | IP-адрес (с учётом `X-Forwarded-For` от `pos-proxy`) | 20 / 10 мин, 100 / 24 ч (`OTP_MAX_SENDS_PER_IP_10M=20`, `…_24H=100`) — NAT операторов КР: не ужесточать без телеметрии | `429 RATE_LIMITED` | `[НЕ ПОДТВЕРЖДЕНО — предложение R6 §1.3; Q-004]` |
 | `device_id` | 5 / 10 мин, 20 / 24 ч (`OTP_MAX_SENDS_PER_DEVICE_10M=5`, `…_24H=20`); `device_id` подделываем → только дополнительный сигнал | `429 RATE_LIMITED` | `[НЕ ПОДТВЕРЖДЕНО — предложение]` |
+| Планшет магазина (код `kiosk_order`, по токену планшета — `store_tablets.id`, а не по `X-Device-Id`) | **30 / 1 ч**, **200 / 24 ч** (`app_settings` `kiosk_otp_per_hour=30`, `kiosk_otp_per_day=200`; значения по умолчанию — в коде; области `rate_limit_counters` `otp_kiosk_tablet_1h`, `otp_kiosk_tablet_24h`); строки IP и `device_id` выше для запросов с токеном планшета **не применяются** — их заменяет лимит планшета (общий Wi-Fi магазина); один действующий код на планшет (§5.3) | `429 KIOSK_RATE_LIMITED`; аудит `kiosk.limit_reached`; алерт (11 §6) | `[РЕШЕНИЕ: ADR-115; Р-14 (а)]` |
 | Глобальный | `OTP_GLOBAL_PER_MIN=60` на весь сервис → circuit-breaker отправки на 5 мин + алерт (защита бюджета SMSPro при массовой атаке) | `503 SMS_PROVIDER_ERROR` (нейтрально) | `[НЕ ПОДТВЕРЖДЕНО — предложение]` |
 | Аннулированные коды подряд на номер | 3 подряд `locked`/исчерпанных → пауза 30 мин на номер (`OTP_LOCK_AFTER_LOCKED_CODES=3`, `OTP_PHONE_PAUSE_MINUTES=30`) + алерт; аккаунт **не блокируется навсегда** | `423 OTP_LOCKED` | `[ПОДТВЕРЖДЕНО: OWASP Forgot Password CS — не блокировать аккаунт; значения — Q-004]` |
 
 Счётчики — в `rate_limit_counters` (PostgreSQL, скользящее окно, ключ `scope:value:window`), чтобы лимиты переживали перезапуск `pos-api` и работали при нескольких репликах `[РЕШЕНИЕ: D-37, D-44 — без Redis: rate-limit OTP в PostgreSQL]`. Лимит по номеру применяется **до** лимита по IP, чтобы ответ на «горячий» номер был идентичен для всех клиентов.
 
 **Окна и хранение лимитов (уточнено на этапе E (EQ-AUTH-04, D F-01, A-02; DQ-01); ADR-088).** Все лимиты отправки (номер 3/15 мин и 10/24 ч, IP 20/10 мин и 100/24 ч, устройство 5/10 мин и 20/24 ч, глобальный `OTP_GLOBAL_PER_MIN`) считаются **фиксированными окнами** счётчиков `rate_limit_counters` (07 §5.12) одним атомарным списанием (отказ квоту не расходует); на границе окна возможно до 2× лимита за короткий интервал. При `failed_delivery` (§6.8) возвращается только квота **номера**; квоты IP и устройства не возвращаются. Пауза номера после трёх аннулированных кодов отсчитывается от `otp_challenges.locked_at` (миграция 0003). Учитывается ли выдача аварийного кода (§6.13) в лимитах номера — Q-298 (сейчас — не учитывается).
+
+**Лимиты кода планшета (ред. 1.11)** `[РЕШЕНИЕ: ADR-115; P-002 §14.2]`. Какие лимиты действуют на код `kiosk_order`:
+- **номер** — как строка «Номер (E.164)»: 3 за 15 мин и 10 в сутки. Квоты номера общие для всех назначений, потому что счётчик ведётся по номеру, а не по назначению. Пауза номера после трёх аннулированных кодов считается для каждого назначения отдельно;
+- **планшет** — строка «Планшет магазина»: 30 в час и 200 в сутки. Квоты планшета списываются тем же атомарным списанием, что и квоты номера и глобальный лимит;
+- **IP и `device_id`** — для токена планшета не применяются;
+- **глобальный лимит** `OTP_GLOBAL_PER_MIN` и автомат отключения — как есть.
+
+Остальное:
+- до списания квот запрос кода блокирует сначала планшет, затем номер;
+- при `failed_delivery` возвращается только квота номера, как для других назначений;
+- алерт «≥ 10 кодов с одного планшета за 10 мин» — 11 §6;
+- при `KIOSK_MODE=false` до лимитов дело не доходит: `POST /kiosk/order-otp` отвечает `403 KIOSK_DISABLED` (08).
 
 ### 5.5. Антиперебор номеров — совместимость с требованием промта
 
@@ -586,7 +646,8 @@ NIST SP 800-63B относит SMS/PSTN к restricted-аутентификато
 | Аспект | Требование | Статус |
 |---|---|---|
 | Шаблон OTP | `Kod: {code}. Optomstroy` (латиница, 23 символа → 1 часть из 160) — по умолчанию; кириллический вариант `Код: {code}. Оптомстрой` (23 символа ≤ 70 → тоже 1 часть). Шаблон в `SMS_OTP_TEMPLATE`, плейсхолдер `{code}`; при длине > 1 части конфигурация отвергается при старте | `[ТРЕБУЕТ РЕШЕНИЯ ЗАКАЗЧИКА: Q-029 — язык и текст]` |
-| Другие тексты | смена номера: `Kod: {code}. Smena nomera Optomstroy`; step-up: `Kod: {code}. Podtverzhdenie Optomstroy`; информационные SMS (новое устройство, смена номера) — опционально, Q-038 | `[НЕ ПОДТВЕРЖДЕНО — предложение]` |
+| Другие тексты | смена номера: `Kod: {code}. Smena nomera Optomstroy`; step-up: `Kod: {code}. Podtverzhdenie Optomstroy`; информационные SMS (новое устройство, смена номера) — опционально, Q-038. **Сейчас (ред. 1.11)** отдельных текстов в коде нет. Все назначения, кроме `kiosk_order`, используют единый шаблон `SMS_OTP_TEMPLATE` (`pos-api/src/common/config/env.schema.ts:117-120`). Текст по шаблону собирают `pos-api/src/auth/otp/otp.provider.ts:128` и `pos-api/src/auth/otp/queued-sms-otp.provider.ts:36`. Тексты этой строки остаются предложением | `[НЕ ПОДТВЕРЖДЕНО — предложение]` |
+| Текст кода `kiosk_order` (планшет магазина, ключ шаблона `otp_kiosk_order`) | `Оптомстрой: код {code} для заявки с планшета. Никому не сообщайте`: 65 символов при коде из 6 цифр, кириллица → 1 часть UCS-2 из 70. Текст называет цель кода и предупреждает «никому не сообщайте». Так код заявки нельзя выдать за код входа: SMS входа цель не называет. Текст — константа в коде, а не переменная окружения. Длина постоянна, поэтому 1 часть проверяется тестом, а не при старте. Текст SMS входа (строка «Шаблон OTP») не меняется. В `dev_outbox` поддельный шлюз пишет для этого кода ключ `otp_login` и полный текст; dev CHECK не меняется (ADR-115 п. 25) | `[РЕШЕНИЕ: ADR-115; Р-21 (а) — ответ владельца 2026-11-04 «Да, все рекомендации (Рекоменд.)», вариант «Р-21 а: SMS по-русски»]`; Q-029 по тексту SMS входа остаётся открытым |
 | Запрещённые символы | `{}[]^~\|€` занимают 2 символа в GSM-7; «№» считается нелатинским символом → в латинском шаблоне не использовать | `[ПОДТВЕРЖДЕНО: R2 §8.5 (S4 п.5–6)]` |
 | Стоп-слова | список не опубликован; шаблон не содержит ничего, кроме слова «Kod/Код», цифр и бренда; при `status=6` — алерт | `[ПОДТВЕРЖДЕНО: наличие фильтра; список — НЕ ПОДТВЕРЖДЕНО]` |
 | Имя отправителя | латиница ≤ 11 символов (буквы, цифры, точка, тире) или 14 цифр; кириллица недопустима; регистрируется в ЛК («Мой профиль»), заявка на `names@nikita.kg`; согласование с операторами **от 7–10 рабочих дней**; подмена имени требует подписанного договора; «международные имена» тарифицируются на порядок дороже; до регистрации имя по умолчанию — номер телефона из регистрации (SMS придёт «с номера»); какое значение передавать в `<sender>` до согласования имени и не вернёт ли шлюз при этом `status=5` — `[НЕ ПОДТВЕРЖДЕНО: вопрос smspro@nikita.kg (Q-029, Q-164); проверить smoke-тестом до согласования имени — §6.12 шаг (3)]` | `[ПОДТВЕРЖДЕНО: R2 §8.3 (S4 п.8–10, S5, S6, S8) — правила имени и имя по умолчанию; договор — ТИПОВО; поведение <sender> до согласования — НЕ ПОДТВЕРЖДЕНО]` |
@@ -631,7 +692,7 @@ type AccountInfo = { status: number; state: 0|1; account: string /* decimal */; 
 
 ### 6.9. Журнал `sms_outbox`, метрики, алерты
 
-- Таблица `sms_outbox` (ядро §6; столбцы и их имена — 07 §5.61, канонические): `id uuid v7`, `provider_message_id` (значение тега `id` SMSPro — наш `transactionId`: ровно 12 символов `[A-Za-z0-9]` из CSPRNG, UNIQUE; не UUID — 07 исправляет `[РЕШЕНИЕ: ядро §18.2 п.9]`), `phone_e164` (адресат — ПДн, ретенция 90 дней; администратору показывается только маска), `template_key` (`otp_login` — вход/регистрация, `otp_step_up`, `otp_phone_change`, `otp_customer_link`), `provider` (`smspro` / `fake`), `provider_status_code`, `delivery_status` (код `report` из `/api/dr`), `status` (enum `sms_status` 07 §6: `queued` — в очереди/ретраях `pos-worker`; `sent` — принято шлюзом, `status=0`/`11`, `report` 0/1/6; `delivered` — `report=3`; `failed` — итог `PERMANENT`/`CONFIG_ERROR`/`INSUFFICIENT_FUNDS`/`INVALID_PHONE` или `RETRYABLE` после ретраев, либо `report` 2/4/5; `expired` — `report=7`), `attempts`, `sent_at`, `delivered_at`, `error` (без секретов), `otp_challenge_id`, `cost_units`. Этим документом в 07 предлагаются дополнительные столбцы `outcome`, `sms_parts`, `phones_recognized`, `latency_ms` (§17 п.16). **Нет** полей `text` и `code`; информационные SMS (Q-038) потребуют нового значения `template_key` в 07 при включении опции.
+- Таблица `sms_outbox` (ядро §6; столбцы и их имена — 07 §5.61, канонические): `id uuid v7`, `provider_message_id` (значение тега `id` SMSPro — наш `transactionId`: ровно 12 символов `[A-Za-z0-9]` из CSPRNG, UNIQUE; не UUID — 07 исправляет `[РЕШЕНИЕ: ядро §18.2 п.9]`), `phone_e164` (адресат — ПДн, ретенция 90 дней; администратору показывается только маска), `template_key` (`otp_login` — вход/регистрация, `otp_step_up`, `otp_phone_change`, `otp_customer_link`, `otp_kiosk_order` — код заявки с планшета магазина, §6.7; ред. 1.11, ADR-115), `provider` (`smspro` / `fake`), `provider_status_code`, `delivery_status` (код `report` из `/api/dr`), `status` (enum `sms_status` 07 §6: `queued` — в очереди/ретраях `pos-worker`; `sent` — принято шлюзом, `status=0`/`11`, `report` 0/1/6; `delivered` — `report=3`; `failed` — итог `PERMANENT`/`CONFIG_ERROR`/`INSUFFICIENT_FUNDS`/`INVALID_PHONE` или `RETRYABLE` после ретраев, либо `report` 2/4/5; `expired` — `report=7`), `attempts`, `sent_at`, `delivered_at`, `error` (без секретов), `otp_challenge_id`, `cost_units`. Этим документом в 07 предлагаются дополнительные столбцы `outcome`, `sms_parts`, `phones_recognized`, `latency_ms` (§17 п.16). **Нет** полей `text` и `code`; информационные SMS (Q-038) потребуют нового значения `template_key` в 07 при включении опции.
 - Лог отправки: `transactionId`, `phoneMasked` (`996700***001`), `purpose`, `providerStatus`, `smscnt`, `phonesRecognized`, `latencyMs`, `attempt`, `requestId`. Никогда: `text`, OTP, `pwd`, `X-API-KEY`, полный номер (SRC-B-116).
 - Метрики: `sms_send_total{outcome,status}`, `sms_send_latency_ms`, `sms_retry_total`, `sms_delivery_report_total{report}`, `sms_balance_som`, `sms_circuit_open` (gauge), `sms_dlr_unknown_id_total`.
 - Алерты (канал — Q-032): баланс < `SMSPRO_BALANCE_ALERT_SOM`; доля `status≠0` > 5 % за 5 мин; любой `status∈{2,3,5}`; `status=11` при `APP_ENV=prod`; доля `report∈{2,4,7}` > 20 % за час; `state=1`; circuit-breaker открыт > 5 мин.
@@ -690,8 +751,10 @@ AUTH_OTP_TEST_PHONES=
 AUTH_ACCESS_TTL_SECONDS=900
 AUTH_REFRESH_TTL_STAFF_DAYS=7
 AUTH_REFRESH_TTL_CUSTOMER_DAYS=30
+AUTH_REFRESH_TTL_KIOSK_DAYS=180       # планшет магазина: абсолютный срок сессии (§8.9; Р-22 (а), ADR-115)
 AUTH_REFRESH_IDLE_STAFF_HOURS=24
 AUTH_REFRESH_IDLE_CUSTOMER_DAYS=14
+AUTH_REFRESH_IDLE_KIOSK_DAYS=7        # планшет магазина: срок простоя refresh (§8.9)
 AUTH_REFRESH_GRACE_SECONDS=30
 SESSION_IDLE_LOCK_MINUTES=30          # имя — ядро §17.7
 AUTH_BACKGROUND_LOCK_MINUTES=5
@@ -873,9 +936,9 @@ sequenceDiagram
 
 ### 7.8. Поиск клиента 1С по подтверждённому номеру (SRC-B-138, SRC-E-134) `[РЕШЕНИЕ: D-08]`
 
-Применяется в двух точках: (а) при регистрации клиента (`customer`) — **основной сценарий R1** (ядро §24.2; Q-001 закрыт) и (б) при создании клиента продавцом/кассиром на SCR-26 (правила — 10_POS_BUSINESS_RULES CUST-; здесь — общий алгоритм). В точке (б) SMS-подтверждение номера клиента (CUST-013) — **R2** и в R1 не выполняется `[РЕШЕНИЕ: ядро §19.2]`; создание при подозрении на дубликат — `POST /customers` с `forceReason` (08).
+Применяется в двух точках: (а) при регистрации клиента (`customer`) — **основной сценарий R1** (ядро §24.2; Q-001 закрыт) и (б) при создании клиента продавцом/кассиром на SCR-26 (правила — 10_POS_BUSINESS_RULES CUST-; здесь — общий алгоритм). С ред. 1.11 есть и третья точка: (в) заявка с планшета магазина после верного кода `kiosk_order` (§5.3). Там поиск вне транзакции даёт клиента заявки. Правило надёжного номера и результат `kioskCustomerMatch` задаёт 10 (KIOSK-014; P-002 §8.6). `customer_links` не создаются, карточка планшету не показывается `[РЕШЕНИЕ: ADR-115]`. В точке (б) SMS-подтверждение номера клиента (CUST-013) — **R2** и в R1 не выполняется `[РЕШЕНИЕ: ядро §19.2]`; создание при подозрении на дубликат — `POST /customers` с `forceReason` (08).
 
-1. Ключ поиска — **подтверждённый** `phone_e164` (владение доказано OTP). Поиск по локальной реплике `customers`/`customer_contacts` (нормализованные номера) и, если 1С доступна, синхронный запрос `onec-adapter` (объекты 1С — `[ТИПОВО]`, см. 05) с таймаутом 5 с; при недоступности 1С — по реплике с пометкой возраста данных.
+1. Ключ поиска — **подтверждённый** `phone_e164` (владение доказано OTP). Поиск по локальной реплике `customers`/`customer_contacts` (нормализованные номера) и, если 1С доступна, синхронный запрос `onec-adapter` (объекты 1С — `[ТИПОВО]`, см. 05) с таймаутом `ONEC_SYNC_CHECK_TIMEOUT_MS` (по умолчанию 6 с — ядро §19.2, 16 §4.3, `pos-api/src/common/config/env.schema.ts:140`; до ред. 1.11 здесь было записано 5 с); при недоступности 1С — по реплике с пометкой возраста данных.
 2. «Другие разрешённые признаки» (промт): точное совпадение второго телефона контакта; совпадение ФИО + год рождения — **только как подсказка** администратору при конфликте, не как автоматическое совпадение (ФИО неуникально; год рождения в 1С, как правило, отсутствует) `[НЕ ПОДТВЕРЖДЕНО — перечень признаков согласовать, Q-025]`.
 3. Результат: `0` совпадений → для (а) `customer_links` не создаётся, пользователь работает как новый клиент; новая карточка 1С при регистрации **не создаётся автоматически** (SRC-B-144) — создаётся только при первом заказе по правилам CUST-/Q-025; `1` совпадение → `customer_links(status=proposed)`; `≥2` совпадений (один телефон у нескольких контрагентов — типично для ЮЛ с несколькими контактами) → `customer_links(status=conflict)` на каждую карточку + задача администратору (SRC-B-146).
 4. Пользователю показывается **только** непубличная часть: наименование карточки частично замаскировано (`ОсОО «Стр***»`) и предложение «Это ваша организация?» — без долгов, истории, скидок (SRC-B-145).
@@ -914,18 +977,31 @@ stateDiagram-v2
 |---|---|---|
 | Формат/подпись | JWS, алгоритм `EdDSA` (Ed25519) или `ES256`; `kid` в заголовке для ротации ключей; allowlist алгоритмов на сервере (`alg=none`, `HS*` отвергаются) | `[РЕШЕНИЕ: D-12; ПОДТВЕРЖДЕНО: OWASP JWT CS]` |
 | TTL | **15 мин** (`AUTH_ACCESS_TTL_SECONDS=900`) для всех ролей (ядро D-12; предложение R6 «30 мин для customer» не принято — одно значение проще) | `[РЕШЕНИЕ: D-12; Q-004]` |
-| Claims | `iss=optomstroy-pos`, `aud=optomstroy-api`, `sub=user_id`, `kind` (`staff`/`customer`), `roles[]`, `permissionsVersion`, `deviceId`, `sid` (session id), `jti`, `iat`, `exp`, `amr[]` (`["sms"]`, `["sms","bio"]`, `["sms","pin"]`), `stepUpUntil` (unix, опционально). **Без PII** (ФИО, телефон) | `[РЕШЕНИЕ: D-12]` |
+| Claims | `iss=optomstroy-pos`, `aud=optomstroy-api`, `sub=user_id`, `kind` (`staff`/`customer`/`kiosk` — `kiosk` у сессии планшета магазина, §8.9), `roles[]`, `permissionsVersion`, `deviceId`, `sid` (session id), `jti`, `iat`, `exp`, `amr[]` (`["sms"]`, `["sms","bio"]`, `["sms","pin"]`; у планшета — `["pin"]`, §8.9), `stepUpUntil` (unix, опционально). **Без PII** (ФИО, телефон) | `[РЕШЕНИЕ: D-12]`; `kiosk` — `[РЕШЕНИЕ: ADR-115]` |
 | Хранение на клиенте | только в памяти процесса (Riverpod-провайдер); не в secure storage, не в drift | `[РЕШЕНИЕ: ядро §18.2 п.2; R6 §2.3]` |
 | Проверка на сервере | подпись, `iss`, `aud`, `exp`, `jti` не в denylist, `permissionsVersion == users.permissions_version` (кэш 60 с), `users.status=active \| pending_activation`, `sessions.revoked_at IS NULL` (проверка по `sid` через кэш 60 с) | проектное |
 
 ### 8.2. Refresh-токен и таблица `sessions`
 
 - Непрозрачная строка 32 байта CSPRNG, base64url (256 бит); в БД только `refresh_hash = SHA-256(token)` (pepper не нужен при 256 бит энтропии) `[ПОДТВЕРЖДЕНО: ASVS 7.2.3; R6 §2.2]`.
-- Поля `sessions`: `id uuid v7` (= `sid`), `user_id`, `device_id`, `family_id`, `kind` (`standard` / `biometric`), `refresh_hash`, `prev_refresh_hash`, `superseded_refresh_hash` `[НОВОЕ ИМЯ]` (хэш токена, вытесненного ротацией в окне грации или повтором verify, §5.6, §8.3), `grace_used_at` `[НОВОЕ ИМЯ]`, `rotated_at`, `unlocked_until` `[НОВОЕ ИМЯ]` (§8.8, Windows), `issued_at`, `expires_at` (абсолютный), `last_used_at`, `idle_expires_at`, `revoked_at`, `revoke_reason` (по 07 §5.9: `logout` / `logout_all` / `reuse_detected` / `admin` / `phone_changed` / `role_changed` / `expired` / `device_revoked` / `blocked` / `session_limit`, дополнено значениями `device_mismatch` и `biometric_invalidated` — 07 добавляет их в CHECK `[РЕШЕНИЕ: ядро §18.2 п.8]`), `client_platform`, `app_version`, `ip_last`, `created_from_challenge_id`, `amr`.
-- Абсолютный срок: **7 дней** сотрудник (`staff`), **30 дней** клиент (`customer`) (`AUTH_REFRESH_TTL_STAFF_DAYS=7`, `AUTH_REFRESH_TTL_CUSTOMER_DAYS=30`); idle-срок refresh (не использовался): 24 ч сотрудник / 14 дней клиент (`AUTH_REFRESH_IDLE_STAFF_HOURS=24`, `…_CUSTOMER_DAYS=14`) `[РЕШЕНИЕ: D-12; Q-004; отклонение от NIST AAL2 12/24 ч — остаточный риск, принимает заказчик]`.
-- Лимит одновременных сессий: сотрудник — 3 устройства, клиент — 5; при превышении отзывается самая старая (`session_limit`) с in-app уведомлением `[НЕ ПОДТВЕРЖДЕНО — предложение; Q-154 (ведущий; Q-166 — дубль в части лимита устройств, 14 §4.2); значения — Q-004]`.
+- Поля `sessions`: `id uuid v7` (= `sid`), `user_id`, `device_id`, `family_id`, `kind` (`standard` / `biometric`), `refresh_hash`, `prev_refresh_hash`, `superseded_refresh_hash` `[НОВОЕ ИМЯ]` (хэш токена, вытесненного ротацией в окне грации или повтором verify, §5.6, §8.3), `grace_used_at` `[НОВОЕ ИМЯ]`, `rotated_at`, `unlocked_until` `[НОВОЕ ИМЯ]` (§8.8, Windows), `issued_at`, `expires_at` (абсолютный), `last_used_at`, `idle_expires_at`, `revoked_at`, `revoke_reason` (по 07 §5.9: `logout` / `logout_all` / `reuse_detected` / `admin` / `phone_changed` / `role_changed` / `expired` / `device_revoked` / `blocked` / `session_limit`, дополнено значениями `device_mismatch` и `biometric_invalidated` — 07 добавляет их в CHECK `[РЕШЕНИЕ: ядро §18.2 п.8]`; с ред. 1.11 — `kiosk_revoked`: отзыв, аварийный выход или подключение заново планшета магазина, §8.9, ADR-115), `client_platform`, `app_version`, `ip_last`, `created_from_challenge_id`, `amr`.
+- Абсолютный срок: **7 дней** сотрудник (`staff`), **30 дней** клиент (`customer`) (`AUTH_REFRESH_TTL_STAFF_DAYS=7`, `AUTH_REFRESH_TTL_CUSTOMER_DAYS=30`); idle-срок refresh (не использовался): 24 ч сотрудник / 14 дней клиент (`AUTH_REFRESH_IDLE_STAFF_HOURS=24`, `…_CUSTOMER_DAYS=14`) `[РЕШЕНИЕ: D-12; Q-004; отклонение от NIST AAL2 12/24 ч — остаточный риск, принимает заказчик]`. Планшет магазина (`kiosk`): 180 дней всего, 7 дней простоя (`AUTH_REFRESH_TTL_KIOSK_DAYS=180`, `AUTH_REFRESH_IDLE_KIOSK_DAYS=7`; ниже и §8.9) `[РЕШЕНИЕ: ADR-115; Р-22 (а)]`.
+- Лимит одновременных сессий: сотрудник — 3 устройства, клиент — 5, планшет магазина — 1 (§8.9); при превышении отзывается самая старая (`session_limit`) с in-app уведомлением `[НЕ ПОДТВЕРЖДЕНО — предложение; Q-154 (ведущий; Q-166 — дубль в части лимита устройств, 14 §4.2); значения — Q-004]`.
 
 **Лимит устройств (уточнено на этапе D (D A-20); значения — Q-154).** Staff 3, customer 5 (константы); повторный OTP-вход на том же устройстве завершает прежнюю стандартную сессию этого устройства (`logout`), затем при превышении отзываются самые старые (`session_limit`).
+
+**Сессия планшета магазина (`kind=kiosk`, ред. 1.11)** `[РЕШЕНИЕ: ADR-115; сроки — Р-22 (а)]`:
+- сроки: абсолютный — **180 дней** (`AUTH_REFRESH_TTL_KIOSK_DAYS=180`), простой refresh — **7 дней** (`AUTH_REFRESH_IDLE_KIOSK_DAYS=7`);
+- сессия **одна на планшет**, её выдаёт только подключение или подключение заново (§8.9);
+- `sessions.kind = standard`, enum `session_kind` не меняется, biometric-сессии у планшета нет;
+- `amr = ["pin"]`: подключение подтверждено step-up администратора по PIN. Новое значение `amr` не вводится (CHECK `sessions_amr_chk` не меняется, ADR-115 п. 18).
+
+Сейчас срок и число сессий выбираются двоичной проверкой `kind === 'staff'`:
+- `sessionTerms` и `nextIdleExpiry` — `pos-api/src/auth/sessions/session-issuer.service.ts:43-64`;
+- лимит сессий — `:170`;
+- срок `biometric_refresh` — `pos-api/src/profile/security.service.ts:158-166`.
+
+Без своей ветки `kiosk` получил бы значения покупателя: 30 дней и 5 сессий. Поэтому у `kiosk` своя ветка во всех этих местах (P-002 TAB-1-03, TAB-1-11).
 
 ### 8.3. Ротация и reuse-detection (`POST /auth/refresh`) `[ПОДТВЕРЖДЕНО: RFC 9700 §4.14.2]`
 
@@ -942,6 +1018,9 @@ sequenceDiagram
   else найден по prev_refresh_hash, rotated_at > now() − 30 с, grace_used_at IS NULL, device_id совпадает, текущий refresh ещё не использовался
     API->>DB: UPDATE: superseded_refresh_hash = refresh_hash, refresh_hash = sha256(R3), grace_used_at = now()
     API-->>App: 200 — новая ротация R3 в той же семье и сессии, без отзыва
+  else kind=kiosk, найден по prev_refresh_hash вне окна, grace_used_at IS NULL, device_id совпадает, текущий refresh ещё не использовался (§8.9)
+    API->>DB: как в окне грации — superseded_refresh_hash = refresh_hash, refresh_hash = sha256(R3), grace_used_at = now()
+    API-->>App: 200 — новая ротация R3 в той же семье и сессии, без отзыва
   else найден по prev_refresh_hash вне окна или повторно, device_id совпадает, текущий refresh ещё не использовался (last_used_at ≤ rotated_at)
     API->>DB: сессия не отзывается, лог auth.refresh.replay
     API-->>App: 401 UNLOCK_REQUIRED {reason:"refresh_replay"} если PIN задан, иначе 401 SESSION_REVOKED {reason:"refresh_replay"} только для этой sid
@@ -954,6 +1033,8 @@ sequenceDiagram
   else device_id не совпадает
     API->>DB: revoke session, audit
     API-->>App: 401 SESSION_REVOKED {reason:"device_mismatch"}
+  else kind=kiosk, сессия отозвана с revoke_reason = kiosk_revoked (§8.9)
+    API-->>App: 401 KIOSK_REVOKED
   else не найден / истёк / отозван
     API-->>App: 401 SESSION_REVOKED
   end
@@ -961,7 +1042,20 @@ sequenceDiagram
 
 - **Окно грации** (`AUTH_REFRESH_GRACE_SECONDS=30`) `[РЕШЕНИЕ: этот документ; вариант (а) замечания проверяющего]`: сервер хранит только хэши и не может повторно выдать уже выданный `R2`. Повтор `R1` (ответ с `R2` потерян) в течение 30 с после ротации выдаёт **новую** ротацию `R3` в той же сессии (`sid`) и семье (`family_id`) без отзыва; хэш `R2` переносится в `superseded_refresh_hash`. Окно грации используется **один раз** на ротацию и только пока текущий токен (`R2`) ещё не использовался. Предъявление `R2` после выдачи `R3` (вытесненный токен) и предъявление `R1` после того, как текущий токен уже использовался, расцениваются как повторное использование → отзыв всей семьи (`reuse_detected`).
 - **Поздний повтор после потери ответа** (`refresh_replay`) `[РЕШЕНИЕ: этот документ, волна 4; уточнение D-12, совместимое с reuse-detection]`: сеть может отсутствовать дольше 30 с (один таймаут 15 с и backoff), и клиент предъявит `R1` вне окна. Если предъявлен непосредственно предшествующий токен (`prev_refresh_hash`) с того же `device_id`, сессия не отозвана и не истекла, а текущий токен после ротации ещё ни разу не использовался (`last_used_at ≤ rotated_at`: не было ни `/auth/refresh`, ни запросов с access-токеном, выданным при ротации), это признак потерянного ответа, а не кражи: семья **не** отзывается, `session.reuse_detected` не пишется. Ответ — `401 UNLOCK_REQUIRED {reason:"refresh_replay"}`; клиент открывает SCR-08 с PIN и вызывает `/auth/unlock {method:"pin", refreshToken: R1, pin}`; при верном PIN — новая ротация `R3` в той же сессии, текущий токен переносится в `superseded_refresh_hash` (его последующее предъявление — повторное использование). Если у пользователя PIN не задан (`customer`), ответ — `401 SESSION_REVOKED {reason:"refresh_replay"}` с отзывом **только этой** сессии (`sid`), без алерта; вход — по OTP. Для `kind=biometric` правило то же: `refresh_replay` отзывает только biometric-сессию, клиент удаляет `biometric_refresh` и предлагает PIN/OTP. Токен старше одного поколения сервер не находит (его хэш не хранится) → `401 SESSION_REVOKED` без отзыва семьи. Значения `reason`/`revoke_reason = refresh_replay` и событие лога `auth.refresh.replay` — `[НОВОЕ ИМЯ — предложение к 08 §2.4, 07 §5.9 и 11 §6.1]`. Почему безопасно: укравший `R1` либо опоздал (текущий токен уже использован законным клиентом → reuse → отзыв семьи), либо должен знать PIN; без PIN (`customer`) он получает только отзыв сессии. Критерий приёмки — «одна сессия / одна семья, без отзыва», а не «тот же `R2`» (AC-AUTH-056). Ответы с открытыми токенами нигде на сервере не кэшируются.
-- Клиент: `AuthInterceptor` (dio) выполняет refresh **single-flight** — параллельные запросы ждут один refresh; при `401 SESSION_REVOKED` (любая причина, включая `reuse_detected`, `refresh_replay`, `expired`) и `409 DEVICE_MISMATCH` — удаляет токены из secure storage (кроме `device_id`) и закрывает, но **не удаляет** файл локальной БД пользователя `pos_<user_id>.db`: несинхронизированные `cart_draft`, `cart_items_draft` и `outbox_actions` сохраняются и отправляются после повторного входа **того же** `user_id` (сервер проверяет `rowVersion`/`Idempotency-Key` как обычно; другой пользователь открывает свой файл и чужих данных не видит); кэши справочников и уведомлений очищаются по 07 §11.4; полная очистка файла БД и secure storage — только при удалении аккаунта (SESS-035) `[РЕШЕНИЕ: этот документ, волна 4; согласовано с 02 §3.3 и 04 FLOW-032.E1; 07 §11.4 выравнивается]`; показывает SCR-01 с сообщением «Сессия завершена. Войдите снова» (`auth_session_revoked`), для `reuse_detected` — «Для безопасности мы завершили все сессии. Войдите снова».
+- **Поздний повтор у планшета магазина (`kind=kiosk`, ред. 1.11)** `[РЕШЕНИЕ: ADR-115; P-002 §8.2 п. 5]`. У планшета нет PIN, поэтому путь `refresh_replay` (выше) отозвал бы сессию. Тогда один потерянный ответ `/auth/refresh` в Wi-Fi магазина переводил бы планшет в «Планшет нужно подключить заново» (§8.9). Правило для `kind=kiosk` — путь `replay` заменяется путём грации, без ограничения окна `AUTH_REFRESH_GRACE_SECONDS`:
+  - **условия те же, что у грации:** новый токен после ротации не использовался (`last_used_at IS NULL`) и грация после этой ротации не тратилась (`grace_used_at IS NULL`; `classifyPrevious` — `pos-api/src/auth/sessions/refresh.service.ts:274-280`);
+  - **результат:** новая ротация `R3` в той же сессии и семье (`rotateAside` — `pos-api/src/auth/sessions/session-store.ts:113-130`), прежний текущий токен — в `superseded_refresh_hash`, `grace_used_at = now()`;
+  - **проверяется раньше, как сейчас:** сроки сессии (`refresh.service.ts:118-120`), `device_key` (`:122-124`) и статус пользователя (`:126-127`);
+  - **второй поздний повтор подряд** (грация уже потрачена) — путь `reuse`, как сейчас: отзыв семьи `reuse_detected`, аудит `session.reuse_detected` с важностью `critical` (`:129-145`);
+  - **кража refresh обнаруживается по-прежнему:** если вор обновил токен первым, следующий refresh настоящего планшета даёт `reuse`;
+  - событие лога — `auth.refresh.kiosk_late_grace` `[НОВОЕ ИМЯ]`;
+  - `refresh_replay` и `UNLOCK_REQUIRED` для `kind=kiosk` не возникают;
+  - для `staff` и `customer` ничего не меняется.
+
+  Проверка — 12 T-KIOSK-067.
+- Клиент: `AuthInterceptor` (dio) выполняет refresh **single-flight** — параллельные запросы ждут один refresh; при `401 SESSION_REVOKED` (любая причина, включая `reuse_detected`, `refresh_replay`, `expired`) и `409 DEVICE_MISMATCH` — удаляет токены из secure storage (кроме `device_id`) и закрывает, но **не удаляет** файл локальной БД пользователя `pos_<user_id>.db`: несинхронизированные `cart_draft`, `cart_items_draft` и `outbox_actions` сохраняются и отправляются после повторного входа **того же** `user_id` (сервер проверяет `rowVersion`/`Idempotency-Key` как обычно; другой пользователь открывает свой файл и чужих данных не видит); кэши справочников и уведомлений очищаются по 07 §11.4; полная очистка файла БД и secure storage — только при удалении аккаунта (SESS-035) `[РЕШЕНИЕ: этот документ, волна 4; согласовано с 02 §3.3 и 04 FLOW-032.E1; 07 §11.4 выравнивается]`; показывает SCR-01 с сообщением «Сессия завершена. Войдите снова» (`auth_session_revoked`), для `reuse_detected` — «Для безопасности мы завершили все сессии. Войдите снова». В режиме планшета магазина вместо SCR-01 действует §8.9:
+  - на `401 SESSION_REVOKED` планшет показывает SCR-51 «Планшет нужно подключить заново»; закрепление и признак планшета остаются;
+  - `401 KIOSK_REVOKED` входит в список кодов, на которые refresh не вызывается — и в ответе на обычный запрос, и в ответе самого `/auth/refresh`.
 - Refresh выполняется заранее: при `exp − now < 60 с` или при получении `401 TOKEN_STALE`/`401` с `WWW-Authenticate: Bearer error="invalid_token"`. На `401 PIN_INVALID` (неверный PIN, `attemptsLeft`) и `401 UNLOCK_REQUIRED` (сессия не отозвана, нужен PIN) `/auth/refresh` **не** вызывается: первый показывается в `PinField`, второй открывает SCR-08 с PIN → `/auth/unlock` `[РЕШЕНИЕ: ядро §18.2 п.5]`.
 
 **Уточнения ротации (уточнено на этапе D–E (D A-08, A-10; EQ-AUTH-03)).** Окно грации однократно (12 T-SESS-006): повторное предъявление R1 после использованной грации — `reuse_detected` (отзыв семьи). Поздний повтор refresh у пользователя без PIN (`customer`) — отзыв только этой сессии с `revoke_reason = refresh_replay` (значение CHECK добавлено миграцией 0003, 07 §6.1.1) и ответ `401 SESSION_REVOKED {reason: "refresh_replay"}`.
@@ -986,7 +1080,7 @@ sequenceDiagram
 - Правило ядра `[РЕШЕНИЕ: ядро §18.2 п.2]`: access-токен — **только в памяти** процесса; refresh-токен и `deviceId` — в `flutter_secure_storage` (Android `allowBackup=false`).
 - **Не хранить** в secure storage: access-токен (память), OTP, PIN (ни в каком виде), телефон/ФИО (берутся из `/me`), `registration_token` (только память), секреты SMSPro/1С (их в приложении нет вовсе). Номер телефона пользователя не хранится на устройстве ни в каком хранилище (secure storage, drift, файлы, кэш `/me` на диске) `[РЕШЕНИЕ: ядро §19.3]`; исключение — ФИО и год рождения черновика регистрации в secure storage на срок черновика (§7.4, ядро §18.2 п.1).
 - `WidgetsFlutterBinding.ensureInitialized()` до первого обращения; `migrateOnAlgorithmChange` по умолчанию.
-- Очистка secure storage: при `SESSION_REVOKED`, `logout`, смене пользователя на устройстве — удалить все ключи, кроме `device_id`. Локальная БД пользователя при этом не удаляется (несинхронизированные данные — SESS-035).
+- Очистка secure storage: при `SESSION_REVOKED`, `logout`, смене пользователя на устройстве — удалить все ключи, кроме `device_id`. Локальная БД пользователя при этом не удаляется (несинхронизированные данные — SESS-035). В режиме планшета магазина при `SESSION_REVOKED` остаются ещё признак планшета и хэш аварийного кода выхода (вне группы ключей сессии). Их удаляют только `401 KIOSK_REVOKED` и аварийный выход (§8.9 п. 7).
 
 **Хранение на устройстве (уточнено на этапе D (D RB-09, SS-10)).** Windows: выбор «Windows Hello перед вводом PIN» — локальный признак secure storage `biometricsEnabled = windows_hello` (на Android/iOS — `true`), `biometric_refresh` не хранится. Чтение refresh на холодном старте ограничено таймаутом 5 с (зависший плагин secure storage) → вход по телефону; refresh при этом не удаляется.
 
@@ -995,6 +1089,18 @@ sequenceDiagram
 - `POST /auth/logout` (Bearer): `sessions.revoked_at=now()` для `sid`, `jti` access → denylist до `exp` (in-memory + таблица для реплик); клиент очищает secure storage и память, останавливает фоновые задачи, переходит на SCR-01. Выход **офлайн**: клиент немедленно удаляет токены и закрывает локальную БД (несинхронизированные `cart_draft`/`outbox_actions` сохраняются в файле пользователя до его следующего входа, перед выходом показывается предупреждение — SESS-035), запрос `logout` ставится в outbox (тип `auth.logout`, 07 — `[РЕШЕНИЕ: ядро §19.4]`) и выполняется при появлении сети (сессия на сервере остаётся до этого момента или до истечения — остаточный риск, приемлемый при 7-дневном сроке).
 - `POST /auth/logout-all` — step-up обязателен (ядро §3.3): отзыв всех сессий пользователя, включая `biometric`; текущая — тоже (пользователь входит заново).
 - Из SCR-42 доступны обе кнопки: «Выйти» и «Выйти на всех устройствах».
+- **Планшет магазина (`kind=kiosk`, ред. 1.11)** `[РЕШЕНИЕ: ADR-115; P-002 §8.3]`. Своего выхода у планшета нет: у роли `kiosk` нет права `session.manage.own`. Поэтому с токеном планшета `403` отвечают:
+  - `POST /auth/logout`, `POST /auth/logout-all`;
+  - `GET/DELETE/PATCH /auth/sessions*`;
+  - `POST /auth/step-up`.
+
+  Сессию планшета завершают только:
+  - отзыв администратором;
+  - аварийный выход `POST /kiosk/exit`;
+  - подключение заново;
+  - конец срока (§8.9).
+
+  Отложенный выход (`auth.logout` в outbox) на `403` прекращает попытки, как на любой `4xx`.
 
 ### 8.7. Смена ролей/прав — `permissionsVersion`
 
@@ -1006,7 +1112,7 @@ sequenceDiagram
 
 | Правило | Значение | Статус |
 |---|---|---|
-| Idle-блокировка экрана сотрудника | 30 мин без ввода (касания/клавиатуры/сканера) → overlay SCR-08 «Разблокировать» поверх текущего экрана, состояние экрана сохраняется (корзина, формы); разблокировка — биометрия с криптопривязкой (Android/iOS: `POST /auth/unlock {method: biometric, refreshToken: biometric_refresh}`, ротация и reuse-detection) или PIN (все платформы: `POST /auth/unlock {method: pin}`, серверная проверка); на Windows — **только** серверная проверка PIN (`/auth/unlock`), Windows Hello — необязательный UX-гейт перед вводом PIN; 5-я неверная попытка PIN подряд → `423 PIN_LOCKED` (BIO-020), далее только OTP (при недоступности SMS — аварийный код администратора, §6.13); `SESSION_IDLE_LOCK_MINUTES=30`; для `customer` — не применяется (опционально 60 мин) | `[РЕШЕНИЕ: D-12; ПОДТВЕРЖДЕНО: NIST SP 800-63B-4 §2.2 — таймаут неактивности SHOULD ≤ 1 ч, 30 мин укладываются; историческая справка: отозванная 63B-3 §4.2.3 — 30 мин (R6 §2.1); Q-004]` |
+| Idle-блокировка экрана сотрудника | 30 мин без ввода (касания/клавиатуры/сканера) → overlay SCR-08 «Разблокировать» поверх текущего экрана, состояние экрана сохраняется (корзина, формы); разблокировка — биометрия с криптопривязкой (Android/iOS: `POST /auth/unlock {method: biometric, refreshToken: biometric_refresh}`, ротация и reuse-detection) или PIN (все платформы: `POST /auth/unlock {method: pin}`, серверная проверка); на Windows — **только** серверная проверка PIN (`/auth/unlock`), Windows Hello — необязательный UX-гейт перед вводом PIN; 5-я неверная попытка PIN подряд → `423 PIN_LOCKED` (BIO-020), далее только OTP (при недоступности SMS — аварийный код администратора, §6.13); `SESSION_IDLE_LOCK_MINUTES=30`; для `customer` — не применяется (опционально 60 мин); для планшета магазина (`kind=kiosk`) — не применяется: нет PIN и SCR-08, вместо блокировки — автосброс FLOW-045 (`kiosk_idle_seconds`, Р-09 (а)); блокировка при уходе в фон и ручная блокировка (`Ctrl+L`) к планшету тоже не относятся (§8.9; ADR-115) | `[РЕШЕНИЕ: D-12; ПОДТВЕРЖДЕНО: NIST SP 800-63B-4 §2.2 — таймаут неактивности SHOULD ≤ 1 ч, 30 мин укладываются; историческая справка: отозванная 63B-3 §4.2.3 — 30 мин (R6 §2.1); Q-004]` |
 | Блокировка при уходе в фон | На Android/iOS при возврате из фона > 5 мин — тот же overlay (`AUTH_BACKGROUND_LOCK_MINUTES=5`); на Windows — по idle (`SESSION_IDLE_LOCK_MINUTES=30`) | `[РЕШЕНИЕ: ядро §19.3]` |
 | Ручная блокировка | Кнопка «Заблокировать» в меню профиля / `Ctrl+L` на Windows — для смены кассира на общей кассе (допущение R1: общий аккаунт ОС на POS-терминале + персональные аккаунты приложения — ядро §20.2 п.12; Q-034) | проектное |
 | Разблокировка (`POST /api/v1/auth/unlock`) `[РЕШЕНИЕ: ядро §17 — поток «/auth/unlock», D-48; путь и код UNLOCK_REQUIRED — ядро §18.2 п.5]` | Публичный путь без Bearer: `{method: "pin", refreshToken, pin}` + `X-Device-Id` → сервер проверяет refresh (как `/auth/refresh`, с ротацией и reuse-detection) **и** PIN (Argon2id, §9.6) → `200 {accessToken, refreshToken(new), sid, amr:["sms","pin"]}`, `sessions.unlocked_until = now() + SESSION_IDLE_LOCK_MINUTES`; ошибки `401 PIN_INVALID {attemptsLeft}` (не ошибка сессии: клиент **не** вызывает `/auth/refresh`), `423 PIN_LOCKED`, `401 SESSION_REVOKED`. Используется при холодном старте и снятии idle-блокировки на Windows (обязательно) и на Android/iOS при входе по PIN; вариант разблокировки «биометрия с криптопривязкой» (ядро §18.2 п.5) — `POST /auth/unlock {method: "biometric", refreshToken: <расшифрованный biometric_refresh>}` + `X-Device-Id` (Android/iOS, не Windows; §9.2) → `200` с `amr:["sms","bio"]` и новым `biometric_refresh`; вариант `/auth/refresh {kind: biometric}` не используется `[РЕШЕНИЕ: ядро §19.3; DTO — 08 §4.1.8]`. Холодный старт `staff` требует сети: без сети SCR-08 показывается с баннером «Нет сети», разблокировка недоступна (Q-241) `[РЕШЕНИЕ: ядро §19.3]` | `[РЕШЕНИЕ: D-13, D-48; ядро §19.3]` |
@@ -1019,6 +1125,98 @@ sequenceDiagram
 ---
 
 **Step-up и блокировка (уточнено на этапе D (D A-14, A-15, A-17, SS-11, FX-02); ADR-096).** Формат `stepUpToken` — 08 §2.12 (claims `sub`, `sid`, `deviceId`, `scope`, `method`, `pv`, `jti`). Реестра выданных step-up `jti` нет: токен привязан к `sid`, `deviceId`, `pv` — смена ролей (`pv++`) и отзыв сессии делают его недействительным; при `logout-all` `jti` предъявленного step-up заносится в `token_denylist`. Клиент очищает кэш `stepUpToken` при блокировке экрана, выходе и завершении сессии. Ограниченная сессия `staff` без PIN — 08 §4.1.2 (`403 pin_not_set` вне `/me*`, `/auth/*`, `GET /settings/public`).
+
+### 8.9. Сессия планшета магазина `[РЕШЕНИЕ: ADR-115; P-002 §8.2, §8.9; сроки — Р-22 (а)]`
+
+Режим «Планшет магазина» добавлен в ред. 1.11 по P-002 ред. 5. Владелец утвердил P-002 2026-11-04 ответами «P-002 утверждаю, делай» и «Да, все рекомендации (Рекоменд.)» (15 ADR-115).
+
+Планшет — **технический субъект**: пользователь `users.kind='kiosk'` без телефона, PIN и биометрии, с неназначаемой ролью `kiosk` (§2.2). Его устройство и сессия — обычные строки `devices` и `sessions`. Ниже «сессия планшета» — это сессия пользователя `kind=kiosk`. Покупатель у планшета сессии не получает, его код `kiosk_order` описан в §5.3. Режим включает `KIOSK_MODE` (по умолчанию `false`, не зависит от `CUSTOMER_SELF_SERVICE`; 16 §4.3). При `KIOSK_MODE=false` подключение и подключение заново отвечают `403 KIOSK_DISABLED`. Список, правка и отзыв планшетов при выключенном флаге работают.
+
+1. **Подключение (FLOW-043).**
+   - **Шаги.** Администратор входит на планшете своим номером, кодом и PIN → SCR-54 → «Сделать это устройство планшетом магазина» → имя и склад → step-up по PIN (операция `kiosk.manage`) → `POST /admin/store-tablets` с `Idempotency-Key`.
+   - **Что делает сервер — в одной транзакции:**
+     - создаёт технического пользователя: `kind=kiosk`, `phone_e164 = NULL`, статус `active` задаётся явно, потому что значение по умолчанию — `pending`;
+     - создаёт профиль: имя — `full_name`, склад — `home_warehouse_id`;
+     - назначает роль `kiosk`;
+     - создаёт строку `devices` для того же `device_key`, сессию планшета (§8.2) и строку `store_tablets`;
+     - отзывает сессии администратора на этом устройстве (как при повторном входе на том же устройстве — `logout`, §8.2) и заносит его access `jti` в denylist;
+     - пишет аудит `kiosk.enrolled`.
+   - **Ответ:** токены планшета и **аварийный код выхода** (п. 5). Код показывается один раз.
+   - **Только так.** Пользователь `kind=kiosk` появляется только этим путём (SEC-136): не OTP-входом, не регистрацией и не приглашением.
+   - **Приложение после ответа:**
+     - удаляет токены и файл локальной БД администратора. Это исключение из SESS-035 и SEC-133: на общем устройстве данные сотрудника не остаются;
+     - пишет признак планшета (п. 7);
+     - включает закрепление (Device Owner и `lock task` — 16, 11).
+   - **Повтор того же `Idempotency-Key`.** Сохранённый ответ содержит только идентификаторы, без токенов. Если сессия планшета ещё не использовалась, повтор ротирует её, как повтор verify (§5.6): прежний access `jti` — в denylist, ответ — новые токены и **новый** аварийный код, прежний код недействителен. Повтор после использования сессии — отказ с предложением «Подключить заново» (ADR-115 п. 20; 08 §2.7).
+2. **Сроки и вид сессии.**
+   - **Сроки:** простой — 7 дней, абсолютный — 180 дней (`AUTH_REFRESH_IDLE_KIOSK_DAYS`, `AUTH_REFRESH_TTL_KIOSK_DAYS`; Р-22 (а), §8.2). Каждые 180 дней и после простоя дольше 7 дней планшет подключают заново (п. 6). За 30 дней до конца срока SCR-54 напоминает об этом, а сервер шлёт алерт (11 §6).
+   - **Вид сессии:** одна на планшет; `sessions.kind=standard`; `amr=["pin"]`. Access JWT `kind=kiosk`, TTL — как у всех, 900 с (§8.1).
+   - **Чего у планшета нет:** PIN, SCR-08, биометрии, idle-блокировки (§8.8), step-up и выхода `POST /auth/logout` (§8.6).
+   - **Маршруты.** С токеном планшета доступны только маршруты закрытого списка `kind=kiosk` (08; 11 §4.4; P-002 §8.3); все остальные маршруты с Bearer отвечают `403`/`404`. Публичные маршруты SEC-013 — `/auth/refresh`, `/auth/otp/*`, `/auth/unlock`, `/registration/complete` — отвечают так же, как без токена. Сам планшет пользуется двумя из них: `POST /auth/refresh` и `GET /auth/otp/challenges/{id}`.
+   - **Вход сотрудника на планшете в режиме планшета невозможен.** Экрана входа в этом режиме нет (guard G-0a и G-15 — visual/navigation.md), а Device Owner и `lock task` не дают открыть другое приложение. Сервер `/auth/otp/verify` с ключом устройства планшета не закрывает: маршрут публичный, а `X-Device-Id` задаёт клиент (P-002 §8.3).
+3. **Потерянный ответ `/auth/refresh`.** Поздний повтор прежнего refresh-токена обрабатывается как грация, один раз на ротацию; второй поздний повтор — `reuse_detected` (§8.3). Отказ `refresh_replay` у планшета не возникает. Простаивающий планшет обращается к серверу не реже раза в 5 мин (опрос `GET /settings/public` — ADR-115 п. 21). Поэтому без этого правила потерянный ответ быстро приводил бы к «Подключите заново».
+4. **Отзыв, выход и другие отказы.**
+
+   | Событие | Что делает сервер | `revoke_reason` | Ответ планшету и что он показывает |
+   |---|---|---|---|
+   | Отключение администратором: SCR-54 → «Отключить планшет» → `POST /admin/store-tablets/{id}/revoke` (step-up `kiosk.manage`) | отзывает все сессии технического пользователя; гасит коды `kiosk_order` планшета (§5.3); `store_tablets.status=revoked`; аудит `kiosk.revoked` | `kiosk_revoked` | `401 KIOSK_REVOKED` → «Планшет отключён администратором» → закрепление снимается, признак планшета удаляется → SCR-01 |
+   | Аварийный выход со связью: `POST /kiosk/exit {code}` (право `kiosk.self.exit`) | сверяет код с `store_tablets.exit_code_hash`; гасит код выхода (`exit_code_used_at`) и коды `kiosk_order`; отзывает сессии; аудит `kiosk.exit_code_used`. Неверный код → `422 KIOSK_EXIT_CODE_INVALID {attemptsLeft}`; после 5 неверных → `423 KIOSK_EXIT_LOCKED` на 15 мин | `kiosk_revoked` | `200` → токены и признак удаляются, закрепление снимается → SCR-01 |
+   | Аварийный выход без связи: нет сети, таймаут, `426`, `401 SESSION_REVOKED`, `403 KIOSK_DISABLED`, `403 KIOSK_NETWORK_DENIED` | ничего: сервер о выходе не знает, сессия остаётся до отзыва или конца срока, код выхода — до ближайшего подключения заново | — | приложение сверяет код с хэшем в защищённом хранилище (п. 7) → выход; подсказка «отключите планшет в SCR-54» |
+   | Подключение заново (п. 6) | отзывает прежние сессии технического пользователя | `kiosk_revoked` | устройство, где прежняя сессия ещё есть (например, заменённый планшет), получает `401 KIOSK_REVOKED` и выходит из режима |
+   | Срок вышел: простой > 7 дней или 180 дней с подключения | refresh отзывает сессию (`refresh.service.ts:118-120`) | `expired` | `401 SESSION_REVOKED` → SCR-51 «Планшет нужно подключить заново», закрепление **остаётся** |
+   | Повтор вытесненного токена; второй поздний повтор (§8.3) | отзыв семьи, аудит `session.reuse_detected` (`critical`) | `reuse_detected` | то же, что при `expired` |
+   | Refresh с другим `X-Device-Id` (признак кражи токена) | отзыв сессии, аудит (`:122-124`) | `device_mismatch` | то же, что при `expired` |
+   | Технический пользователь не `active` (только инцидент: через `/admin/users/*` статус планшета не меняется — п. 9) | без отзыва (`:126-127`) | — | то же, что при `expired` |
+
+   Разница между двумя исходами. `KIOSK_REVOKED` — решение администратора: закрепление снимается. `SESSION_REVOKED` — сессии нет, но планшет остаётся в зале: закрепление не снимается, иначе покупатель вышел бы из приложения. Выход в этом случае — аварийный код или отключение администратором.
+5. **Аварийный код выхода** (11 SEC-140).
+   - **Формат:** 8 цифр из CSPRNG, показ один раз, одноразовый. Новый код выдаётся при каждом подключении и подключении заново, прежний перестаёт действовать.
+   - **Хранение на сервере:** `Argon2id(pepper ∥ код ∥ tablet_id)` с серверным pepper и его версией, как PIN по SEC-047 (§9.6). 10^8 вариантов мало для перебора по украденной копии хэша — поэтому нужен pepper.
+   - **На планшете:** свой хэш с солью устройства в защищённом хранилище; там же счётчик попыток и время паузы, они переживают перезапуск.
+   - **Попытки:** 5 неверных — пауза 15 мин, и на сервере, и на устройстве.
+   - **Связь есть:** код проверяет сервер (п. 4). Если сервер ответил `422`, приложение код на устройстве не проверяет.
+   - **Связи нет:** код проверяет устройство (п. 4). Хранение кода администратором (конверт в сейфе) — инструкция подготовки планшета (16).
+6. **Подключение заново — тем же техническим пользователем.** Строка `store_tablets` и пользователь `kind=kiosk` сохраняются: `store_tablets.user_id` уникален. Не меняются имя, склад, история заявок и код автора в 1С (`createdByUserCode`; Q-129, Q-343). Новый пользователь на каждое подключение дал бы в 1С новых «авторов» и разорвал бы историю планшета.
+   - **Запрос:** `POST /admin/store-tablets/{id}/reconnect` — право `kiosk.manage`, step-up, `Idempotency-Key`, с самого планшета в сессии администратора.
+   - **Что делает сервер — в одной транзакции:**
+     - статус `active`;
+     - прежние сессии технического пользователя отзываются (`kiosk_revoked`, п. 4);
+     - строка `devices` для текущего `device_key` — новая, если приложение переустановлено или планшет заменён; `store_tablets.device_id` указывает на неё;
+     - новая сессия (п. 2) и новый аварийный код;
+     - коды `kiosk_order` гасятся;
+     - после погашения кодов закрывается активная корзина технического пользователя — корзина прошлого покупателя, оставшаяся после отключения, аварийного выхода или истечения сессии (`active → cleared`, аудит `cart.cleared` с `after.reason = kiosk_reconnect`, `itemsCount`; порядок блокировок «коды → корзина»; новую пустую корзину создаёт первый `GET /cart` новой сессии; 08 §4.18.15, 04 FLOW-045.A1; уточнено по реализации, ADR-115);
+     - сессия администратора на устройстве завершается, его локальные данные удаляются, как в п. 1;
+     - аудит `kiosk.reconnected`.
+   - **Повтор ключа** — как в п. 1.
+   - **Как администратор доходит до кнопки:**
+     - **плановое подключение заново** (сессия ещё действует, SCR-54 напомнил): «Отключить» в SCR-54 на своём телефоне → `401 KIOSK_REVOKED` → SCR-01 → вход администратора на планшете → «Подключить заново этот планшет». По умолчанию выбрана запись с этим `device_key`, иначе — выбор из списка;
+     - **срок уже вышел или нет сети:** сначала аварийный выход (п. 5), дальше так же.
+   - **Новый пользователь** `kind=kiosk` по-прежнему создаётся только кнопкой «Сделать это устройство планшетом магазина» (п. 1).
+7. **Признак планшета на устройстве.**
+   - **Что пишется.** При подключении и подключении заново приложение пишет в `flutter_secure_storage` (`allowBackup=false`), вне группы ключей сессии:
+     - признак планшета: `kiosk.tablet_id`, `kiosk.tablet_name`, `kiosk.user_id`, `kiosk.warehouse_id` (склад планшета — только для чтения кэша каталога на устройстве; обновляется по `GET /me` → `tablet.warehouseId`);
+     - хэш аварийного кода: `kiosk.exit_hash`, `kiosk.exit_salt`;
+     - счётчик и пауза: `kiosk.exit_attempts`, `kiosk.exit_locked_until`.
+
+     Персональных данных среди них нет.
+   - **Пока признак есть,** приложение остаётся в режиме планшета и не снимает закрепление, даже без сессии: G-0a ведёт на «Планшет нужно подключить заново».
+   - **Когда удаляется.** Признак переживает `401 SESSION_REVOKED` — это исключение из правила очистки §8.5. Удаляют его только `401 KIOSK_REVOKED` и аварийный выход.
+   - **Данные покупателя** — номер телефона, `challengeId`, код, ключ идемпотентности — только в памяти. Они не пишутся в secure storage, drift и журналы (11, PRIV-033).
+8. **Где сервер отвечает `KIOSK_REVOKED`, а где — `SESSION_REVOKED`** `[РЕШЕНИЕ: ADR-115; P-002 §8.2 п. 6; 11 SEC-139]`.
+   - **`401 KIOSK_REVOKED`** — сессия пользователя `kind=kiosk` с `revoke_reason='kiosk_revoked'`:
+     - (а) `POST /auth/refresh`: токен найден по любому из трёх хэшей (текущий, предыдущий, вытесненный), а сессия отозвана (`pos-api/src/auth/sessions/refresh.service.ts:110-111`);
+     - (б) `AuthGuard`: проверка идёт сразу после снимка состояния и **до** проверки denylist `jti` (`pos-api/src/common/auth/auth.guard.ts:90-93`). Причина отзыва входит в снимок `AuthSessionState` (`pos-api/src/common/auth/auth-state.ts:17-23`).
+
+     Приложение на этот код refresh не вызывает (§8.3, клиент).
+   - **`401 SESSION_REVOKED`** — все остальные отказы. Планшет показывает «Планшет нужно подключить заново», закрепление остаётся.
+     - От `/auth/refresh`: `expired` (`:118-120`), `reuse_detected` (`:129-145`), `device_mismatch` (`:122-124`), `blocked` (`:126-127`); неизвестный токен или сессия, отозванная по другой причине (`:110-111`, `:115`).
+     - От `AuthGuard`: его ветки `SESSION_REVOKED` (`auth.guard.ts:86-87`, `:93`, `:96-98`, `:101-105`), кроме сессии с `kiosk_revoked`.
+   - **Принятые остатки** — в этих случаях отозванный планшет получает не `KIOSK_REVOKED`, а `SESSION_REVOKED` или (в окне кэша) ещё успешный ответ:
+     - (1) **Заголовок `X-Device-Id` не равен claim `deviceId`.** `AuthGuard` отвечает `401 SESSION_REVOKED device_mismatch` ещё до снимка состояния (`auth.guard.ts:86-87`). Это не ветка отзыва: приложение шлёт свой `device_key`, поэтому такое бывает только с токеном, скопированным на другое устройство.
+     - (2) **Кэш снимков `AuthGuard` — 60 с в каждом процессе** (`auth-state.ts:43-44`). В другом процессе снимок, взятый до отзыва, ещё до 60 с пропускает прежний access. Это действующий остаточный риск ASVS 8.3.2 (§8.7). Если `jti` есть в локальном denylist процесса, кэш возвращает снимок до отзыва, и ответ — `SESSION_REVOKED` (`auth-state.ts:74-79`). Тогда планшет покажет «Подключите заново» вместо «Планшет отключён»: выход — аварийным кодом, затем подключение заново. `/auth/refresh` читает БД без кэша, поэтому refresh после отзыва всегда даёт `KIOSK_REVOKED`.
+     - (3) **После `200` на `POST /kiosk/exit`.** Если сервер занёс `jti` вызывающего в denylist, запрос с тем же access получает `SESSION_REVOKED`. Это безвредно: приложение уже удалило токены.
+9. **Администрирование.** Операции `/admin/users/*` над пользователем `kind=kiosk` отвечают `403` (`kiosk_target`). В списке SCR-45 он не показывается, роль `kiosk` через `setRoles` не назначается и не снимается (11 SEC-043, SEC-142; ADR-115 п. 19). Статус, сессии, имя и склад планшета меняются только через `/admin/store-tablets*`. Новое имя и склад действуют со следующей корзины, после ближайшего сброса.
+10. **Сеть магазина** (could). Если задана переменная `KIOSK_ALLOWED_CIDRS`, токен планшета принимается только из сети магазина; адрес берётся, как для IP-лимитов SEC-016. Иначе ответ — `403 KIOSK_NETWORK_DENIED`, аудит `kiosk.network_denied`, алерт. Сессия при этом не отзывается. Пустая переменная — проверки нет (16 §4.3; 11 SEC-143).
 
 ## 9. Защита входа: биометрия и PIN (BIO) `[РЕШЕНИЕ: D-13]`
 
@@ -1487,6 +1685,9 @@ State machine `MascotAuth`: `bool isTyping`, `bool isChecking`, `trigger success
 | AUTH-050 | Экран входа — белый, минималистичный по составу элементов (визуальные токены — 03), с персонажем, полем номера и одной основной кнопкой | must | РЕШЕНИЕ | SRC-B-069, SRC-B-069a, SRC-B-069b | AC-AUTH-073 |
 | AUTH-051 | `/auth/otp/verify` выполняет проверки в фиксированном порядке: существование challenge (`404`) → совпадение `X-Device-Id` (`409 DEVICE_MISMATCH`, попытка учитывается) → состояние challenge (потреблён/истёк/`superseded` → `422 OTP_EXPIRED`, `locked` → `423 OTP_LOCKED`) → инкремент `attempts` и сравнение кода (`422 OTP_INVALID`) → статус пользователя (`403 FORBIDDEN` для `blocked`) | must | РЕШЕНИЕ | SRC-B-120, SRC-D-082a, SRC-D-096 | AC-AUTH-005, AC-AUTH-022 |
 | AUTH-052 | SMS отправляется асинхронно: `/auth/otp/request` в одной транзакции создаёт challenge и `sms_outbox(queued)` и отвечает `202` без сетевого вызова SMSPro; отправку и ретраи выполняет `pos-worker`; синхронный `503 SMS_PROVIDER_ERROR` — только при открытом circuit-breaker или превышении глобального лимита; итог доставки доступен SCR-02 через `GET /auth/otp/challenges/{challengeId}` (`queued`/`sent`/`failed`, одинаково для login/register) | must | РЕШЕНИЕ (эндпоинт статуса — [РЕШЕНИЕ: ядро §19.2]) | SRC-D-098, SRC-B-104, SRC-B-105 | AC-AUTH-007, AC-AUTH-082 |
+| AUTH-053 | Код назначения `kiosk_order` (заявка покупателя на планшете магазина) выдаёт только `POST /kiosk/order-otp` при непустой корзине, с нейтральным ответом `202` для любого номера; код никогда не выдаёт сессию и `registration_token`: `/auth/otp/verify` с ним отвечает `404 NOT_FOUND`, код входа в `POST /kiosk/orders` — тоже `404`; для покупателя не создаются `users`, `devices`, `sessions`, `customer_links`, `consents` (§5.3) | must | РЕШЕНИЕ (ADR-115; ред. 1.11) | P-002 §8.5, KIOSK-011; ответы владельца 2026-11-02 (P-002 §0) | T-KIOSK-011, T-KIOSK-012, T-KIOSK-013, T-KIOSK-014, T-KIOSK-015, T-SEC-070 (12_TEST_PLAN — владелец T-ID; AC-AUTH нет) |
+| AUTH-054 | Код `kiosk_order` привязан к планшету (`kiosk_tablet_id`, `device_key`), номеру и корзине (`cart_id`); у планшета один действующий код — новый запрос с того же планшета на любой номер вытесняет прежний (`superseded`), отказа нет; автосброс, отзыв, аварийный выход со связью и подключение заново гасят коды планшета; вытесненный или погашенный код → `422 OTP_EXPIRED`; в `POST /kiosk/orders` токен предпросмотра, назначение, планшет и корзина кода проверяются до `OtpService.check` без траты попытки — несовпадение назначения, планшета или корзины даёт `404 NOT_FOUND`, `409 DEVICE_MISMATCH` планшету не отдаётся; один верный код даёт одну заявку (§5.3) | must | РЕШЕНИЕ (ADR-115; ред. 1.11) | P-002 §8.5 п. 4–5, KIOSK-011, KIOSK-013 | T-KIOSK-016, T-KIOSK-028, T-KIOSK-047, T-KIOSK-052, T-KIOSK-054 (12_TEST_PLAN — владелец T-ID; AC-AUTH нет) |
+| AUTH-055 | Лимиты кода `kiosk_order` (§5.4): планшет — 30 в час и 200 в сутки по токену планшета (`kiosk_otp_per_hour`, `kiosk_otp_per_day`), исчерпан → `429 KIOSK_RATE_LIMITED`, аудит `kiosk.limit_reached`, алерт; лимиты IP и `device_id` для токена планшета не применяются; лимиты номера — как строка «Номер (E.164)» §5.4 (3/15 мин, 10/сутки), общие для всех назначений; повтор на тот же номер раньше 60 с — `429 OTP_RATE_LIMITED {retryAfterSec}`; глобальный лимит — как есть | must | РЕШЕНИЕ (Р-14 (а); ADR-115; ред. 1.11) | P-002 §14.2, KIOSK-012 | T-KIOSK-017, T-KIOSK-018, T-KIOSK-052, T-SEC-071 (12_TEST_PLAN — владелец T-ID; AC-AUTH нет) |
 
 ### 14.2. Интеграция SMSPro и SMS-адаптер (SMS-NNN)
 
@@ -1527,6 +1728,7 @@ State machine `MascotAuth`: `bool isTyping`, `bool isChecking`, `trigger success
 | SMS-033 | Информационные SMS (новое устройство, смена номера, приглашение) — опции `AUTH_NOTIFY_OLD_PHONE`, `INVITE_SMS`, выключены по умолчанию; базовый канал — in-app уведомления | could | РЕШЕНИЕ (Q-038) | D-41 | AC-AUTH-063 |
 | SMS-034 | SOAP-интерфейс, SMPP и Email2SMS изучены (R2 §7) и в проекте не используются; SOAP может применяться стороной 1С по её решению | could | ПОДТВЕРЖДЕНО (R2 §7) | SRC-B-109a, SRC-B-109b | — |
 | SMS-035 | При недоступности SMSPro касса не останавливается: действующие сессии, разблокировка по PIN/биометрии и step-up по PIN работают без SMS; для `staff` без действующей сессии или с `PIN_LOCKED` `admin` со step-up по PIN выдаёт аварийный код входа `POST /admin/users/{id}/emergency-login-code` (DTO — 08 §4.18.10; цель — `staff` `active`, не себе, не `admin`/`owner` — 11 SEC-131; 6 цифр CSPRNG, HMAC-хранение, TTL 10 мин, одноразовый, привязка к номеру пользователя и к устройству первого `/auth/otp/request`, при установленном PIN — обязательная разблокировка PIN, аудит `auth.emergency_code.issued`/`used`, уведомление `owner`, не более 3 кодов на пользователя в сутки); runbook «SMSPro недоступен» — 16 | should | РЕШЕНИЕ (ядро §22.13 п.2 — R1 `should`; эндпоинт — 08 §4.18.10; право и события — 11 код 76, SEC-131, §7.2.1); ТРЕБУЕТ РЕШЕНИЯ ЗАКАЗЧИКА: Q-168 | SRC-D-098, SRC-B-105 | AC-AUTH-086 |
+| SMS-036 | SMS кода `kiosk_order` (ключ шаблона `otp_kiosk_order` в `sms_outbox`) — свой текст с целью и предупреждением `Оптомстрой: код {code} для заявки с планшета. Никому не сообщайте` (65 символов при 6 цифрах; кириллица — 1 часть UCS-2 из 70); текст — константа в коде, а не `SMS_OTP_TEMPLATE`; тексты SMS входа и других назначений не меняются (§6.7) | must | РЕШЕНИЕ (Р-21 (а) — ответ владельца 2026-11-04; ADR-115; ред. 1.11) | P-002 §8.5 п. 1, KIOSK-011; Q-029 | T-KIOSK-037 (12_TEST_PLAN — владелец T-ID; AC-AUTH нет) |
 
 ### 14.3. Регистрация и привязка к клиенту 1С (REG-NNN)
 
@@ -1556,7 +1758,7 @@ State machine `MascotAuth`: `bool isTyping`, `bool isChecking`, `trigger success
 | REG-022 | Приглашения сотрудников создаёт `admin` со step-up (`POST /admin/invitations`): телефон E.164, роль (кроме `owner`/`integration`), срок `INVITATION_TTL_DAYS` (Q-141); один активный invite на номер; применяется и к уже зарегистрированному аккаунту; приглашения создаёт только `admin` («супер-админ» заказчика — Q-303, допущение `admin`) | must | РЕШЕНИЕ (ядро §24.2) | D-07; ядро §3.3 | AC-AUTH-053 |
 | REG-023 | Профиль пользователя (`user_profiles`) и карточка клиента 1С (`customers`) — раздельные сущности; поля, отсутствующие в 1С (год рождения, сфера деятельности, согласия, устройства), в 1С не передаются; передача ФИО/телефона — только по правилам 05 и Q-025 | must | РЕШЕНИЕ | SRC-B-140, SRC-B-141 | AC-AUTH-052 |
 | REG-024 | Отсутствие в карточке 1С нового поля регистрации не является основанием для создания дубликата; дедупликация выполняется по телефону и разрешённым признакам | must | РЕШЕНИЕ | SRC-B-139 | AC-AUTH-049 |
-| REG-025 | Поиск клиента 1С выполняется по подтверждённому `phone_e164` в локальной реплике и, при доступности 1С, синхронно (таймаут 5 с); «другие признаки» (второй телефон контакта, ФИО+год) — только подсказка администратору | must | РЕШЕНИЕ (объекты 1С — ТИПОВО; признаки — Q-025) | D-08; SRC-B-138, SRC-E-134 | AC-AUTH-049 |
+| REG-025 | Поиск клиента 1С выполняется по подтверждённому `phone_e164` в локальной реплике и, при доступности 1С, синхронно (таймаут `ONEC_SYNC_CHECK_TIMEOUT_MS`, по умолчанию 6 с — ядро §19.2, 16 §4.3, код; ред. 1.11, ранее 5 с); «другие признаки» (второй телефон контакта, ФИО+год) — только подсказка администратору | must | РЕШЕНИЕ (объекты 1С — ТИПОВО; признаки — Q-025) | D-08; SRC-B-138, SRC-E-134 | AC-AUTH-049 |
 | REG-026 | При 0 совпадений новая карточка 1С при регистрации не создаётся автоматически; создаётся только при первом заказе по правилам CUST-/Q-025 | must | РЕШЕНИЕ | SRC-B-144 | AC-AUTH-049 |
 | REG-027 | При 1 совпадении создаётся `customer_links(status=proposed)` и пользователю предлагается безопасная привязка с маскированным наименованием без долгов, истории и скидок | must | РЕШЕНИЕ | D-08; SRC-B-142, SRC-B-145 | AC-AUTH-049, AC-AUTH-050 |
 | REG-028 | При ≥ 2 совпадениях или спорных признаках создаются `customer_links(status=conflict)` и задача администратору; разрешение — только `admin` со step-up и аудитом | must | РЕШЕНИЕ | SRC-B-146 | AC-AUTH-051 |
@@ -1584,12 +1786,12 @@ State machine `MascotAuth`: `bool isTyping`, `bool isChecking`, `trigger success
 | SESS-006 | Refresh-токен — непрозрачная строка 256 бит CSPRNG (base64url); в БД хранится только `SHA-256(token)` | must | ПОДТВЕРЖДЕНО (ASVS 7.2.3) | D-12; R6 §2.2; SRC-B-082a | AC-AUTH-055 |
 | SESS-007 | Таблица `sessions` содержит поля §8.2 (`family_id`, `kind`, `refresh_hash`, `prev_refresh_hash`, `expires_at`, `idle_expires_at`, `revoked_at`, `revoke_reason`, `created_from_challenge_id`, `amr` и др.) | must | РЕШЕНИЕ | ядро §6; D-12; SRC-B-082a | AC-AUTH-057 |
 | SESS-008 | Абсолютный срок сессии — 7 дней (`staff`) / 30 дней (`customer`); idle-срок refresh — 24 ч / 14 дней; после истечения — только OTP | must | РЕШЕНИЕ (Q-004; отклонение от NIST AAL2 — остаточный риск заказчика) | D-12; SRC-B-082a | AC-AUTH-057 |
-| SESS-009 | Лимит одновременных сессий: 3 устройства (`staff`) / 5 (`customer`); при превышении отзывается самая старая с in-app уведомлением | should | НЕ ПОДТВЕРЖДЕНО (предложение, Q-154 — ведущий; Q-166 — дубль) | R6 §2.2; SRC-B-082a | AC-AUTH-063 |
+| SESS-009 | Лимит одновременных сессий: 3 устройства (`staff`) / 5 (`customer`); при превышении отзывается самая старая с in-app уведомлением (планшет магазина `kiosk` — одна сессия, SESS-037) | should | НЕ ПОДТВЕРЖДЕНО (предложение, Q-154 — ведущий; Q-166 — дубль) | R6 §2.2; SRC-B-082a | AC-AUTH-063 |
 | SESS-010 | При каждом `POST /auth/refresh` выдаётся новый refresh-токен, предыдущий переносится в `prev_refresh_hash` | must | ПОДТВЕРЖДЕНО (RFC 9700 §4.14.2) | D-12; SRC-B-082a | AC-AUTH-055 |
 | SESS-011 | Повторное использование refresh-токена (предъявление вытесненного токена или предыдущего токена после использования текущего; поздний повтор до использования текущего — SESS-034) отзывает всю семью сессий (`family_id`), пишет `session.reuse_detected` в аудит и уведомляет пользователя; ответ `401 SESSION_REVOKED {reason:"reuse_detected"}` | must | ПОДТВЕРЖДЕНО (RFC 9700) | D-12; SRC-B-082a | AC-AUTH-055 |
 | SESS-012 | Окно грации 30 с (`AUTH_REFRESH_GRACE_SECONDS`), однократное на ротацию: повтор предыдущего refresh после сетевого сбоя выдаёт новую ротацию в той же сессии и семье без отзыва (сервер хранит только хэши и прежний токен не возвращает); вытесненный токен (`superseded_refresh_hash`) и повтор после использования текущего токена считаются повторным использованием; повтор вне окна до использования текущего токена — SESS-034 | must | РЕШЕНИЕ | D-12; SRC-D-099; SRC-B-082a | AC-AUTH-056 |
 | SESS-013 | Refresh привязан к `device_id`; несовпадение `deviceId` отзывает сессию (`device_mismatch`) | must | РЕШЕНИЕ | D-12; SRC-B-082a; SRC-B-083 | AC-AUTH-057 |
-| SESS-014 | Клиентский `AuthInterceptor` выполняет refresh single-flight, обновляет заранее (`exp − now < 60 с` или `TOKEN_STALE`), при `SESSION_REVOKED`/`DEVICE_MISMATCH` удаляет токены из secure storage (кроме `device_id`), сохраняет несинхронизированные локальные данные (SESS-035) и ведёт на SCR-01 с сообщением | must | РЕШЕНИЕ | R6 §2.3; SRC-B-082a | AC-AUTH-055 |
+| SESS-014 | Клиентский `AuthInterceptor` выполняет refresh single-flight, обновляет заранее (`exp − now < 60 с` или `TOKEN_STALE`), при `SESSION_REVOKED`/`DEVICE_MISMATCH` удаляет токены из secure storage (кроме `device_id`), сохраняет несинхронизированные локальные данные (SESS-035) и ведёт на SCR-01 с сообщением (в режиме планшета магазина — SESS-038: на `KIOSK_REVOKED` refresh не вызывается) | must | РЕШЕНИЕ | R6 §2.3; SRC-B-082a | AC-AUTH-055 |
 | SESS-015 | `device_id` — UUID v4, создаётся приложением при первом запуске, хранится в `flutter_secure_storage` и передаётся заголовком `X-Device-Id` во всех запросах; сервер хранит его в `devices.device_key` (UNIQUE в паре с `user_id`), PK `devices.id` — UUID v7 | must | РЕШЕНИЕ (ядро §18.2 п.2–п.3; поведение при переустановке — ТИПОВО) | D-12; SRC-B-082a | AC-AUTH-062 |
 | SESS-016 | Пользователь видит свои сессии (`GET /auth/sessions`), может отозвать любую не текущую (`DELETE /auth/sessions/{id}`) и переименовать устройство (`PATCH /auth/sessions/{id}`) на SCR-42 | must | РЕШЕНИЕ (методы `DELETE`/`PATCH` — ядро §17) | ядро §7, §9 (SCR-42), §17; SRC-B-082a; SRC-B-083 | AC-AUTH-063 |
 | SESS-017 | Вход с нового устройства порождает in-app уведомление на все активные сессии пользователя; SMS-уведомление — опция | should | РЕШЕНИЕ (Q-038) | D-41; SRC-B-082a; SRC-B-083 | AC-AUTH-063 |
@@ -1611,6 +1813,10 @@ State machine `MascotAuth`: `bool isTyping`, `bool isChecking`, `trigger success
 | SESS-033 | Номер телефона пользователя не хранится на устройстве (secure storage, drift, файлы, кэши на диске); SCR-01 после перезапуска и SCR-08 номер не показывают и не предзаполняют; `registration_token` хранится только в памяти; холодный старт `staff` требует сети (без сети — SCR-08 с баннером «Нет сети», разблокировка недоступна, Q-241) | must | РЕШЕНИЕ (ядро §19.3) | D-48; SRC-B-106; SRC-B-082a | AC-AUTH-083, AC-AUTH-045 |
 | SESS-034 | Поздний повтор непосредственно предшествующего refresh (`prev_refresh_hash`) с того же `device_id`, пока текущий токен после ротации не использовался (`last_used_at ≤ rotated_at`), не отзывает семью: `401 UNLOCK_REQUIRED {reason:"refresh_replay"}` → `/auth/unlock {method: pin, refreshToken: R1}` → новая ротация; без PIN — `401 SESSION_REVOKED {reason:"refresh_replay"}` с отзывом только этой сессии, без `session.reuse_detected` | must | РЕШЕНИЕ (волна 4; `refresh_replay` — НОВОЕ ИМЯ) | D-12; SRC-D-099; SRC-B-082a | AC-AUTH-084 |
 | SESS-035 | При `SESSION_REVOKED` (любая причина), `DEVICE_MISMATCH` и выходе приложение удаляет токены, но не удаляет файл локальной БД пользователя `pos_<user_id>.db`: несинхронизированные `cart_draft`, `cart_items_draft` и `outbox_actions` сохраняются и отправляются после повторного входа того же `user_id`; другой пользователь их не видит; полная очистка файла — только при удалении аккаунта | must | РЕШЕНИЕ (волна 4; согласовано с 02 §3.3, 04 FLOW-032.E1; 07 §11.4 выравнивается) | SRC-D-099; SRC-B-137 | AC-AUTH-085 |
+| SESS-036 | Технический пользователь планшета магазина `kind=kiosk` (без телефона, PIN и биометрии, роль `kiosk`, статус `active`) создаётся только `POST /admin/store-tablets` — `admin` с `kiosk.manage` и step-up на самом планшете. Одна транзакция создаёт пользователя, профиль (имя и склад), роль, устройство с тем же `device_key`, сессию и `store_tablets`. Сессии администратора на устройстве отзываются, его токены и локальная БД удаляются (исключение из SESS-035). Аудит `kiosk.enrolled`; при `KIOSK_MODE=false` — `403 KIOSK_DISABLED` (§8.9 п. 1) | must | РЕШЕНИЕ (ADR-115; SEC-136; ред. 1.11) | P-002 §8.2 п. 4, KIOSK-002, KIOSK-003 | T-KIOSK-001, T-KIOSK-002, T-KIOSK-033 (12_TEST_PLAN — владелец T-ID; AC-AUTH нет) |
+| SESS-037 | Сессия планшета — одна на планшет: `sessions.kind=standard`, `amr=["pin"]`, простой 7 дней и абсолютный срок 180 дней (`AUTH_REFRESH_IDLE_KIOSK_DAYS`, `AUTH_REFRESH_TTL_KIOSK_DAYS`). PIN, SCR-08, idle-блокировки и step-up нет; `POST /auth/logout`, `/auth/logout-all` и `/auth/sessions*` с токеном планшета → `403`. Поздний повтор refresh после потерянного ответа — путь грации без ограничения окна, при неиспользованном новом токене и непотраченной грации, один раз на ротацию; второй повтор — `reuse_detected`; `refresh_replay` для `kind=kiosk` не возникает; для `staff` и `customer` правила §8.3 не меняются (§8.2, §8.3, §8.9 п. 2–3) | must | РЕШЕНИЕ (Р-22 (а); ADR-115; ред. 1.11) | P-002 §8.2 п. 5, KIOSK-002, KIOSK-031 | T-KIOSK-006, T-KIOSK-049, T-KIOSK-067 (12_TEST_PLAN — владелец T-ID; AC-AUTH нет) |
+| SESS-038 | Сессия планшета, отозванная с `revoke_reason='kiosk_revoked'` (отключение администратором, аварийный выход `POST /kiosk/exit`, подключение заново), получает `401 KIOSK_REVOKED` и от `POST /auth/refresh`, и от `AuthGuard`. Приложение на этот код refresh не вызывает, снимает закрепление и удаляет признак планшета. Остальные отказы — `401 SESSION_REVOKED`: «Планшет нужно подключить заново», закрепление остаётся. Принятые остатки — заголовок `X-Device-Id`, кэш 60 с, denylist (§8.9 п. 4, п. 8) | must | РЕШЕНИЕ (ADR-115; ред. 1.11) | P-002 §8.2 п. 6, KIOSK-004 | T-KIOSK-003, T-KIOSK-060, T-SEC-072 (12_TEST_PLAN — владелец T-ID; AC-AUTH нет) |
+| SESS-039 | Подключение заново — `POST /admin/store-tablets/{id}/reconnect` (`kiosk.manage`, step-up, `Idempotency-Key`, с самого планшета) тем же техническим пользователем и той же строкой `store_tablets`. Прежние сессии отзываются, устройство — текущий `device_key`; выдаются новая сессия и новый аварийный код (прежний недействителен), коды `kiosk_order` гасятся; аудит `kiosk.reconnected`. Признак планшета на устройстве переживает `SESSION_REVOKED` и удаляется только при `KIOSK_REVOKED` и аварийном выходе. Аварийный код — 8 цифр, показ один раз, одноразовый; 5 неверных — пауза 15 мин; на сервере — Argon2id с pepper, без связи — хэш и счётчик в защищённом хранилище устройства (§8.9 п. 5–7) | must / should (аварийный код) | РЕШЕНИЕ (ADR-115; ред. 1.11) | P-002 §8.2 п. 8, §8.9, KIOSK-004, KIOSK-031 | T-KIOSK-004, T-KIOSK-049, T-KIOSK-066 (12_TEST_PLAN — владелец T-ID; AC-AUTH нет) |
 
 ### 14.5. Защита входа: биометрия и PIN (BIO-NNN)
 
@@ -1665,7 +1871,7 @@ State machine `MascotAuth`: `bool isTyping`, `bool isChecking`, `trigger success
 | FACE-013 | Режим `sdk_liveness` допускается только при выполнении условий гл. 11 ЦК КР: ст. 80 (специальная категория), ст. 82 (DPIA), ст. 86 (договор с обработчиком), ст. 89 (трансграничная передача — on-prem либо правовое основание), ст. 88 (ответственное лицо), ст. 63 (инциденты ≤ 72 ч) | must | ТИПОВО (изложение по тексту реестра ГАЗПД — R6 §4.2; сверка с cbd.minjust.gov.kg — Q-180; юридическое заключение — Q-027) | SRC-B-089, SRC-E-136b, SRC-E-136c | — (юридическое заключение заказчика) |
 | FACE-014 | Интерфейсы модуля: `FaceScanController { events, start(), cancel() }`, `FaceScanStep`, `FaceScanEvent`, `FaceScanResult`; серверный `POST /registration/face-scan/verify` — только в режиме с SDK (R2) | could | РЕШЕНИЕ | §10.6 | — (R2) |
 
-Итого требований: AUTH-001…052 (52), SMS-001…035 (35), REG-001…039 (39), SESS-001…035 (35), BIO-001…029 (29), FACE-001…014 (14) — **204**; критерии приёмки AC-AUTH-001…089.
+Итого требований: AUTH-001…055 (55), SMS-001…036 (36), REG-001…039 (39), SESS-001…039 (39), BIO-001…029 (29), FACE-001…014 (14) — **212** (ред. 1.11: +8 по режиму «Планшет магазина» — AUTH-053…AUTH-055, SMS-036, SESS-036…SESS-039, ADR-115; было 204); критерии приёмки AC-AUTH-001…089. У новых требований AC-AUTH нет: их проверки — T-KIOSK и T-SEC в 12 §3.23.
 
 ---
 
@@ -1902,6 +2108,13 @@ State machine `MascotAuth`: `bool isTyping`, `bool isChecking`, `trigger success
 20. **Актуализация по ядру v1.6 и v1.7 (2026-10-19).** Ядро §21 п.2 (D-13): основной путь криптопривязки заменён порядком «прототип `biometric_storage` с чек-листом → platform channel только при непрохождении» (§9.2, BIO-007; результат — ADR-013 в 15, задача — 13 RM-C-013). Ядро §22.12: подтверждение привязки сотрудником — только `admin`; самоподтверждение — `customer.link.self_resolve` без step-up по 08 §4.2.4 и 11 SEC-130 (§7.9, REG-029, REG-036, AC-AUTH-050, AC-AUTH-087); прежние формулировки этого документа (`customer.link.confirm.own`, step-up, синхронная сверка с 1С как условие, `nextStep=wait_staff`, подтверждение `cashier`/`senior_seller`) сняты. Ядро §22.13 п.2: аварийный код — R1 `should`, эндпоинт 08 §4.18.10, право и аудит — 11 код 76, SEC-131, §7.2.1; выдача `owner` для `admin`/`owner` снята — цели только `staff` без ролей `admin`/`owner` (§6.13, SMS-035, AC-AUTH-086, Q-168). Отзыв биометрической семьи при инвалидации ключа — серверный по 08 §4.1.8 (§9.3, §9.7, BIO-014, AC-AUTH-066). Остаётся у владельцев других документов: 12 — тест IDOR для `/registration/customer-match/confirm` и случай `verified=false` (T-SEC-015/T-REG-*), T-BIO-003 — серверный отзыв `biometric_invalidated`; 13 RM-C-013/RM-D-008 и 15 ADR-013 — по §21 п.2; 16 — runbook «SMSPro недоступен»; 14 — Q-168, Q-202; 02 SCR-06 и 04 FLOW-006 — эндпоинты 08 §4.2.4.
 21. **Актуализация по ядру v1.8 (2026-10-19).** Ядро §23 п.8: действие на SCR-45 называется «Выдать аварийный код входа» (`users.emergency_code.issue`, только `admin`, step-up; цель — активный сотрудник, не `admin`/`owner`; код показывается один раз) — §6.13 п.3 выровнен с 08 §4.18.10 и 11 код 76. Ядро §23 п.9: Q-168 — действующий вопрос (§15). Ссылка §17 п.19 (г) на несуществующие T-AUTH-055/056 заменена реальными ID 12 — T-SESS-005/T-SESS-006. Ядро §23 пп.1–7, 10 документ не затрагивают (обмен с 1С, проекция статуса заказа, платежи, долг, отмена заказа, дашборд кассира, статистика). Остаётся у владельцев других документов: 02 SCR-45 — действие «Выдать аварийный код входа» (ядро §23 п.8); 14 — Q-168 в реестре (ядро §23 п.9; Q-202 в 14 уже закрыт по ядру §22.12); 12 — IDOR-тест `/registration/customer-match/confirm`, случай `verified=false`, T-BIO-003 (серверный отзыв по 08 §4.1.8); 13 RM-C-013/RM-D-008 и 15 ADR-013 — по ядру §21 п.2; 16 — runbook «SMSPro недоступен» (включая восстановление входа `admin`/`owner`, 11 SEC-131); 02 SCR-06/SCR-50 и 04 FLOW-006 — эндпоинт 08 §4.2.4; 07 §11.4 — по SESS-035; 08 §4.2.4 — явное исключение юридических карточек и `verified=true` по 11 SEC-130.
 22. **Актуализация по ядру v1.9 (2026-10-21, ответы заказчика).** Ядро §24.2 (Q-001 закрыт): D-07 пересмотрен — регистрация по телефону для клиентов, `CUSTOMER_SELF_SERVICE=true` по умолчанию, режим клиента — R1; сотрудники — только приглашением `admin` с созданием учётной записи при первом OTP-входе и обязательным PIN; `pending_activation` — только при выключенном флаге; защита входа клиента — хотя бы один способ (биометрия или PIN), прежнее «Пропустить» для `customer` (п.9) снято; привязка клиента к карточке 1С по телефону — основной сценарий R1. Правки, требующие других документов (этот документ их не вносит; владельцы — ядро §18.1, §19.1, §20.1): (а) **08** — §4.1.2: ветка «аккаунта нет, есть действующее приглашение» → `200 authenticated` с созданием `staff` (сейчас приглашённый номер проходит `registration_required` → `/registration/complete`), §4.2.1 и API-040: правило `login_protection_required` для `customer` и пример по умолчанию `CUSTOMER_SELF_SERVICE=true`, §4.3: `POST /me/biometrics {enabled:false}` при отсутствии PIN → `400 VALIDATION_FAILED` (`login_protection_required`), §4.18.4: предложение сделать `fullName` обязательным в приглашении сотрудника; (б) **16** §4.3 — значение по умолчанию `CUSTOMER_SELF_SERVICE=true`; ядро §24.2 говорит «администратор отключил самостоятельную регистрацию», тогда как флаг — переменная окружения (ядро §19.2): отключение выполняет администратор сервера; если нужен переключатель на SCR-45 (ключ `app_settings`) — решение оркестратора; (в) **02/04** — SCR-04 в режиме «первый вход сотрудника» (PIN обязателен, без формы SCR-03), удаление «Пропустить» на SCR-04 для клиента, сценарий первого входа приглашённого сотрудника; (г) **12** — тест-кейсы к AC-AUTH-088, AC-AUTH-089 и к обновлённым AC-AUTH-002, AC-AUTH-042, AC-AUTH-047; (д) **14** — номер **Q-303** уже занят в реестре 14 (§3.6: «обязательный PIN вместо обязательной биометрии», 17 §13.2), а ядро §24.5 вводит Q-303 «кто такой супер-админ»; документ использует Q-303 в значении ядра §24.5, коллизию номеров разрешает оркестратор; прежний вопрос частично отвечен ядром §24.2 для клиентов («биометрия или PIN, хотя бы один способ»), для сотрудников сохраняется обязательный PIN (D-48); (е) **07** DATA-102 — роль из приглашения присваивается атомарно с созданием `users` при первом OTP-входе, а не при регистрации; (ж) **11** — аудит `user.created` с `roleSource=invitation` при `/auth/otp/verify`; матрица прав `customer` и object-level правило SEC-130 не меняются.
+23. **Режим «Планшет магазина» (ред. 1.11, 2026-11-04; P-002, ADR-115) — отступления от ядра.** R0 не редактируется. Отступления перечислены в ADR-115 («Отклонение от ядра»). Владелец согласился на них ответом 2026-11-04 «Да, все рекомендации (Рекоменд.)»; вариант этого ответа начинается словами «Р-01 а: новая роль и режим «Планшет», код из SMS уже в R1, планшет только со своего склада».
+    - **Затрагивают этот документ:**
+      - ядро §3.1 — новая техническая роль `kiosk` в закрытом перечне ролей (§2.1, §2.2);
+      - ядро §19.2 — подтверждение номера покупателя кодом из SMS уже в R1, только в канале планшета: код `kiosk_order` (§5.3). Ядро перенесло SMS-подтверждение клиента (CUST-013) в R2; в точке (б) §7.8 оно остаётся R2;
+      - ядро §6 — новые значения `user_kind` (`kiosk`) и `role_code` (`kiosk`) (07 §6).
+    - **Уточняют D-12 без отступления:** новые сроки сессии `kind=kiosk` — 7 дней простоя и 180 дней всего (§8.2, §8.9). Сроки `staff` и `customer` не меняются.
+    - **Предложение к ядру:** в следующей версии R0 закрепить эти отступления, сроки сессии `kind=kiosk` и назначение `kiosk_order` в перечне назначений кода.
 
 
 ---
@@ -2099,5 +2312,43 @@ State machine `MascotAuth`: `bool isTyping`, `bool isChecking`, `trigger success
 ## 22. Ревью закрытия этапа E (версия 1.10, 2026-10-22)
 
 Источник — замечания ревью закрытия этапа E (`docs/reviews/E_review.md`, закрытие остатков); бизнес-правила и ядро не менялись. RS-2: у правил, которые реализация R1 выполняет иначе до ответа заказчика, добавлены ссылки на вопросы — §4.4 «Повторная отправка» и «Ошибка SMS-сервиса», §5.3 «Повторная отправка» (прежний код аннулируется в момент выпуска нового — Q-299); BIO-020 (счёт неверных PIN на пользователя — Q-310). Нормативный текст до ответа не меняется.
+
+## 23. Режим «Планшет магазина» (версия 1.11, 2026-11-04, ADR-115)
+
+**Источник** — предложение `proposals/P-002_STORE_TABLET.md` ред. 5: §8.2, §8.5, §8.9, §14.2 и строка «09» §19.
+
+**Ответы владельца:**
+- 2026-11-02 — четыре ответа анкеты (P-002 §0);
+- 2026-11-04 — «P-002 утверждаю, делай», «Да, все рекомендации (Рекоменд.)» и «Да, разработка сразу (Рекоменд.)».
+
+**Что из них следует для этого документа:**
+- группа А — вариант (а), в том числе «Р-01 а» и «Р-21 а: SMS по-русски»;
+- группа Б — вариант (а) по утверждению P-002 (P-002 §22), в том числе Р-14 и Р-22;
+- решение записано в 15 ADR-115.
+
+**Владельцы смежных частей:** бизнес-правила планшета — 10 (KIOSK-NNN), API и коды ошибок — 08, модель данных — 07, безопасность и персональные данные — 11, переменные — 16 §4.3.
+
+**Паритет (KIOSK-029).** Правила входа, OTP, регистрации, сессий и защиты входа для `staff` и `customer` не менялись; новые правила действуют только для `kind=kiosk` и кода `kiosk_order`. На рабочем контуре `KIOSK_MODE=false` (16).
+
+| Пункт | Что изменено | Где |
+|---|---|---|
+| P-002 §8.2 п. 1–2, §8.3 (`GET /me`) | технический пользователь `kind=kiosk`, роль `kiosk`, сущность `store_tablets`, ответ `/me` планшету | §1 п. 11, §2.1, §2.2, §2.4 |
+| P-002 §8.5 п. 1–5, KIOSK-011 | назначение `kiosk_order`: без сессии, привязка к планшету, номеру и корзине, порядок проверок, вытеснение и погашение кодов | §2.1, §5.1, §5.3; AUTH-053, AUTH-054 |
+| P-002 §14.2, Р-14 (а), KIOSK-012 | лимиты планшета 30 в час и 200 в сутки вместо лимитов IP и устройства; лимиты номера общие для всех назначений | §5.4; AUTH-055 |
+| Р-21 (а) | текст SMS `otp_kiosk_order` (65 символов, 1 часть). Записано: остальные назначения сейчас используют единый `SMS_OTP_TEMPLATE`, тексты «Другие тексты» остаются предложением | §6.7, §6.9; SMS-036 |
+| Р-22 (а); 16 §4.3 | `AUTH_REFRESH_TTL_KIOSK_DAYS=180`, `AUTH_REFRESH_IDLE_KIOSK_DAYS=7`; одна сессия, `sessions.kind=standard`, `amr=["pin"]` (ADR-115 п. 18); claim `kind=kiosk` | §6.11, §8.1, §8.2; SESS-037, SESS-009 (пометка) |
+| P-002 §8.2 п. 5 (TAB-1-15) | поздний повтор refresh планшета — путь грации, один раз на ротацию; второй — `reuse_detected`; ветка `KIOSK_REVOKED` в диаграмме | §8.3; SESS-037 |
+| P-002 §8.2 п. 4, п. 6–8, §8.9 | новый §8.9: подключение, сроки и доступ, отзыв и аварийный выход, аварийный код, подключение заново тем же пользователем, признак планшета, `KIOSK_REVOKED` и `SESSION_REVOKED` с принятыми остатками, `/admin/users/*` → `403`, `KIOSK_ALLOWED_CIDRS` | §8.9; SESS-036, SESS-038, SESS-039, SESS-014 (пометка) |
+| P-002 §8.3, §8.9 п. 3 | своего выхода у планшета нет (`403`); idle-блокировка, блокировка при уходе в фон и ручная к планшету не относятся; признак планшета переживает очистку secure storage при `SESSION_REVOKED` | §8.5, §8.6, §8.8 |
+| P-002 §8.6, строка «09» §19 | таймаут синхронного поиска клиента в 1С: 5 с → `ONEC_SYNC_CHECK_TIMEOUT_MS`, 6 с (ядро §19.2, 16 §4.3, `pos-api/src/common/config/env.schema.ts:140`); третья точка поиска — заявка с планшета | §7.8; REG-025 |
+| ADR-115 «Отклонение от ядра» | отступления ядра §3.1, §19.2, §6, которые затрагивают этот документ | §17 п. 23 |
+| — | итог требований 204 → 212; входные материалы — P-002 | §14 (итог), шапка |
+| ревью реализации 2026-11-06 (app-kiosk-5) | подключение заново закрывает активную корзину технического пользователя (`cart.cleared`, `kiosk_reconnect`) — корзина прошлого покупателя не возвращается следующему (`pos-api/src/kiosk/lifecycle/store-tablets.service.ts`, `pos-api/src/cart/kiosk-cart-closer.ts`) | §8.9 п. 6 |
+| итоговая сборка 2026-11-06 (итоговый отчёт сборки P-002, «Что не сделано и почему» п. 7) | признак планшета на устройстве — и склад планшета `kiosk.warehouse_id` (подключение SCR-54, затем `GET /me` → `tablet.warehouseId`; только для чтения кэша каталога), как в коде (`pos-app/lib/core/storage/secure_storage.dart` — `SecureKey.kioskWarehouseId`) и 02 SCR-51.9; ПДн среди ключей по-прежнему нет | §8.9 п. 7 |
+
+**Проверка целостности (ред. 1.11):**
+- **строки:** 2103 → 2351 (`wc -l`, вместе с этим разделом);
+- **новые ID** — AUTH-053…AUTH-055, SMS-036, SESS-036…SESS-039. До правки в `docs/specification` они не встречались; совпадение подстроки есть только у `T-AUTH-055` в §17 п. 21 и в журнале §19 — это ID теста, не требование;
+- **существующие ID** требований, AC-AUTH и вопросов не менялись; новых AC-AUTH нет: проверки новых требований — T-KIOSK и T-SEC в 12 §3.23.
 
 Конец документа 09_AUTH_SMS_BIOMETRICS.md.

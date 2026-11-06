@@ -14,7 +14,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /**
  * `inventory` (08 §4.6; RM-E-004, RM-E-017): остатки по вариантам и пакетная проверка доступности корзины.
  * `Cache-Control: no-store`, `X-Data-As-Of`; аудит не пишется. Количества для `customer` — по
- * `app_settings.customer_stock_display` (field-level, 11 §4.4).
+ * `app_settings.customer_stock_display` (field-level, 11 §4.4). Планшет магазина (`kind=kiosk`, склад закреплён —
+ * `CatalogViewer.warehouseLocked`; 08 §4.25, 10 KIOSK-007): только склад планшета — параметр `warehouseId` → `403`,
+ * без параметра — склад планшета (не «все склады»); тело `POST /inventory/check` — только склад планшета (другой →
+ * `403`).
  */
 @Controller('inventory')
 export class InventoryController {
@@ -42,6 +45,7 @@ export class InventoryController {
     const warehouseId = uuidParam(q, 'warehouseId');
     const live = boolParam(q, 'live') ?? false;
     const viewer = await this.viewers.resolve(req.principal);
+    if (viewer.warehouseLocked && warehouseId !== undefined) throw lockedWarehouseForbidden();
     if (live && viewer.isCustomer) {
       throw new ProblemException('FORBIDDEN', { detail: 'Синхронная проверка 1С доступна только сотрудникам.' });
     }
@@ -51,7 +55,7 @@ export class InventoryController {
     const body = await this.inventory.balances(
       viewer,
       [...new Set(ids.map((s) => s.toLowerCase()))],
-      warehouseId,
+      viewer.warehouseLocked ? viewer.warehouse?.id : warehouseId,
       snap,
     );
     sendCached(res, { body, cacheControl: CACHE_NO_STORE, dataAsOf: snap.stockAsOf, etag: false });
@@ -63,8 +67,14 @@ export class InventoryController {
   async check(@Req() req: RequestWithContext, @Body() body: unknown, @Res() res: Response): Promise<void> {
     const input = parseInventoryCheck(body);
     const viewer = await this.viewers.resolve(req.principal);
+    if (viewer.warehouseLocked && input.warehouseId !== viewer.warehouse?.id) throw lockedWarehouseForbidden();
     const snap = await this.snapshots.read();
     const result = await this.inventory.check(viewer, input, snap);
     sendCached(res, { body: result, cacheControl: CACHE_NO_STORE, dataAsOf: snap.stockAsOf, etag: false });
   }
+}
+
+/** Склад планшета магазина закреплён (ADR-115 п. 23): другой склад — `403 FORBIDDEN` (в том числе параметром). */
+function lockedWarehouseForbidden(): ProblemException {
+  return new ProblemException('FORBIDDEN', { detail: 'На планшете магазина доступен только склад планшета.' });
 }

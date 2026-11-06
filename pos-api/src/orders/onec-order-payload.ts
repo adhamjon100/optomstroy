@@ -14,7 +14,13 @@ export interface OnecOrderPayloadInput {
   readonly publicNumber: string;
   readonly createdAt: Date;
   readonly createdByUserId: string;
-  readonly createdVia: 'staff' | 'customer';
+  /** Канал заказа (`orders.created_via`); `kiosk` — заявка с планшета магазина (ADR-115). */
+  readonly createdVia: 'staff' | 'customer' | 'kiosk';
+  /**
+   * Имя планшета (`user_profiles.full_name` технического пользователя) — только у `createdVia = 'kiosk'`: часть
+   * комментария «Заявка с планшета «{имя}»» (05 ONEC-109; Q-344; контракт 1С 1.2.0 `x-comment-format`).
+   */
+  readonly kioskTabletName?: string | null;
   readonly customerId: string;
   readonly paymentMethod: PaymentMethod;
   readonly snapshot: CheckoutCartSnapshot;
@@ -36,6 +42,8 @@ export interface OnecOrderPayloadInput {
  * реплик каталога/клиентов, строки и итоги — из снимка сервера (`order_items`), а не от клиента (D-23).
  * `Комментарий` содержит `POS <uuid>` (ONEC-040); заявка клиента помечена «заявка клиента» — в 1С создаётся
  * «Заказ клиента» в статусе по умолчанию «Не согласован» (ядро §24.2, ORD-024; статус в запросе контракт не передаёт).
+ * Заявка с планшета магазина — вместо неё «Заявка с планшета «{имя}»» (05 ONEC-109, Q-344); `createdByUserCode` —
+ * UUID технического пользователя планшета (один на планшет, не меняется при подключении заново; Q-343).
  */
 export async function buildOnecOrderPayload(tx: SalesTx, i: OnecOrderPayloadInput): Promise<Record<string, unknown>> {
   const refs = await tx.execute<{
@@ -69,6 +77,10 @@ export async function buildOnecOrderPayload(tx: SalesTx, i: OnecOrderPayloadInpu
     i.delivery.desiredDate && time ? `${i.delivery.desiredDate}T${time}:00+06:00` : null;
   const commentParts = [`POS ${i.orderId}`, i.publicNumber];
   if (i.createdVia === 'customer') commentParts.push('заявка клиента');
+  if (i.createdVia === 'kiosk') {
+    if (!i.kioskTabletName) throw new Error('onec-order-payload: у заявки с планшета нет имени планшета');
+    commentParts.push(`Заявка с планшета «${i.kioskTabletName}»`);
+  }
   if (i.comment) commentParts.push(i.comment);
   return {
     externalId: i.orderId,

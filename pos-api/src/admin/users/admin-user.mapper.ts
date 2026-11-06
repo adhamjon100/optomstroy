@@ -4,7 +4,8 @@ import { phoneForViewer } from './shared/phone.js';
 /** `AdminUser` (08 §4.18.1; contracts/openapi `#/components/schemas/AdminUser`). */
 export interface AdminUserDto {
   readonly id: string;
-  readonly kind: 'staff' | 'customer';
+  /** `UserKind` контракта (`kiosk` — ADR-115; цель `kind=kiosk` в `/admin/users/*` не отдаётся — 11 SEC-142). */
+  readonly kind: 'staff' | 'customer' | 'kiosk';
   readonly status: string;
   readonly phoneMasked?: string;
   readonly fullName?: string;

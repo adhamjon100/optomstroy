@@ -14,8 +14,18 @@
 /** DI-токен порта. */
 export const SMS_GATEWAY = 'SmsGateway' as const;
 
-/** Значения `sms_outbox.template_key` / `dev_outbox.template_key` (07 §5.61, 09 §6.9). */
-export const SMS_TEMPLATE_KEYS = ['otp_login', 'otp_step_up', 'otp_phone_change', 'otp_customer_link'] as const;
+/**
+ * Значения `sms_outbox.template_key` (07 §5.61, 09 §6.9; `otp_kiosk_order` — код заявки с планшета магазина, ADR-115,
+ * миграция 0022). CHECK `dev_outbox.template_key` без `otp_kiosk_order` (07 §5.63): FakeSmsGateway пишет его как
+ * `otp_login` (ADR-115 п. 25).
+ */
+export const SMS_TEMPLATE_KEYS = [
+  'otp_login',
+  'otp_step_up',
+  'otp_phone_change',
+  'otp_customer_link',
+  'otp_kiosk_order',
+] as const;
 export type SmsTemplateKey = (typeof SMS_TEMPLATE_KEYS)[number];
 
 /** Классы исхода отправки (09 §6.4, столбец «Класс»; CHECK `sms_outbox_outcome_chk`, 07 §5.61). */

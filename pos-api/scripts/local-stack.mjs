@@ -30,6 +30,15 @@
  *                                                   # история, скидки, возвраты)
  *   node scripts/local-stack.mjs serve --cashier-fixtures --catalog-spec=../demo/catalog/design-catalog.json
  *                                                   # демо Windows (ADR-114): каталог по макету вместо синтетики
+ *   node scripts/local-stack.mjs kiosk-smoke [--catalog-fixtures=N]
+ *                                                   # планшет магазина (P-002, ADR-115): как cashier-smoke, KIOSK_MODE=
+ *                                                   # true; подключение планшета → GET /me → каталог → корзина →
+ *                                                   # код kiosk_order (246810) → заявка → outbox → фейк 1С → кассир
+ *                                                   # видит и принимает → сброс → отключение (KIOSK_REVOKED) →
+ *                                                   # подключение заново → аварийный выход (код 0/1)
+ *   LOCAL_STACK_KIOSK_MODE=true|false node scripts/local-stack.mjs serve …
+ *                                                   # KIOSK_MODE процессов стека (не задано — как раньше, по умолчанию
+ *                                                   # false); интеграционные потоки pos-app с режимом планшета и без
  *
  * `--catalog-spec=<файл>` (только `serve`, только dev; вместо `--catalog-fixtures`, вместе — ошибка): каталог по
  * прототипу экрана выбора товаров из спецификации `demo/catalog/design-catalog.json` (**тестовые данные**: 8 корней и
@@ -244,6 +253,8 @@ class Stack {
   proxy = undefined;
   /** Переменные API тестового режима OTP (`--auth-fixtures`, auth-smoke). */
   authEnv = {};
+  /** `KIOSK_MODE` процессов стека (`LOCAL_STACK_KIOSK_MODE`, kiosk-smoke); пусто — окружение как есть. */
+  kioskEnv = {};
   /** Этап F: процесс pos-worker, фейк 1С и окружение `ONEC_MODE=extension` → фейк. */
   worker = undefined;
   workerLog = join(this.dir, 'worker.log');
@@ -311,6 +322,7 @@ class Stack {
       SMS_PROVIDER: 'fake',
       OPENAPI_PUBLIC: 'true',
       ...this.authEnv,
+      ...this.kioskEnv,
       ...extra,
     };
   }
@@ -2371,6 +2383,372 @@ async function cashierSmoke(stack, sku, world) {
   return failed === 0;
 }
 
+/** Планшет магазина (P-002, ADR-115): версия текста информирования (`contracts/legal/notices_ru.md`) и имя планшета. */
+const KIOSK_NOTICE_VERSION = '2026-11-04';
+const KIOSK_TABLET_NAME = 'Планшет у входа';
+/** PIN администратора и кассира стенда планшета (только dev, тестовое значение, не секрет). */
+const KIOSK_STAFF_PIN = '715382';
+
+/**
+ * `LOCAL_STACK_KIOSK_MODE` (`true` | `false`; только dev): значение `KIOSK_MODE` процессов стека (pos-api, pos-worker,
+ * migrate) — режим «Планшет магазина» (P-002, ADR-115; 16 §4.3). Не задано — как раньше (`KIOSK_MODE` окружения или
+ * значение по умолчанию `false`). Интеграционные потоки pos-app (WP-A11, T-KIOSK-035) поднимают `serve` с `true` и
+ * `false`; `kiosk-smoke` всегда работает с `true`. Иное значение — ошибка запуска (код 2).
+ */
+function kioskModeArg() {
+  const v = process.env.LOCAL_STACK_KIOSK_MODE;
+  if (v === undefined || v === '') return undefined;
+  if (v !== 'true' && v !== 'false') throw new Error(`LOCAL_STACK_KIOSK_MODE: true | false (получено «${v}»)`);
+  return v;
+}
+
+/**
+ * Планшет магазина на настоящих процессах (P-002, ADR-115; TAB-1-07): pos-api + pos-worker (`KIOSK_MODE=true`) +
+ * управляемый фейк HTTP-сервиса 1С в режиме кассира (мир кассира загружен синхронизацией), тестовый код SMS
+ * `AUTH_FIXTURES.otpCode` (09 §5.8). Сценарии: подключение планшета администратором со step-up `kiosk.manage`
+ * (`POST /admin/store-tablets`) → `GET /me` планшета (`{kind, tablet}`) и `GET /settings/public` (`storeTablet`) →
+ * каталог → корзина → предпросмотр → `POST /kiosk/order-otp` → `POST /kiosk/orders` (номер карточки 1С и номер без
+ * карточки) → восстановление по ключу → outbox → «Заказ клиента» в фейке 1С (канал, комментарий по шаблону
+ * контракта) → кассир видит заявки (`GET /orders?createdVia=kiosk`, уведомление `kiosk_order`) и принимает
+ * наличные → закрытый список (`POST /orders` планшету — 403) → `POST /kiosk/reset` → список планшетов →
+ * отключение → `401 KIOSK_REVOKED` (AuthGuard и `/auth/refresh`) → подключение заново с того же устройства (та же
+ * строка, новый аварийный код) → аварийный выход `POST /kiosk/exit`. **На фикстурах, не реальная интеграция**: номера
+ * и карточки — синтетика кассира (тестовые данные); номера, коды и токены в журнал не пишутся.
+ */
+async function kioskSmoke(stack) {
+  const results = [];
+  const check = (name, ok, detail) => {
+    results.push(Boolean(ok));
+    log(`${ok ? 'PASS' : 'FAIL'} ${name} — ${detail}`);
+  };
+  const db = new pg.Client({ connectionString: stack.dbUrl });
+  await db.connect();
+  const q = async (sql, params = []) => (await db.query(sql, params)).rows;
+  const stepUp = async (actor) =>
+    (
+      await apiF('POST', '/auth/step-up', {
+        ...actor,
+        body: { method: 'pin', operation: 'kiosk.manage', pin: KIOSK_STAFF_PIN },
+      })
+    ).body?.stepUpToken;
+  /** Вход администратора по OTP на устройстве `deviceId` (PIN уже задан); пауза повторной отправки — ожидание. */
+  const loginOn = async (phone, deviceId) => {
+    let { req, verify } = await otpLogin(phone, deviceId);
+    for (let i = 0; i < 2 && req?.status === 429; i++) {
+      const wait = Number(req.body?.retryAfter ?? 60);
+      log(`kiosk-smoke: 429 ${req.body?.code ?? ''} — пауза ${wait} с (otp_resend_cooldown)`);
+      await new Promise((r) => setTimeout(r, (wait + 1) * 1000));
+      ({ req, verify } = await otpLogin(phone, deviceId));
+    }
+    return { token: verify?.body?.accessToken, deviceId, status: verify?.status ?? req?.status }; // check-secrets: allow — имя поля, не секрет
+  };
+  try {
+    // 1. Подключение планшета: администратор на устройстве планшета, step-up, склад POS.
+    const admin = await staffSession(AUTH_FIXTURES.admin, KIOSK_STAFF_PIN);
+    const A = { token: admin.token, deviceId: admin.deviceId };
+    const wh = await apiF('GET', '/catalog/warehouses', A);
+    const warehouse = (wh.body?.items ?? []).find((w) => w.isDefaultForPos) ?? (wh.body?.items ?? [])[0];
+    const noStep = await apiF('POST', '/admin/store-tablets', {
+      ...A,
+      idem: true,
+      body: { name: KIOSK_TABLET_NAME, warehouseId: warehouse?.id },
+    });
+    const enroll = await apiF('POST', '/admin/store-tablets', {
+      ...A,
+      idem: true,
+      stepUp: await stepUp(A),
+      body: { name: KIOSK_TABLET_NAME, warehouseId: warehouse?.id },
+    });
+    const tabletId = enroll.body?.tablet?.id ?? null;
+    const exitCode1 = enroll.body?.exitCode ?? null;
+    let T = { token: enroll.body?.accessToken, deviceId: admin.deviceId }; // check-secrets: allow — имя поля из ответа API в прогоне, не секрет
+    const tabletRefresh = enroll.body?.refreshToken;
+    const adminAfter = await apiF('GET', '/me', A);
+    check(
+      'подключение: без step-up → 403 STEP_UP_REQUIRED; со step-up kiosk.manage → 201 KioskTokens (tablet, токены, код 8 цифр); сессия администратора на устройстве завершена',
+      admin.ok &&
+        noStep.status === 403 &&
+        noStep.body?.code === 'STEP_UP_REQUIRED' &&
+        enroll.status === 201 &&
+        typeof tabletId === 'string' &&
+        /^\d{8}$/.test(String(exitCode1)) &&
+        typeof T.token === 'string' &&
+        adminAfter.status === 401,
+      `admin=${admin.ok} noStep=${noStep.status} ${noStep.body?.code ?? ''} enroll=${enroll.status} ${enroll.body?.code ?? ''} adminAfter=${adminAfter.status}`,
+    );
+    const userRow = await q(
+      `SELECT u.kind::text AS kind, u.phone_e164, st.status::text AS status
+         FROM store_tablets st JOIN users u ON u.id = st.user_id WHERE st.id = $1`,
+      [tabletId],
+    );
+    check(
+      'технический пользователь планшета: kind=kiosk, без телефона; store_tablets active',
+      userRow[0]?.kind === 'kiosk' && userRow[0]?.phone_e164 === null && userRow[0]?.status === 'active',
+      JSON.stringify(userRow[0] ?? null),
+    );
+
+    // 2. Планшет: GET /me, публичные настройки, каталог, корзина, предпросмотр.
+    const me = await apiF('GET', '/me', T);
+    const settings = await apiF('GET', '/settings/public', T);
+    check(
+      'планшет: GET /me → {kind: kiosk, tablet}; GET /settings/public → features.storeTablet=true, тайминги kiosk',
+      me.status === 200 &&
+        me.body?.kind === 'kiosk' &&
+        me.body?.tablet?.id === tabletId &&
+        Object.keys(me.body ?? {})
+          .sort()
+          .join(',') === 'kind,tablet' &&
+        settings.body?.features?.storeTablet === true &&
+        Number.isInteger(settings.body?.kiosk?.idleSeconds),
+      `me=${me.status} ${me.body?.kind} storeTablet=${settings.body?.features?.storeTablet} idle=${settings.body?.kiosk?.idleSeconds}`,
+    );
+    const list = await apiF('GET', '/catalog/products?limit=50&inStock=true', T);
+    const product = (list.body?.items ?? []).find(
+      (p) => !p.hasVariants && p.defaultVariantId && p.baseUnit?.id && p.price,
+    );
+    const variant = product ? { variantId: product.defaultVariantId, unitId: product.baseUnit.id } : null;
+    const forbiddenOrder = await apiF('POST', '/orders', { ...T, idem: true, body: {} });
+    const priceLists = await apiF('GET', '/catalog/price-lists', T);
+    check(
+      'закрытый список: каталог 200; POST /orders → 403 kiosk_closed_list; GET /catalog/price-lists → 403 (как у покупателя)',
+      list.status === 200 &&
+        variant !== null &&
+        forbiddenOrder.status === 403 &&
+        forbiddenOrder.body?.reason === 'kiosk_closed_list' &&
+        priceLists.status === 403,
+      `catalog=${list.status} items=${list.body?.items?.length ?? 0} orders=${forbiddenOrder.status} ${forbiddenOrder.body?.reason ?? ''} priceLists=${priceLists.status}`,
+    );
+
+    /** Заявка с планшета на номер: корзина → предпросмотр → код → заявка (ключ — на попытку). */
+    const kioskOrder = async (phone) => {
+      const { cart } = await fillCart(T, variant, '1');
+      const preview = await apiF('POST', '/cart/checkout-preview', {
+        ...T,
+        body: {
+          cartId: cart?.id,
+          cartRowVersion: cart?.rowVersion,
+          paymentMethod: 'cash',
+          delivery: { method: 'pickup' },
+          receiver: { kind: 'customer' },
+        },
+      });
+      const otp = await apiF('POST', '/kiosk/order-otp', {
+        ...T,
+        body: { phone, cartId: cart?.id, noticeVersion: KIOSK_NOTICE_VERSION },
+      });
+      const key = randomUUID();
+      const order = await apiF('POST', '/kiosk/orders', {
+        ...T,
+        idem: key,
+        body: {
+          challengeId: otp.body?.challengeId,
+          code: AUTH_FIXTURES.otpCode,
+          cartId: preview.body?.cartId,
+          cartRowVersion: preview.body?.cartRowVersion,
+          previewToken: preview.body?.previewToken, // check-secrets: allow — имя поля из ответа API в прогоне, не секрет
+        },
+      });
+      const found = await apiF('GET', `/kiosk/orders?idempotencyKey=${key}`, T);
+      return { preview, otp, order, found, publicNumber: order.body?.publicNumber ?? null };
+    };
+
+    // 3. Заявка на номер карточки 1С (синтетика кассира «долг в лимите») и на номер без карточки.
+    const onCard = await kioskOrder(AUTH_FIXTURES.cashierCustomerLinked);
+    const noCard = await kioskOrder(AUTH_FIXTURES.customerSmoke);
+    const bodiesOk = [onCard, noCard].every(
+      (x) =>
+        x.preview.status === 200 &&
+        x.otp.status === 202 &&
+        Object.keys(x.otp.body ?? {})
+          .sort()
+          .join(',') === 'challengeId,resendAfterSec' &&
+        x.order.status === 201 &&
+        Object.keys(x.order.body ?? {}).join(',') === 'publicNumber' &&
+        x.found.status === 200 &&
+        x.found.body?.publicNumber === x.publicNumber,
+    );
+    check(
+      'POST /kiosk/order-otp → 202 {challengeId, resendAfterSec}; POST /kiosk/orders (код 246810) → 201 {publicNumber}; GET /kiosk/orders?idempotencyKey= → тот же номер',
+      bodiesOk,
+      [onCard, noCard]
+        .map(
+          (x) =>
+            `preview=${x.preview.status} otp=${x.otp.status} order=${x.order.status} ${x.order.body?.code ?? ''} found=${x.found.status}`,
+        )
+        .join('; '),
+    );
+    const orders = await q(
+      `SELECT o.id, o.public_number, o.created_via, o.customer_id, o.kiosk_customer_match, o.created_by_user_id,
+              (SELECT user_id FROM store_tablets WHERE id = $2) AS tablet_user,
+              (SELECT id FROM customers WHERE primary_phone_e164 = $3 AND NOT deletion_mark LIMIT 1) AS card_id
+         FROM orders o WHERE o.public_number = ANY($1::text[]) ORDER BY o.created_at`,
+      [[onCard.publicNumber, noCard.publicNumber], tabletId, AUTH_FIXTURES.cashierCustomerLinked],
+    );
+    const [cardOrder, retailOrder] = orders;
+    const cardConsistent =
+      cardOrder?.kiosk_customer_match === 'single'
+        ? cardOrder?.customer_id === cardOrder?.card_id
+        : ['none', 'ambiguous'].includes(cardOrder?.kiosk_customer_match);
+    check(
+      'заявки: created_via=kiosk, автор — технический пользователь планшета; номер карточки → клиент по поиску (single → карточка); номер без карточки → «Розничный покупатель»',
+      orders.length === 2 &&
+        orders.every((o) => o.created_via === 'kiosk' && o.created_by_user_id === o.tablet_user) &&
+        cardConsistent &&
+        retailOrder?.kiosk_customer_match === 'none',
+      `orders=${orders.length} card=${cardOrder?.kiosk_customer_match ?? '—'} retail=${retailOrder?.kiosk_customer_match ?? '—'}`,
+    );
+    const noAccounts = await q(`SELECT count(*)::int AS n FROM users WHERE phone_e164 = ANY($1::text[])`, [
+      [AUTH_FIXTURES.cashierCustomerLinked, AUTH_FIXTURES.customerSmoke],
+    ]);
+    check(
+      'код kiosk_order не создаёт учётных записей: users по номерам покупателей — 0',
+      noAccounts[0]?.n === 0,
+      `users=${noAccounts[0]?.n}`,
+    );
+
+    // 4. Outbox → pos-worker → «Заказ клиента» в фейке 1С; комментарий по шаблону контракта 1С (Q-343).
+    const cashier = await staffSession(AUTH_FIXTURES.cashier, KIOSK_STAFF_PIN);
+    const C = { token: cashier.token, deviceId: cashier.deviceId };
+    const inOnec = await until(
+      () => apiF('GET', `/orders/${cardOrder?.id}`, C),
+      (r) => onecNumberOf(r.body) !== null,
+      90_000,
+      1000,
+    );
+    const outbox = await q(
+      `SELECT status::text AS status, payload->>'comment' AS comment FROM onec_outbox
+        WHERE aggregate_type = 'order' AND aggregate_id = $1 AND operation = 'create'`,
+      [cardOrder?.id],
+    );
+    check(
+      'outbox → pos-worker → фейк 1С: номер 1С у заявки; комментарий «POS <id> · <номер> · Заявка с планшета «Планшет у входа»»',
+      onecNumberOf(inOnec.body) !== null &&
+        typeof outbox[0]?.comment === 'string' &&
+        outbox[0].comment.includes(`· ${onCard.publicNumber} · Заявка с планшета «${KIOSK_TABLET_NAME}»`),
+      `onec=${onecNumberOf(inOnec.body) ?? '—'} outbox=${outbox[0]?.status ?? '—'}`,
+    );
+
+    // 5. Кассир: заявки с планшета в списке, уведомление kiosk_order, приём наличных.
+    const mine = await apiF('GET', '/orders?createdVia=kiosk&limit=50', C);
+    const seen = (mine.body?.items ?? []).filter((o) =>
+      [onCard.publicNumber, noCard.publicNumber].includes(o.publicNumber),
+    );
+    const notes = await until(
+      () => apiF('GET', '/notifications?limit=50', C),
+      (r) => (r.body?.items ?? []).some((n) => n.kind === 'kiosk_order'),
+      30_000,
+      1000,
+    );
+    const order = inOnec.body;
+    const pay = await apiF('POST', `/orders/${cardOrder?.id}/payments`, {
+      ...C,
+      idem: true,
+      body: { method: 'cash', receivedAmount: { amount: order?.total?.amount, currency: 'KGS' } },
+    });
+    check(
+      'кассир: GET /orders?createdVia=kiosk — обе заявки (createdVia=kiosk, kioskCustomerMatch); уведомление kiosk_order; наличные → received',
+      cashier.ok &&
+        seen.length === 2 &&
+        seen.every((o) => o.createdVia === 'kiosk' && 'kioskCustomerMatch' in o) &&
+        (notes.body?.items ?? []).some((n) => n.kind === 'kiosk_order') &&
+        [200, 201].includes(pay.status) &&
+        pay.body?.status === 'received',
+      `list=${mine.status} seen=${seen.length} notes=${(notes.body?.items ?? []).filter((n) => n.kind === 'kiosk_order').length} pay=${pay.status} ${pay.body?.status ?? pay.body?.code}`,
+    );
+
+    // 6. Сброс сессии покупателя; список планшетов; отключение → KIOSK_REVOKED.
+    const cartNow = await apiF('GET', '/cart', T);
+    const reset = await apiF('POST', '/kiosk/reset', { ...T, idem: true, body: { cartId: cartNow.body?.id } });
+    const cartAfter = await apiF('GET', '/cart', T);
+    check(
+      'POST /kiosk/reset → 200; новая пустая корзина планшета',
+      reset.status === 200 &&
+        cartAfter.status === 200 &&
+        cartAfter.body?.id !== cartNow.body?.id &&
+        (cartAfter.body?.items ?? []).length === 0,
+      `reset=${reset.status} ${reset.body?.code ?? ''} cart=${cartAfter.status} items=${cartAfter.body?.items?.length ?? '—'}`,
+    );
+    const admin2 = await loginOn(AUTH_FIXTURES.admin, randomUUID());
+    const A2 = { token: admin2.token, deviceId: admin2.deviceId };
+    const tablets = await apiF('GET', '/admin/store-tablets', A2);
+    const listed = (tablets.body?.items ?? []).find((x) => x.id === tabletId);
+    const revoke = await apiF('POST', `/admin/store-tablets/${tabletId}/revoke`, {
+      ...A2,
+      idem: true,
+      stepUp: await stepUp(A2),
+      body: {},
+    });
+    const afterRevoke = await apiF('GET', '/cart', T);
+    const refreshRevoked = await apiF('POST', '/auth/refresh', {
+      deviceId: T.deviceId,
+      body: { refreshToken: tabletRefresh }, // check-secrets: allow — имя поля, не секрет
+    });
+    check(
+      'GET /admin/store-tablets — планшет active; отключение со step-up → 200; планшет → 401 KIOSK_REVOKED (AuthGuard и /auth/refresh)',
+      tablets.status === 200 &&
+        listed?.status === 'active' &&
+        revoke.status === 200 &&
+        afterRevoke.status === 401 &&
+        afterRevoke.body?.code === 'KIOSK_REVOKED' &&
+        refreshRevoked.status === 401 &&
+        refreshRevoked.body?.code === 'KIOSK_REVOKED',
+      `list=${tablets.status} ${listed?.status ?? '—'} revoke=${revoke.status} ${revoke.body?.code ?? ''} guard=${afterRevoke.status} ${afterRevoke.body?.code ?? ''} refresh=${refreshRevoked.status} ${refreshRevoked.body?.code ?? ''}`,
+    );
+
+    // 7. Подключение заново с того же устройства (та же строка, новый аварийный код) и аварийный выход.
+    const admin3 = await loginOn(AUTH_FIXTURES.admin, T.deviceId);
+    const A3 = { token: admin3.token, deviceId: T.deviceId };
+    const reconnect = await apiF('POST', `/admin/store-tablets/${tabletId}/reconnect`, {
+      ...A3,
+      idem: true,
+      stepUp: await stepUp(A3),
+      body: {},
+    });
+    T = { token: reconnect.body?.accessToken, deviceId: T.deviceId }; // check-secrets: allow — имя поля из ответа API в прогоне, не секрет
+    const exitCode2 = reconnect.body?.exitCode ?? null;
+    const me2 = await apiF('GET', '/me', T);
+    const wrongExit = await apiF('POST', '/kiosk/exit', {
+      ...T,
+      body: { code: exitCode2 === '00000000' ? '11111111' : '00000000' },
+    });
+    const exit = await apiF('POST', '/kiosk/exit', { ...T, body: { code: exitCode2 } });
+    const afterExit = await apiF('GET', '/me', T);
+    check(
+      'подключение заново: 200 KioskTokens, тот же tablet.id, новый аварийный код; неверный код → 422; верный → 200 {}; сессия планшета завершена',
+      admin3.status === 200 &&
+        reconnect.status === 200 &&
+        reconnect.body?.tablet?.id === tabletId &&
+        /^\d{8}$/.test(String(exitCode2)) &&
+        exitCode2 !== exitCode1 &&
+        me2.status === 200 &&
+        wrongExit.status === 422 &&
+        exit.status === 200 &&
+        Object.keys(exit.body ?? {}).length === 0 &&
+        afterExit.status === 401,
+      `login=${admin3.status} reconnect=${reconnect.status} ${reconnect.body?.code ?? ''} me=${me2.status} wrong=${wrongExit.status} exit=${exit.status} ${exit.body?.code ?? ''} after=${afterExit.status}`,
+    );
+
+    // 8. Аудит действий с планшетом (11 §7.2.1) — без номеров покупателей.
+    const audit = await q(
+      `SELECT action, after::text AS after FROM audit_logs WHERE action LIKE 'kiosk.%' AND entity_id = $1 ORDER BY chain_seq`,
+      [tabletId],
+    );
+    const actions = audit.map((x) => x.action);
+    check(
+      'аудит: kiosk.enrolled, kiosk.revoked, kiosk.reconnected, kiosk.exit_code_used; без номеров телефонов',
+      ['kiosk.enrolled', 'kiosk.revoked', 'kiosk.reconnected', 'kiosk.exit_code_used'].every((a) =>
+        actions.includes(a),
+      ) && audit.every((x) => !/\+?996\d{9}/.test(x.after ?? '')),
+      actions.join(','),
+    );
+  } finally {
+    await db.end().catch(() => undefined);
+  }
+  const failed = results.filter((x) => !x).length;
+  log(`kiosk-smoke итог: ${results.length - failed}/${results.length} PASS (на фикстурах, не реальная интеграция)`);
+  return failed === 0;
+}
+
 /** `--catalog-fixtures` или `--catalog-fixtures=N` → N (по умолчанию 500); нет флага → undefined. */
 function catalogFixturesArg() {
   const a = args.find((x) => x === '--catalog-fixtures' || x.startsWith('--catalog-fixtures='));
@@ -2398,22 +2776,25 @@ function catalogSpecArg() {
 }
 
 async function main() {
-  if (!['smoke', 'serve', 'auth-smoke', 'catalog-smoke', 'pos-smoke', 'cashier-smoke'].includes(mode)) {
+  if (!['smoke', 'serve', 'auth-smoke', 'catalog-smoke', 'pos-smoke', 'cashier-smoke', 'kiosk-smoke'].includes(mode)) {
     process.stderr.write(
-      'usage: node scripts/local-stack.mjs smoke | auth-smoke | catalog-smoke [--catalog-fixtures=N] | pos-smoke [--catalog-fixtures=N] | cashier-smoke [--catalog-fixtures=N] | serve [--ready-file <path>] [--ttl <sec>] [--auth-fixtures] [--catalog-fixtures[=N] | --catalog-spec=<file>] [--pos-fixtures | --cashier-fixtures [--qr-provider onec|none] [--qr-paid-after-polls N]]\n',
+      'usage: node scripts/local-stack.mjs smoke | auth-smoke | catalog-smoke [--catalog-fixtures=N] | pos-smoke [--catalog-fixtures=N] | cashier-smoke [--catalog-fixtures=N] | kiosk-smoke [--catalog-fixtures=N] | serve [--ready-file <path>] [--ttl <sec>] [--auth-fixtures] [--catalog-fixtures[=N] | --catalog-spec=<file>] [--pos-fixtures | --cashier-fixtures [--qr-provider onec|none] [--qr-paid-after-polls N]]  (env LOCAL_STACK_KIOSK_MODE=true|false)\n',
     );
     process.exit(2);
   }
   let catalogSku;
   let catalogSpec;
+  let kioskMode;
   try {
     catalogSku = catalogFixturesArg();
     catalogSpec = catalogSpecArg();
+    kioskMode = mode === 'kiosk-smoke' ? 'true' : kioskModeArg();
   } catch (e) {
     process.stderr.write(`${e.message}\n`);
     process.exit(2);
   }
   const stack = new Stack();
+  if (kioskMode !== undefined) stack.kioskEnv = { KIOSK_MODE: kioskMode };
   let stopping = false;
   const shutdown = async (code) => {
     if (stopping) return;
@@ -2474,6 +2855,20 @@ async function main() {
       await shutdown(ok ? 0 : 1);
       return;
     }
+    if (mode === 'kiosk-smoke') {
+      // Как cashier-smoke (фейк 1С в режиме кассира, мир кассира — синхронизацией), KIOSK_MODE=true у API и воркера.
+      const sku = catalogSku ?? 200;
+      await stack.loadCatalog(sku);
+      await stack.insertAuthFixtures();
+      await stack.insertCashierFixtures();
+      await stack.startFakeOnec(2, { sku });
+      await stack.startApi(stack.posEnv);
+      await stack.startWorker();
+      await loadCashierWorld(stack);
+      const ok = await kioskSmoke(stack);
+      await shutdown(ok ? 0 : 1);
+      return;
+    }
     const cashierFixtures = args.includes('--cashier-fixtures');
     const posFixtures = args.includes('--pos-fixtures') || cashierFixtures;
     const serveSku = catalogSpec ? undefined : (catalogSku ?? (posFixtures ? CATALOG_SKU_DEFAULT : undefined));
@@ -2512,6 +2907,11 @@ async function main() {
     log(
       `READY ${BASE_URL}${stack.proxy ? ` (фото и API через ${PROXY_URL})` : ''} (журнал API: ${stack.apiLog}); Ctrl+C — остановка`,
     );
+    if (kioskMode !== undefined) {
+      log(
+        `KIOSK_MODE=${kioskMode} (LOCAL_STACK_KIOSK_MODE): режим «Планшет магазина» ${kioskMode === 'true' ? 'включён' : 'выключен'}`,
+      );
+    }
     if (posFixtures) {
       log(
         `POS-FIXTURES: pos-worker (журнал ${stack.workerLog}), фейк 1С ${ONEC_FAKE_URL}/ut11/hs, управление ${ONEC_FAKE_URL}/__fake/state (тестовые данные)`,

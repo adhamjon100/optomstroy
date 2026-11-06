@@ -89,7 +89,8 @@ final class PosDashboard {
   final DateTime date;
   final PosDashboardTotals totals;
 
-  /// «Ожидают оплаты» (≤ 20).
+  /// «Ожидают оплаты» (≤ 20). Элемент несёт `createdVia` (OpenAPI 1.3.0): заявка с планшета магазина — пометка
+  /// «С планшета» (02 UI-30-020; 08 §4.10.1; ADR-115).
   final List<OrderSummary> awaitingPayment;
   final List<Payment> qrPending;
   final List<Payment> manualConfirm;

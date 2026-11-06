@@ -188,7 +188,7 @@
 | 6 | Пути 1С | `python scripts/check_onec_paths.py` | набор `/pos/v1/*` = 05 §6.3 (0 лишних, 0 недостающих) | RM-B-004 п. 2 |
 | 7 | Фикстуры 1С | валидация `contracts/onec/fixtures/` схемой | фикстуры соответствуют схеме | RM-B-004 п. 4 |
 | 8 | DDL | `PGOPTIONS='-c app.env=test' psql -v ON_ERROR_STOP=1 -f pos-api/migrations/0001_init.sql`, затем `-f pos-api/migrations/0002_rbac_seed.sql` на пустом `postgres:17` (без Docker — `node tools/pg/run-sql.mjs --set app.env=test --repeat-strict pos-api/migrations/0001_init.sql pos-api/migrations/0002_rbac_seed.sql`) | миграции применяются без ошибок; повтор — 0 изменений | RM-B-005 п. 1, RM-B-008 п. 2, RM-C-006 п. 4 |
-| 9 | Состав таблиц | `psql -v ON_ERROR_STOP=1 -f scripts/check_tables.sql` — дважды: на dev/test-схеме (`app.env=test`) и на prod-схеме (без `app.env`) | dev/test — 64 таблицы; prod — 63, `dev_outbox` отсутствует (B-AR-09, 07 §5.63) | RM-B-005 п. 2 |
+| 9 | Состав таблиц | `psql -v ON_ERROR_STOP=1 -f scripts/check_tables.sql` — дважды: на dev/test-схеме (`app.env=test`) и на prod-схеме (без `app.env`) | dev/test — 65 таблиц; prod — 64, `dev_outbox` отсутствует (B-AR-09, 07 §5.63; с миграции 0022 — и `store_tablets`, 07 §5.65, ADR-115) | RM-B-005 п. 2 |
 | 10 | Токены | `python -m jsonschema` (или `ajv`) `contracts/design-tokens/tokens.json` по `tokens.schema.json` | структура токенов | RM-B-006 п. 1 |
 | 11 | Генератор токенов | `python scripts/gen_tokens_dart.py` дважды во временный каталог, затем `diff` | детерминизм (пустой diff) | RM-B-006 п. 2 |
 | 12 | Контраст | `contrast.py` (R4 Прил. A) по разрешённым парам 03 §5.4 и п. 5.4.5 | 0 пар ниже AA; 0 сочетаний «белый текст на `primary`» | RM-B-006 п. 3 |

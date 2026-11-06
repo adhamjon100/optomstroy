@@ -14,11 +14,14 @@
 // диалоге или листе (`PopupRoute`), маршрут под другим экраном (SCR-21 обрабатывает `F9` сам; панель SCR-14 на
 // expanded/large экраном не считается — клавиши работают и при ней) или на экране уже корзина `/cart`. Вокруг кнопки — постоянно смонтированный слушатель фоновых событий корзины
 // ([CartEventsListener]). Корень подставляет виджет в порт `catalogCartButtonProvider` (catalog ↛ cart).
+// Планшет магазина (роль `kiosk`; navigation.md §9; 12 T-KIOSK-042): клавиши сотрудника `F4`/`F8`/`F9` не действуют —
+// drawer открывается только кнопкой, «Отложить» и «Создать заказ» у планшета нет.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/design_system/components/price_text.dart';
@@ -95,6 +98,7 @@ class _CartHeaderButtonViewState extends ConsumerState<CartHeaderButtonView> {
     if (e is! KeyDownEvent) return false;
     final LogicalKeyboardKey k = e.logicalKey;
     if (k != LogicalKeyboardKey.f4 && k != LogicalKeyboardKey.f8 && k != LogicalKeyboardKey.f9) return false;
+    if (ref.read(cartViewerRoleProvider) == RoleCode.kiosk) return false;
     // Панель SCR-14 (expanded/large) над страницей шапки — экран остаётся активным: F4/F8/F9 на SCR-10…SCR-14
     // (02 §3.8; у SCR-14 своих F4/F8/F9 нет).
     if (!mounted || !_inTree || !_tickerOn || !dsRouteIsCurrent(context, allowPanels: true)) return false;

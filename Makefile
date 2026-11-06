@@ -22,6 +22,9 @@ CADDY_ROOT_CA   := $(CRED_DIR)/caddy-root.crt
 AGE_KEY         := $(CRED_DIR)/backup_age.key
 SMOKE_BASE_URL  ?= https://localhost
 TMP             ?= /tmp/optomstroy-make
+# Все forward-only миграции pos-api по порядку имён — как мигратор (pos-api/src/db/migrator.ts) и CI (ci.yml, шаги 8–9):
+# store_tablets создаёт 0022_kiosk_schema.sql (ADR-115), поэтому DDL-проверки применяют весь каталог, а не 0001+0002.
+MIGRATIONS      := $(sort $(wildcard pos-api/migrations/[0-9][0-9][0-9][0-9]_*.sql))
 
 .PHONY: help test-secrets test-build test-up test-wait test-smoke test-check test-logs test-down gen check-contracts
 
@@ -136,8 +139,8 @@ check-contracts:
 	$(PY) scripts/check_env_example.py
 	$(PY) scripts/check_repo_layout.py
 	bash scripts/check_no_double_money.sh
-	node tools/pg/run-sql.mjs --set app.env=test --repeat-strict pos-api/migrations/0001_init.sql pos-api/migrations/0002_rbac_seed.sql pos-api/db/migrations-dev/0001_dev_outbox.sql --check scripts/check_tables.sql
-	node tools/pg/run-sql.mjs pos-api/migrations/0001_init.sql pos-api/migrations/0002_rbac_seed.sql --check scripts/check_tables.sql
-	node tools/pg/run-sql.mjs --set app.env=test pos-api/migrations/0001_init.sql pos-api/migrations/0002_rbac_seed.sql pos-api/db/migrations-dev/0001_dev_outbox.sql --check pos-api/test/sql/check_ddl_behavior.sql
+	node tools/pg/run-sql.mjs --set app.env=test --repeat-strict $(MIGRATIONS) pos-api/db/migrations-dev/0001_dev_outbox.sql --check scripts/check_tables.sql
+	node tools/pg/run-sql.mjs $(MIGRATIONS) --check scripts/check_tables.sql
+	node tools/pg/run-sql.mjs --set app.env=test $(MIGRATIONS) pos-api/db/migrations-dev/0001_dev_outbox.sql --check pos-api/test/sql/check_ddl_behavior.sql
 	cd pos-api && npm run check:permissions
 	@echo "check-contracts: все проверки пройдены"

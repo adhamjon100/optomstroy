@@ -6,7 +6,9 @@
 // - показ остатков клиенту (`customer_stock_display`) и флаг `customerSelfService` из `GET /settings/public`
 //   (core/config, RM-D-015) с портами catalog / product_details и guard-ом маршрутов (EQ-FEF-08, EQ-DREST-15);
 // - «Мой кабинет» SCR-50 с `GET /me` (`customerLink`);
-// - избранное и недавние каталога (`CatalogShelfPort`, EQ-CAT-02) с фичей favorites и outbox core/sync;
+// - избранное и недавние каталога (`CatalogShelfPort`, EQ-CAT-02) с фичей favorites и outbox core/sync; у планшета
+//   магазина (роль `kiosk`, ADR-115 п. 8; 02 UI-51-007, UI-51-011) портов нет: ни звёзд, ни «Недавних», ни запроса
+//   `GET /catalog/products/recent` (вне закрытого списка 08 §4.25);
 // - статус сети каталога с `onlineStatusProvider`;
 // - этап G (RM-G-014): «Мой кабинет» — заказы в работе (`GET /orders`, `totalEstimate`) и свой долг
 //   (`GET /customers/{id}/receivables` только при `confirmed`, только память сессии — CASH-015); своя привязка
@@ -87,11 +89,16 @@ final List<Override> customerModeOverrides = <Override>[
   notificationsCustomerModeProvider.overrideWith(
     (Ref ref) => ref.watch(catalog.catalogViewerRoleProvider) == RoleCode.customer,
   ),
-  catalogShelfPortProvider.overrideWith(FavoritesCatalogShelf.new),
+  catalogShelfPortProvider.overrideWith((Ref ref) => _kiosk(ref) ? null : FavoritesCatalogShelf(ref)),
   // Звезда избранного SCR-14 — тот же адаптер над favorites/outbox (порт product_details, EQ-PD-03).
-  product_details.productFavoritePortProvider.overrideWith(FavoritesCatalogShelf.new),
+  product_details.productFavoritePortProvider.overrideWith(
+    (Ref ref) => _kiosk(ref) ? null : FavoritesCatalogShelf(ref),
+  ),
   catalogOnlineStatusProvider.overrideWith((Ref ref) => ref.watch(onlineStatusProvider).value ?? OnlineStatus.unknown),
 ];
+
+/// Планшет магазина: избранного и недавних на общем устройстве нет (02 ч. F, ADR-115 п. 8).
+bool _kiosk(Ref ref) => ref.watch(catalog.catalogViewerRoleProvider) == RoleCode.kiosk;
 
 /// Своя привязка клиента-покупателя по `GET /me` (фича profile); сотрудникам — `null`. Ошибка `/me` — `null`
 /// (fail-closed: свои долг и история закрыты, 10 CUST-025). ПДн не сохраняются — только память процесса.

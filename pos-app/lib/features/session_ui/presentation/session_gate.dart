@@ -6,6 +6,8 @@
 // - StepUpDialog для `403 STEP_UP_REQUIRED` (презентер StepUpCoordinator): compact — нижний лист, иначе диалог;
 // - SCR-90 C «Сессия завершена» и C3 «Требуется обновление» (426 — навигация заморожена, G-12);
 // - учёт активности (касания, клавиатура, сканер-HID) для idle-таймера и жизненного цикла для блокировки из фона.
+// Планшет магазина (ADR-115; navigation.md §9, §14.1; AC-UI-90-020): слоёв нет (SCR-90 C3, C и SCR-08 заменяют
+// состояния SCR-51 — `sessionOverlayProvider`), `Ctrl+L` не действует: PIN у планшета нет, блокировку было бы нечем снять.
 // «Назад» (Android) при открытом слое не уходит в навигатор; `Esc` и тап по scrim слой не закрывают.
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
@@ -138,6 +140,8 @@ class _SessionGateState extends ConsumerState<SessionGate> with WidgetsBindingOb
     if (!widget.manualLockShortcut || event is! KeyDownEvent) return false;
     final ctrl = HardwareKeyboard.instance.isControlPressed;
     if (ctrl && event.logicalKey == LogicalKeyboardKey.keyL) {
+      // Планшет магазина: клавиша не перехватывается и блокировку не включает.
+      if (ref.read(kioskModeProvider)) return false;
       final session = ref.read(sessionControllerProvider);
       if (session.isAuthenticated && !session.isLocked) {
         _controller.lock(SessionLockReason.manual);

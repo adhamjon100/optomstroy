@@ -10,6 +10,10 @@
 // - 403 `STEP_UP_REQUIRED` → `stepUpToken` из кэша области (15 мин) или StepUpDialog, повтор
 //   с `X-Step-Up-Token` и тем же `Idempotency-Key`;
 // - 401 `PIN_INVALID` / 423 `PIN_LOCKED` → refresh не вызывается (ядро §18.2 п.5);
+// - планшет магазина (ADR-115; 09 §8.9 п. 8; navigation.md §4.3): 401 `KIOSK_REVOKED` — refresh не вызывается, код не
+//   переписывается в `REFRESH_REJECTED` ни на запросе, ни на ответе самого `/auth/refresh` → конец режима планшета
+//   (токены и признак удаляются, закрепление снимается); 403 `KIOSK_NETWORK_DENIED` / `KIOSK_DISABLED` /
+//   `FORBIDDEN kiosk_warehouse_unavailable` и успешные ответы сессии планшета → [KioskSessionHooks] (состояния SCR-51);
 // - 426 `APP_UPDATE_REQUIRED` здесь не обрабатывается (AppVersionInterceptor → SCR-90 «Требуется обновление»);
 // - пока сессия заблокирована, новые запросы ждут разблокировки (данные под overlay не читаются).
 // Сессионные действия (ожидание разблокировки, StepUpDialog) — через [AuthSessionHooks] core/session;
@@ -41,6 +45,20 @@ final class SessionEndedWhileLocked implements Exception {
 
   @override
   String toString() => 'SessionEndedWhileLocked';
+}
+
+/// Порт режима «Планшет магазина» для [AuthInterceptor] (ADR-115; 02 SCR-51.7): реализует core/session вместе с
+/// [AuthSessionHooks]; интерсептор проверяет его через `is`, поэтому прежние реализации хуков не меняются.
+abstract interface class KioskSessionHooks {
+  /// Текущая сессия — технический пользователь планшета (`kind=kiosk`).
+  bool get isKioskSession;
+
+  /// Сервер ответил планшету `403` с [code] и `Problem.reason` (`KIOSK_NETWORK_DENIED`, `KIOSK_DISABLED`, …).
+  void kioskForbidden(String code, String? reason);
+
+  /// Сервер ответил на запрос сессии планшета [path] (`RequestOptions.path`) успешно (2xx): по пути видно, был ли запрос
+  /// выполнен по складу планшета (снимает «Сервис временно недоступен» по складу, 02 SCR-51.7).
+  void kioskRequestSucceeded(String path);
 }
 
 final class AuthInterceptor extends Interceptor {
@@ -90,6 +108,12 @@ final class AuthInterceptor extends Interceptor {
   /// Подключённые хуки (для проверок).
   AuthSessionHooks? get hooks => _hooks;
 
+  /// Хуки режима планшета, если их реализует подключённый контроллер сессии.
+  KioskSessionHooks? get _kiosk {
+    final Object? hooks = _hooks;
+    return hooks is KioskSessionHooks ? hooks : null;
+  }
+
   @override
   Future<void> onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
     if (options.skipAuth) return handler.next(options);
@@ -117,6 +141,16 @@ final class AuthInterceptor extends Interceptor {
   }
 
   @override
+  void onResponse(Response<dynamic> response, ResponseInterceptorHandler handler) {
+    // Планшет: успешный ответ снимает «Не в сети магазина» / «Сервис временно недоступен» (AC-UI-51-010).
+    if (!response.requestOptions.skipAuth) {
+      final KioskSessionHooks? kiosk = _kiosk;
+      if (kiosk != null && kiosk.isKioskSession) kiosk.kioskRequestSucceeded(response.requestOptions.path);
+    }
+    handler.next(response);
+  }
+
+  @override
   Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
     final options = err.requestOptions;
     final status = err.response?.statusCode;
@@ -128,9 +162,15 @@ final class AuthInterceptor extends Interceptor {
       await _endSession(SessionEndSignal(code: code!, reason: Problem.tryParse(data)?.reason));
       return handler.next(err);
     }
+    if (status == 403 && code != null) {
+      // Планшет: отказ доступа без отзыва сессии — состояние SCR-51; ошибка уходит и вызывающему.
+      final KioskSessionHooks? kiosk = _kiosk;
+      if (kiosk != null && kiosk.isKioskSession) kiosk.kioskForbidden(code, Problem.tryParse(data)?.reason);
+    }
     if (status != 401) return handler.next(err);
     switch (code) {
-      case 'SESSION_REVOKED':
+      case 'SESSION_REVOKED' || 'KIOSK_REVOKED':
+        // `KIOSK_REVOKED` — refresh не вызывается: отозванный планшет не получит новый access (09 §8.9 п. 8).
         await _endSession(SessionEndSignal(code: code!, reason: Problem.tryParse(data)?.reason));
         return handler.next(err);
       case 'UNLOCK_REQUIRED':
@@ -167,8 +207,9 @@ final class AuthInterceptor extends Interceptor {
         await _tokens.saveTokens(accessToken: tokens.accessToken, refreshToken: tokens.refreshToken);
       case RefreshSessionEnded(:final String? code, :final String? reason):
         // Причина сервера (`SESSION_REVOKED` + `reason`, D SS-03) — для текста SCR-90; без тела — «refresh отклонён».
+        // `KIOSK_REVOKED` сохраняется: «Планшет отключён» (закрепление снимается) ≠ «Подключите заново» (остаётся).
         await _endSession(
-          code == 'SESSION_REVOKED' || code == 'DEVICE_MISMATCH'
+          code == 'SESSION_REVOKED' || code == 'DEVICE_MISMATCH' || code == 'KIOSK_REVOKED'
               ? SessionEndSignal(code: code!, reason: reason)
               : SessionEndSignal(code: SessionEndSignal.refreshRejected, reason: reason),
         );

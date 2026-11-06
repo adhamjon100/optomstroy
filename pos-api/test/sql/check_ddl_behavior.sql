@@ -1,14 +1,16 @@
 -- =====================================================================================================
--- pos-api/test/sql/check_ddl_behavior.sql (до RM-C-006 — scripts/) — поведенческие (негативные и позитивные) проверки DDL 0001_init.sql + 0002.
+-- pos-api/test/sql/check_ddl_behavior.sql (до RM-C-006 — scripts/) — поведенческие (негативные и позитивные) проверки DDL
+-- всех pos-api/migrations/*.sql (0001_init.sql + 0002 и следующие; режим «Планшет магазина» — 0021/0022, раздел 6).
 --
 -- B-AR-10 (б) (docs/reviews/B_architecture_review.md): перенос в репозиторий scratch-проверок RM-B-005
 -- (pos-api/migrations/NOTES.md §9) и проверки исправлений B-AR-01, B-AR-03, B-AR-05, B-AR-09, B-AR-19, B-AR-20.
 -- Каждый негативный сценарий — pg_temp.expect_error(sql, метка): ожидается отказ CHECK/UNIQUE/FK/триггера;
+-- pg_temp.expect_constraint(sql, ограничение, метка) — отказ именно этого ограничения (раздел 6, T-KIOSK-025);
 -- если отказа нет — RAISE EXCEPTION (код выхода раннера 1). Позитивные инварианты — DO-блоки с RAISE.
 -- В конце — сводка числа сценариев; файл ничего не оставляет «наполовину»: ошибка = падение проверки.
 --
--- Запуск (одноразовый кластер, схема dev/test — нужна для проверки dev_outbox):
---   node tools/pg/run-sql.mjs --set app.env=test pos-api/migrations/0001_init.sql pos-api/migrations/0002_rbac_seed.sql \
+-- Запуск (одноразовый кластер, схема dev/test — нужна для проверки dev_outbox; миграции — все, по порядку имён):
+--   node tools/pg/run-sql.mjs --set app.env=test <pos-api/migrations/*.sql по порядку> \
 --        pos-api/db/migrations-dev/0001_dev_outbox.sql --check pos-api/test/sql/check_ddl_behavior.sql
 -- С RM-C-006 п. 7 файл лежит в pos-api/test/sql/ (ранее scripts/) и запускается в CI (contracts-lint, RM-C-011) и в
 -- npm run test:db (test/db/ddl-behavior.db-spec.ts); dev_outbox создаёт dev-миграция db/migrations-dev/ (C-MJ-05).
@@ -37,6 +39,25 @@ BEGIN
   IF p_cond IS NOT TRUE THEN RAISE EXCEPTION 'EXPECTED TRUE: %', p_label; END IF;
   INSERT INTO ddl_check_log (label, outcome) VALUES (p_label, 'ok');
   RETURN p_label || ': ok';
+END $$;
+
+-- helper: ожидается отказ ИМЕННО указанного ограничения (CHECK/UNIQUE/FK; имя — GET STACKED DIAGNOSTICS
+-- CONSTRAINT_NAME): строка не должна «случайно» отклоняться соседним ограничением (T-KIOSK-025 — CHECK канала)
+CREATE OR REPLACE FUNCTION pg_temp.expect_constraint(p_sql text, p_constraint text, p_label text) RETURNS text LANGUAGE plpgsql AS $$
+DECLARE v_con text;
+BEGIN
+  BEGIN
+    EXECUTE p_sql;
+  EXCEPTION WHEN others THEN
+    GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+    IF v_con IS DISTINCT FROM p_constraint THEN
+      RAISE EXCEPTION 'WRONG REJECTION: % — ожидался отказ %, получен % (%) %',
+        p_label, p_constraint, coalesce(NULLIF(v_con, ''), '<без ограничения>'), SQLSTATE, left(SQLERRM, 120);
+    END IF;
+    INSERT INTO ddl_check_log (label, outcome) VALUES (p_label, 'rejected ' || SQLSTATE);
+    RETURN p_label || ': rejected (' || SQLSTATE || ') ' || v_con;
+  END;
+  RAISE EXCEPTION 'EXPECTED ERROR NOT RAISED: %', p_label;
 END $$;
 
 -- =====================================================================================================
@@ -102,9 +123,12 @@ SELECT pg_temp.expect_error($q$INSERT INTO user_invitations (phone_e164, role, f
   VALUES ('+996700000009','seller','Иван','00000000-0000-7000-8000-000000000001', now())$q$, 'one pending invitation (AC-DATA-102)');
 SELECT pg_temp.expect_error($q$INSERT INTO user_invitations (phone_e164, role, full_name, invited_by_user_id, expires_at)
   VALUES ('+996700000008','customer','Иван','00000000-0000-7000-8000-000000000001', now())$q$, 'invitation role customer');
--- роли и права — из 0002_rbac_seed.sql (7 ролей, 77 кодов, 231 пара)
-SELECT pg_temp.expect_true((SELECT count(*) FROM roles) = 7 AND (SELECT count(*) FROM permissions) = 77
-                           AND (SELECT count(*) FROM role_permissions) = 231, 'rbac seed 7/77/231 (RM-B-008)');
+-- роли и права — из 0002_rbac_seed.sql (7 ролей, 77 кодов, 231 пара) и дельты 0023_kiosk_rbac_seed.sql (роль kiosk,
+-- коды №77–81, 12 пар; ADR-115 п. 14): 8 ролей, 82 кода, 243 пары; kiosk — sort_order 8, не назначается (AC-DATA-103)
+SELECT pg_temp.expect_true((SELECT count(*) FROM roles) = 8 AND (SELECT count(*) FROM permissions) = 82
+                           AND (SELECT count(*) FROM role_permissions) = 243
+                           AND EXISTS (SELECT 1 FROM roles WHERE code = 'kiosk' AND sort_order = 8 AND NOT is_assignable),
+                           'rbac seed 8/82/243 (RM-B-008, 0023 — ADR-115)');
 SELECT pg_temp.expect_error($q$DELETE FROM roles WHERE code='admin'$q$, 'system role delete (AC-DATA-103)');
 SELECT pg_temp.expect_error($q$UPDATE roles SET code='owner' WHERE code='admin'$q$, 'system role rename (AC-DATA-103)');
 SELECT pg_temp.expect_error($q$INSERT INTO permissions (code, description_ru) VALUES ('Cart.Write','x')$q$, 'permission code format (AC-DATA-104)');
@@ -392,7 +416,214 @@ SELECT pg_temp.expect_true(current_setting('app.env', true) IN ('dev', 'test') A
   'dev_outbox present in dev/test schema (app.env=' || coalesce(current_setting('app.env', true), '<не задан>') || ')');
 
 -- =====================================================================================================
--- 6. Сводка
+-- 6. Режим «Планшет магазина» (P-002, ADR-115): 0021_kiosk_enum_values.sql, 0022_kiosk_schema.sql
+--    (07 §5.65, §5.1, §5.9, §5.11, §5.12, §5.37, §5.61; DATA-171, DATA-300…DATA-303, DATA-305; 12 T-KIOSK-025)
+-- =====================================================================================================
+
+-- 6.1 Значения enum-ов 0021 — в конце перечней (07 §6.1); типов по-прежнему 45 (scripts/check_tables.sql)
+SELECT pg_temp.expect_true(
+  enum_range(NULL::user_kind)::text[] = ARRAY['staff','customer','kiosk']
+  AND (enum_range(NULL::role_code)::text[])[8] = 'kiosk'
+  AND (enum_range(NULL::otp_purpose)::text[])[6] = 'kiosk_order'
+  AND (enum_range(NULL::notification_kind)::text[])[9] = 'kiosk_order',
+  'enum values kiosk / kiosk_order appended (0021, 07 §6.1)');
+SELECT pg_temp.expect_true(
+  (SELECT data_type FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'orders' AND column_name = 'created_via') = 'text',
+  'orders.created_via stays text with CHECK, not enum (ADR-115 п. 15)');
+
+-- 6.2 Технический пользователь планшета — без телефона (users_kiosk_phone_chk, AC-DATA-300)
+INSERT INTO users (id, kind, status) VALUES
+  ('00000000-0000-7000-8000-000000000101', 'kiosk', 'active'),
+  ('00000000-0000-7000-8000-000000000102', 'kiosk', 'active');
+SELECT pg_temp.expect_constraint($q$INSERT INTO users (phone_e164, kind, status) VALUES ('+996700000101','kiosk','active')$q$,
+  'users_kiosk_phone_chk', 'kiosk user with phone (AC-DATA-300)');
+SELECT pg_temp.expect_constraint($q$UPDATE users SET phone_e164 = '+996700000101' WHERE id = '00000000-0000-7000-8000-000000000101'$q$,
+  'users_kiosk_phone_chk', 'kiosk user gets a phone later');
+INSERT INTO devices (id, user_id, device_key, platform) VALUES
+  ('00000000-0000-7000-8000-0000000001d1', '00000000-0000-7000-8000-000000000101', '3f2b8c1e-1a2b-4c3d-8e4f-5a6b7c8d9e11', 'android'),
+  ('00000000-0000-7000-8000-0000000001d2', '00000000-0000-7000-8000-000000000102', '3f2b8c1e-1a2b-4c3d-8e4f-5a6b7c8d9e12', 'android');
+
+-- 6.3 store_tablets (DATA-171): один планшет на пользователя, статус ↔ revoked_at, формат revoke_reason
+INSERT INTO store_tablets (id, user_id, device_id, exit_code_hash, exit_code_pepper_version, enrolled_by_user_id) VALUES
+  ('00000000-0000-7000-8000-0000000001a1', '00000000-0000-7000-8000-000000000101', '00000000-0000-7000-8000-0000000001d1',
+   'stub-argon2id-hash-1', 1, '00000000-0000-7000-8000-000000000001'),
+  ('00000000-0000-7000-8000-0000000001a2', '00000000-0000-7000-8000-000000000102', '00000000-0000-7000-8000-0000000001d2',
+   'stub-argon2id-hash-2', 1, '00000000-0000-7000-8000-000000000001');
+SELECT pg_temp.expect_true(
+  (SELECT count(*) FROM store_tablets WHERE status = 'active' AND exit_failed_attempts = 0 AND lock_task_enabled IS NULL
+      AND enrolled_at IS NOT NULL AND revoked_at IS NULL) = 2,
+  'store_tablets defaults: active, 0 attempts, lock_task_enabled NULL until X-Kiosk-Lock (07 §5.65)');
+SELECT pg_temp.expect_constraint($q$INSERT INTO store_tablets (user_id, device_id, exit_code_hash, exit_code_pepper_version, enrolled_by_user_id)
+  VALUES ('00000000-0000-7000-8000-000000000101','00000000-0000-7000-8000-0000000001d1','h',1,'00000000-0000-7000-8000-000000000001')$q$,
+  'store_tablets_user_id_uq', 'second tablet row for one kiosk user');
+SELECT pg_temp.expect_constraint($q$INSERT INTO store_tablets (user_id, device_id, exit_code_hash, exit_code_pepper_version, enrolled_by_user_id)
+  VALUES (gen_random_uuid(),'00000000-0000-7000-8000-0000000001d1','h',1,'00000000-0000-7000-8000-000000000001')$q$,
+  'store_tablets_user_id_fk', 'store_tablets user FK');
+SELECT pg_temp.expect_constraint($q$UPDATE store_tablets SET status = 'paused' WHERE id = '00000000-0000-7000-8000-0000000001a1'$q$,
+  'store_tablets_status_chk', 'store_tablets status outside active|revoked');
+SELECT pg_temp.expect_constraint($q$UPDATE store_tablets SET status = 'revoked' WHERE id = '00000000-0000-7000-8000-0000000001a1'$q$,
+  'store_tablets_revoked_chk', 'store_tablets revoked without revoked_at');
+SELECT pg_temp.expect_constraint($q$UPDATE store_tablets SET revoked_at = now() WHERE id = '00000000-0000-7000-8000-0000000001a1'$q$,
+  'store_tablets_revoked_chk', 'store_tablets active with revoked_at');
+SELECT pg_temp.expect_constraint($q$UPDATE store_tablets SET exit_failed_attempts = -1 WHERE id = '00000000-0000-7000-8000-0000000001a1'$q$,
+  'store_tablets_exit_failed_attempts_chk', 'store_tablets exit_failed_attempts < 0');
+SELECT pg_temp.expect_constraint($q$UPDATE store_tablets SET status = 'revoked', revoked_at = now(), revoke_reason = 'Отключён администратором'
+  WHERE id = '00000000-0000-7000-8000-0000000001a1'$q$,
+  'store_tablets_revoke_reason_chk', 'store_tablets revoke_reason not an audit event name');
+-- Аварийный выход со связью → revoked (revoked_by_user_id NULL), затем подключение заново — та же строка (07 §5.65)
+UPDATE store_tablets SET status = 'revoked', revoked_at = now(), revoke_reason = 'kiosk.exit_code_used', exit_code_used_at = now()
+ WHERE id = '00000000-0000-7000-8000-0000000001a2';
+UPDATE store_tablets SET status = 'active', revoked_at = NULL, revoked_by_user_id = NULL, revoke_reason = NULL,
+       exit_code_hash = 'stub-argon2id-hash-3', exit_code_used_at = NULL, exit_failed_attempts = 0, exit_locked_until = NULL,
+       lock_task_enabled = NULL, reconnected_at = now(), reconnected_by_user_id = '00000000-0000-7000-8000-000000000001'
+ WHERE id = '00000000-0000-7000-8000-0000000001a2';
+SELECT pg_temp.expect_true(
+  (SELECT status = 'active' AND reconnected_by_user_id IS NOT NULL AND revoke_reason IS NULL
+     FROM store_tablets WHERE id = '00000000-0000-7000-8000-0000000001a2')
+  AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_store_tablets_set_updated_at' AND NOT tgisinternal)
+  AND has_table_privilege('pos_app', 'store_tablets', 'SELECT') AND has_table_privilege('pos_app', 'store_tablets', 'INSERT')
+  AND has_table_privilege('pos_app', 'store_tablets', 'UPDATE') AND has_table_privilege('pos_readonly', 'store_tablets', 'SELECT')
+  AND NOT has_table_privilege('pos_readonly', 'store_tablets', 'UPDATE'),
+  'store_tablets exit → reconnect keeps the row; updated_at trigger; pos_app/pos_readonly rights');
+
+-- 6.4 CHECK-перечни auth/sms, дополненные 0022 (прежние значения сохранены)
+INSERT INTO sessions (user_id, device_id, family_id, refresh_hash, expires_at, idle_expires_at, amr, revoked_at, revoke_reason) VALUES
+  ('00000000-0000-7000-8000-000000000101', '00000000-0000-7000-8000-0000000001d1', gen_random_uuid(), '\x0a01',
+   now() + interval '180 days', now() + interval '7 days', '{pin}', now(), 'kiosk_revoked'),
+  ('00000000-0000-7000-8000-000000000101', '00000000-0000-7000-8000-0000000001d1', gen_random_uuid(), '\x0a02',
+   now() + interval '180 days', now() + interval '7 days', '{pin}', now(), 'refresh_replay');
+SELECT pg_temp.expect_constraint($q$INSERT INTO sessions (user_id, device_id, family_id, refresh_hash, expires_at, idle_expires_at, revoked_at, revoke_reason)
+  VALUES ('00000000-0000-7000-8000-000000000101','00000000-0000-7000-8000-0000000001d1',gen_random_uuid(),'\x0a03',now(),now(),now(),'tablet_revoked')$q$,
+  'sessions_revoke_reason_chk', 'session revoke_reason outside list (kiosk_revoked only)');
+INSERT INTO rate_limit_counters (scope, subject, window_start, count, window_end) VALUES
+  ('otp_kiosk_tablet_1h', '00000000-0000-7000-8000-0000000001a1', date_trunc('hour', now()), 1, date_trunc('hour', now()) + interval '1 hour'),
+  ('otp_kiosk_tablet_24h', '00000000-0000-7000-8000-0000000001a1', date_trunc('day', now()), 1, date_trunc('day', now()) + interval '1 day'),
+  ('admin_user_1m', '00000000-0000-7000-8000-000000000001', date_trunc('minute', now()), 1, date_trunc('minute', now()) + interval '1 minute');
+SELECT pg_temp.expect_constraint($q$INSERT INTO rate_limit_counters (scope, subject, window_start, count, window_end)
+  VALUES ('otp_kiosk_tablet_10m','x',now(),1,now())$q$, 'rate_limit_counters_scope_chk', 'rate limit scope outside list');
+INSERT INTO sms_outbox (phone_e164, template_key, provider, provider_message_id) VALUES ('+996700000101', 'otp_kiosk_order', 'fake', 'KIOSK0000001');
+SELECT pg_temp.expect_constraint($q$INSERT INTO sms_outbox (phone_e164, template_key, provider, provider_message_id)
+  VALUES ('+996700000101','otp_kiosk','fake','KIOSK0000002')$q$, 'sms_outbox_template_key_chk', 'sms template_key outside list');
+INSERT INTO notifications (user_id, kind, severity, title_ru, body_ru, dedupe_key)
+VALUES ('00000000-0000-7000-8000-000000000001', 'kiosk_order', 'info', 'Заявка с планшета', 'POS-2026-000101', 'kiosk_order:POS-2026-000101');
+
+-- 6.5 Код kiosk_order (DATA-301): планшет + корзина + версия текста, без пользователя; один действующий на планшет
+INSERT INTO carts (id, owner_user_id, created_by_user_id, device_id, warehouse_id, price_list_id) VALUES
+  ('00000000-0000-7000-8000-0000000001c1', '00000000-0000-7000-8000-000000000101', '00000000-0000-7000-8000-000000000101',
+   '00000000-0000-7000-8000-0000000001d1', '00000000-0000-7000-8000-0000000000a2', '00000000-0000-7000-8000-0000000000a6'),
+  ('00000000-0000-7000-8000-0000000001c2', '00000000-0000-7000-8000-000000000102', '00000000-0000-7000-8000-000000000102',
+   '00000000-0000-7000-8000-0000000001d2', '00000000-0000-7000-8000-0000000000a2', '00000000-0000-7000-8000-0000000000a6');
+INSERT INTO otp_challenges (id, phone_e164, purpose, code_hmac, salt, pepper_version, expires_at, status,
+                            kiosk_tablet_id, cart_id, notice_version, device_key)
+VALUES ('00000000-0000-7000-8000-0000000001e1', '+996700000101', 'kiosk_order', '\x01', '\x01', 1, now() + interval '5 minutes', 'sent',
+        '00000000-0000-7000-8000-0000000001a1', '00000000-0000-7000-8000-0000000001c1', '2026-11-04', '3f2b8c1e-1a2b-4c3d-8e4f-5a6b7c8d9e11');
+SELECT pg_temp.expect_constraint($q$INSERT INTO otp_challenges (phone_e164, purpose, code_hmac, salt, pepper_version, expires_at, status, kiosk_tablet_id, notice_version)
+  VALUES ('+996700000103','kiosk_order','\x01','\x01',1,now(),'sent','00000000-0000-7000-8000-0000000001a2','2026-11-04')$q$,
+  'otp_challenges_kiosk_chk', 'kiosk_order code without cart (AC-DATA-301)');
+SELECT pg_temp.expect_constraint($q$INSERT INTO otp_challenges (phone_e164, purpose, code_hmac, salt, pepper_version, expires_at, status, cart_id, notice_version)
+  VALUES ('+996700000103','kiosk_order','\x01','\x01',1,now(),'sent','00000000-0000-7000-8000-0000000001c2','2026-11-04')$q$,
+  'otp_challenges_kiosk_chk', 'kiosk_order code without tablet');
+SELECT pg_temp.expect_constraint($q$INSERT INTO otp_challenges (phone_e164, purpose, code_hmac, salt, pepper_version, expires_at, status, kiosk_tablet_id, cart_id)
+  VALUES ('+996700000103','kiosk_order','\x01','\x01',1,now(),'sent','00000000-0000-7000-8000-0000000001a2','00000000-0000-7000-8000-0000000001c2')$q$,
+  'otp_challenges_kiosk_chk', 'kiosk_order code without notice version');
+SELECT pg_temp.expect_constraint($q$INSERT INTO otp_challenges (phone_e164, user_id, purpose, code_hmac, salt, pepper_version, expires_at, status, kiosk_tablet_id, cart_id, notice_version)
+  VALUES ('+996700000103','00000000-0000-7000-8000-000000000101','kiosk_order','\x01','\x01',1,now(),'sent','00000000-0000-7000-8000-0000000001a2','00000000-0000-7000-8000-0000000001c2','2026-11-04')$q$,
+  'otp_challenges_kiosk_chk', 'kiosk_order code bound to a user account');
+-- выдавший администратор: отклоняют и otp_challenges_issued_by_chk (0003), и otp_challenges_kiosk_chk
+SELECT pg_temp.expect_error($q$INSERT INTO otp_challenges (phone_e164, purpose, code_hmac, salt, pepper_version, expires_at, status, kiosk_tablet_id, cart_id, notice_version, issued_by_user_id)
+  VALUES ('+996700000103','kiosk_order','\x01','\x01',1,now(),'sent','00000000-0000-7000-8000-0000000001a2','00000000-0000-7000-8000-0000000001c2','2026-11-04','00000000-0000-7000-8000-000000000001')$q$,
+  'kiosk_order code issued by an admin');
+SELECT pg_temp.expect_constraint($q$INSERT INTO otp_challenges (phone_e164, purpose, code_hmac, salt, pepper_version, expires_at, status, kiosk_tablet_id)
+  VALUES ('+996700000103','login_or_register','\x01','\x01',1,now(),'sent','00000000-0000-7000-8000-0000000001a2')$q$,
+  'otp_challenges_kiosk_chk', 'login code with kiosk_tablet_id');
+SELECT pg_temp.expect_constraint($q$INSERT INTO otp_challenges (phone_e164, purpose, code_hmac, salt, pepper_version, expires_at, status, kiosk_tablet_id, cart_id, notice_version)
+  VALUES ('+996700000103','kiosk_order','\x01','\x01',1,now(),'sent',gen_random_uuid(),'00000000-0000-7000-8000-0000000001c2','2026-11-04')$q$,
+  'otp_challenges_kiosk_tablet_id_fk', 'kiosk_order code of an unknown tablet');
+SELECT pg_temp.expect_constraint($q$INSERT INTO otp_challenges (phone_e164, purpose, code_hmac, salt, pepper_version, expires_at, status, kiosk_tablet_id, cart_id, notice_version)
+  VALUES ('+996700000104','kiosk_order','\x01','\x01',1,now(),'sent','00000000-0000-7000-8000-0000000001a1','00000000-0000-7000-8000-0000000001c1','2026-11-04')$q$,
+  'otp_challenges_kiosk_active_uq', 'second sent kiosk_order code of one tablet (AC-DATA-301)');
+-- другой планшет — свой действующий код; прежний код планшета superseded → новый допустим
+INSERT INTO otp_challenges (phone_e164, purpose, code_hmac, salt, pepper_version, expires_at, status, kiosk_tablet_id, cart_id, notice_version)
+VALUES ('+996700000105', 'kiosk_order', '\x01', '\x01', 1, now() + interval '5 minutes', 'sent',
+        '00000000-0000-7000-8000-0000000001a2', '00000000-0000-7000-8000-0000000001c2', '2026-11-04');
+UPDATE otp_challenges SET status = 'superseded' WHERE id = '00000000-0000-7000-8000-0000000001e1';
+INSERT INTO otp_challenges (phone_e164, purpose, code_hmac, salt, pepper_version, expires_at, status, kiosk_tablet_id, cart_id, notice_version)
+VALUES ('+996700000104', 'kiosk_order', '\x01', '\x01', 1, now() + interval '5 minutes', 'sent',
+        '00000000-0000-7000-8000-0000000001a1', '00000000-0000-7000-8000-0000000001c1', '2026-11-04');
+SELECT pg_temp.expect_true(
+  (SELECT count(*) FROM otp_challenges WHERE purpose = 'kiosk_order' AND status = 'sent') = 2
+  AND (SELECT count(*) FROM otp_challenges WHERE kiosk_tablet_id IS NULL AND cart_id IS NULL AND notice_version IS NULL)
+      = (SELECT count(*) FROM otp_challenges WHERE purpose <> 'kiosk_order'),
+  'one sent kiosk_order code per tablet; other purposes keep kiosk columns empty');
+
+-- 6.6 T-KIOSK-025: CHECK канала kiosk (orders_kiosk_channel_chk) — наличные, самовывоз, без ручной скидки и долга;
+--     скидку клиента 1С (customer_discount_*) CHECK не ограничивает (Р-05 (а)); kiosk_customer_match — только у kiosk
+SELECT pg_temp.expect_constraint($q$INSERT INTO orders (public_number, status, customer_id, created_by_user_id, created_via, warehouse_id, price_list_id, subtotal, total, payment_method, delivery_method, kiosk_customer_match, receiver_phone_e164)
+  VALUES ('POS-2026-000102','draft','00000000-0000-7000-8000-0000000000c1','00000000-0000-7000-8000-000000000101','kiosk','00000000-0000-7000-8000-0000000000a2','00000000-0000-7000-8000-0000000000a6',100,100,'credit','pickup','single','+996700000101')$q$,
+  'orders_kiosk_channel_chk', 'T-KIOSK-025 kiosk order on credit');
+SELECT pg_temp.expect_constraint($q$INSERT INTO orders (public_number, status, customer_id, created_by_user_id, created_via, warehouse_id, price_list_id, subtotal, total, payment_method, delivery_method, kiosk_customer_match, receiver_phone_e164)
+  VALUES ('POS-2026-000102','draft','00000000-0000-7000-8000-0000000000c1','00000000-0000-7000-8000-000000000101','kiosk','00000000-0000-7000-8000-0000000000a2','00000000-0000-7000-8000-0000000000a6',100,100,'qr_bakai','pickup','single','+996700000101')$q$,
+  'orders_kiosk_channel_chk', 'T-KIOSK-025 kiosk order paid by QR (cash only)');
+SELECT pg_temp.expect_constraint($q$INSERT INTO orders (public_number, status, customer_id, created_by_user_id, created_via, warehouse_id, price_list_id, subtotal, discount_percent, total, payment_method, delivery_method, kiosk_customer_match, receiver_phone_e164)
+  VALUES ('POS-2026-000102','draft','00000000-0000-7000-8000-0000000000c1','00000000-0000-7000-8000-000000000101','kiosk','00000000-0000-7000-8000-0000000000a2','00000000-0000-7000-8000-0000000000a6',100,5,100,'cash','pickup','single','+996700000101')$q$,
+  'orders_kiosk_channel_chk', 'T-KIOSK-025 kiosk order with discount_percent');
+SELECT pg_temp.expect_constraint($q$INSERT INTO orders (public_number, status, customer_id, created_by_user_id, created_via, warehouse_id, price_list_id, subtotal, manual_discount_total, discount_total, total, payment_method, delivery_method, kiosk_customer_match, receiver_phone_e164)
+  VALUES ('POS-2026-000102','draft','00000000-0000-7000-8000-0000000000c1','00000000-0000-7000-8000-000000000101','kiosk','00000000-0000-7000-8000-0000000000a2','00000000-0000-7000-8000-0000000000a6',100,10,10,90,'cash','pickup','single','+996700000101')$q$,
+  'orders_kiosk_channel_chk', 'T-KIOSK-025 kiosk order with manual discount');
+SELECT pg_temp.expect_constraint($q$INSERT INTO orders (public_number, status, customer_id, created_by_user_id, created_via, warehouse_id, price_list_id, subtotal, total, payment_method, delivery_method, kiosk_customer_match, receiver_phone_e164, discount_approved_by_user_id)
+  VALUES ('POS-2026-000102','draft','00000000-0000-7000-8000-0000000000c1','00000000-0000-7000-8000-000000000101','kiosk','00000000-0000-7000-8000-0000000000a2','00000000-0000-7000-8000-0000000000a6',100,100,'cash','pickup','single','+996700000101','00000000-0000-7000-8000-000000000001')$q$,
+  'orders_kiosk_channel_chk', 'T-KIOSK-025 kiosk order with discount approval');
+SELECT pg_temp.expect_constraint($q$INSERT INTO orders (public_number, status, customer_id, created_by_user_id, created_via, warehouse_id, price_list_id, subtotal, total, payment_method, delivery_method, kiosk_customer_match, receiver_phone_e164, credit_approved_by_user_id)
+  VALUES ('POS-2026-000102','draft','00000000-0000-7000-8000-0000000000c1','00000000-0000-7000-8000-000000000101','kiosk','00000000-0000-7000-8000-0000000000a2','00000000-0000-7000-8000-0000000000a6',100,100,'cash','pickup','single','+996700000101','00000000-0000-7000-8000-000000000001')$q$,
+  'orders_kiosk_channel_chk', 'T-KIOSK-025 kiosk order with credit approval');
+SELECT pg_temp.expect_constraint($q$INSERT INTO orders (public_number, status, customer_id, created_by_user_id, created_via, warehouse_id, price_list_id, subtotal, total, payment_method, delivery_method, delivery_address, delivery_recipient_phone_e164, kiosk_customer_match, receiver_phone_e164)
+  VALUES ('POS-2026-000102','draft','00000000-0000-7000-8000-0000000000c1','00000000-0000-7000-8000-000000000101','kiosk','00000000-0000-7000-8000-0000000000a2','00000000-0000-7000-8000-0000000000a6',100,100,'cash','delivery','г. Бишкек, ул. Токтогула, 1','+996700000101','single','+996700000101')$q$,
+  'orders_kiosk_channel_chk', 'T-KIOSK-025 kiosk order with delivery (pickup only)');
+SELECT pg_temp.expect_constraint($q$INSERT INTO orders (public_number, status, customer_id, created_by_user_id, created_via, warehouse_id, price_list_id, subtotal, total, payment_method, delivery_method, receiver_phone_e164)
+  VALUES ('POS-2026-000102','draft','00000000-0000-7000-8000-0000000000c1','00000000-0000-7000-8000-000000000101','kiosk','00000000-0000-7000-8000-0000000000a2','00000000-0000-7000-8000-0000000000a6',100,100,'cash','pickup','+996700000101')$q$,
+  'orders_kiosk_match_chk', 'kiosk order without kiosk_customer_match (AC-DATA-302)');
+SELECT pg_temp.expect_constraint($q$INSERT INTO orders (public_number, status, customer_id, created_by_user_id, warehouse_id, price_list_id, subtotal, total, payment_method, delivery_method, kiosk_customer_match)
+  VALUES ('POS-2026-000102','draft','00000000-0000-7000-8000-0000000000c1','00000000-0000-7000-8000-000000000001','00000000-0000-7000-8000-0000000000a2','00000000-0000-7000-8000-0000000000a6',100,100,'cash','pickup','single')$q$,
+  'orders_kiosk_match_chk', 'staff order with kiosk_customer_match (AC-DATA-302)');
+SELECT pg_temp.expect_constraint($q$INSERT INTO orders (public_number, status, customer_id, created_by_user_id, created_via, warehouse_id, price_list_id, subtotal, total, payment_method, delivery_method, kiosk_customer_match, receiver_phone_e164)
+  VALUES ('POS-2026-000102','draft','00000000-0000-7000-8000-0000000000c1','00000000-0000-7000-8000-000000000101','kiosk','00000000-0000-7000-8000-0000000000a2','00000000-0000-7000-8000-0000000000a6',100,100,'cash','pickup','many','+996700000101')$q$,
+  'orders_kiosk_customer_match_chk', 'kiosk_customer_match outside single|ambiguous|none');
+SELECT pg_temp.expect_constraint($q$INSERT INTO orders (public_number, status, customer_id, created_by_user_id, created_via, warehouse_id, price_list_id, subtotal, total, payment_method, delivery_method)
+  VALUES ('POS-2026-000102','draft','00000000-0000-7000-8000-0000000000c1','00000000-0000-7000-8000-000000000101','tablet','00000000-0000-7000-8000-0000000000a2','00000000-0000-7000-8000-0000000000a6',100,100,'cash','pickup')$q$,
+  'orders_created_via_chk', 'created_via outside staff|customer|kiosk');
+SELECT pg_temp.expect_constraint($q$INSERT INTO orders (public_number, status, customer_id, created_by_user_id, created_via, warehouse_id, price_list_id, subtotal, total, payment_method, delivery_method, kiosk_customer_match, pd_notice_version, pd_notice_sha256, receiver_phone_e164)
+  VALUES ('POS-2026-000102','draft','00000000-0000-7000-8000-0000000000c1','00000000-0000-7000-8000-000000000101','kiosk','00000000-0000-7000-8000-0000000000a2','00000000-0000-7000-8000-0000000000a6',100,100,'cash','pickup','none','2026-11-04','ABC','+996700000101')$q$,
+  'orders_pd_notice_sha256_chk', 'pd_notice_sha256 not 64 lowercase hex');
+-- допустимая заявка с планшета: наличные, самовывоз, скидка клиента 1С 5 % (Р-05 (а)), принята сервером (submitting)
+INSERT INTO orders (id, public_number, status, customer_id, created_by_user_id, created_via, device_id, warehouse_id, price_list_id,
+                    subtotal, customer_discount_percent, customer_discount_total, discount_total, total, payment_method, delivery_method,
+                    kiosk_customer_match, pd_notice_version, pd_notice_sha256, receiver_phone_e164, submitted_at, onec_sync_state)
+VALUES ('00000000-0000-7000-8000-0000000001b1', 'POS-2026-000101', 'submitting', '00000000-0000-7000-8000-0000000000c1',
+        '00000000-0000-7000-8000-000000000101', 'kiosk', '00000000-0000-7000-8000-0000000001d1', '00000000-0000-7000-8000-0000000000a2',
+        '00000000-0000-7000-8000-0000000000a6', 100.00, 5.00, 5.00, 5.00, 95.00, 'cash', 'pickup', 'single', '2026-11-04',
+        encode(digest('kiosk_order_notice 2026-11-04', 'sha256'), 'hex'), '+996700000101', now(), 'pending');
+SELECT pg_temp.expect_true(
+  (SELECT count(*) FROM orders WHERE created_via = 'kiosk' AND customer_discount_total = 5.00 AND kiosk_customer_match = 'single') = 1
+  AND (SELECT count(*) FROM orders WHERE created_via <> 'kiosk' AND kiosk_customer_match IS NOT NULL) = 0,
+  'T-KIOSK-025 kiosk order: cash + pickup + 1C customer discount accepted');
+
+-- 6.7 Маскирование номера через 90 дней (DATA-303): маска — в receiver_phone_masked, E.164 → NULL одним UPDATE;
+--     CHECK E.164 receiver_phone_e164 не ослаблен; триггер заморозки финансовых полей маскированию не мешает
+SELECT pg_temp.expect_constraint($q$UPDATE orders SET receiver_phone_masked = '+996 7** *** *01' WHERE id = '00000000-0000-7000-8000-0000000001b1'$q$,
+  'orders_receiver_phone_masked_null_chk', 'masked phone together with E.164 (AC-DATA-303)');
+SELECT pg_temp.expect_constraint($q$UPDATE orders SET receiver_phone_e164 = '+996 7** *** *01' WHERE id = '00000000-0000-7000-8000-0000000001b1'$q$,
+  'orders_receiver_phone_e164_chk', 'mask written into receiver_phone_e164 (AC-DATA-303)');
+SELECT pg_temp.expect_constraint($q$UPDATE orders SET receiver_phone_e164 = NULL, receiver_phone_masked = '+996 *** ** 01' WHERE id = '00000000-0000-7000-8000-0000000001b1'$q$,
+  'orders_receiver_phone_masked_chk', 'masked phone in a wrong format');
+UPDATE orders SET receiver_phone_e164 = NULL, receiver_phone_masked = '+996 7** *** *01' WHERE id = '00000000-0000-7000-8000-0000000001b1';
+SELECT pg_temp.expect_true(
+  (SELECT receiver_phone_e164 IS NULL AND receiver_phone_masked = '+996 7** *** *01' AND submitted_at IS NOT NULL
+     FROM orders WHERE id = '00000000-0000-7000-8000-0000000001b1'),
+  'kiosk order phone masked after submit (DATA-303)');
+
+-- =====================================================================================================
+-- 7. Сводка
 -- =====================================================================================================
 SELECT outcome LIKE 'rejected%' AS negative, count(*) AS scenarios FROM ddl_check_log GROUP BY 1 ORDER BY 1;
 DO $$

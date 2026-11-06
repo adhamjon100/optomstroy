@@ -2,7 +2,9 @@
 // (точки → «_»), неизвестный код — `audit_action_unknown` с кодом (AC-UI-47-009); результат → `StatusChip`
 // (`ok` success, `denied` error, `error` warning); префиксы групп действий UI-47-007 (фильтр `action` — префикс,
 // ≤ 100); переход по объекту UI-47-011 (`order` → SCR-24, `customer` → SCR-32, `user` → SCR-45,
-// `payment`/`transaction` → SCR-37, `return_request` → SCR-39, `sync_run` → SCR-43).
+// `payment`/`transaction` → SCR-37, `return_request` → SCR-39, `sync_run` → SCR-43, запись планшета `store_tablets` →
+// SCR-54). Планшет магазина (02 версия 1.27, AC-UI-47-015; 11 §7.2; ADR-115): семь событий `kiosk.*` и префикс `kiosk.`
+// в группе «Пользователи и роли».
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
@@ -15,6 +17,7 @@ abstract final class AuditLabels {
     'session.',
     'user.',
     'invitation.',
+    'kiosk.',
     'discount.',
     'order.',
     'payment.',
@@ -47,6 +50,13 @@ abstract final class AuditLabels {
     'user_blocked' => l10n.audit_action_user_blocked,
     'user_unblocked' => l10n.audit_action_user_unblocked,
     'auth_pin_reset' => l10n.audit_action_auth_pin_reset,
+    'kiosk_enrolled' => l10n.audit_action_kiosk_enrolled,
+    'kiosk_reconnected' => l10n.audit_action_kiosk_reconnected,
+    'kiosk_updated' => l10n.audit_action_kiosk_updated,
+    'kiosk_revoked' => l10n.audit_action_kiosk_revoked,
+    'kiosk_exit_code_used' => l10n.audit_action_kiosk_exit_code_used,
+    'kiosk_limit_reached' => l10n.audit_action_kiosk_limit_reached,
+    'kiosk_network_denied' => l10n.audit_action_kiosk_network_denied,
     _ => l10n.audit_action_unknown(code),
   };
 
@@ -78,6 +88,8 @@ abstract final class AuditLabels {
       'payment' || 'transaction' => '/transactions/$id',
       'return_request' => '/returns/$id',
       'sync_run' => '/sync?runId=$id',
+      // Запись планшета магазина: деталь — список SCR-54 (отдельного маршрута записи нет).
+      'store_tablet' || 'store_tablets' => '/admin/tablets',
       _ => null,
     };
   }

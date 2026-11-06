@@ -25,13 +25,16 @@ class ErrorState extends StatelessWidget {
       requestId = null,
       onClose = null,
       onBack = null,
-      backLabel = null;
+      backLabel = null,
+      icon = null;
 
-  /// Баннер 48 на контейнере тона с закрытием для неблокирующих.
+  /// Баннер 48 на контейнере тона с закрытием для неблокирующих. [icon] — иконка состояния вместо иконки тона
+  /// (баннеры планшета магазина UI-51-014: `wifi_off` — «Нет связи», `system_update` — «Планшет нужно обновить»).
   const ErrorState.banner({
     super.key,
     required this.message,
     this.tone = ErrorStateTone.error,
+    this.icon,
     this.onRetry,
     this.retrying = false,
     this.onClose,
@@ -54,13 +57,17 @@ class ErrorState extends StatelessWidget {
     this.requestId,
   }) : kind = ErrorStateKind.fullScreen,
        tone = ErrorStateTone.error,
-       onClose = null;
+       onClose = null,
+       icon = null;
 
   /// Вид.
   final ErrorStateKind kind;
 
   /// Тон (баннер).
   final ErrorStateTone tone;
+
+  /// Иконка баннера вместо иконки тона; `null` — иконка тона ([toneOf]). У `inline` и `fullScreen` — всегда `null`.
+  final IconData? icon;
 
   /// Заголовок (`fullScreen`).
   final String? title;
@@ -135,7 +142,7 @@ class ErrorState extends StatelessWidget {
 
   Widget _banner(BuildContext context, AppLocalizations l10n) {
     final DsColors c = context.colors;
-    final (Color bg, Color fg, IconData icon) = toneOf(c, tone);
+    final (Color bg, Color fg, IconData toneIcon) = toneOf(c, tone);
     return Semantics(
       liveRegion: true,
       container: true,
@@ -145,7 +152,7 @@ class ErrorState extends StatelessWidget {
         decoration: BoxDecoration(color: bg),
         child: Row(
           children: <Widget>[
-            Icon(icon, size: 20, color: fg),
+            Icon(icon ?? toneIcon, size: 20, color: fg),
             const SizedBox(width: 12),
             Expanded(
               child: Padding(

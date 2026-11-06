@@ -60,6 +60,12 @@
 | `QR_UNAVAILABLE` | 503 | `error_qr_unavailable` | QR временно недоступен | `qrManualFallback` |
 | `CONSENT_REQUIRED` | 422 | `reg_error_consent_required` | Чтобы продолжить, подтвердите, что ознакомлены с условиями обработки данных | `provideConsent` |
 | `APP_READ_ONLY` | 503 | `error_app_read_only` | Сервер работает в режиме только чтения — изменения временно недоступны | `readOnlyMode` |
+| `KIOSK_REVOKED` | 401 | `error_kiosk_revoked` | Планшет отключён администратором | `signIn` |
+| `KIOSK_DISABLED` | 403 | `error_kiosk_disabled` | Режим планшета выключен | `none` |
+| `KIOSK_NETWORK_DENIED` | 403 | `error_kiosk_network_denied` | Планшет не в сети магазина | `none` |
+| `KIOSK_RATE_LIMITED` | 429 | `error_kiosk_rate_limited` | Слишком много кодов с этого планшета. Обратитесь к продавцу | `none` |
+| `KIOSK_EXIT_CODE_INVALID` | 422 | `error_kiosk_exit_code_invalid` | Неверный аварийный код | `none` |
+| `KIOSK_EXIT_LOCKED` | 423 | `error_kiosk_exit_locked` | Аварийный выход временно заблокирован | `retryAfter` |
 
 ## Предупреждения успешного ответа (`warnings[].code`)
 

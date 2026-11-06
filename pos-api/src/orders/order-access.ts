@@ -1,15 +1,20 @@
 import type { AuthenticatedPrincipal } from '../common/auth/principal.js';
+import { isBuyerLike } from '../common/auth/subject-kind.js';
 import type { SalesActor } from '../common/ports/index.js';
 import type { PermissionCatalog } from '../common/rbac/permission-catalog.js';
 import type { PermissionCode } from '../common/rbac/permissions.generated.js';
 import type { OrderRow } from './order.repository.js';
 
-/** Субъект запроса для портов этапа F. */
+/**
+ * Субъект запроса для портов этапа F. Вид — `subjectKind` (06 ARCH-065); `isCustomer` — ветка покупателя: `customer` и
+ * планшет магазина `kiosk` (покупатель без привязки: без «своих» заказов карточки, без скидок и долга; 11 SEC-137 (6)).
+ */
 export function salesActorOf(p: AuthenticatedPrincipal, requestId?: string | null): SalesActor {
   return {
     userId: p.userId,
     roles: p.roles,
-    isCustomer: p.kind === 'customer',
+    isCustomer: isBuyerLike(p.kind),
+    subjectKind: p.kind,
     sessionId: p.sessionId,
     deviceId: p.deviceId,
     requestId: requestId ?? null,

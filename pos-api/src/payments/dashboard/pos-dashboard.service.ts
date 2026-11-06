@@ -235,6 +235,7 @@ export class PosDashboardService {
           public_number: string;
           status: string;
           onec_sync_state: string;
+          created_via: string;
           warehouse_id: string;
           subtotal: string;
           discount_total: string;
@@ -250,7 +251,7 @@ export class PosDashboardService {
         }
       >(sql`
         SELECT o.id AS order_id, o.public_number, o.status::text AS status, o.onec_sync_state::text AS onec_sync_state,
-               o.warehouse_id, o.subtotal::text AS subtotal, o.discount_total::text AS discount_total,
+               o.created_via, o.warehouse_id, o.subtotal::text AS subtotal, o.discount_total::text AS discount_total,
                o.total::text AS total, o.payment_method::text AS payment_method, o.paid_amount::text AS paid_amount,
                o.is_paid, o.created_at,
                (SELECT count(*)::int FROM order_items oi WHERE oi.order_id = o.id) AS items_count,
@@ -274,6 +275,8 @@ export class PosDashboardService {
       publicNumber: o.public_number,
       status: o.status,
       onecSyncState: o.onec_sync_state,
+      // Канал заказа — пометка «С планшета» SCR-30 (08 §4.10.1; ADR-115 п. 24): фильтр блока по складу не меняется.
+      createdVia: o.created_via,
       customer: presentCustomerBrief(o),
       warehouseId: o.warehouse_id,
       itemsCount: Number(o.items_count), // money-double: allow — число строк

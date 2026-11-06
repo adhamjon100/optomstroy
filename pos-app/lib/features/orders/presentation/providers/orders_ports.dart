@@ -33,8 +33,9 @@ final class OrdersViewer {
   /// Режим клиента (ядро §24.2).
   bool get isCustomer => role == RoleCode.customer;
 
-  /// Сотрудник магазина.
-  bool get isStaff => role != null && role != RoleCode.customer && role != RoleCode.integration;
+  /// Сотрудник магазина. Планшет магазина (`kiosk`, ADR-115) — не сотрудник: заказов он не видит (KIOSK-005).
+  bool get isStaff =>
+      role != null && role != RoleCode.customer && role != RoleCode.integration && role != RoleCode.kiosk;
 
   /// `order.read.all` — список всех и переключатель «Мои / Все».
   bool get canReadAll => switch (role) {
@@ -42,8 +43,8 @@ final class OrdersViewer {
     _ => false,
   };
 
-  /// `order.documents.print` (у `customer` — только счёт, 02 SCR-24.10).
-  bool get canPrint => role != null && role != RoleCode.integration;
+  /// `order.documents.print` (у `customer` — только счёт, 02 SCR-24.10; у планшета `kiosk` права нет, KIOSK-005).
+  bool get canPrint => role != null && role != RoleCode.integration && role != RoleCode.kiosk;
 
   /// `payment.cash.receive` — «Принять оплату» (02 AC-UI-24-007: не у `seller`, `admin`, `owner`).
   bool get canAcceptPayment => role == RoleCode.cashier || role == RoleCode.seniorSeller;

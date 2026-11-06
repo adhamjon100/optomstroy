@@ -110,6 +110,11 @@ final catalogCartFabProvider = Provider<WidgetBuilder?>((ref) => null);
 /// `NetworkFailure` запросов списка; корень подставляет `onlineStatusProvider` (core/di) — EQ-CAT-02.
 final catalogOnlineStatusProvider = Provider<OnlineStatus>((ref) => OnlineStatus.unknown);
 
+/// Планшет магазина: сервер ответил `426` — «Планшет нужно обновить» (баннер UI-51-014 под шапкой SCR-51 вместо «Нет
+/// связи»). Корень подставляет состояние сессии планшета (`kioskStatusProvider`) для роли `kiosk`; каталог сотрудника
+/// и SCR-50 значение не читают (по умолчанию — `false`).
+final catalogKioskUpdateNeededProvider = Provider<bool>((ref) => false);
+
 /// Необязательная возможность [CatalogShelfPort]: обновить локальный кэш избранного с сервера (`GET /favorites/products`
 /// → кэш; неподтверждённые действия сохраняются). Без неё кэш заполняет только SCR-40, и число избранных («Избранное N»
 /// меню ☰, подсказка «Избранные» строки управления) после входа было 0 при избранном на сервере (ревью RP-02).

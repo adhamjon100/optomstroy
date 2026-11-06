@@ -103,7 +103,7 @@ jobs:
         run: npx --yes @redocly/cli@${REDOCLY_VERSION} lint contracts/onec/onec-http-service.v1.yaml
       - name: "Шаги 6–7: пути 1С и фикстуры"
         run: python -I -X utf8 scripts/check_onec_paths.py
-      - name: "Шаги 8–9: DDL на postgres:17 (psql) — все pos-api/migrations/*.sql по порядку, состав таблиц dev/test (64) и prod (63), повтор миграций"
+      - name: "Шаги 8–9: DDL на postgres:17 (psql) — все pos-api/migrations/*.sql по порядку, состав таблиц по scripts/check_tables.sql (dev/test и prod), повтор миграций"
         run: |
           for db in ci_test ci_prod ci_behavior; do psql -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE $db"; done
           # Все миграции в лексикографическом порядке (как мигратор src/db/migrator.ts), включая 0003, 0005–0007…
@@ -118,7 +118,7 @@ jobs:
           PGOPTIONS='-c app.env=test' psql -v ON_ERROR_STOP=1 -q -d ci_test -f scripts/check_tables.sql
           for f in "${MIGRATIONS[@]}"; do psql -v ON_ERROR_STOP=1 -q -d ci_prod -f "$f"; done
           psql -v ON_ERROR_STOP=1 -q -d ci_prod -f scripts/check_tables.sql
-      - name: "B-AR-10 (б): поведение DDL (60 негативных сценариев + инварианты)"
+      - name: "B-AR-10 (б): поведение DDL (негативные сценарии + инварианты)"
         run: |
           for f in $(ls -1 pos-api/migrations/*.sql | LC_ALL=C sort); do
             PGOPTIONS='-c app.env=test' psql -v ON_ERROR_STOP=1 -q -d ci_behavior -f "$f"

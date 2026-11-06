@@ -46,15 +46,16 @@ IDE-кеш `.idea/` (игнорируется git) перенесён в `pos-ap
 ├── Makefile                        # RM-C-011, RM-C-012 — цели test-*, check-contracts, gen (docs/ci.md)
 ├── README.md                       # RM-C-001 — назначение и команды запуска
 ├── contracts/                      # этап B — машинно-проверяемые контракты (13 §5.1)
+│   ├── CHANGELOG.md                # RM-B-009 — журнал версий enums.json (шаг 16 CI; создан с 1.3.0, ADR-115)
 │   ├── NOTES_enums.md              # RM-B-009 — заметки исполнителя (решения по неоднозначностям)
 │   ├── design-tokens/              # RM-B-006 — tokens.json, tokens.schema.json (DS)
 │   ├── enums.json                  # RM-B-009 — enum-ы и коды ошибок (BE)
 │   ├── enums.schema.json           # RM-B-009
 │   ├── l10n/                       # RM-B-007 — app_ru.arb, app_ky.arb, app_en.arb (DS + FE)
-│   ├── legal/                      # RM-A-007 — consents_ru.md (заказчик / SEC)
-│   ├── onec/                       # RM-B-004 — onec-http-service.v1.yaml, odata-allowlist.yaml, fixtures/ (ONEC)
+│   ├── legal/                      # RM-A-007 — consents_ru.md (заказчик / SEC); notices_ru.md — текст информирования планшета магазина (P-002, ADR-115)
+│   ├── onec/                       # RM-B-004 — onec-http-service.v1.yaml, odata-allowlist.yaml, fixtures/, CHANGELOG.md (ONEC; журнал с 1.2.0, ADR-115)
 │   ├── openapi/                    # RM-B-003 — pos-api.v1.yaml, CHANGELOG.md (BE)
-│   ├── rbac/                       # RM-B-008 — permissions.yaml (SEC)
+│   ├── rbac/                       # RM-B-008 — permissions.yaml, NOTES.md, CHANGELOG.md (SEC; журнал с версии 2, ADR-115)
 │   └── test-vectors/               # RM-C-004/005 (MNY-004) — money.v1.json: общие векторы MV-01…MV-30 для pos-api и pos-app (BE + FE)
 ├── demo/                           # ADR-109 — демо-пакет на тестовых данных (app/, data/, logs/, .tmp/, demo_env.json — вне git); ADR-113 — веб-демо в web/
 │   ├── README.md                   # ADR-109 — инструкция демо для заказчика; раздел «Веб-демо» (ADR-113)
@@ -65,7 +66,7 @@ IDE-кеш `.idea/` (игнорируется git) перенесён в `pos-ap
 │   ├── start-demo.ps1              # ADR-109 — запуск стека и приложения, режим -Smoke
 │   └── web/                        # ADR-113 — веб-демо на Netlify: backend/, site-src/; tools/, build-web-demo.ps1, netlify.toml, README.md — создают WP-N1/WP-T2 (site/, .build/, .smoke/ — вне git; §3.4)
 ├── docs/                           # документация (ARCH; владельцы подкаталогов — 13 §5.2)
-│   ├── customer/                   # документы для заказчика: Voprosy_zakazchiku.md/.docx — сводные вопросы заказчику (ARCH; 2026-10-28); WEB_DEMO_INSTRUCTION.md — инструкция к веб-демо (ADR-113)
+│   ├── customer/                   # документы для заказчика: Voprosy_zakazchiku.md/.docx — сводные вопросы заказчику (ARCH; 2026-10-28); WEB_DEMO_INSTRUCTION.md — инструкция к веб-демо (ADR-113); P-002_OWNER_DECISIONS.md — запись ответов владельца по планшету магазина, P-002_LAWYER_PACKAGE.md, P-002_TABLET_INSTRUCTIONS.md, P-002_PILOT_CHECKLIST.md — черновики для заказчика (ADR-115)
 │   ├── discovery/                  # этап A — аудит сервера, сведения 1С, SMSPro, устройства
 │   ├── erd/                        # RM-B-005, RM-C-006 — ER-диаграммы, schema_v1.sql
 │   ├── integration/                # RM-B-014 и др. — журнал версий расширения 1С, подключения
@@ -76,7 +77,7 @@ IDE-кеш `.idea/` (игнорируется git) перенесён в `pos-ap
 │   ├── research/                   # этап 1 — R0 (ядро решений), R1…R8
 │   ├── reviews/                    # отчёты независимой проверки (QA)
 │   ├── perf/                       # этапы E, H — бенчмарки
-│   ├── specification/              # ТЗ 00…18 + visual/ (в т. ч. visual/prototype/ — утверждённый прототип экрана выбора товаров 2026-10-29, эталон ADR-111/ADR-112), source/ (ARCH; только через ADR)
+│   ├── specification/              # ТЗ 00…18 + visual/ (в т. ч. visual/prototype/ — утверждённый прототип экрана выбора товаров 2026-10-29, эталон ADR-111/ADR-112), proposals/ (предложения изменения ТЗ P-001, P-002), source/ (ARCH; только через ADR)
 │   ├── stages/                     # ворота и отчёты этапов: B_approval.md, B_changes.md, <X>_<name>_report.md
 │   ├── templates/                  # RM-B-012 — stage_report.md, adr.md
 │   ├── PROGRESS_LOG.md
@@ -196,7 +197,7 @@ pos-api/src/
 | `check_repo_layout.py`, `check_secrets.py` | RM-C-001 (`check_secrets.py` заменяет `gitleaks detect` до RM-C-011) |
 | `build_openapi.py`, `check_openapi_dictionaries.py` | RM-B-003 (сборка из `contracts/openapi/parts/`, сверка словарей) |
 | `check_api_paths.py`, `check_api_permissions.py` | RM-B-003, RM-B-008 |
-| `gen_rbac_seed.py` | RM-B-008 (`0002_rbac_seed.sql` из `permissions.yaml`) |
+| `gen_rbac_seed.py` | RM-B-008 (`0002_rbac_seed.sql` из `permissions.yaml`; элементы с `since` — дельта-миграции, первая — `0023_kiosk_rbac_seed.sql`, ADR-115) |
 | `check_ddl_behavior.sql` | RM-B-005 (B-AR-10, поведенческие проверки DDL); с RM-C-006 п. 7 — `pos-api/test/sql/check_ddl_behavior.sql` |
 | `check_contrast.py` | RM-B-006 |
 | `build_arb.py` | RM-B-007 |

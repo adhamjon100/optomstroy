@@ -30,6 +30,7 @@ export interface AdminSettingsResponse {
 type EnvConfig = Pick<
   AppConfig,
   | 'CUSTOMER_SELF_SERVICE'
+  | 'KIOSK_MODE'
   | 'DEBT_PAYMENTS_FROM_POS'
   | 'QR_PROVIDER'
   | 'QR_TTL_MINUTES'
@@ -84,7 +85,8 @@ function rowVersionOf(rows: readonly AppSettingRow[]): number {
  * Настройки системы `GET/PUT /admin/settings` (08 §4.18.6, API-117, API-164; ядро §19.2; RM-D-015 п. 2).
  *
  * - `settings` — ключи `app_settings` по таблице соответствия (admin-settings.map.ts); в ответе — ключи, у которых
- *   задано значение (JSON `null` у ненулевого по схеме поля = «не задано, действует env» — поле не выводится).
+ *   задано значение (JSON `null` у ненулевого по схеме поля = «не задано, действует env» — поле не выводится); ключ
+ *   без строки со значением по умолчанию в коде (`codeDefault` — ключи планшета магазина, 07 §5.59) — это значение.
  * - `env` — значения переменных окружения только для чтения; секреты не отдаются.
  * - `rowVersion` — сумма `app_settings.row_version` ключей таблицы: каждое изменение строки (+1) и новая строка
  *   (+1) её увеличивают, поэтому устаревшая версия всегда обнаруживается (409 VERSION_CONFLICT).
@@ -194,7 +196,10 @@ export class AdminSettingsService {
     const settings: Record<string, unknown> = {};
     for (const def of ADMIN_SETTING_KEYS) {
       const row = byKey.get(def.key);
-      if (!row) continue;
+      if (!row) {
+        if (def.codeDefault !== undefined) settings[def.apiField] = def.codeDefault;
+        continue;
+      }
       const c = checkSettingValue(def.rule, row.value);
       if (c.ok) settings[def.apiField] = c.value;
       else if (row.value !== null) {
@@ -211,6 +216,7 @@ export class AdminSettingsService {
     const c = this.config;
     return {
       customerSelfService: c.CUSTOMER_SELF_SERVICE,
+      kioskMode: c.KIOSK_MODE,
       debtPaymentsFromPos: c.DEBT_PAYMENTS_FROM_POS,
       qrProvider: c.QR_PROVIDER,
       qrTtlMinutes: c.QR_TTL_MINUTES,

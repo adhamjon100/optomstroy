@@ -138,6 +138,7 @@ final class SessionApi {
   static const String stepUpPath = '/auth/step-up';
   static const String logoutPath = '/auth/logout';
   static const String logoutAllPath = '/auth/logout-all';
+  static const String mePath = '/me';
 
   final Dio _dio;
 
@@ -228,6 +229,20 @@ final class SessionApi {
     final options = apiOptions(retry: RetryProfile.none);
     options.extra![SessionRequestExtra.stepUpOperation] = 'session.logout_all';
     await _dio.post<Object?>(logoutAllPath, options: options);
+  }
+
+  /// `GET /me` сессии планшета магазина → `tablet.warehouseId` (08 §3.14 `MeKioskTablet`; 02 SCR-51.9). `null` — нет
+  /// ответа, отказ или поля нет. Прочие поля ответа не читаются и не сохраняются.
+  Future<String?> kioskTabletWarehouseId() async {
+    try {
+      final Response<Object?> response = await _dio.get<Object?>(mePath, options: apiOptions());
+      final Object? body = response.data;
+      final Object? tablet = body is Map ? body['tablet'] : null;
+      final Object? warehouseId = tablet is Map ? tablet['warehouseId'] : null;
+      return warehouseId is String && warehouseId.isNotEmpty ? warehouseId : null;
+    } on DioException {
+      return null;
+    }
   }
 
   /// Ошибка Dio → [SessionCallError].

@@ -2,7 +2,9 @@
 // API: подписей полей в словаре 02 §7 нет, GQ-FEADM-05), ввод и ошибка 02 SCR-46.8; изменённое поле — фон
 // `primaryContainer` (до сохранения/отмены); значения окружения — строка только для чтения с `lock` и подсказкой
 // «Задаётся на сервере» (UI-46-004). `owner` — все поля неактивны (UI-46-015). `CUSTOMER_SELF_SERVICE` — строка
-// только для чтения без переключателя (UI-46-017, AC-UI-46-011). Секреты не показываются (AC-UI-46-010).
+// только для чтения без переключателя (UI-46-017, AC-UI-46-011). Секреты не показываются (AC-UI-46-010). Секция
+// «Планшеты магазина» (UI-46-018; ADR-115) — подписи полей из 02 §7 (`admin_settings_kiosk_*`), пустые часы работы —
+// подсказка «Не заданы — сигнал выключен»; `KIOSK_MODE` не показывается.
 import 'package:flutter/material.dart';
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
@@ -34,6 +36,7 @@ abstract final class AdminSettingsTexts {
     AdminSettingsSection.appVersions => l10n.admin_settings_section_versions,
     AdminSettingsSection.registration => l10n.admin_settings_section_registration,
     AdminSettingsSection.textsContacts => l10n.admin_settings_section_texts,
+    AdminSettingsSection.kiosk => l10n.admin_settings_section_kiosk,
   };
 
   static IconData icon(AdminSettingsSection s) => switch (s) {
@@ -48,6 +51,18 @@ abstract final class AdminSettingsTexts {
     AdminSettingsSection.appVersions => Icons.system_update_outlined,
     AdminSettingsSection.registration => Icons.person_add_outlined,
     AdminSettingsSection.textsContacts => Icons.info_outline_rounded,
+    AdminSettingsSection.kiosk => Icons.tablet_android_outlined,
+  };
+
+  /// Подпись поля: ключи планшета — строки 02 §7 (UI-46-018), прочие — ключ `app_settings` API (GQ-FEADM-05).
+  static String fieldLabel(AppLocalizations l10n, String key) => switch (key) {
+    'kioskIdleSeconds' => l10n.admin_settings_kiosk_idle,
+    'kioskIdleWarningSeconds' => l10n.admin_settings_kiosk_idle_warning,
+    'kioskDoneSeconds' => l10n.admin_settings_kiosk_done,
+    'kioskOtpPerHour' => l10n.admin_settings_kiosk_otp_per_hour,
+    'kioskOtpPerDay' => l10n.admin_settings_kiosk_otp_per_day,
+    'kioskWorkingHours' => l10n.admin_settings_kiosk_working_hours,
+    _ => key,
   };
 
   /// Текст ошибки поля; для диапазонов без отдельного ключа — сам диапазон (GQ-FEADM-05).
@@ -64,6 +79,8 @@ abstract final class AdminSettingsTexts {
     SettingsFieldError.invalid =>
       field?.min != null && field?.max != null ? '${field!.min}…${field.max}' : l10n.error_internal,
     SettingsFieldError.server => l10n.error_internal,
+    // Строки формата в 02 §7 нет — подсказка показывает сам формат 07 §5.59.
+    SettingsFieldError.workingHours => KioskWorkingHours.example,
   };
 
   /// Значения окружения секции (UI-46-004): имя переменной → значение.
@@ -234,7 +251,7 @@ class _FieldRow extends StatelessWidget {
     final String value = state.value(field.key);
     final bool changed = value.trim() != state.serverValue(field.key).trim();
     final String? error = AdminSettingsTexts.error(l10n, state.errorOf(field.key), field: field);
-    final String label = field.key;
+    final String label = AdminSettingsTexts.fieldLabel(l10n, field.key);
     final Widget input = switch (field.kind) {
       SettingsFieldKind.boolean => AppSwitch(
         value: value == 'true',
@@ -254,6 +271,10 @@ class _FieldRow extends StatelessWidget {
         label: label,
         value: value,
         errorText: error,
+        // Пустые часы работы магазина — сигнал «планшет не на связи» выключен (UI-46-018, Q-341).
+        helper: field.kind == SettingsFieldKind.workingHours && value.trim().isEmpty
+            ? l10n.admin_settings_kiosk_working_hours_empty
+            : null,
         enabled: editable,
         numeric: field.kind == SettingsFieldKind.integer,
         onChanged: (String v) => onEdit(field.key, v),

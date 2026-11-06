@@ -8,14 +8,20 @@
 // экрана — `presentation/providers/cart_controller.dart`.
 // Реализации подключает `app/di/overrides.dart` списками `cartDraftBindings` и `cartBindings` (data/, L-8).
 // В widget-тестах — `cartDraftRepositoryProvider.overrideWithValue(fake)`, `cartRepositoryProvider.overrideWithValue(fake)`.
+// Планшет магазина (ADR-115; 10 KIOSK-009, KIOSK-020; 13 TAB-2-12): при роли `kiosk` те же порты `cartSyncProvider` и
+// `cartDraftRepositoryProvider` дают корзину только на сервере (`KioskCartSync`, без drift и очереди `cart.sync`);
+// сброс FLOW-045 — [kioskCartControlProvider], куда ведёт «Оформить заявку» — [cartCheckoutLocationProvider], отметка
+// строк после отказа заявки (02 UI-51-018) — [kioskCartMarkStockChangedProvider] / [kioskCartStockChangedProvider].
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:optomstroy/core/connectivity/connectivity_watcher.dart';
 import 'package:optomstroy/core/di/core_providers.dart';
 import 'package:optomstroy/core/enums.dart';
+import 'package:optomstroy/core/error/result.dart';
 import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/core/utils/qty.dart';
 import 'package:optomstroy/features/cart/domain/draft/cart_draft.dart';
+import 'package:optomstroy/features/cart/domain/entities/cart.dart';
 import 'package:optomstroy/features/cart/domain/repositories/cart_json_decoder.dart';
 import 'package:optomstroy/features/cart/domain/repositories/cart_repository.dart';
 import 'package:optomstroy/features/cart/domain/sync/cart_sync.dart';
@@ -58,6 +64,78 @@ final cartViewerNameProvider = Provider<String?>((ref) => null);
 final cartOnlineStatusProvider = Provider<OnlineStatus>(
   (ref) => ref.watch(onlineStatusProvider).value ?? OnlineStatus.unknown,
 );
+
+/// Путь оформления из корзины по id серверной корзины.
+typedef CartCheckoutLocation = String Function(String? cartId);
+
+/// Куда ведёт «Создать заказ» / «Отправить заявку» корзины (02 UI-20-016); `null` — SCR-21 `/checkout?cartId=`
+/// (сотрудник и покупатель). Корень подставляет для планшета магазина SCR-52 `/kiosk/checkout?step=phone`
+/// (02 UI-51-013; корзина на сервере, `cartId` — в памяти).
+final cartCheckoutLocationProvider = Provider<CartCheckoutLocation?>((ref) => null);
+
+/// Оформление из корзины недоступно по состоянию режима, а не корзины (02 UI-51-013: планшет — `426`, полноэкранные
+/// состояния, метка сброса без сети). Подставляет корень; по умолчанию — `false` (сотрудник и покупатель).
+final cartOrderingBlockedProvider = Provider<bool>((ref) => false);
+
+// ---------------------------------------------------------------------------
+// Корзина планшета магазина (ADR-115; 04 FLOW-045; 10 KIOSK-009, KIOSK-020): только на сервере, снимок в памяти.
+// ---------------------------------------------------------------------------
+
+/// Изменение корзины планшета отклонено: идёт сброс или есть метка сброса без сети (`UnknownFailure.cause`).
+final class KioskCartResetPending implements Exception {
+  const KioskCartResetPending();
+
+  @override
+  String toString() => 'KioskCartResetPending';
+}
+
+/// Сброс корзины планшета FLOW-045 и метка сброса без сети (02 UI-51-005, SCR-51.7 «Сброс без сети»).
+abstract interface class KioskCartControl {
+  /// Id серверной корзины на экране (`POST /kiosk/reset {cartId}`); `null` — корзины ещё нет или идёт сброс.
+  String? get cartId;
+
+  /// Id корзины, закрытие которой сервер ещё не подтвердил (`app_meta.kiosk.pending_reset_cart_id`, FLOW-045.A1);
+  /// пока он есть, корзина на экране пуста, изменения и `GET /cart` не выполняются.
+  String? get pendingResetCartId;
+
+  /// Очистка файла БД планшета при запуске (FLOW-045.A2) и чтение метки сброса без сети — один раз на БД; любой
+  /// запрос корзины и [reset] сначала ждут её.
+  Future<void> prepare();
+
+  /// Сброс FLOW-045.S3–S4: после уже начатых изменений корзины метка сброса пишется локально (только id корзины),
+  /// корзина на экране становится пустой, затем [request] выполняет `POST /kiosk/reset {cartId}` (`cartId` — метка или
+  /// корзина на экране; `null` — корзины не было). Успех — новая пустая корзина на экране, метка снимается; отказ —
+  /// метка остаётся (повтор — следующим вызовом). Без сети [request] не вызывается.
+  Future<Result<Cart>> reset(Future<Result<Cart>> Function(String? cartId) request);
+
+  /// «В корзину» карточки каталога (02 UI-51-010): прямой `PUT /cart/items/{variantId}` `mode=increment` на шаг строки;
+  /// [unitId] — единица варианта из карточки (`ProductSummary.baseUnit`), если варианта ещё нет ни в корзине, ни в кэше
+  /// каталога планшета. Результат — новое количество строки.
+  Future<Result<Qty>> addStepWithUnit(CartLineKey key, {String? unitId, Money? priceSnapshot});
+}
+
+/// Управление корзиной планшета; `null` — не планшет (подставляет `cartBindings` для роли `kiosk`).
+final kioskCartControlProvider = Provider<KioskCartControl?>((ref) => null);
+
+/// Есть метка сброса без сети ([KioskCartControl.pendingResetCartId]): «В корзину» и «Оформить заявку» недоступны
+/// (02 SCR-51.7). Подставляет `cartBindings` для роли `kiosk`; иначе — `false`.
+final kioskCartResetPendingProvider = Provider<bool>((ref) => false);
+
+/// Строка `conflicts[]` отказа заявки планшета: только `variantId`, `kind`, `stockLevel` (08 §2.4 п. 3).
+typedef KioskCartStockConflict = ({String variantId, String kind, String? stockLevel});
+
+/// Отметить корзину планшета на экране после отказа заявки по остатку или количеству (02 UI-51-018; SCR-52 п. 6;
+/// 04 FLOW-044.A3): над строками drawer — «Товара стало меньше…», пока корзина не изменилась и не сброшена; строки
+/// [conflicts] отказа отмечаются, даже если `GET /cart` их не пометил (`variant_unavailable` — «Товар больше не
+/// продаётся», `stock_insufficient` — «Недостаточно товара»).
+typedef KioskCartMarkStockChanged = void Function([List<KioskCartStockConflict> conflicts]);
+
+/// Порт отметки UI-51-018 для SCR-52; `null` — не планшет (подставляет `cartBindings` для роли `kiosk`).
+final kioskCartMarkStockChangedProvider = Provider<KioskCartMarkStockChanged?>((ref) => null);
+
+/// Отметка UI-51-018 видна: баннер `kiosk_stock_changed` над строками drawer планшета. Подставляет `cartBindings` для
+/// роли `kiosk`; иначе — `false`.
+final kioskCartStockChangedProvider = Provider<bool>((ref) => false);
 
 // ---------------------------------------------------------------------------
 // Смена варианта в строке корзины (10 CART-005; 02 UI-20-007 → SCR-15 в режиме смены, UI-15-007 «Заменить

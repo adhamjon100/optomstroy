@@ -4,6 +4,7 @@ import { newId } from '../ids/uuid.js';
 import { RBAC_ROLES } from '../rbac/permissions.generated.js';
 import { type Clock, systemClock } from './clock.js';
 import { JWT_ALLOWED_ALGS, type JwtAlg, type JwtKeyRing } from './jwt-keys.js';
+import { SUBJECT_KINDS, type SubjectKind } from './subject-kind.js';
 
 /** `iss`/`aud` access-JWT (09 §8.1; совпадают с scripts/issue_test_jwt.ts RM-C-008). */
 export const JWT_ISSUER = 'optomstroy-pos';
@@ -13,7 +14,11 @@ export const JWT_MAX_LENGTH = 8192;
 /** Допуск расхождения часов для `nbf`/`iat`/`exp`, секунд. */
 export const JWT_CLOCK_TOLERANCE_SECONDS = 5;
 
-export type TokenKind = 'staff' | 'customer';
+/**
+ * `users.kind` (07 §6.1) = вид субъекта `SubjectKind` (06 ARCH-065, subject-kind.ts); `kiosk` — технический
+ * пользователь планшета магазина (ADR-115; 08 §2.2). Токен с иным `kind` не проходит схему claims → 401.
+ */
+export type TokenKind = SubjectKind;
 export type AmrValue = 'sms' | 'pin' | 'bio' | 'admin_code';
 
 const UUID = z.uuid();
@@ -97,7 +102,7 @@ export class JwtVerificationError extends Error {
 const accessSchema = z
   .object({
     sub: UUID,
-    kind: z.enum(['staff', 'customer']),
+    kind: z.enum(SUBJECT_KINDS),
     roles: z
       .array(z.enum(RBAC_ROLES))
       .max(RBAC_ROLES.length)

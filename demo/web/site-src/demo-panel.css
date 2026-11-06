@@ -109,6 +109,13 @@
 
 .pd-badge { display: inline-block; padding: 2px var(--pd-space-2); border-radius: var(--pd-radius-sm); font-size: var(--pd-text-caption-size); line-height: var(--pd-text-caption-line); font-weight: 500; }
 .pd-badge-warn { background: var(--pd-color-warning-container); color: var(--pd-color-warning); }
+/* «С планшета» — нейтральная пометка, как StatusChip neutral приложения (03 §9.39, DS-104). */
+.pd-badge-kiosk { margin-left: var(--pd-space-2); background: var(--pd-color-surface-variant); color: var(--pd-color-text-primary); border: 1px solid var(--pd-color-border); }
+
+/* «Планшет магазина»: нумерованные шаги подключения (P-002 TAB-3-01). */
+.pd-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: var(--pd-space-2);
+  font-size: var(--pd-text-label-size); line-height: var(--pd-text-label-line); }
+.pd-steps b { font-variant-numeric: tabular-nums; }
 
 .pd-confirm { padding: var(--pd-space-3); border-radius: var(--pd-radius-md); background: var(--pd-color-error-container); border: 1px solid var(--pd-color-border); }
 .pd-confirm[hidden] { display: none; }

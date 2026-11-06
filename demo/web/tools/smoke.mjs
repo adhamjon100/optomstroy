@@ -1,9 +1,10 @@
-// Headless-проверка СОБРАННОГО сайта веб-демо (review fixes: часть WP-T2; critic [5], [16], [19], [21]).
+// Headless-проверка СОБРАННОГО сайта веб-демо (review fixes: часть WP-T2; critic [5], [16], [19], [21]; шаги kiosk и
+// kioskswitch — «Планшет магазина», P-002 TAB-3-01 и TAB-3-02).
 // Настоящая страница, настоящее приложение Flutter (main.dart.js), настоящий backend.js на PGlite — через
 // tools/serve-site.mjs с заголовками и перенаправлениями Netlify; Chrome --headless=new, CDP на глобальном WebSocket
 // Node 24 (без puppeteer). Порт статики 8095–8099 (первый свободный), CDP — первый свободный от 9491.
 //
-//   node demo/web/tools/smoke.mjs [--storage opfs|idb] [--only boot,ui,f5,frozen] [--out <каталог>] [--keep-profile] [--port 8095–8099] [--cdp <порт>]
+//   node demo/web/tools/smoke.mjs [--storage opfs|idb] [--only boot,ui,f5,frozen,kiosk,kioskswitch] [--out <каталог>] [--keep-profile] [--port 8095–8099] [--cdp <порт>]
 //                                 [--url <https-адрес>] [--browser chrome|edge]
 //
 // --url — удалённый режим (превью или основной адрес Netlify, например https://<id>--optomstroy-demo-4fhvb.netlify.app):
@@ -26,7 +27,19 @@
 //            дожидаясь ответа → повтор тем же Idempotency-Key после перезагрузки → ровно один новый заказ;
 //   frozen — замороженная вкладка: A заморожена (Page.setWebLifecycleState frozen), B «Продолжить здесь» → steal;
 //            B работает (IndexedDB) или честно сообщает «данные заняты» (OPFS: дескрипторы замороженной вкладки);
-//            A после разморозки уходит на demo-closed.html и НЕ пишет (заказ B на месте после перезагрузки B).
+//            A после разморозки уходит на demo-closed.html и НЕ пишет (заказ B на месте после перезагрузки B);
+//   kiosk  — планшет магазина (P-002 TAB-3-01, ADR-115; по умолчанию не входит, вне релизных ворот — 12 §3.23):
+//            «ДЕМО» → «Планшет магазина» (шаги) → вход администратора 901 в НАСТОЯЩЕМ интерфейсе → SCR-54 «Сделать это
+//            устройство планшетом магазина» (имя, склад, PIN) → аварийный код → SCR-51 → товар → корзина → «Оформить
+//            заявку» → номер и код 246810 экранной клавиатурой → SCR-53; кассир 906 видит заявку createdVia=kiosk,
+//            документ «1С» демо создан, в панели «С планшета» (T-KIOSK-034, T-KIOSK-043); адресная строка #/auth/phone,
+//            #/orders, «назад» и загрузка страницы с #/auth/phone → планшет на /kiosk (T-KIOSK-045). Идёт после прежних
+//            шагов: после него браузер — планшет. Своя вкладка K: прежние вкладки шага закрываются (замок и дескрипторы OPFS);
+//   kioskswitch — «планшет магазина ↔ обычный вход» (P-002 TAB-3-02; T-KIOSK-051; по умолчанию не входит, нужен шаг kiosk,
+//            идёт последним): «Вернуться к обычному входу» → кассир 906 видит заявку → «Планшет магазина» — тот же
+//            store_tablets.id без подключения заново, корзина пуста → снова обычный вход — кассир без кода; негодные
+//            отложенные данные → «Подключить этот браузер заново» → SCR-54 «Подключить заново этот планшет» — тот же id;
+//            «Сбросить демо» → только первое подключение (новый id). device.id и ключ AES не переносятся и не меняются.
 // Итог — <out>/smoke.json и снимки <out>/NN-*.png. Свои сервер и браузер — по PID, профиль удаляется.
 // В удалённом режиме по умолчанию <out> = .tmp/web_demo/smoke/remote-[edge-]<storage>-<время>.
 import { execFileSync, spawn } from 'node:child_process';
@@ -303,6 +316,184 @@ const semanticsOn = async (tab) => {
 };
 const texts = (tab) => ev(tab, `[...document.querySelectorAll('flt-semantics')].map((n) => n.getAttribute('aria-label') || (n.childElementCount === 0 ? n.textContent : '') || '').map((s) => s.trim()).filter(Boolean).slice(0, 60)`);
 
+// Помощники UI-шагов на вкладке tab (шаги kiosk и kioskswitch). Текст — только по дереву семантики Flutter: подписи
+// панели «ДЕМО» (раздел «Планшет магазина» называет те же кнопки) в document.body есть всегда, поэтому
+// document.body.innerHTML здесь не годится. rec.stage — этап шага для отчёта.
+function uiKit(tab, rec, name) {
+  const stage = (s) => {
+    rec.stage = s;
+    log(`${name}: ${s}`);
+  };
+  const statuses = () => ev(tab, `Object.assign({}, PosDemoPage.bridge._stats.statuses)`);
+  const count = async (code) => Number((await statuses())[String(code)] || 0);
+  const allTexts = () => ev(tab, `[...document.querySelectorAll('flt-semantics')].map((n) => n.getAttribute('aria-label') || (n.childElementCount === 0 ? n.textContent : '') || '').map((s) => s.trim()).filter(Boolean)`);
+  const semExpr = (text) => `[...document.querySelectorAll('flt-semantics, flt-semantics input, flt-semantics textarea')].some((n) => ((n.getAttribute('aria-label') || '') + ' ' + (n.getAttribute('placeholder') || '') + ' ' + n.textContent).includes(${JSON.stringify(text)}))`;
+  const has = (text) => ev(tab, semExpr(text));
+  const waitText = (text, ms, label) => waitFor(tab, semExpr(text), ms, label ?? `«${text}»`);
+  // Первая (сверху слева) карточка витрины в пределах окна, товар в наличии: узел семантики карточки содержит
+  // «В наличии» и «+ Добавить»; нажатие — в верхнюю четверть (фото), не на кнопку.
+  const firstCardInView = () => `(() => { const out = [];
+    for (const n of document.querySelectorAll('flt-semantics')) {
+      const l = (n.getAttribute('aria-label') || '') + ' ' + n.textContent;
+      if (!l.includes('+ Добавить') || !l.includes('В наличии') || l.includes('Нет в наличии')) continue;
+      const r = n.getBoundingClientRect();
+      if (r.width < 120 || r.height < 150 || r.width > 400 || r.top < 0 || r.left < 0 || r.bottom > innerHeight || r.right > innerWidth) continue;
+      out.push({ x: r.left + r.width / 2, y: r.top + r.height / 4 }); }
+    out.sort((a, b) => a.y - b.y || a.x - b.x); return out[0] || null; })()`;
+  const clickFound = async (expr, label) => {
+    const b = await ev(tab, expr);
+    if (!b) throw new Error(`нет элемента ${label} на экране; видно: ${JSON.stringify((await allTexts()).slice(0, 40))}`);
+    await click(tab, b.x, b.y);
+    return b;
+  };
+  const clickText = (text) => clickFound(findExpr(text), `«${text}»`);
+  const clickExact = (text) => clickFound(findExact(text), `«${text}» (точно)`);
+  const digits = async (seq) => {
+    for (const d of seq) {
+      await clickExact(d);
+      await sleep(160);
+    }
+  };
+  const hash = () => ev(tab, 'location.hash');
+  const waitHash = (prefix, ms, label) => waitFor(tab, `location.hash.indexOf(${JSON.stringify(`#${prefix}`)}) === 0 ? location.hash : null`, ms, label ?? `адрес #${prefix}`);
+  const panelOpen = async (id) => {
+    if (!(await ev(tab, 'PosDemoPage.panel.isOpen'))) await ev(tab, `document.getElementById('pos-demo-fab').click(), true`);
+    await waitFor(tab, 'PosDemoPage.panel.isOpen', 5000, 'панель «ДЕМО» открыта');
+    await ev(tab, `(function () { var d = document.getElementById('pd-sec-${id}'); if (!d.open) d.querySelector('summary').click(); d.scrollIntoView({ block: 'start' }); return true; })()`);
+    await waitFor(tab, `document.getElementById('pd-sec-${id}').open`, 3000, `раздел ${id} открыт`);
+  };
+  const panelClose = () => ev(tab, `PosDemoPage.panel.isOpen && document.getElementById('pd-close').click(), true`);
+  return { tab, stage, statuses, count, allTexts, semExpr, has, waitText, firstCardInView, clickFound, clickText, clickExact, digits, hash, waitHash, panelOpen, panelClose };
+}
+
+// Вход сотрудника в НАСТОЯЩЕМ интерфейсе (как шаг ui): SCR-08 «Сменить аккаунт» → SCR-01 (координаты — по семантике),
+// перезагрузка (ввод кода с включённой семантикой не работает — handoff «OtpField»), номер phone9 → «Получить код» →
+// 246810 → первый PIN 715382 дважды с согласием (если PIN ещё не задан) → рабочий экран («Меню разделов»).
+async function staffLogin(x, phone9) {
+  const tab = x.tab;
+  await semanticsOn(tab);
+  await waitFor(tab, `${x.semExpr('Получить код')} || ${x.semExpr('Сменить аккаунт')}`, 30000, 'SCR-01 или SCR-08');
+  const switchedAccount = await x.has('Сменить аккаунт');
+  if (switchedAccount) {
+    // в браузере есть сессия прежнего сотрудника: SCR-08 «Сменить аккаунт» → «Сменить» → SCR-01
+    await x.clickText('Сменить аккаунт');
+    await waitFor(tab, `!!(${findExact('Сменить')})`, 10000, 'подтверждение «Сменить»');
+    await sleep(400);
+    await x.clickExact('Сменить');
+    await x.waitText('Получить код', 30000, 'SCR-01 после «Сменить аккаунт»');
+  }
+  await sleep(800);
+  const field = await ev(tab, findExpr('Номер телефона'));
+  const submit = await ev(tab, findExpr('Получить код'));
+  if (!field || !submit) throw new Error(`SCR-01: нет поля номера или «Получить код»: ${JSON.stringify(await x.allTexts())}`);
+  await send('Page.reload', {}, tab.sid);
+  await appReady(tab, 90000);
+  await sleep(1500);
+  await click(tab, field.x, field.y);
+  await sleep(500);
+  await typeText(tab, phone9);
+  await sleep(600);
+  await click(tab, submit.x, submit.y);
+  await waitFor(tab, `(PosDemoPage.bridge._stats.statuses['202'] || 0) >= 1`, 15000, 'otp/request 202');
+  await sleep(1500);
+  await typeText(tab, '246810');
+  await waitFor(tab, `(PosDemoPage.bridge._stats.statuses['200'] || 0) >= 2`, 15000, 'otp/verify 200');
+  await sleep(2500);
+  await semanticsOn(tab);
+  // первый вход — «Задайте PIN-код для работы» (дважды, согласие, «Начать работу»); PIN уже задан — сразу рабочий экран
+  const firstPin = await waitFor(tab, `${x.semExpr('Задайте PIN-код для работы')} ? 'pin' : (${x.semExpr('Меню разделов')} ? 'home' : null)`, 30000, 'SCR-04 или рабочий экран');
+  if (firstPin === 'pin') {
+    x.stage(`первый PIN ${phone9.slice(-3)}`);
+    await x.digits('715382');
+    await sleep(1200);
+    if (await ev(tab, `${x.semExpr('Повторите')} || ${x.semExpr('ещё раз')}`)) {
+      await x.digits('715382');
+      await sleep(1200);
+    }
+    const consent = await ev(tab, findExpr('Я ознакомлен'));
+    if (consent) {
+      await click(tab, consent.x, consent.y);
+      await sleep(600);
+    }
+    await x.clickText('Начать работу');
+    await waitFor(tab, `(PosDemoPage.bridge._stats.statuses['204'] || 0) >= 1`, 15000, 'POST /me/pin 204');
+    await sleep(2500);
+  }
+  await x.waitText('Меню разделов', 30000, 'рабочий экран сотрудника');
+  return { switchedAccount, firstPin: firstPin === 'pin', home: await x.hash() };
+}
+
+// Меню разделов → «Администратор» (SCR-45 «Пользователи») → меню разделов админа «Ещё» → «Планшеты магазина» (SCR-54).
+async function openTablets(x) {
+  await x.clickText('Меню разделов');
+  await waitFor(x.tab, `!!(${findExact('Администратор')})`, 10000, 'меню разделов: «Администратор»');
+  await sleep(500);
+  await x.clickExact('Администратор');
+  await x.waitHash('/admin/users', 20000, 'SCR-45 «Пользователи»');
+  await sleep(1200);
+  await x.clickExact('Ещё');
+  await x.waitText('Планшеты магазина', 10000, 'меню разделов админа: «Планшеты магазина»');
+  await sleep(400);
+  await x.clickExact('Планшеты магазина');
+  await x.waitHash('/admin/tablets', 20000, 'SCR-54 «Планшеты магазина»');
+}
+
+// Аварийный код выхода показан (8 цифр группами по 4 — в журнал смоука не пишется, только факт показа).
+async function exitCodeShown(x) {
+  await x.waitText('Аварийный код выхода', 20000, 'аварийный код выхода');
+  await sleep(800);
+  return ev(x.tab, `[...document.querySelectorAll('flt-semantics')].some((n) => /Аварийный код выхода: \\d{4} \\d{4}/.test(((n.getAttribute('aria-label') || '') + ' ' + n.textContent).replace(/\\s+/g, ' ')))`);
+}
+
+// SCR-54 «Сделать это устройство планшетом магазина» → имя «Планшет у входа», склад по умолчанию → кнопка формы (та же
+// подпись; модальный барьер прячет экран из семантики) → 403 STEP_UP_REQUIRED → PIN администратора → 201 → аварийный
+// код показан. Снимки — <prefix>-enroll-form, -stepup, -exit-code.
+async function enrollThisDevice(x, prefix) {
+  const tab = x.tab;
+  await x.clickText('Сделать это устройство планшетом магазина');
+  await x.waitText('Имя планшета', 15000, 'форма подключения: «Имя планшета»');
+  await sleep(800);
+  await x.clickText('Имя планшета');
+  await sleep(500);
+  await typeText(tab, 'Планшет у входа');
+  await sleep(800);
+  await shot(tab, `${prefix}-enroll-form`);
+  const before403 = await x.count(403);
+  await x.clickText('Сделать это устройство планшетом магазина');
+  await waitFor(tab, `(PosDemoPage.bridge._stats.statuses['403'] || 0) > ${before403}`, 20000, 'POST /admin/store-tablets → 403 STEP_UP_REQUIRED');
+  await x.waitText('PIN', 15000, 'step-up: PIN');
+  await sleep(800);
+  await shot(tab, `${prefix}-stepup`);
+  const before201 = await x.count(201);
+  await x.digits('715382');
+  await waitFor(tab, `(PosDemoPage.bridge._stats.statuses['201'] || 0) > ${before201}`, 30000, 'POST /admin/store-tablets → 201');
+  const shown = await exitCodeShown(x);
+  await shot(tab, `${prefix}-exit-code`);
+  return shown;
+}
+
+// SCR-54 «Подключить заново этот планшет» (UI-54-003) → выбор записи «Выберите планшет для подключения заново» (признака
+// планшета в браузере нет — записи по умолчанию нет) → кнопка диалога (та же подпись) → 403 STEP_UP_REQUIRED → PIN →
+// POST /admin/store-tablets/{id}/reconnect → аварийный код показан. Снимки — <prefix>-reconnect-pick, -exit-code.
+async function reconnectThisDevice(x, tabletName, prefix) {
+  const tab = x.tab;
+  await x.clickText('Подключить заново этот планшет');
+  await x.waitText('Выберите планшет для подключения заново', 15000, 'выбор планшета для подключения заново');
+  await sleep(800);
+  await x.clickText(tabletName);
+  await sleep(600);
+  await shot(tab, `${prefix}-reconnect-pick`);
+  const before403 = await x.count(403);
+  await x.clickText('Подключить заново этот планшет');
+  await waitFor(tab, `(PosDemoPage.bridge._stats.statuses['403'] || 0) > ${before403}`, 20000, 'POST …/reconnect → 403 STEP_UP_REQUIRED');
+  await x.waitText('PIN', 15000, 'step-up: PIN');
+  await sleep(800);
+  await x.digits('715382');
+  const shown = await exitCodeShown(x);
+  await shot(tab, `${prefix}-exit-code`);
+  return shown;
+}
+
 // ================================================================ шаги
 try {
   await connect();
@@ -325,8 +516,12 @@ try {
   check('заголовки как на Netlify: CSP и X-Robots-Tag на странице, .wasm — application/wasm, снимок .gz — application/gzip без Content-Encoding, /api/* → 404', /default-src 'self'/.test(R.headers.index['content-security-policy'] ?? '') && /noindex/.test(R.headers.index['x-robots-tag'] ?? '') && R.headers.wasm === 'application/wasm' && R.headers.gz[0] === 'application/gzip' && !R.headers.gz[1] && R.headers.api === 404, R.headers);
 
   const A = await openTab('A');
+  // Вкладка, в которой работает демо к началу шага kiosk: A, а после шага frozen — B (A ушла на demo-closed.html).
+  let cur = A;
+  // Вкладка шагов kiosk и kioskswitch (после шага kiosk браузер — планшет магазина).
+  let K = null;
   // ------------------------------------------------------------ boot
-  if (ONLY.has('boot') || ONLY.has('ui') || ONLY.has('f5') || ONLY.has('frozen')) {
+  if (ONLY.has('boot') || ONLY.has('ui') || ONLY.has('f5') || ONLY.has('frozen') || ONLY.has('kiosk') || ONLY.has('kioskswitch')) {
     const tNav = Date.now();
     await navigate(A, url('&envcheck=0'));
     await appReady(A, 120000);
@@ -455,6 +650,7 @@ try {
     const genA = await ev(A, `PosDemoPage.lock.generation`);
     await send('Page.setWebLifecycleState', { state: 'frozen' }, A.sid);
     const B = await openTab('B');
+    cur = B;
     await navigate(B, url('&envcheck=0'));
     await waitFor(B, `(document.getElementById('loading')||{dataset:{}}).dataset.view === 'lock' && !!document.getElementById('pd-lock-takeover')`, 30000, 'плашка «Демо уже открыто»');
     await shot(B, 'frozen-B-lock');
@@ -499,6 +695,429 @@ try {
     const st = await ev(B, `__posDemo.control('GET state')`);
     check('после перезагрузки B заказ B на месте, том цел (A не перезаписала его)', !!orderB && st.orders.some((o) => o.id === orderB.id), { orderB: orderB?.publicNumber, orders: st.orders.length, storage: st.storage });
     await shot(B, 'frozen-B-final');
+  }
+
+  // ------------------------------------------------------------ kiosk: планшет магазина через настоящий интерфейс
+  // P-002 TAB-3-01, ADR-115; 12 §3.23 (вне релизных ворот). T-KIOSK-034: «ДЕМО» → «Планшет магазина» (шаги) → вход
+  // администратором 901 в интерфейсе (номер, код 246810, PIN) → меню разделов → «Администратор» → меню разделов админа →
+  // SCR-54 «Планшеты магазина» → «Сделать это устройство планшетом магазина» (имя, склад по умолчанию, PIN) → аварийный
+  // код → «Готово» → SCR-51 → «+ Добавить» → корзина → «Оформить заявку» → номер на экранной клавиатуре → «Получить код»
+  // → 246810 → «Отправить заявку» → SCR-53 с номером заявки; кассир 906 (через мост, как приложение) видит её в
+  // GET /orders?createdVia=kiosk. T-KIOSK-043: документ «1С» демо создан (номер «1С»), в панели — «С планшета».
+  // T-KIOSK-045: адресная строка `#/auth/phone` без перезагрузки, с перезагрузкой и «назад» браузера → планшет на `/kiosk`.
+  if (ONLY.has('kiosk')) {
+    // Своя вкладка: прежние (A, после frozen — и B) закрываются — замок вкладки и дескрипторы OPFS отпускаются, а
+    // вкладка B после «Продолжить здесь» на OPFS бывает неустойчива (WEB-KI-24, WEB-KI-25). Хранилище браузера общее:
+    // приложение в новой вкладке видит прежнюю сессию (после шага ui — SCR-08 кассира).
+    K = await openTab('K');
+    for (const t of new Set([A, cur])) await send('Target.closeTarget', { targetId: t.targetId }).catch(() => undefined);
+    await sleep(1500);
+    R.kiosk = { tab: K.name, closed: [...new Set([A, cur])].map((t) => t.name) };
+    const kx = uiKit(K, R.kiosk, 'kiosk');
+    const { stage, count, allTexts, has, waitText, firstCardInView, clickFound, clickText, clickExact, digits, hash, waitHash, panelOpen, panelClose } = kx;
+    try {
+      stage('загрузка');
+      await navigate(K, url('&envcheck=0'));
+      await appReady(K, 120000);
+      await sleep(1500);
+
+      // ---- (1) панель: раздел «Планшет магазина» с шагами — между «Как войти» и «Оплата QR»
+      stage('панель «Планшет магазина»');
+      await panelOpen('kiosk');
+      const panel = await ev(K, `({ steps: document.querySelectorAll('#pd-kiosk-steps > li').length, text: document.getElementById('pd-sec-kiosk').innerText, order: [...document.querySelectorAll('#pos-demo-panel .pd-section')].map((d) => d.id), mode: document.getElementById('pd-kiosk-mode').textContent })`);
+      await shot(K, 'kiosk-panel');
+      check(
+        'T-KIOSK-034 «ДЕМО» → «Планшет магазина»: шаги подключения (вход администратором +996 777 000 901, код 246810, PIN, «Планшеты магазина», «Сделать это устройство планшетом магазина»); раздел между «Как войти» и «Оплата QR»',
+        panel.steps === 6 && /\+996 777 000 901/.test(panel.text) && /246810/.test(panel.text) && /Планшеты магазина/.test(panel.text) && /Сделать это устройство планшетом магазина/.test(panel.text) && panel.order.indexOf('pd-sec-kiosk') === panel.order.indexOf('pd-sec-login') + 1 && panel.order.indexOf('pd-sec-qr') === panel.order.indexOf('pd-sec-kiosk') + 1 && /обычный вход/.test(panel.mode),
+        { steps: panel.steps, order: panel.order, mode: panel.mode },
+      );
+      await panelClose();
+
+      // ---- (2) вход администратором 901 в интерфейсе (как шаг ui: координаты — по семантике, ввод — без неё); после
+      // прежних шагов в браузере сессия кассира — SCR-08 «Сменить аккаунт»; первый вход — PIN 715382 дважды (шаг frozen
+      // задаёт его через API — тогда сразу рабочий экран)
+      stage('SCR-01');
+      const login = await staffLogin(kx, '777000901');
+      R.kiosk.switchedAccount = login.switchedAccount;
+      R.kiosk.adminFirstPin = login.firstPin;
+      R.kiosk.adminHome = login.home;
+      await shot(K, 'kiosk-admin-home');
+
+      // ---- (3) меню разделов → «Администратор» (SCR-45 «Пользователи») → меню разделов админа «Ещё» → «Планшеты магазина» (SCR-54)
+      stage('SCR-54');
+      await openTablets(kx);
+      await waitText('Сделать это устройство планшетом магазина', 30000, 'SCR-54: «Сделать это устройство планшетом магазина»');
+      await sleep(1000);
+      await shot(K, 'kiosk-scr54');
+
+      // ---- (4) «Сделать это устройство планшетом магазина» → имя, склад (по умолчанию), → PIN → аварийный код
+      stage('подключение');
+      R.kiosk.exitCodeShown = await enrollThisDevice(kx, 'kiosk');
+      await clickExact('Готово');
+      const showcase = await waitHash('/kiosk', 60000, 'SCR-51 после «Готово»');
+      await waitText('Начать заново', 60000, 'SCR-51: витрина планшета («Начать заново» в шапке)').catch(() => undefined);
+      await sleep(2500);
+      await shot(K, 'kiosk-scr51');
+      R.kiosk.scr51 = (await allTexts()).slice(0, 12).map((t) => t.split('\n')[0]);
+      const kioskFlag = await ev(K, `localStorage.getItem('FlutterSecureStorage.kiosk.tablet_id') !== null`);
+      const stTablets = (await ev(K, `__posDemo.control('GET state')`)).kiosk;
+      const tablet = (stTablets?.tablets ?? []).find((t) => t.name === 'Планшет у входа' && t.status === 'active');
+      R.kiosk.tablet = tablet ? { id: tablet.id, status: tablet.status } : null;
+      check(
+        'T-KIOSK-034 SCR-54 → «Сделать это устройство планшетом магазина» (имя «Планшет у входа», склад, PIN администратора) → аварийный код один раз → «Готово» → SCR-51; планшет в GET state панели, признак планшета в хранилище',
+        R.kiosk.exitCodeShown && showcase.startsWith('#/kiosk') && kioskFlag && !!tablet && stTablets?.enabled === true,
+        { exitCodeShown: R.kiosk.exitCodeShown, hash: showcase, kioskFlag, tablet: R.kiosk.tablet, enabled: stTablets?.enabled },
+      );
+
+      // ---- (5) T-KIOSK-045: адресная строка и «назад» браузера не уводят планшет с /kiosk (G-15, G-0a)
+      stage('адресная строка');
+      await ev(K, `(location.hash = '#/auth/phone', true)`);
+      await sleep(2500);
+      const afterHash = await waitHash('/kiosk', 20000, 'G-15: #/auth/phone → /kiosk').catch(() => null);
+      await ev(K, `(location.hash = '#/orders', true)`);
+      await sleep(2500);
+      const afterOrders = await waitHash('/kiosk', 20000, 'G-15: #/orders → /kiosk').catch(() => null);
+      await ev(K, `(history.back(), true)`);
+      await sleep(2500);
+      const afterBack = await waitHash('/kiosk', 20000, 'G-15: «назад» браузера → /kiosk').catch(() => null);
+      // адрес с переходом и Enter — полная загрузка страницы на #/auth/phone: холодный старт планшета → /kiosk
+      await navigate(K, `${url('&envcheck=0')}#/auth/phone`);
+      await appReady(K, 90000);
+      const afterReload = await waitHash('/kiosk', 60000, 'G-0a/G-15 после загрузки #/auth/phone').catch(() => null);
+      await semanticsOn(K);
+      const showcaseAgain = await waitText('Начать заново', 60000, 'SCR-51 после загрузки').then(() => true, () => false);
+      await sleep(2000);
+      const loginShown = await has('Получить код');
+      await shot(K, 'kiosk-after-address-bar');
+      check(
+        'T-KIOSK-045 веб-демо: адресная строка #/auth/phone и #/orders, «назад» браузера и загрузка страницы с #/auth/phone → планшет остаётся на /kiosk, экрана входа нет',
+        !!afterHash && !!afterOrders && !!afterBack && !!afterReload && showcaseAgain && !loginShown,
+        { afterHash, afterOrders, afterBack, afterReload, showcaseAgain, loginShown },
+      );
+
+      // ---- (6) заявка: «+ Добавить» → корзина → «Оформить заявку» → номер → «Получить код» → 246810 → SCR-53
+      stage('товар в корзину');
+      // карточка витрины — один узел семантики («…, В наличии, … + Добавить»): нажатие открывает слой карточки
+      // товара (UI-51-011), в нём — «В корзину · …»
+      await clickFound(firstCardInView(), 'карточка товара в наличии на витрине');
+      await waitText('В корзину ·', 15000, 'слой карточки товара: «В корзину · …»');
+      await sleep(800);
+      await shot(K, 'kiosk-product-sheet');
+      await clickText('В корзину ·');
+      // строка подтверждена сервером (корзина планшета — только на сервере): «В корзине: 1 шт», кнопка «Добавить ещё»
+      await waitText('Добавить ещё', 20000, 'слой карточки: товар в корзине («Добавить ещё»)');
+      await sleep(600);
+      await clickText('Закрыть');
+      await sleep(1200);
+      await waitFor(K, `[...document.querySelectorAll('flt-semantics')].some((n) => /Открыть корзину, [1-9]/.test((n.getAttribute('aria-label') || '') + ' ' + n.textContent))`, 20000, 'шапка: «Открыть корзину, 1 позиция, …»');
+      R.kiosk.afterAdd = (await allTexts()).filter((t) => /Открыть корзину/.test(t)).slice(0, 3);
+      await shot(K, 'kiosk-added');
+      stage('корзина');
+      await clickText('Открыть корзину');
+      await waitText('Оформить заявку', 15000, 'drawer корзины: «Оформить заявку»');
+      await sleep(1200);
+      await shot(K, 'kiosk-cart');
+      await clickExact('Оформить заявку');
+      stage('SCR-52 телефон');
+      // SCR-52 открывается поверх витрины (push): адрес страницы остаётся #/kiosk?…, шаг виден по заголовку
+      await waitText('Введите номер телефона', 30000, 'SCR-52 «Введите номер телефона»');
+      await sleep(1500);
+      await digits('700000101');
+      await sleep(800);
+      await shot(K, 'kiosk-scr52-phone');
+      const otpBefore = await count(202);
+      await clickExact('Получить код');
+      await waitFor(K, `(PosDemoPage.bridge._stats.statuses['202'] || 0) > ${otpBefore}`, 30000, 'POST /kiosk/order-otp → 202');
+      stage('SCR-52 код');
+      await waitText('Введите код из SMS', 20000, 'SCR-52 «Введите код из SMS»');
+      await sleep(1200);
+      await digits('246810');
+      await sleep(800);
+      await shot(K, 'kiosk-scr52-code');
+      await clickExact('Отправить заявку');
+      stage('SCR-53');
+      const done = await waitHash('/kiosk/done', 90000, 'SCR-53');
+      await waitText('Заявка № POS-', 30000, 'SCR-53 «Заявка № … отправлена»');
+      await sleep(1200);
+      const number = await ev(K, `(/Заявка № (POS-\\d{4}-\\d+)/.exec([...document.querySelectorAll('flt-semantics')].map((n) => (n.getAttribute('aria-label') || '') + ' ' + n.textContent).join(' ')) || [])[1] || null`);
+      R.kiosk.number = number;
+      await shot(K, 'kiosk-scr53');
+
+      // ---- (7) кассир 906 (через мост страницы, как приложение) видит заявку createdVia=kiosk; документ «1С» создан
+      stage('кассир и «1С»');
+      const { token: ct } = await apiLogin(K, '+996777000906', { device: crypto.randomUUID() });
+      let mine = null;
+      for (let i = 0; i < 30 && !mine?.onec?.number; i++) {
+        const list = (await api(K, 'GET', '/orders?createdVia=kiosk&limit=20', { token: ct })).json;
+        mine = (list?.items ?? []).find((o) => o.publicNumber === number) ?? null;
+        if (mine?.id && !mine?.onec?.number) mine = (await api(K, 'GET', `/orders/${mine.id}`, { token: ct })).json ?? mine;
+        if (!mine?.onec?.number) await sleep(1000);
+      }
+      check(
+        'T-KIOSK-034 SCR-53 «Заявка № … отправлена»; заявку с кодом 246810 видит кассир 906: GET /orders?createdVia=kiosk',
+        done.startsWith('#/kiosk/done') && !!number && mine?.createdVia === 'kiosk',
+        { hash: done, number, createdVia: mine?.createdVia ?? null, status: mine?.status ?? null, match: mine?.kioskCustomerMatch ?? null },
+      );
+      await panelOpen('onec');
+      await sleep(2500);
+      const onecRow = await ev(K, `(function () { var li = [...document.querySelectorAll('#pd-onec-orders li[data-order]')].find(function (x) { return x.textContent.indexOf(${JSON.stringify(String(number))}) >= 0; }); return li ? { via: li.dataset.createdVia, badge: !!li.querySelector('.pd-badge-kiosk'), text: li.innerText.slice(0, 200) } : null; })()`);
+      const st = await ev(K, `__posDemo.control('GET state')`);
+      const so = (st.orders ?? []).find((o) => o.number === number);
+      await shot(K, 'kiosk-panel-onec');
+      check(
+        'T-KIOSK-043 веб-демо: документ «1С» демо создан (номер «1С» у заявки), в разделе «1С» панели — пометка «С планшета»',
+        !!mine?.onec?.number && !!so?.onecNumber && so?.createdVia === 'kiosk' && onecRow?.via === 'kiosk' && onecRow?.badge === true,
+        { onec: mine?.onec?.number ?? null, panel: so && { onecNumber: so.onecNumber, createdVia: so.createdVia }, row: onecRow },
+      );
+      await panelOpen('kiosk');
+      await sleep(800);
+      const kRow = await ev(K, `({ mode: document.getElementById('pd-kiosk-mode').textContent, rows: [...document.querySelectorAll('#pd-kiosk-tablets li[data-tablet]')].map(function (x) { return { id: x.dataset.tablet, status: x.dataset.status, text: x.innerText }; }) })`);
+      await shot(K, 'kiosk-panel-tablets');
+      check(
+        'T-KIOSK-034 панель «Планшет магазина»: этот браузер — планшет, планшет «Планшет у входа» в списке (подключён)',
+        /планшет магазина/.test(kRow.mode) && kRow.rows.some((r) => r.id === tablet?.id && r.status === 'active' && /Планшет у входа/.test(r.text)),
+        kRow,
+      );
+      await panelClose();
+      // «Готово» на SCR-53 — сброс (POST /kiosk/reset) и снова витрина
+      stage('«Готово»');
+      await clickExact('Готово');
+      await waitFor(K, `location.hash === '#/kiosk' || location.hash.indexOf('#/kiosk?') === 0`, 60000, 'SCR-51 после «Готово»');
+      await sleep(1500);
+      await shot(K, 'kiosk-scr51-after-done');
+    } catch (e) {
+      R.kiosk.error = String(e?.message ?? e);
+      R.kiosk.texts = await allTexts().catch(() => null);
+      R.kiosk.hash = await hash().catch(() => null);
+      check(`T-KIOSK-034 шаг kiosk без исключения (этап «${R.kiosk.stage}»)`, false, R.kiosk.error.slice(0, 900));
+      await shot(K, 'kiosk-error').catch(() => undefined);
+    }
+  }
+
+  // ------------------------------------------------------------ kioskswitch: «планшет магазина ↔ обычный вход»
+  // P-002 TAB-3-02, ADR-115; 10 AC-KIOSK-027; 12 T-KIOSK-051 (вне релизных ворот, §3.23). После шага kiosk (браузер —
+  // планшет «Планшет у входа», вкладка K): товар в корзину планшета → «ДЕМО» → «Планшет магазина» → «Вернуться к
+  // обычному входу» → SCR-01 → вход кассиром 906 в интерфейсе, заявка планшета в «Ожидают оплаты» → «Планшет магазина» →
+  // тот же store_tablets.id без подключения заново, корзина пуста → снова обычный вход — кассир без кода из SMS (SCR-08,
+  // PIN); отложенные данные планшета негодны → панель предлагает «Подключить этот браузер заново» → вход администратором
+  // → SCR-54 «Подключить заново этот планшет» → тот же store_tablets.id; «Сбросить демо» → планшета нет ни в браузере, ни
+  // на сервере → первое подключение — новый store_tablets.id. На каждом шаге device.id и ключ AES приложения не
+  // переносятся и не меняются (сравниваются отпечатки; значения ключей в отчёт не попадают).
+  if (ONLY.has('kioskswitch')) {
+    R.kioskswitch = {};
+    const x = uiKit(K ?? cur, R.kioskswitch, 'kioskswitch');
+    const T = x.tab;
+    const tabletId = R.kiosk?.tablet?.id ?? null;
+    const number = R.kiosk?.number ?? null;
+    // Состояние хранилища браузера без значений: имена ключей приложения, места хранения (имена ключей внутри),
+    // отпечатки device.id и ключа AES (SHA-256, 8 байт).
+    const storageState = () => ev(T, `(async () => {
+      const fp = async (v) => v === null ? 'none' : [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)))].slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
+      const short = (k) => k.replace(/^FlutterSecureStorage\\./, '');
+      const slot = (n) => { const raw = localStorage.getItem('optomstroy.demo.kioskSlot.' + n); if (!raw) return null;
+        try { const items = JSON.parse(raw).items || {}; const keys = Object.keys(items);
+          return { keys: keys.map(short).sort(), device: keys.includes('FlutterSecureStorage.device.id'), aes: keys.includes('FlutterSecureStorage') }; } catch (e) { return { broken: true }; } };
+      const app = Object.keys(localStorage).filter((k) => k.startsWith('FlutterSecureStorage.')).map(short).sort();
+      return { tablet: app.includes('kiosk.tablet_id'), session: app.includes('auth.refresh_token'), app,
+        dev: await fp(localStorage.getItem('FlutterSecureStorage.device.id')), aes: await fp(localStorage.getItem('FlutterSecureStorage')),
+        slots: { kiosk: slot('kiosk'), normal: slot('normal') }, pending: localStorage.getItem('optomstroy.demo.kioskSwitch') !== null };
+    })()`);
+    // Новая загрузка страницы после кнопки панели: метка старой страницы пропала, демо готово («Всё равно продолжить» на
+    // проверке среды — как пользователь: адрес после перезагрузки без envcheck=0).
+    const reboot = async (label, ms = 150000) => {
+      const end = Date.now() + ms;
+      while (Date.now() < end) {
+        const s = await ev(T, `window.__ksOld ? 'old' : document.getElementById('pd-env-continue') ? 'env' : (window.__posDemo && __posDemo.isReady && window.PosDemoPage && PosDemoPage.boot.hidden && document.getElementById('pos-demo-fab')) ? 'ready' : 'wait'`, 10000).catch(() => 'nav');
+        if (s === 'ready') return;
+        if (s === 'env') await ev(T, `document.getElementById('pd-env-continue').click(), true`).catch(() => undefined);
+        await sleep(300);
+      }
+      throw new Error(`не дождались новой загрузки страницы: ${label}`);
+    };
+    const panelButton = async (id) => {
+      await x.panelOpen('kiosk');
+      await waitFor(T, `!!document.getElementById(${JSON.stringify(id)})`, 15000, `панель: кнопка #${id}`);
+      await ev(T, `(window.__ksOld = true, document.getElementById(${JSON.stringify(id)}).click(), true)`);
+    };
+    const panelKiosk = () => ev(T, `(() => { const g = (id) => document.getElementById(id); const n = g('pd-kiosk-notice');
+      return { mode: g('pd-kiosk-mode').textContent, toNormal: !!g('pd-kiosk-to-normal'), toKiosk: !!g('pd-kiosk-to-kiosk'), reconnect: !!g('pd-kiosk-reconnect'), first: !!g('pd-kiosk-first'), notice: n ? n.textContent : null, reason: n ? n.dataset.reason : null }; })()`);
+    const switchResult = () => ev(T, `PosDemoPage.boot.kiosk`);
+    const tablets = async () => ((await ev(T, `__posDemo.control('GET state')`)).kiosk?.tablets ?? []).map((t) => ({ id: t.id, name: t.name, status: t.status }));
+    // число позиций на кнопке корзины в шапке витрины («Открыть корзину, N …»); 0 — пусто
+    const cartExpr = `(() => { for (const n of document.querySelectorAll('flt-semantics')) { const m = /Открыть корзину, (\\d+)/.exec((n.getAttribute('aria-label') || '') + ' ' + n.textContent); if (m) return Number(m[1]); } return 0; })()`;
+    const showcase = async (label) => {
+      const h = await x.waitHash('/kiosk', 60000, label);
+      await semanticsOn(T);
+      await x.waitText('Начать заново', 60000, `${label}: витрина («Начать заново»)`);
+      await sleep(2500);
+      return h;
+    };
+    const same = (a, b) => a.dev === b.dev && a.aes === b.aes && a.dev !== 'none' && a.aes !== 'none';
+    try {
+      if (!K || !tabletId) throw new Error('нужен шаг kiosk (--only …,kiosk,kioskswitch): браузер должен быть планшетом магазина');
+      x.stage('исходное состояние');
+      await semanticsOn(T);
+      await x.waitText('Начать заново', 30000, 'SCR-51 после шага kiosk');
+      const s0 = await storageState();
+      const t0 = await tablets();
+      R.kioskswitch.start = { s0: { app: s0.app, slots: s0.slots }, tablets: t0 };
+
+      // ---- (1) товар в корзину планшета → «Вернуться к обычному входу» → SCR-01; данные планшета — в месте «планшет»
+      x.stage('товар в корзину планшета');
+      await x.clickFound(x.firstCardInView(), 'карточка товара в наличии на витрине');
+      await x.waitText('В корзину ·', 15000, 'слой карточки товара: «В корзину · …»');
+      await sleep(800);
+      await x.clickText('В корзину ·');
+      await x.waitText('Добавить ещё', 20000, 'слой карточки: товар в корзине');
+      await sleep(600);
+      await x.clickText('Закрыть');
+      const cartBefore = await waitFor(T, cartExpr, 20000, 'шапка: «Открыть корзину, 1 …»');
+      await shot(T, 'ks-cart-before');
+      x.stage('«Вернуться к обычному входу»');
+      await x.panelOpen('kiosk');
+      const p0 = await panelKiosk();
+      await shot(T, 'ks-panel-tablet');
+      await panelButton('pd-kiosk-to-normal');
+      await reboot('«Вернуться к обычному входу»');
+      const r1 = await switchResult();
+      const s1 = await storageState();
+      await semanticsOn(T);
+      await x.waitText('Получить код', 30000, 'SCR-01 после «Вернуться к обычному входу»');
+      const h1 = await x.hash();
+      await shot(T, 'ks-normal-scr01');
+      check(
+        'T-KIOSK-051 (1) «ДЕМО» → «Планшет магазина» → «Вернуться к обычному входу»: перезагрузка → экран входа SCR-01; данные планшета (признак kiosk.tablet_id, refresh-токен) отложены в хранилище страницы, device.id и ключ AES не перенесены и не изменились',
+        p0.toNormal && p0.reconnect && !p0.toKiosk && r1?.to === 'normal' && r1.ok && !s1.tablet && !s1.session && !!s1.slots.kiosk?.keys?.includes('kiosk.tablet_id') && s1.slots.kiosk.keys.includes('auth.refresh_token') && !s1.slots.kiosk.device && !s1.slots.kiosk.aes && same(s0, s1) && !h1.startsWith('#/kiosk'),
+        { panel: p0, result: r1, hash: h1, app: s1.app, slotKiosk: s1.slots.kiosk, deviceSame: s0.dev === s1.dev, aesSame: s0.aes === s1.aes },
+      );
+
+      // ---- (2) вход кассиром 906 в интерфейсе; заявка планшета — в «Ожидают оплаты» с пометкой «С планшета»
+      x.stage('вход кассиром');
+      const cashier = await staffLogin(x, '777000906');
+      const seen = number ? await waitFor(T, `${x.semExpr(number)} && ${x.semExpr('С планшета')}`, 30000, `«Ожидают оплаты»: ${number} «С планшета»`).then(() => true, () => false) : false;
+      await shot(T, 'ks-cashier');
+      check(
+        'T-KIOSK-051 (2) обычный вход: кассир 906 входит в той же вкладке (номер, код 246810, PIN); заявка с планшета видна кассиру — «Ожидают оплаты» с пометкой «С планшета»',
+        !!cashier.home && seen,
+        { cashier, number, seen, texts: seen ? undefined : (await x.allTexts()).slice(0, 30) },
+      );
+
+      // ---- (3) «Планшет магазина» → тот же планшет без подключения заново; корзина пуста; вход кассира отложен
+      x.stage('«Планшет магазина»');
+      await panelButton('pd-kiosk-to-kiosk');
+      await reboot('«Планшет магазина»');
+      const r2 = await switchResult();
+      const s2 = await storageState();
+      const h2 = await showcase('SCR-51 после «Планшет магазина»');
+      const cartAfter = await ev(T, cartExpr);
+      const enrollShown = await x.has('Сделать это устройство планшетом магазина');
+      const t2 = await tablets();
+      await shot(T, 'ks-kiosk-again');
+      check(
+        'T-KIOSK-051 (3) снова «Планшет магазина»: тот же демо-планшет — тот же store_tablets.id, новых планшетов нет, подключать заново не нужно (сразу SCR-51); корзина планшета пуста; вход кассира отложен; device.id и ключ AES не изменились',
+        r2?.to === 'kiosk' && r2.ok && s2.tablet && !s2.slots.kiosk && !!s2.slots.normal?.keys?.includes('auth.refresh_token') && !s2.slots.normal.device && same(s0, s2) && h2.startsWith('#/kiosk') && !enrollShown && t2.length === t0.length && t2.some((t) => t.id === tabletId && t.status === 'active') && cartBefore >= 1 && cartAfter === 0,
+        { result: r2, hash: h2, tablets: t2, tabletId, cartBefore, cartAfter, slotNormal: s2.slots.normal, deviceSame: s0.dev === s2.dev, aesSame: s0.aes === s2.aes },
+      );
+
+      // ---- (4) снова «Вернуться к обычному входу» → кассир без кода из SMS: SCR-08 «Введите PIN-код» → рабочий экран
+      x.stage('снова обычный вход');
+      await panelButton('pd-kiosk-to-normal');
+      await reboot('снова «Вернуться к обычному входу»');
+      const r3 = await switchResult();
+      const s3 = await storageState();
+      const unlock = await waitFor(T, `location.hash.indexOf('#/auth/unlock') === 0 ? location.hash : null`, 30000, 'SCR-08 «Введите PIN-код»').catch(() => null);
+      await semanticsOn(T);
+      await waitFor(T, `!!(${findExact('7')})`, 20000, 'SCR-08: клавиатура PIN');
+      const otpShown = await x.has('Получить код');
+      await shot(T, 'ks-cashier-unlock');
+      await x.digits('715382');
+      const home3 = await x.waitText('Меню разделов', 30000, 'рабочий экран кассира после PIN').then(() => true, () => false);
+      await shot(T, 'ks-cashier-back');
+      check(
+        'T-KIOSK-051 (4) снова «Вернуться к обычному входу»: вернулся вход кассира без кода из SMS (SCR-08 «Введите PIN-код» → рабочий экран); планшет снова отложен',
+        r3?.to === 'normal' && r3.ok && r3.restored > 0 && !s3.tablet && s3.session && !!s3.slots.kiosk?.keys?.includes('kiosk.tablet_id') && same(s0, s3) && !!unlock && !otpShown && home3,
+        { result: r3, unlock, otpShown, home3 },
+      );
+
+      // ---- (5) отложенные данные планшета не восстановились (запись другой эпохи данных демо) → «вернуть не удалось»
+      x.stage('отложенные данные негодны');
+      await ev(T, `(() => { const k = 'optomstroy.demo.kioskSlot.kiosk'; const j = JSON.parse(localStorage.getItem(k)); j.epochKey = 'e000000000000000'; localStorage.setItem(k, JSON.stringify(j)); return true; })()`);
+      await panelButton('pd-kiosk-to-kiosk');
+      await reboot('«Планшет магазина» с негодными данными');
+      const r4 = await switchResult();
+      const s4 = await storageState();
+      await x.panelOpen('kiosk');
+      await waitFor(T, `!!document.getElementById('pd-kiosk-reconnect')`, 15000, 'панель: «Подключить этот браузер заново»');
+      const p4 = await panelKiosk();
+      await shot(T, 'ks-restore-failed');
+      check(
+        'T-KIOSK-051 (5) отложенные данные планшета не восстановились: браузер остаётся на обычном входе (вход кассира не тронут), запись удалена, панель сообщает «вернуть не удалось» и предлагает «Подключить этот браузер заново»',
+        r4?.to === 'kiosk' && r4.ok === false && r4.reason === 'epoch' && !s4.tablet && s4.session && !s4.slots.kiosk && same(s0, s4) && p4.reconnect && !p4.toKiosk && !p4.toNormal && /вернуть не удалось/.test(p4.notice ?? '') && p4.reason === 'epoch',
+        { result: r4, panel: p4 },
+      );
+
+      // ---- (6) «Подключить этот браузер заново» → вход администратором 901 → SCR-54 «Подключить заново этот планшет» →
+      // выбор записи → PIN → аварийный код → SCR-51: тот же store_tablets.id
+      x.stage('подключение заново');
+      await ev(T, `(window.__ksOld = true, document.getElementById('pd-kiosk-reconnect').click(), true)`);
+      await reboot('«Подключить этот браузер заново»');
+      const r5 = await switchResult();
+      const s5 = await storageState();
+      const admin = await staffLogin(x, '777000901');
+      await openTablets(x);
+      await x.waitText('Подключить заново этот планшет', 30000, 'SCR-54: «Подключить заново этот планшет»');
+      await sleep(1000);
+      await shot(T, 'ks-scr54');
+      const codeShown = await reconnectThisDevice(x, 'Планшет у входа', 'ks');
+      await x.clickExact('Готово');
+      const h6 = await showcase('SCR-51 после подключения заново');
+      const s6 = await storageState();
+      const t6 = await tablets();
+      await shot(T, 'ks-reconnected');
+      check(
+        'T-KIOSK-051 (6) «Подключить этот браузер заново» (данные планшета удалены, device.id сохранён, вход кассира отложен) → вход администратором → SCR-54 «Подключить заново этот планшет» → PIN → аварийный код → SCR-51: тот же store_tablets.id, новых планшетов нет',
+        r5?.to === 'reconnect' && r5.ok && !s5.tablet && !s5.session && !!s5.slots.normal?.keys?.includes('auth.refresh_token') && same(s0, s5) && !!admin.home && codeShown && h6.startsWith('#/kiosk') && s6.tablet && same(s0, s6) && t6.length === t0.length && t6.some((t) => t.id === tabletId && t.status === 'active'),
+        { result: r5, admin, codeShown, hash: h6, tablets: t6, tabletId, deviceSame: s0.dev === s6.dev },
+      );
+
+      // ---- (7) «Сбросить демо» удаляет и планшет: только первое подключение, новый store_tablets.id
+      x.stage('«Сбросить демо»');
+      await x.panelOpen('service');
+      await ev(T, `document.getElementById('pd-reset').click(), true`);
+      await waitFor(T, `!document.getElementById('pd-reset-confirm').hidden`, 5000, 'подтверждение «Сбросить»');
+      await ev(T, `(window.__ksOld = true, document.getElementById('pd-reset-yes').click(), true)`);
+      await reboot('«Сбросить демо»', 240000);
+      const s7 = await storageState();
+      const t7 = await tablets();
+      await x.panelOpen('kiosk');
+      await waitFor(T, `!!document.getElementById('pd-kiosk-first')`, 15000, 'панель: «ещё не подключён»').catch(() => null);
+      const p7 = await panelKiosk();
+      await shot(T, 'ks-after-reset');
+      await x.panelClose();
+      x.stage('первое подключение после сброса');
+      await staffLogin(x, '777000901');
+      await openTablets(x);
+      await x.waitText('Сделать это устройство планшетом магазина', 30000, 'SCR-54 после сброса');
+      const reconnectOffered = await x.has('Подключить заново этот планшет');
+      await sleep(800);
+      const codeShown2 = await enrollThisDevice(x, 'ks-new');
+      await x.clickExact('Готово');
+      await showcase('SCR-51 после первого подключения');
+      const t8 = await tablets();
+      await shot(T, 'ks-new-tablet');
+      check(
+        'T-KIOSK-051 (7) «Сбросить демо», затем «Планшет магазина»: прежнего планшета нет ни в браузере (признак и отложенные данные удалены), ни на сервере демо; панель и SCR-54 предлагают только первое подключение; после него — новый store_tablets.id',
+        !s7.tablet && !s7.slots.kiosk && !s7.slots.normal && t7.length === 0 && p7.first && !p7.toKiosk && !p7.reconnect && !reconnectOffered && codeShown2 && t8.length === 1 && t8[0].id !== tabletId && t8[0].status === 'active',
+        { tabletsAfterReset: t7, panel: p7, reconnectOffered, tablets: t8, oldId: tabletId },
+      );
+    } catch (e) {
+      R.kioskswitch.error = String(e?.message ?? e);
+      R.kioskswitch.texts = await x.allTexts().catch(() => null);
+      R.kioskswitch.hash = await x.hash().catch(() => null);
+      R.kioskswitch.bootSteps = await ev(T, `PosDemoPage.boot.steps.slice(-12)`).catch(() => null);
+      check(`T-KIOSK-051 шаг kioskswitch без исключения (этап «${R.kioskswitch.stage}»)`, false, R.kioskswitch.error.slice(0, 900));
+      await shot(T, 'kioskswitch-error').catch(() => undefined);
+    }
   }
 
   // ------------------------------------------------------------ общие проверки

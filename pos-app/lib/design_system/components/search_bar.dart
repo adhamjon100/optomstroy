@@ -6,6 +6,7 @@ import 'package:optomstroy/design_system/components/app_progress.dart';
 import 'package:optomstroy/design_system/components/app_tooltip.dart';
 import 'package:optomstroy/design_system/components/ds_glyph.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
+import 'package:optomstroy/design_system/components/private_input_scope.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -36,6 +37,10 @@ enum SearchBarVariant {
 ///
 /// Фокус — обводка 2 px `primaryText` и фон `surface`; загрузка — `AppProgress.linear` 2 px под полем.
 /// Debounce, история и подсказки — у фичи каталога (компонент только сообщает ввод).
+///
+/// В области «общее устройство» `PrivateInputScope` (03 §9.7, §9.74, редакция 1.19; DS-099): системная клавиатура
+/// остаётся, но без подсказок, автоисправления, обучения клавиатуры и автозаполнения; выделения, контекстного меню и
+/// вставки нет. Вне области — как прежде.
 class SearchBar extends StatefulWidget {
   /// Создаёт поле поиска.
   const SearchBar({
@@ -157,6 +162,8 @@ class _SearchBarState extends State<SearchBar> {
             ? l10n.ds_search_placeholder_customers
             : l10n.ds_search_placeholder_products);
     final bool scanner = widget.onScan != null && widget.variant != SearchBarVariant.customers;
+    // Область «общее устройство» (03 §9.74, DS-099): вне неё значения TextField — прежние (по умолчанию).
+    final bool private = PrivateInputScope.of(context);
 
     // header: поле 44 визуально, область ввода и тач-цель — 48 (по 2 px сверху и снизу за кромкой фона).
     final double target = header ? SearchBar.headerTarget : height;
@@ -187,6 +194,12 @@ class _SearchBarState extends State<SearchBar> {
                 focusNode: _focus,
                 autofocus: widget.autofocus,
                 textInputAction: TextInputAction.search,
+                enableSuggestions: !private,
+                autocorrect: private ? false : null,
+                enableIMEPersonalizedLearning: !private,
+                enableInteractiveSelection: private ? false : null,
+                contextMenuBuilder: PrivateInputScope.contextMenuBuilderFor(private: private),
+                autofillHints: private ? null : PrivateInputScope.defaultAutofillHints,
                 style: textStyle.copyWith(color: c.textPrimary),
                 cursorColor: c.primaryText,
                 onChanged: widget.onChanged,

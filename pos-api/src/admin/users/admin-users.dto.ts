@@ -17,10 +17,23 @@ import {
 } from 'class-validator';
 import { ForbiddenField, IsPhoneE164, IsReason, NoControlChars, NormalizePhone, Trim } from './shared/validators.js';
 
-/** `RoleCode` (07 §6.1) — значения схемы; ограничения назначения проверяет target-policy. */
-export const ROLE_CODES = ['seller', 'cashier', 'senior_seller', 'admin', 'owner', 'customer', 'integration'] as const;
+/**
+ * `RoleCode` (07 §6.1) — значения схемы; ограничения назначения проверяет target-policy (`kiosk`, как `customer`, —
+ * 422 `role_not_assignable`; ADR-115). Фильтры `role=kiosk` и `kind=kiosk` принимаются, но планшетов в списке нет
+ * (08 §4.18, 11 SEC-142).
+ */
+export const ROLE_CODES = [
+  'seller',
+  'cashier',
+  'senior_seller',
+  'admin',
+  'owner',
+  'customer',
+  'integration',
+  'kiosk',
+] as const;
 export const USER_STATUSES = ['pending', 'pending_activation', 'active', 'blocked', 'deleted'] as const;
-export const USER_KINDS = ['staff', 'customer'] as const;
+export const USER_KINDS = ['staff', 'customer', 'kiosk'] as const;
 /** `user_invitations.role` (07 §6.1.1): подмножество RoleCode без customer и integration. */
 export const INVITATION_ROLE_CODES = ['seller', 'cashier', 'senior_seller', 'admin', 'owner'] as const;
 

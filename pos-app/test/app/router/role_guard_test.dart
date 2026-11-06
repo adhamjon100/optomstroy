@@ -146,6 +146,33 @@ void main() {
       expect(redirect(AppMode.seller, '/catalog', selfService: false), isNull);
     });
 
+    test('G-15 (ADR-115): /kiosk* сотруднику и customer закрыт — главный экран режима; планшет — только /kiosk*', () {
+      expect(redirect(AppMode.customer, '/kiosk'), '/home');
+      expect(redirect(AppMode.customer, '/kiosk/checkout?step=phone'), '/home');
+      expect(redirect(AppMode.seller, '/kiosk'), '/catalog');
+      expect(redirect(AppMode.cashier, '/kiosk/done'), '/cashier');
+      expect(redirect(AppMode.owner, '/kiosk'), '/reports');
+      expect(redirect(AppMode.kiosk, '/kiosk?c=c1'), isNull);
+      expect(redirect(AppMode.kiosk, '/kiosk/checkout?step=code'), isNull);
+      for (final path in ['/catalog', '/home', '/orders', '/auth/phone', '/register', '/pending-activation']) {
+        expect(redirect(AppMode.kiosk, path), '/kiosk', reason: path);
+      }
+      // roleGuard сам по себе (сессию планшета вне /kiosk* раньше возвращает authGuard).
+      expect(
+        roleRedirect(
+          mode: AppMode.kiosk,
+          uri: Uri.parse('/catalog'),
+          homeLocation: '/kiosk',
+          customerSelfService: true,
+        ),
+        '/kiosk',
+      );
+      // Прежние классы путей планшет не задевает.
+      expect(isStaffOnlyPath('/kiosk'), isFalse);
+      expect(isCustomerSelfServicePath('/kiosk'), isFalse);
+      expect(isCustomerOnlyPath('/kiosk'), isFalse);
+    });
+
     test('без сессии решает authGuard; публичные пути roleGuard не трогает', () {
       expect(
         appRedirect(

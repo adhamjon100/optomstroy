@@ -303,6 +303,11 @@
     knownDbs: 'optomstroy.demo.knownDbs',
     // review fixes: {epochKey, storage, readyCount, lastReadyAt} — где лежат данные этой эпохи (pickStorage, demo-boot).
     storageKind: 'optomstroy.demo.storageKind',
+    // P-002 TAB-3-02 (demo-kiosk.js): отложенное переключение «планшет магазина ↔ обычный вход» {to, at} и два места
+    // хранения данных приложения — планшета и обычного входа (зашифрованные значения FlutterSecureStorage.*).
+    kioskSwitch: 'optomstroy.demo.kioskSwitch',
+    kioskSlotKiosk: 'optomstroy.demo.kioskSlot.kiosk',
+    kioskSlotNormal: 'optomstroy.demo.kioskSlot.normal',
   };
 
   PosDemoPage.env = {

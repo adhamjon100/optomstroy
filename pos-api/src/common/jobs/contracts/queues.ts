@@ -51,6 +51,9 @@ export const QUEUES = {
   auditAnchor: 'audit.anchor',
   auditVerify: 'audit.verify',
   retentionDaily: 'retention.daily',
+  // Планшет магазина (ADR-115; 11 §6.2 «Алерты планшета магазина»; 16 §9): проверка сигналов администратору раз в
+  // 5 мин — обработчик в модуле `kiosk` (src/kiosk/ops/kiosk-alerts.service.ts), при `KIOSK_MODE=false` — пусто.
+  kioskAlerts: 'kiosk.alerts',
 } as const;
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];

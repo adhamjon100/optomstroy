@@ -4,6 +4,7 @@ import { AppVersionPolicy } from '../common/app-version/app-version.policy.js';
 import { formatVersionHeader } from '../common/app-version/version-policy.js';
 import { APP_CONFIG, type AppConfig } from '../common/config/app-config.js';
 import { SettingsReader } from '../common/settings/settings-reader.js';
+import { kioskIntegerSetting } from './public-settings.map.js';
 
 export type QrProviderMode = 'none' | 'onec' | 'bakai';
 export type CustomerStockDisplay = 'status' | 'quantity';
@@ -28,12 +29,24 @@ export interface PublicSettings {
   readonly minAppVersion: string;
   readonly recommendedAppVersion: string | null;
   readonly customerStockDisplay: CustomerStockDisplay;
+  /**
+   * Общие для всех планшетов магазина настройки автосброса, секунды (08 §4.23.1; ADR-115, Р-09 (а)): ключи
+   * `kiosk_idle_seconds`, `kiosk_idle_warning_seconds`, `kiosk_done_seconds`, иначе значения по умолчанию из кода.
+   * Отдаётся всем ролям при любом `KIOSK_MODE`; лимиты кодов и часы работы не отдаются.
+   */
+  readonly kiosk: {
+    readonly idleSeconds: number;
+    readonly idleWarningSeconds: number;
+    readonly doneSeconds: number;
+  };
   readonly features: {
     readonly customerSelfService: boolean;
     readonly returnsFromPos: boolean;
     readonly qrProvider: QrProviderMode;
     readonly qrWebhook: boolean;
     readonly debtPaymentsFromPos: boolean;
+    /** env `KIOSK_MODE` — режим «Планшет магазина» (только env, по умолчанию `false`; ADR-115). */
+    readonly storeTablet: boolean;
   };
 }
 
@@ -48,14 +61,18 @@ export const PUBLIC_SETTINGS_DEFAULTS = {
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const CONTACT_KINDS = new Set(['phone', 'telegram', 'email']);
 
-type PublicSettingsConfig = Pick<AppConfig, 'CUSTOMER_SELF_SERVICE' | 'DEBT_PAYMENTS_FROM_POS' | 'QR_PROVIDER'>;
+type PublicSettingsConfig = Pick<
+  AppConfig,
+  'CUSTOMER_SELF_SERVICE' | 'DEBT_PAYMENTS_FROM_POS' | 'QR_PROVIDER' | 'KIOSK_MODE'
+>;
 
 /**
  * Публичные настройки (RM-D-015; 08 §4.23.1, API-157; ядро §19.2, §24.2, §24.4). Источники: ключи `app_settings`
  * по таблице соответствия (public-settings.map.ts) через `SettingsReader` (кэш TTL — изменение действует без
  * перезапуска), версии — `AppVersionPolicy` (ключ, иначе env), флаги режима — только env
- * (`CUSTOMER_SELF_SERVICE`, `DEBT_PAYMENTS_FROM_POS`, `QR_PROVIDER`). Секреты, параметры OTP/лимиты и внутренние
- * адреса не читаются и не отдаются; неверное значение ключа заменяется значением по умолчанию (не 500).
+ * (`CUSTOMER_SELF_SERVICE`, `DEBT_PAYMENTS_FROM_POS`, `QR_PROVIDER`, `KIOSK_MODE`). Секреты, параметры OTP/лимиты (в
+ * том числе `kiosk_otp_per_*`), часы работы `kiosk_working_hours` и внутренние адреса не читаются и не отдаются;
+ * неверное значение ключа заменяется значением по умолчанию (не 500).
  */
 @Injectable()
 export class PublicSettingsService {
@@ -66,15 +83,19 @@ export class PublicSettingsService {
   ) {}
 
   async read(): Promise<PublicSettings> {
-    const [slots, contacts, privacy, threshold, stockDisplay, returnsEnabled, qrEnabled] = await Promise.all([
-      this.settings.get('delivery_slots'),
-      this.settings.get('support_contacts'),
-      this.settings.get('privacy_contact'),
-      this.settings.get('low_stock_threshold'),
-      this.settings.get('customer_stock_display'),
-      this.settings.get('returns_enabled'),
-      this.settings.get('qr.enabled'),
-    ]);
+    const [slots, contacts, privacy, threshold, stockDisplay, returnsEnabled, qrEnabled, idle, warning, done] =
+      await Promise.all([
+        this.settings.get('delivery_slots'),
+        this.settings.get('support_contacts'),
+        this.settings.get('privacy_contact'),
+        this.settings.get('low_stock_threshold'),
+        this.settings.get('customer_stock_display'),
+        this.settings.get('returns_enabled'),
+        this.settings.get('qr.enabled'),
+        this.settings.get('kiosk_idle_seconds'),
+        this.settings.get('kiosk_idle_warning_seconds'),
+        this.settings.get('kiosk_done_seconds'),
+      ]);
     const policy = await this.versions.refresh();
     const qrOn = typeof qrEnabled === 'boolean' ? qrEnabled : PUBLIC_SETTINGS_DEFAULTS.qrEnabled;
     const provider: QrProviderMode = this.config.QR_PROVIDER;
@@ -92,12 +113,18 @@ export class PublicSettingsService {
         stockDisplay === 'status' || stockDisplay === 'quantity'
           ? stockDisplay
           : PUBLIC_SETTINGS_DEFAULTS.customerStockDisplay,
+      kiosk: {
+        idleSeconds: kioskIntegerSetting('kiosk_idle_seconds', idle),
+        idleWarningSeconds: kioskIntegerSetting('kiosk_idle_warning_seconds', warning),
+        doneSeconds: kioskIntegerSetting('kiosk_done_seconds', done),
+      },
       features: {
         customerSelfService: this.config.CUSTOMER_SELF_SERVICE,
         returnsFromPos: typeof returnsEnabled === 'boolean' ? returnsEnabled : PUBLIC_SETTINGS_DEFAULTS.returnsEnabled,
         qrProvider: qrOn ? provider : 'none',
         qrWebhook: provider === 'bakai' && qrOn,
         debtPaymentsFromPos: this.config.DEBT_PAYMENTS_FROM_POS,
+        storeTablet: this.config.KIOSK_MODE,
       },
     };
   }

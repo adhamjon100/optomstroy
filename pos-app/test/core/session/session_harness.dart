@@ -90,12 +90,15 @@ final class SessionHarness {
     List<Override> overrides = const <Override>[],
     BiometricAuthenticator biometrics = const NoBiometricAuthenticator(),
     bool pendingLogoutAutoRetry = false,
+    SecureStorage? secureStorage,
   }) {
     storage = InMemorySecureStorage(<SecureKey, String>{
       SecureKey.deviceId: testDeviceId,
       SecureKey.refreshToken: ?refresh, // check-secrets: allow (тест)
     });
-    tokens = TokenStore(storage);
+    // [secureStorage] — своё хранилище контейнера (например, зависшее); иначе — [storage].
+    final SecureStorage backing = secureStorage ?? storage;
+    tokens = TokenStore(backing);
     if (access != null) unawaited(tokens.saveTokens(accessToken: access, refreshToken: refresh ?? 'r0'));
     adapter = FakeAdapter(handler);
     clock = FixedClock(t0);
@@ -115,7 +118,7 @@ final class SessionHarness {
     if (withDatabase) db = AppDatabase(NativeDatabase.memory());
     container = ProviderContainer(
       overrides: <Override>[
-        secureStorageProvider.overrideWithValue(storage),
+        secureStorageProvider.overrideWithValue(backing),
         tokenStoreProvider.overrideWithValue(tokens),
         dioProvider.overrideWithValue(dio),
         clockProvider.overrideWithValue(clock),

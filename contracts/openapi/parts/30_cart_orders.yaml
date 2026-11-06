@@ -54,14 +54,18 @@ paths:
         FIX-F-07; с 1.2.0). Только своя корзина. Для `customer` (R1, ядро §24.2; при CUSTOMER_SELF_SERVICE=true)
         цены — по виду цены своей `confirmed`-карточки, иначе розничный; остатки — по `customer_stock_display` (08 §3.6).
         08 §4.7.1.
+        Планшет магазина (kiosk; 08 §4.7, §4.25; ADR-115): маршрут закрытого списка; корзина технического пользователя
+        живёт только на сервере, Cart.customer = null, обычная цена, склад — склад планшета; цена соглашения карточки в ответ
+        не попадает.
       security: [ { bearerAuth: [] } ]
       x-permissions: [cart.manage.own]
-      x-roles: [seller, cashier, senior_seller, admin, customer]
+      x-roles: [seller, cashier, senior_seller, admin, customer, kiosk]
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-CART
       parameters:
         - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/KioskLock" }
         - { $ref: "#/components/parameters/AppVersion" }
         - { $ref: "#/components/parameters/Platform" }
         - { $ref: "#/components/parameters/RequestId" }
@@ -106,6 +110,8 @@ paths:
         быть активным. Сервер пересчитывает available/remainingAvailable/stockLevel/warnings; позиции не удаляются.
         Тот же warehouseId → 200 без изменения rowVersion. Ошибки: 409 VERSION_CONFLICT (current: Cart); 404 NOT_FOUND
         (склад не существует/неактивен); 403 FORBIDDEN (склад недоступен); 400 VALIDATION_FAILED. 08 §4.7.8 [ядро §19.2].
+        Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль
+        kiosk держит cart.manage.own (11 SEC-137; ADR-115).
       security: [ { bearerAuth: [] } ]
       x-permissions: [cart.manage.own]
       x-roles: [seller, cashier, senior_seller, admin, customer]
@@ -149,6 +155,8 @@ paths:
       description: >
         200 Cart с `items: []`, `status: active`; отложенные корзины не затрагиваются. Повтор для уже пустой корзины → 200
         без проверки rowVersion. Ошибки: 409 VERSION_CONFLICT; 400 VALIDATION_FAILED. Аудит `cart.cleared`. 08 §4.7.3.
+        Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль
+        kiosk держит cart.manage.own (11 SEC-137; ADR-115). Новую пустую корзину планшета создаёт POST /kiosk/reset.
       security: [ { bearerAuth: [] } ]
       x-permissions: [cart.manage.own]
       x-roles: [seller, cashier, senior_seller, admin, customer]
@@ -197,15 +205,19 @@ paths:
         reason: stock_unknown). Ошибки: 409 VERSION_CONFLICT (current: Cart), IDEMPOTENCY_IN_PROGRESS; 422 VARIANT_UNAVAILABLE,
         QTY_NOT_MULTIPLE, QTY_BELOW_MIN, STOCK_INSUFFICIENT, IDEMPOTENCY_KEY_REUSED; 400 VALIDATION_FAILED (forbidden_field,
         max_items — 201-я строка, idempotency_key_required). 08 §4.7.2.
+        Планшет магазина (kiosk; 08 §4.7, §4.25; ADR-115): маршрут закрытого списка; корзина технического пользователя
+        живёт только на сервере, Cart.customer = null, обычная цена, склад — склад планшета; цена соглашения карточки в ответ
+        не попадает.
       security: [ { bearerAuth: [] } ]
       x-permissions: [cart.manage.own]
-      x-roles: [seller, cashier, senior_seller, admin, customer]
+      x-roles: [seller, cashier, senior_seller, admin, customer, kiosk]
       x-step-up: false
       x-idempotent: true
       x-rate-limit-group: RL-CART
       parameters:
         - { $ref: "#/components/parameters/CartVariantIdPath" }
         - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/KioskLock" }
         - { $ref: "#/components/parameters/AppVersion" }
         - { $ref: "#/components/parameters/Platform" }
         - { $ref: "#/components/parameters/RequestId" }
@@ -242,15 +254,19 @@ paths:
         С packagingId удаляется строка варианта с этой упаковкой; без параметра — все строки варианта [ядро §19.2].
         Удаление отсутствующей строки → 200 с текущей корзиной. Ошибки: 400 VALIDATION_FAILED (packagingId не uuid).
         08 §4.7.3.
+        Планшет магазина (kiosk; 08 §4.7, §4.25; ADR-115): маршрут закрытого списка; корзина технического пользователя
+        живёт только на сервере, Cart.customer = null, обычная цена, склад — склад планшета; цена соглашения карточки в ответ
+        не попадает.
       security: [ { bearerAuth: [] } ]
       x-permissions: [cart.manage.own]
-      x-roles: [seller, cashier, senior_seller, admin, customer]
+      x-roles: [seller, cashier, senior_seller, admin, customer, kiosk]
       x-step-up: false
       x-idempotent: false
       x-rate-limit-group: RL-CART
       parameters:
         - { $ref: "#/components/parameters/CartVariantIdPath" }
         - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/KioskLock" }
         - { $ref: "#/components/parameters/AppVersion" }
         - { $ref: "#/components/parameters/Platform" }
         - { $ref: "#/components/parameters/RequestId" }
@@ -285,6 +301,8 @@ paths:
         Цены пересчитываются по priceListId клиента; warnings при изменении цен. `customer` — только своя
         `confirmed`-карточка (чужая → 403 FORBIDDEN). Ошибки: 404 NOT_FOUND (клиент); 409 VERSION_CONFLICT;
         403 FORBIDDEN; 400 VALIDATION_FAILED (other_person без name/phone). 08 §4.7.4; «Розничный клиент» — Q-026.
+        Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль
+        kiosk держит cart.manage.own (11 SEC-137; ADR-115).
       security: [ { bearerAuth: [] } ]
       x-permissions: [cart.manage.own]
       x-roles: [seller, cashier, senior_seller, admin, customer]
@@ -325,7 +343,9 @@ paths:
       tags: [cart]
       operationId: cart_customer_unset
       summary: Отвязать клиента от корзины
-      description: "Идемпотентен по семантике. 08 §4.7.4 [ядро §17.4]."
+      description: "Идемпотентен по семантике. 08 §4.7.4 [ядро §17.4].
+        Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль
+        kiosk держит cart.manage.own (11 SEC-137; ADR-115)."
       security: [ { bearerAuth: [] } ]
       x-permissions: [cart.manage.own]
       x-roles: [seller, cashier, senior_seller, admin, customer]
@@ -414,6 +434,8 @@ paths:
         Idempotency-Key обязателен (08 §2.7: операция создаёт новую active корзину). `customer` → 403 FORBIDDEN.
         Срок хранения expiresAt = 7 дней [НЕ ПОДТВЕРЖДЕНО]. Ошибки: 409 VERSION_CONFLICT, IDEMPOTENCY_IN_PROGRESS;
         422 IDEMPOTENCY_KEY_REUSED; 400 VALIDATION_FAILED. Аудит cart.parked. 08 §4.7.6.
+        Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль
+        kiosk держит cart.manage.own (11 SEC-137; ADR-115).
       security: [ { bearerAuth: [] } ]
       x-permissions: [cart.manage.own]
       x-roles: [seller, cashier, senior_seller, admin]
@@ -460,6 +482,8 @@ paths:
         scope=own (по умолчанию) — cart.manage.own; scope=all — cart.parked.read.all (senior_seller, admin, owner —
         только чтение). Элементы — корзина без items (CartParkedSummary). Ошибки: 403 FORBIDDEN (scope=all без права);
         400 VALIDATION_FAILED (limit, cursor). 08 §4.7.6.
+        Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль
+        kiosk держит cart.manage.own (11 SEC-137; ADR-115).
       security: [ { bearerAuth: [] } ]
       x-permissions: [cart.manage.own, cart.parked.read.all]
       x-roles: [seller, cashier, senior_seller, admin, owner]
@@ -513,6 +537,8 @@ paths:
         replaceActive=true — текущая паркуется как «Автосохранение <время>». Возобновлённая проходит полную перепроверку
         цен/остатков (warnings[]). Resume уже активной → 200 с текущей корзиной. Объединение корзин (merge) — R2, параметра
         нет. Ошибки: 404 NOT_FOUND (чужая без права); 409 VERSION_CONFLICT / ORDER_STATE_INVALID. 08 §4.7.6.
+        Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль
+        kiosk держит cart.manage.own (11 SEC-137; ADR-115).
       security: [ { bearerAuth: [] } ]
       x-permissions: [cart.manage.own, cart.parked.resume.any]
       x-roles: [seller, cashier, senior_seller, admin]
@@ -561,6 +587,8 @@ paths:
         owner и customer → 403 FORBIDDEN; чужая без права → 404 NOT_FOUND (существование не раскрывается). Повтор для уже
         удалённой → 204. Ошибки: 404 NOT_FOUND; 409 ORDER_STATE_INVALID (resource: cart, reason: not_parked). Аудит cart.cleared
         (parked: true; foreign: true для чужой). 08 §4.7.9 [ядро §19.2].
+        Планшет магазина (kiosk): маршрут вне закрытого списка 08 §4.25 → 403 FORBIDDEN (reason kiosk_closed_list), хотя роль
+        kiosk держит cart.manage.own (11 SEC-137; ADR-115).
       security: [ { bearerAuth: [] } ]
       x-permissions: [cart.manage.own, cart.parked.resume.any]
       x-roles: [seller, cashier, senior_seller, admin]
@@ -602,15 +630,23 @@ paths:
         (syncCheckWithOnec, 6 с) — в onecCheck. Ошибки: 422 CART_EMPTY, CUSTOMER_NOT_IDENTIFIED, RECEIVABLES_STALE,
         CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED, VALIDATION_FAILED; 409 VERSION_CONFLICT; 403 FORBIDDEN; 400 VALIDATION_FAILED
         (forbidden_field — попытка передать цену, аудит price.override_attempt). 08 §4.7.7.
+        Требование прав: cart.manage.own и одно из order.create | kiosk.order.submit (форма «И из ИЛИ», ADR-115;
+        kiosk.order.submit засчитывается только при kind=kiosk — 11 SEC-138); x-permissions перечисляет все три кода (NOTES
+        §4). Предпросмотр на планшете (kiosk; 08 §4.7.7): тело — cartId, cartRowVersion, paymentMethod cash, delivery {method:
+        pickup}, receiver {kind: customer} без имени и телефона, manualDiscountPercent 0.00, syncCheckWithOnec false; суммы —
+        по обычной цене корзины планшета; permissions.allowedPaymentMethods = [cash], canCreateOrder — по kiosk.order.submit;
+        иные способ оплаты, доставка, скидка и creditOverride — как у customer (403/422). Планшет вызывает предпросмотр при
+        открытии шага «Телефон» и сразу перед каждым POST /kiosk/orders.
       security: [ { bearerAuth: [] } ]
-      x-permissions: [cart.manage.own, order.create]
-      x-roles: [seller, cashier, senior_seller, admin, customer]
+      x-permissions: [cart.manage.own, order.create, kiosk.order.submit]
+      x-roles: [seller, cashier, senior_seller, admin, customer, kiosk]
       x-step-up: false
       x-idempotent: true
       x-feature-flag: QR_PROVIDER
       x-rate-limit-group: RL-CART
       parameters:
         - { $ref: "#/components/parameters/DeviceId" }
+        - { $ref: "#/components/parameters/KioskLock" }
         - { $ref: "#/components/parameters/AppVersion" }
         - { $ref: "#/components/parameters/Platform" }
         - { $ref: "#/components/parameters/RequestId" }
@@ -669,6 +705,8 @@ paths:
         (forbidden_field — price/unitPrice/total/subtotal/amount, аудит price.override_attempt). 08 §4.8.1 [ядро §22.3, §22.4, §24.4].
         Повтор с тем же Idempotency-Key (Idempotent-Replayed: true) возвращает текущее представление созданного заказа с тем
         же статусом 201/202, в том числе QR начального платежа, сформированный после COMMIT (B-AR-04).
+        Планшет магазина (kiosk): права order.create у роли kiosk нет, маршрут вне закрытого списка → 403 FORBIDDEN; заявку с
+        планшета создаёт POST /kiosk/orders (08 §4.8.1, §4.25.2; ADR-115).
       security:
         - { bearerAuth: [] }
         - { bearerAuth: [], stepUpToken: [] }
@@ -733,6 +771,9 @@ paths:
         include=statusCounts — счётчики по order_status при всех фильтрах, кроме status, в пределах видимости роли [ядро §19.2];
         totalEstimate — точное число по фильтру. Ошибки: 400 VALIDATION_FAILED (sort_field, date_range, limit, cursor);
         403 FORBIDDEN (createdBy без order.read.all). 08 §4.8.2.
+        createdVia — канал заказа staff | customer | kiosk (одно значение, в пределах видимости роли; чип «С планшета» SCR-25;
+        08 §4.8.2, ADR-115; с 1.3.0). Заявки с планшета видны держателям order.read.all (Р-12 (а)); у сотрудников элементы
+        несут kioskCustomerMatch, после маскирования номера — receiver.phone = null и receiver.phoneMasked.
       security: [ { bearerAuth: [] } ]
       x-permissions: [order.read.own, order.read.all]
       x-roles: [seller, cashier, senior_seller, admin, owner, customer]
@@ -780,6 +821,11 @@ paths:
           required: false
           description: "Ключ Idempotency-Key запроса POST /orders; только заказы текущего пользователя (08 §2.7, ядро §22.6)."
           schema: { type: string, format: uuid }
+        - name: createdVia
+          in: query
+          required: false
+          description: "Канал заказа (orders.created_via; одно значение) — чип «С планшета» SCR-25 (08 §4.8.2; ADR-115). С 1.3.0."
+          schema: { $ref: "#/components/schemas/OrderCreatedVia" }
         - name: include
           in: query
           required: false
@@ -892,6 +938,8 @@ paths:
         openPaymentId — платёж в manual_confirm), IDEMPOTENCY_IN_PROGRESS; 404 NOT_FOUND (заказ не виден по order.read.*);
         403 FORBIDDEN, STEP_UP_REQUIRED; 422 IDEMPOTENCY_KEY_REUSED; 400 VALIDATION_FAILED (reason ≤ 500, refundIntent).
         ONEC_UNAVAILABLE не возвращается (запрос уходит в outbox). 08 §4.8.4 [ядро §22.9]; Q-012.
+        Заявка с планшета (createdVia=kiosk): для кассира это чужой заказ — order.cancel.request.any со step-up; при отмене и
+        отклонении 1С состав в корзину планшета не возвращается (08 §4.8.4; ADR-115).
       security:
         - { bearerAuth: [] }
         - { bearerAuth: [], stepUpToken: [] }
@@ -1451,6 +1499,7 @@ components:
       description: >
         Элемент GET /orders (08 §4.8.2): Order без items/history/payments, с itemsCount и paymentsSummary. Поля — подмножество
         Order (08 §3.9). Состав paymentsSummary 08 не раскрывает — открытый объект до уточнения владельцем DTO.
+        С 1.3.0 — createdVia и kioskCustomerMatch (ADR-115); тот же элемент — awaitingPayment[] GET /pos/dashboard.
       properties:
         id: { type: string, format: uuid }
         publicNumber: { type: string, example: "POS-2026-000123" }
@@ -1467,6 +1516,15 @@ components:
           type: object
           nullable: true
           description: "Ролевое представление Customer без сумм долга (только флаги)."
+        createdVia:
+          allOf: [ { $ref: "#/components/schemas/OrderCreatedVia" } ]
+          description: "Канал заказа — orders.created_via, как Order.createdVia (08 §3.9; ADR-115). С 1.3.0."
+        kioskCustomerMatch:
+          allOf: [ { $ref: "#/components/schemas/KioskCustomerMatch" } ]
+          type: string
+          nullable: true
+          x-roles: [seller, cashier, senior_seller, admin, owner]
+          description: "Как Order.kioskCustomerMatch: только у createdVia=kiosk (иначе null), только сотрудникам (08 §3.9; ADR-115). С 1.3.0."
         receiver: { $ref: "#/components/schemas/Receiver" }
         delivery: { $ref: "#/components/schemas/Delivery" }
         warehouseId: { type: string, format: uuid }

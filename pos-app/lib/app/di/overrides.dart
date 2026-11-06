@@ -16,17 +16,24 @@ import 'package:optomstroy/app/di/scan_cart_adapter.dart';
 import 'package:optomstroy/app/di/scan_catalog_adapter.dart';
 import 'package:optomstroy/app/di/stage_g_overrides.dart';
 import 'package:optomstroy/app/router/app_router.dart';
+import 'package:optomstroy/app/router/kiosk_routes.dart' show KioskPaths;
 import 'package:optomstroy/app/router/shells/app_mode.dart';
 import 'package:optomstroy/app/router/shells/customer_mode_bindings.dart';
+import 'package:optomstroy/app/router/shells/kiosk_mode_bindings.dart';
 import 'package:optomstroy/core/config/public_settings_provider.dart';
 import 'package:optomstroy/core/connectivity/connectivity_watcher.dart' show OnlineStatus;
 import 'package:optomstroy/core/database/app_database.dart';
 import 'package:optomstroy/core/database/daos/settings_dao.dart';
 import 'package:optomstroy/core/di/core_providers.dart';
 import 'package:optomstroy/core/enums.dart';
+import 'package:optomstroy/core/error/failure.dart';
+import 'package:optomstroy/core/error/result.dart';
+import 'package:optomstroy/core/hardware/kiosk_lock.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
+import 'package:optomstroy/core/session/kiosk_marker.dart' show kioskMarkerStoreProvider;
 import 'package:optomstroy/core/session/pending_logout.dart' show pendingLogoutServiceProvider;
 import 'package:optomstroy/core/session/session_controller.dart';
+import 'package:optomstroy/core/session/session_overlay.dart' show KioskStatus, kioskStatusProvider;
 import 'package:optomstroy/core/session/session_state.dart' show SessionLockReason;
 import 'package:optomstroy/core/sync/auth_logout_outbox.dart';
 import 'package:optomstroy/core/sync/outbox_handlers.dart';
@@ -36,7 +43,9 @@ import 'package:optomstroy/core/sync/sync_providers.dart';
 import 'package:optomstroy/core/utils/clock.dart';
 import 'package:optomstroy/core/utils/qty.dart';
 import 'package:optomstroy/design_system/components/date_range_picker.dart' show DsBishkekTime;
+import 'package:optomstroy/features/admin/admin_providers.dart' show AdminKioskDevice, adminKioskDeviceProvider;
 import 'package:optomstroy/features/admin/data/admin_bindings.dart';
+import 'package:optomstroy/features/admin/domain/tablets/store_tablet.dart' show KioskEnrollment;
 import 'package:optomstroy/features/auth/auth_providers.dart' as auth;
 import 'package:optomstroy/features/auth/data/auth_bindings.dart';
 import 'package:optomstroy/features/auth/domain/entities/verify_outcome.dart' as auth_domain;
@@ -44,6 +53,8 @@ import 'package:optomstroy/features/cart/cart_providers.dart' as cart;
 import 'package:optomstroy/features/cart/data/cart_bindings.dart';
 import 'package:optomstroy/features/cart/data/draft/cart_draft_bindings.dart';
 import 'package:optomstroy/features/cart/domain/repositories/cart_repository.dart' show CartRepository;
+import 'package:optomstroy/features/cart/domain/sync/cart_sync.dart' show CartLineKey;
+import 'package:optomstroy/features/cart/presentation/kiosk_cart_rejection.dart';
 import 'package:optomstroy/features/cart/presentation/providers/cart_banner_port.dart';
 import 'package:optomstroy/features/cart/presentation/providers/cart_controller.dart'
     show CartLineView, CartState, cartControllerProvider;
@@ -53,6 +64,7 @@ import 'package:optomstroy/features/cart/presentation/widgets/cart_header_button
 import 'package:optomstroy/features/cashier/data/cashier_bindings.dart';
 import 'package:optomstroy/features/catalog/catalog_providers.dart' as catalog;
 import 'package:optomstroy/features/catalog/data/local/catalog_offline_bindings.dart';
+import 'package:optomstroy/features/catalog/domain/entities/product.dart' show ProductSummary;
 import 'package:optomstroy/features/catalog/presentation/providers/catalog_ports.dart' as catalog_ports;
 import 'package:optomstroy/features/checkout/data/checkout_bindings.dart';
 import 'package:optomstroy/features/checkout/presentation/controllers/order_submission_recovery.dart';
@@ -63,6 +75,7 @@ import 'package:optomstroy/features/customers/data/customers_bindings.dart';
 import 'package:optomstroy/features/customers/presentation/new/new_customer_controller.dart'
     show newCustomerViewerRoleProvider;
 import 'package:optomstroy/features/favorites/data/favorites_bindings.dart';
+import 'package:optomstroy/features/kiosk/data/kiosk_bindings.dart';
 import 'package:optomstroy/features/notifications/data/notifications_bindings.dart';
 import 'package:optomstroy/features/notifications/presentation/notifiers/notifications_center_controller.dart';
 import 'package:optomstroy/features/notifications/presentation/widgets/notification_announcements.dart';
@@ -103,6 +116,9 @@ final List<Override> appOverrides = <Override>[
   ...authBindings,
   ...registrationOverrides,
   ...adminOverrides,
+  // SCR-54 (P-002, ADR-115; FLOW-043.S4–S6): «Сделать это устройство планшетом магазина» / «Подключить заново» —
+  // удержание сессии администратора до «Готово», затем `SessionController.becomeKiosk`.
+  adminKioskDeviceProvider.overrideWith(SessionAdminKioskDevice.new),
   // Этап E: каталог, поиск, остатки, офлайн-кэш и статус синхронизации; избранное и недавние.
   // RM-E-009: `catalogBindings` + композиция «кэш → сеть» и порты core/sync (замена, не дополнение списка).
   ...catalogOfflineFirstBindings,
@@ -154,6 +170,14 @@ final List<Override> appOverrides = <Override>[
   // RM-E-017: режим клиента (SCR-50, `customer_stock_display`, `customerSelfService`), избранное/недавние
   // и статус сети каталога (EQ-CAT-02).
   ...customerModeOverrides,
+  // Режим «Планшет магазина» (P-002, ADR-115): порты фичи kiosk (тело SCR-51, шаги SCR-52/SCR-53).
+  ...kioskModeOverrides,
+  // Аварийный выход планшета со связью (`POST /kiosk/exit`, 13 TAB-2-10); без связи код проверяет устройство.
+  ...kioskBindings,
+  // Закрепление планшета (13 TAB-2-09; 16 §10.10; ADR-115 п. 29): Android — Device Owner и `lock task` (канал
+  // `kg.optomstroy/kiosk_lock`), Windows и веб — без действия. Привязка — по платформе, не по режиму: включает
+  // закрепление сессия администратора при подключении (SCR-54), снимает — сессия планшета при отзыве и аварийном выходе.
+  kioskLockProvider.overrideWith((Ref ref) => kioskLockFor(defaultTargetPlatform)),
   catalog.catalogViewerRoleProvider.overrideWith(catalogViewerRole),
   // Шапка SCR-10: имя пользователя из профиля входа (ПДн — только память) и `SyncIndicator` core/sync (тап → SCR-43).
   catalog_ports.catalogViewerNameProvider.overrideWith(
@@ -185,7 +209,10 @@ final List<Override> appOverrides = <Override>[
 ///   (07 §11.2) и `notification.read` фичи notifications; новые типы очереди дополняют этот же список;
 /// - роль и пользователь сессии для корзины (`customer` — режим клиента; «своя» отложенная на вкладке «Все»);
 /// - каталог: кнопка-итог корзины в шапке medium+ (drawer 420, ADR-112), `CartFab` на compact (и у `customer` на
-///   medium), «+ Добавить».
+///   medium), «+ Добавить»;
+/// - планшет магазина (роль `kiosk`, ADR-115; 13 TAB-2-12): корзина только на сервере выбирается в `cartBindings` по
+///   роли корзины; «Оформить заявку» → SCR-52, оформление недоступно при `426`, полноэкранных состояниях и метке сброса
+///   без сети (02 UI-51-013); «В корзину» без связи — «Корзина не сохранена» (UI-51-010).
 final List<Override> cartUiOverrides = <Override>[
   outboxHandlersProvider.overrideWith(
     (Ref ref) => <OutboxActionHandler>[
@@ -202,6 +229,17 @@ final List<Override> cartUiOverrides = <Override>[
   ),
   cart.cartViewerRoleProvider.overrideWith((Ref ref) => ref.watch(catalog.catalogViewerRoleProvider)),
   cart.cartViewerUserIdProvider.overrideWith((Ref ref) => ref.watch(sessionUserIdProvider)),
+  // Планшет магазина: CTA корзины → SCR-52 `?step=phone` (02 UI-51-013); сотрудник и покупатель — SCR-21 (`null`).
+  cart.cartCheckoutLocationProvider.overrideWith(
+    (Ref ref) => ref.watch(catalog.catalogViewerRoleProvider) == RoleCode.kiosk ? kioskCheckoutLocation : null,
+  ),
+  cart.cartOrderingBlockedProvider.overrideWith((Ref ref) {
+    if (ref.watch(catalog.catalogViewerRoleProvider) != RoleCode.kiosk) return false;
+    return ref.watch(kioskStatusProvider.select((KioskStatus s) => s.blocksOrdering)) ||
+        ref.watch(cart.kioskCartResetPendingProvider);
+  }),
+  // Планшет магазина: `426` — баннер «Планшет нужно обновить» под шапкой SCR-51 (02 UI-51-014).
+  catalog_ports.catalogKioskUpdateNeededProvider.overrideWith(catalogKioskUpdateNeeded),
   // FQ-CHK-06 / FIX-FE-08: ФИО пользователя сессии для «Подтвердил: {name}» (UI-20-033) и «Разрешено: {name}»
   // (UI-21-028) — профиль сессии фичи auth (только память).
   cart.cartViewerNameProvider.overrideWith(
@@ -227,13 +265,18 @@ final List<Override> cartUiOverrides = <Override>[
 /// сохранение файла, уведомления (06 §6.1: фичи не импортируют друг друга, связь — только здесь).
 final List<Override> stageFOverrides = <Override>[
   // SCR-24/25: роль и пользователь сессии; показ QR — при `QR_PROVIDER≠none` (клиенту — только `onec`, §24.4).
+  // Планшету магазина заказы не положены (KIOSK-005: `order.read.*` нет): роль `kiosk` — без служебных действий и QR.
   orders_ports.ordersViewerProvider.overrideWith((Ref ref) {
     final RoleCode? role = ref.watch(catalog.catalogViewerRoleProvider);
     final QrProviderMode qr = ref.watch(publicFeatureFlagsProvider.select((PublicFeatureFlags f) => f.qrProvider));
     return orders_ports.OrdersViewer(
       role: role,
       userId: ref.watch(sessionUserIdProvider),
-      qrShowEnabled: role == RoleCode.customer ? qr == QrProviderMode.onec : qr != QrProviderMode.none,
+      qrShowEnabled: switch (role) {
+        RoleCode.customer => qr == QrProviderMode.onec,
+        RoleCode.kiosk => false,
+        _ => qr != QrProviderMode.none,
+      },
     );
   }),
   orders_ports.ordersOnlineStatusProvider.overrideWith(
@@ -341,10 +384,52 @@ final class CartQuantities {
 }
 
 /// «+ Добавить» каталога для роли сессии: корзина пользователя; `owner` и неизвестная роль — без порта (карточка).
+/// Планшет магазина — корзина только на сервере (`kioskCartControlProvider`) с единицей карточки и текстом отказа
+/// без связи.
 catalog_ports.CatalogCartPort? catalogCartPortFor(Ref ref) {
   final RoleCode? role = ref.watch(catalog.catalogViewerRoleProvider);
   if (role == null || role == RoleCode.owner) return null;
-  return CartSyncCatalogCartPort(ref.watch(cart.cartSyncProvider));
+  final CartSyncCatalogCartPort port = CartSyncCatalogCartPort(ref.watch(cart.cartSyncProvider));
+  final cart.KioskCartControl? kiosk = role == RoleCode.kiosk ? ref.watch(cart.kioskCartControlProvider) : null;
+  return kiosk == null ? port : KioskCatalogCartPort(kiosk, port);
+}
+
+/// «Планшет нужно обновить» для витрины SCR-51 (02 UI-51-014): только роль `kiosk` и состояние сессии планшета `426`.
+bool catalogKioskUpdateNeeded(Ref ref) =>
+    ref.watch(catalog.catalogViewerRoleProvider) == RoleCode.kiosk &&
+    ref.watch(kioskStatusProvider) == KioskStatus.updateNeeded;
+
+/// SCR-52 «Телефон» — шаг оформления заявки планшета (02 UI-51-013; `cartId` — в памяти корзины, не в адресе).
+String kioskCheckoutLocation(String? cartId) => '${KioskPaths.checkout}?step=phone';
+
+/// «В корзину» каталога планшета магазина (02 UI-51-010): прямой `PUT /cart/items/{variantId}` `mode=increment` с
+/// единицей варианта по умолчанию из карточки (`ProductSummary.baseUnit`) — каталог мог прийти из сети раньше кэша.
+/// Отказ без связи и при метке сброса — «Корзина не сохранена» (изменение не встало в очередь, количество —
+/// серверное); отказ по количеству и остатку — без чисел сервера (`kioskCartRejectionText`: в `conflicts[]` планшету
+/// их нет, 08 §2.4); прочие — как у корзины сотрудника («Слишком много позиций…»).
+final class KioskCatalogCartPort implements catalog_ports.CatalogCartPort {
+  const KioskCatalogCartPort(this._kiosk, this._base);
+
+  final cart.KioskCartControl _kiosk;
+
+  /// Тексты прочих отказов — как у корзины сотрудника.
+  final catalog_ports.CatalogCartPort _base;
+
+  @override
+  Future<Result<void>> add(ProductSummary product) async {
+    final String? variantId = product.defaultVariantId;
+    if (variantId == null) return const FailureResult<void>(UnknownFailure(cause: 'no default variant'));
+    final Result<Qty> r = await _kiosk.addStepWithUnit(
+      CartLineKey(variantId),
+      unitId: product.baseUnit?.id,
+      priceSnapshot: product.price?.amount,
+    );
+    return r.map((Qty _) {});
+  }
+
+  @override
+  String? rejectionText(Failure failure, AppLocalizations l10n) =>
+      kioskCartRejectionText(l10n, failure) ?? _base.rejectionText(failure, l10n);
 }
 
 /// Режим «сразу в корзину» для скана (ядро §19.4; 13 RM-E-014 п. 5):
@@ -396,6 +481,46 @@ final class AppRegistrationNavigator implements reg.RegistrationNavigator {
       _ref.read(auth.authSessionProvider.notifier).signedIn(session.profile);
     }
     context.go(homeLocationFor(_ref.read(appModeProvider)));
+  }
+}
+
+/// Порт SCR-54 «это устройство — планшет магазина» поверх `SessionController` (core/session) и признака планшета.
+/// После `becomeKiosk` профиль входа администратора (имя, роли — память фичи auth) сбрасывается: в режиме планшета
+/// его нет, как после холодного старта планшета.
+final class SessionAdminKioskDevice implements AdminKioskDevice {
+  SessionAdminKioskDevice(this._ref);
+
+  final Ref _ref;
+
+  SessionController get _session => _ref.read(sessionControllerProvider.notifier);
+
+  @override
+  Future<String?> knownTabletId() async {
+    try {
+      return (await _ref.read(kioskMarkerStoreProvider).read())?.tabletId;
+    } on Object catch (e) {
+      _log.fine('признак планшета не прочитан: ${e.runtimeType}');
+      return null;
+    }
+  }
+
+  @override
+  void holdSession() => _session.holdForKioskEnrollment();
+
+  @override
+  void releaseSession() => _session.releaseKioskEnrollment();
+
+  @override
+  Future<void> become(KioskEnrollment enrollment) async {
+    await _session.becomeKiosk(
+      tabletId: enrollment.tablet.id,
+      tabletName: enrollment.tablet.name,
+      warehouseId: enrollment.tablet.warehouseId,
+      exitCode: enrollment.exitCode,
+      accessToken: enrollment.accessToken,
+      refreshToken: enrollment.refreshToken,
+    );
+    if (_ref.mounted) _ref.read(auth.authSessionProvider.notifier).signedOut();
   }
 }
 
@@ -462,10 +587,11 @@ final featureBridgesProvider = Provider<void>((ref) {
   }, fireImmediately: true);
 });
 
-/// Порт «сразу в корзину» для роли сессии: черновик корзины; `owner`, `customer` и неизвестная роль — `null`.
+/// Порт «сразу в корзину» для роли сессии: черновик корзины; `owner`, `customer`, планшет магазина `kiosk` (сканера
+/// у планшета нет, P-002 §8.8) и неизвестная роль — `null`.
 ScanCartPort? scanCartPortFor(Ref ref) {
   final RoleCode? role = ref.watch(catalog.catalogViewerRoleProvider);
-  if (role == null || role == RoleCode.owner || role == RoleCode.customer) return null;
+  if (role == null || role == RoleCode.owner || role == RoleCode.customer || role == RoleCode.kiosk) return null;
   return CartDraftScanCartPort(
     ref.watch(cart.cartDraftRepositoryProvider),
     // Этап F: изменение черновика сразу уходит в очередь `cart.sync` (RM-F-005).
@@ -482,9 +608,12 @@ ScanCartPort? scanCartPortFor(Ref ref) {
 /// «Сразу добавлять в корзину» по умолчанию для роли (ядро §19.4): `cashier` — да, остальные — нет.
 bool scanAddsToCartByDefault(RoleCode? role) => role == RoleCode.cashier;
 
-/// Роль для экранов каталога: клиент сессии — `customer`, иначе главная роль профиля входа (фича auth).
+/// Роль для экранов каталога: клиент сессии — `customer`, технический пользователь планшета магазина (`kind=kiosk`,
+/// ролей в `GET /me` нет) — `kiosk` (права покупателя, 11 §4.4; ADR-115), иначе главная роль профиля входа (фича auth).
 RoleCode? catalogViewerRole(Ref ref) {
-  if (ref.watch(sessionControllerProvider.select((s) => s.userKind)) == UserKind.customer) return RoleCode.customer;
+  final UserKind? kind = ref.watch(sessionControllerProvider.select((s) => s.userKind));
+  if (kind == UserKind.kiosk) return RoleCode.kiosk;
+  if (kind == UserKind.customer) return RoleCode.customer;
   return ref.watch(auth.authSessionProvider.select((s) => s.profile.primaryRole));
 }
 

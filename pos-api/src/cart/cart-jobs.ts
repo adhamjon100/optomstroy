@@ -20,7 +20,9 @@ const CART_BATCH = 200;
  * - `catalog.prices-changed` / `catalog.stock-changed` `{variantIds}` — пометка строк корзин `active`/`parked`
  *   (`price_changed`, `stock_insufficient`, `stock_snapshot`) и уведомления владельцу `cart_price_changed` /
  *   `cart_stock_changed` (через `NOTIFICATIONS_PORT`, дедупликация по корзине и составу изменений). Заголовок `carts`
- *   не меняется (иначе `row_version` клиента устареет без действий пользователя — FQ-CART-07);
+ *   не меняется (иначе `row_version` клиента устареет без действий пользователя — FQ-CART-07). Владельцу-планшету
+ *   (`users.kind='kiosk'`, ADR-115) уведомления не создаются: читателя у них нет, строки бы копились (10 KIOSK-030,
+ *   P-002 §8.7 п. 8); пометки строк корзины планшета ставятся, как у всех;
  * - `cart.parked_expire` (ежечасно) — уведомление автору отложенной корзины за сутки до `expires_at`
  *   (`notification_kind=system`, однократно) и перевод истёкших `parked → cleared` (CART-033, DATA-205).
  * Обработчики идемпотентны. Регистрация в pg-boss — `registerCartJobs` (вызывает композиционный корень worker).
@@ -41,14 +43,15 @@ export class CartJobsHandler {
   ): Promise<{ carts: number; notified: number }> {
     const variantIds = [...new Set(payload.variantIds ?? [])].filter((v) => /^[0-9a-f-]{36}$/i.test(v));
     if (variantIds.length === 0) return { carts: 0, notified: 0 };
-    const carts = await rows<{ id: string }>(
+    const carts = await rows<{ id: string; kiosk_owner: boolean }>(
       this.db,
-      sql`SELECT DISTINCT c.id FROM carts c JOIN cart_items i ON i.cart_id = c.id
+      sql`SELECT DISTINCT c.id, (u.kind = 'kiosk') AS kiosk_owner
+            FROM carts c JOIN cart_items i ON i.cart_id = c.id JOIN users u ON u.id = c.owner_user_id
            WHERE c.status IN ('active', 'parked') AND i.variant_id = ANY(${sql.param(variantIds)}::uuid[])
            LIMIT ${CART_BATCH * 50}`,
     );
     let notified = 0;
-    for (const { id } of carts) {
+    for (const { id, kiosk_owner: kioskOwner } of carts) {
       const cart = await this.repo.findById(this.db, id);
       if (!cart || (cart.status !== 'active' && cart.status !== 'parked')) continue;
       const items = await this.repo.items(this.db, cart.id);
@@ -82,7 +85,7 @@ export class CartJobsHandler {
           ...(kind === 'stock' ? { stockSnapshot: l.quote.available } : {}),
         })),
       );
-      if (newly.length === 0) continue;
+      if (newly.length === 0 || kioskOwner) continue;
       const sorted = [...new Set(newly)].sort();
       const digest = createHash('sha256').update(sorted.join(',')).digest('hex').slice(0, 16);
       const r = await this.notifications.notify(null, {

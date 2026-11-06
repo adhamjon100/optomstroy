@@ -9,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:optomstroy/core/config/public_settings_provider.dart';
 import 'package:optomstroy/features/admin/domain/audit/audit_log.dart';
 import 'package:optomstroy/features/admin/domain/settings/admin_settings_repository.dart';
+import 'package:optomstroy/features/admin/domain/tablets/admin_tablets_repository.dart';
+import 'package:optomstroy/features/admin/domain/tablets/store_tablet.dart';
 import 'package:optomstroy/features/admin/domain/users/admin_users_repository.dart';
 import 'package:optomstroy/features/admin/domain/users/step_up.dart';
 
@@ -49,4 +51,40 @@ final adminSettingsRepositoryProvider = Provider<AdminSettingsRepository>(
 /// Порт SCR-47 (журнал аудита; этап G). Реализация — `DioAuditLogRepository` (data).
 final auditLogRepositoryProvider = Provider<AuditLogRepository>(
   (ref) => throw UnimplementedError('auditLogRepositoryProvider: подключите adminOverrides в app/di/overrides.dart'),
+);
+
+/// Порт SCR-54 «Планшеты магазина» (08 §4.18.11–§4.18.15; ADR-115). Реализация — `DioAdminTabletsRepository` (data).
+final adminTabletsRepositoryProvider = Provider<AdminTabletsRepository>(
+  (ref) =>
+      throw UnimplementedError('adminTabletsRepositoryProvider: подключите adminOverrides в app/di/overrides.dart'),
+);
+
+/// Это устройство становится планшетом магазина (SCR-54, FLOW-043.S4–S6, A2; 09 §8.9 п. 1, п. 6). Реализацию поверх
+/// `SessionController` (core/session) привязывает корень `app/di/overrides.dart`.
+abstract interface class AdminKioskDevice {
+  /// `store_tablets.id` из признака планшета на устройстве, если он сохранился — предвыбор UI-54-013.
+  Future<String?> knownTabletId();
+
+  /// Перед `POST /admin/store-tablets` и `…/reconnect`: сервер отзывает сессию администратора на устройстве в той же
+  /// транзакции — до «Готово» на диалоге аварийного кода её конец не уводит на SCR-01 и не стирает ответ.
+  void holdSession();
+
+  /// Подключение не состоялось (ошибка, отмена): сессия администратора — как обычно.
+  void releaseSession();
+
+  /// «Готово» (UI-54-014): данные администратора на устройстве удаляются, признак, хэш аварийного кода и токены
+  /// планшета сохраняются, закрепление включается, приложение уходит в режим планшета (SCR-51).
+  Future<void> become(KioskEnrollment enrollment);
+}
+
+/// Порт [AdminKioskDevice]; `null` — устройство планшетом не становится (подключение и «Подключить заново» скрыты).
+final adminKioskDeviceProvider = Provider<AdminKioskDevice?>((ref) => null);
+
+/// `features.storeTablet` (env `KIOSK_MODE`, `GET /settings/public`; fail-closed до ответа сервера): подключение и
+/// «Подключить заново» — только при `true`; список, «Изменить» и «Отключить планшет» — всегда (ADR-115 п. 28).
+final adminKioskEnabledProvider = Provider<bool>((ref) => ref.watch(kioskEnabledProvider));
+
+/// `recommendedAppVersion` (`SemVerByPlatform`) из `GET /settings/public` — «Нужна новая версия приложения» (UI-54-009).
+final adminRecommendedAppVersionProvider = Provider<String?>(
+  (ref) => ref.watch(publicSettingsProvider.select((PublicSettingsSnapshot s) => s.settings.recommendedAppVersion)),
 );

@@ -25,7 +25,7 @@ enum StatusChipVariant {
 }
 
 /// Статус `StatusChip` (03 §9.39): всегда иконка 16 + текст `label 13/500` (A11Y-004),
-/// высота 24 (20 — [dense]), паддинг 2×8, текст не переносится (ellipsis при ширине > 160).
+/// высота 24 (20 — [dense]), паддинг 2×8, текст не переносится (ellipsis при ширине > [maxLabelWidth], 160).
 class StatusChip extends StatelessWidget {
   /// Создаёт чип.
   const StatusChip({
@@ -37,6 +37,7 @@ class StatusChip extends StatelessWidget {
     this.icon,
     this.tooltip,
     this.semanticLabel,
+    this.maxLabelWidth = 160,
   });
 
   /// Подпись из ARB (`status_order_<code>` и т. п.).
@@ -59,6 +60,11 @@ class StatusChip extends StatelessWidget {
 
   /// Подпись для screen reader («Статус: ожидает оплаты»).
   final String? semanticLabel;
+
+  /// Предел ширины текста (03 §9.39: 160); `null` — без предела (чип планшета SCR-51 «Обычные цены магазина», 02
+  /// UI-51-004: текст целиком, при нехватке места шапка оставляет только иконку). Ellipsis — последняя мера, когда
+  /// чипу не хватает ширины родителя.
+  final double? maxLabelWidth;
 
   /// Иконка варианта (03 §9.39, п. 5.5).
   static IconData iconOf(StatusChipVariant v) => switch (v) {
@@ -95,23 +101,29 @@ class StatusChip extends StatelessWidget {
         children: <Widget>[
           Icon(icon ?? iconOf(variant), size: 16, color: fg),
           const SizedBox(width: 4),
-          Flexible(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 160),
-              child: Text(
-                label,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.ellipsis,
-                style: context.text.label.copyWith(color: fg, height: 1.2),
-              ),
-            ),
-          ),
+          Flexible(child: _label(context, fg)),
         ],
       ),
     );
     final Widget sem = Semantics(label: semanticLabel ?? label, excludeSemantics: true, child: chip);
     return tooltip == null ? sem : AppTooltip(message: tooltip!, child: sem);
+  }
+
+  Widget _label(BuildContext context, Color fg) {
+    final Widget text = Text(
+      label,
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.ellipsis,
+      style: context.text.label.copyWith(color: fg, height: 1.2),
+    );
+    final double? max = maxLabelWidth;
+    return max == null
+        ? text
+        : ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: max),
+            child: text,
+          );
   }
 }
 

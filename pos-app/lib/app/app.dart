@@ -5,11 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:optomstroy/app/di/overrides.dart';
 import 'package:optomstroy/app/global_states/app_version_gate.dart';
 import 'package:optomstroy/app/router/app_router.dart';
+import 'package:optomstroy/app/router/shells/app_mode.dart';
 import 'package:optomstroy/core/config/environment.dart';
 import 'package:optomstroy/core/di/core_providers.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/core/sync/sync_providers.dart';
 import 'package:optomstroy/design_system/components/env_banner.dart';
+import 'package:optomstroy/design_system/components/private_input_scope.dart';
 import 'package:optomstroy/design_system/components/product_image.dart';
 import 'package:optomstroy/design_system/theme/app_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
@@ -37,6 +39,8 @@ class App extends ConsumerWidget {
     if (ref.watch(appDatabaseProvider.select((db) => db != null))) ref.watch(syncSchedulerProvider);
     final DisplayPreferences display = ref.watch(displayPreferencesProvider);
     final AppConfig config = ref.watch(appConfigProvider);
+    // Область «общее устройство» (03 §9.74, DS-100; ADR-115 п. 27): только в режиме планшета магазина.
+    final bool sharedDevice = ref.watch(appModeProvider.select((AppMode mode) => mode == AppMode.kiosk));
     return MaterialApp.router(
       routerConfig: router,
       // Название продукта не переводится (отдельного ключа ARB нет); заголовок окна Windows задаёт
@@ -58,13 +62,19 @@ class App extends ConsumerWidget {
       // (третий источник reduce-motion 03 §11.1 — через `MediaQuery.disableAnimations`).
       // Фото товаров и категорий: сервер отдаёт путь `/images/{sha256}/{size}` без хоста (00_root.yaml `Image`) —
       // разрешается от `API_BASE_URL` (ProductImageBase).
+      // Ввод на общем устройстве: `PrivateInputScope` оборачивает Navigator — область получают все маршруты, нижние
+      // листы и диалоги корневого навигатора; виджет стоит всегда (вне режима планшета — `enabled: false`), чтобы
+      // смена режима не пересоздавала Navigator.
       builder: (context, child) => MediaQuery(
         data: displayMediaQuery(MediaQuery.of(context), display),
-        child: ProductImageBase(
-          baseUri: config.apiBaseUrl,
-          child: EnvBanner(
-            environmentCode: config.envBannerCode,
-            child: AppVersionGate(child: SessionGate(coverColdStart: false, child: child ?? const SizedBox.shrink())),
+        child: PrivateInputScope(
+          enabled: sharedDevice,
+          child: ProductImageBase(
+            baseUri: config.apiBaseUrl,
+            child: EnvBanner(
+              environmentCode: config.envBannerCode,
+              child: AppVersionGate(child: SessionGate(coverColdStart: false, child: child ?? const SizedBox.shrink())),
+            ),
           ),
         ),
       ),

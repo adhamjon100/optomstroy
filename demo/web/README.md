@@ -9,7 +9,7 @@
 | Путь | Что это |
 |---|---|
 | `backend/` | сборка браузерного бэкенда (`build-backend.mjs`), шимы, подмены, тесты — см. `backend/README.md` |
-| `site-src/` | страница: загрузка, мост `__posDemo`, панель «ДЕМО», одна вкладка, сброс (`build-site.mjs`, `dev/`) |
+| `site-src/` | страница: загрузка, мост `__posDemo`, панель «ДЕМО», одна вкладка, сброс, переключение «планшет магазина ↔ обычный вход» (`demo-kiosk.js`; P-002 TAB-3-02, ADR-115); `build-site.mjs`, `dev/` |
 | `tools/` | сборка сайта (`assemble-site.mjs`), проверки (`check-site.mjs`), статика как на Netlify (`serve-site.mjs`), headless-проверка собранного сайта (`smoke.mjs`), сверка с прототипом (`design-compare.mjs`), заголовки и перенаправления (`site-headers.mjs`) |
 | `build-web-demo.ps1` | всё по порядку (PowerShell) |
 | `netlify.toml` | каталог публикации `site` (правила — в `site/_headers`, `site/_redirects`) |
@@ -66,11 +66,17 @@ node demo/web/tools/check-site.mjs             # проверки публика
 node demo/web/backend/test/run-all.mjs                         # бэкенд: модульные, дифференциальный, критик, PostgreSQL, soak (≈ 40 мин)
 node demo/web/site-src/dev/cdp-test.mjs                        # страница с имитацией воркера (≈ 1 мин)
 node demo/web/tools/smoke.mjs --storage opfs                   # собранный сайт: загрузка, вход 906 в интерфейсе, F5 (экран PIN), замороженная вкладка
-node demo/web/tools/smoke.mjs --storage idb                    # [--port 8095…8099] [--cdp N] [--only boot,ui,f5,frozen]
+node demo/web/tools/smoke.mjs --storage idb                    # [--port 8095…8099] [--cdp N] [--only boot,ui,f5,frozen,kiosk,kioskswitch]
+node demo/web/tools/smoke.mjs --storage idb --only kiosk,kioskswitch   # планшет магазина (12 §3.23): T-KIOSK-034, -043, -045 (kiosk), T-KIOSK-051 (kioskswitch)
 node demo/web/tools/pdf-smoke.mjs --storage idb                # предпросмотр и печать PDF под CSP, pdf.js с сайта [--port 8097] [--cdp 9417]
 node demo/web/tools/design-compare.mjs                         # сверка с прототипом (T-UI-116): вход 907, 10 состояний × 1440/1280/1920 + 1024; [--port] [--cdp] [--vp] [--states] [--out] [--app-png <golden.png>]
 node demo/web/tools/serve-site.mjs --port 8095                 # открыть сайт локально: http://127.0.0.1:8095/
 ```
+
+По умолчанию `smoke.mjs` идёт с `--only boot,ui,f5,frozen`: шаги планшета магазина `kiosk` и `kioskswitch` (P-002
+TAB-3-01, TAB-3-02; ADR-115; вне релизных ворот — 12 §3.23) в него не входят, поэтому T-KIOSK-034 и T-KIOSK-051
+выполняются только с `--only kiosk,kioskswitch` (или добавленными к прежнему списку). Шагу `kioskswitch` нужен шаг `kiosk`
+в том же прогоне и идёт последним; после шага `kiosk` браузер — планшет магазина.
 
 Коды `run-all.mjs`: 0 — всё зелёное; 1 — провалы демо; 3 — провалы есть, но все — известные открытые дефекты pos-api
 (`backend/test/pos-api-defects.json`, поле `tests`). Открытых дефектов сейчас нет: POSAPI-T1-01 (`/sync/status`
@@ -79,13 +85,21 @@ node demo/web/tools/serve-site.mjs --port 8095                 # открыть 
 `tests_history`); провал critic C4.3b/C4.10b теперь — провал демо (код 1), отчёт считает открытые и исправленные
 дефекты отдельно.
 
-Последние прогоны (2026-10-30, сборка `232b127e2352d11c`): `check-site` 26/26; `smoke.mjs` 15/15 на OPFS и на
+Прогоны 2026-10-30 (до планшета магазина P-002, сборка `232b127e2352d11c`): `check-site` 26/26; `smoke.mjs` 15/15 на OPFS и на
 IndexedDB; `pdf-smoke.mjs` 9/9 (сборка `a4b231dc44c76999`); `run-all.mjs --no-browser --soak-min 5` — модульные
 133/133, дифференциальный 8/8 (0 отличий шима), critic 29/29 (C4.3b и C4.10b — `overall=ok`), PostgreSQL 17 — 0
 расхождений слоя БД, код 1 только из-за двух критериев soak, рассчитанных на 20 мин; отдельный
 `scenarios/soak.mjs --minutes 20` — 5/5. Браузерные шаги `run-all` (порты 8095–8099, CDP 9481/9482) и
 `cdp-test.mjs` на последней сборке не запускались. Сценарии инструкции заказчика в интерфейсе — 12 §3.22
 «Прогоны 2026-10-30».
+
+Прогон 2026-11-06 (после P-002, локально, без Netlify; бандл `be275a1ebdf3…`, ключ эпохи `ed3bd646a9840642`):
+`check-site` 27/27; `run-all.mjs --no-browser --skip-soak --skip-flush` — модульные 140/140, дифференциальный 8/8
+(4 × 471 запрос, 138/138 проверок, 0 ответов 5xx, 0 отличий шима; контракт — 15 групп «бандл и эталон», 0 «только
+бандл», `GET /me` планшета проверяется по `MeKiosk`; покрытие Dio 126/126, все операции приложения 127/128), critic
+29/29; PostgreSQL 17 — 2 отличия слоя БД (`GET /transactions` `related` — гонка с фоновой задачей «1С»;
+`GET /sync/status` `intervalSec`), код 1. Soak, браузерные шаги `run-all`, `smoke.mjs` (в том числе `kiosk`,
+`kioskswitch`) и `pdf-smoke.mjs` в этот раз не запускались.
 
 Порты: статика 8095–8099 (`serve-site.mjs` другие не принимает); 3000, 8080, 8091, 8092 не занимать (local-stack
 другого workflow). Свои процессы скрипты завершают по PID, профили Chrome удаляют.

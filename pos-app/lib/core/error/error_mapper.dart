@@ -238,6 +238,15 @@ abstract final class ErrorKeys {
   static const String returnNotReturnable = 'return_not_returnable';
   static const String returnsDisabled = 'return_disabled';
 
+  // Планшет магазина (ADR-115; 08 §2.4 коды `KIOSK_*`, 03 §16.5 ключи `error_kiosk_*`). На экранах планшета поверх
+  // них — экранные тексты `kiosk_*` 02 §7 (SCR-51, SCR-52, SCR-54).
+  static const String kioskRevoked = 'error_kiosk_revoked';
+  static const String kioskDisabled = 'error_kiosk_disabled';
+  static const String kioskNetworkDenied = 'error_kiosk_network_denied';
+  static const String kioskRateLimited = 'error_kiosk_rate_limited';
+  static const String kioskExitCodeInvalid = 'error_kiosk_exit_code_invalid';
+  static const String kioskExitLocked = 'error_kiosk_exit_locked';
+
   /// Ключи уточнения по `creditReason` (полнота — test/core/error/error_mapper_g_test.dart).
   static const Map<CreditReason, String> byCreditReason = <CreditReason, String>{
     CreditReason.forbiddenRole: creditForbiddenRole,
@@ -309,6 +318,12 @@ abstract final class ErrorKeys {
     returnAlreadyInOnec,
     returnNotReturnable,
     returnsDisabled,
+    kioskRevoked,
+    kioskDisabled,
+    kioskNetworkDenied,
+    kioskRateLimited,
+    kioskExitCodeInvalid,
+    kioskExitLocked,
   };
 }
 
@@ -373,6 +388,19 @@ abstract final class UiErrorMapper {
       ProblemCode.qrUnavailable => e(ErrorKeys.qrUnavailable, ErrorAction.qrManualFallback),
       ProblemCode.consentRequired => e(ErrorKeys.consentRequired, ErrorAction.provideConsent),
       ProblemCode.appReadOnly => e(ErrorKeys.appReadOnly, ErrorAction.readOnlyMode),
+      // Планшет магазина (08 §2.4 «Что делает клиент»; ADR-115). KIOSK_REVOKED — без `/auth/refresh`: токены и
+      // признак планшета удаляются, SCR-01 (выполняет AuthInterceptor / сессия, не экран).
+      ProblemCode.kioskRevoked => e(ErrorKeys.kioskRevoked, ErrorAction.signIn),
+      // SCR-51 «Сервис временно недоступен»; аварийный выход — проверкой кода на устройстве.
+      ProblemCode.kioskDisabled => e(ErrorKeys.kioskDisabled, ErrorAction.none),
+      // «Обратитесь к продавцу»; сессия не отозвана, в сети магазина работа продолжается.
+      ProblemCode.kioskNetworkDenied => e(ErrorKeys.kioskNetworkDenied, ErrorAction.none),
+      // Лимит кодов планшета: не повторять автоматически.
+      ProblemCode.kioskRateLimited => e(ErrorKeys.kioskRateLimited, ErrorAction.none),
+      // Неверный аварийный код (`attemptsLeft`); код на устройстве при этом не проверяется.
+      ProblemCode.kioskExitCodeInvalid => e(ErrorKeys.kioskExitCodeInvalid, ErrorAction.none),
+      // Пауза 15 мин: ввод заблокирован до `retryAfter`, таймер.
+      ProblemCode.kioskExitLocked => e(ErrorKeys.kioskExitLocked, ErrorAction.retryAfter),
     };
   }
 

@@ -9,6 +9,91 @@
 Собранный файл не редактируется вручную: правки вносятся в `parts/*.yaml`, затем
 `python -I -X utf8 scripts/build_openapi.py` (правила — `NOTES.md` §1, §7).
 
+## [1.3.0] — 2026-11-04 — режим «Планшет магазина» (P-002, ADR-115)
+
+Аддитивное изменение (MINOR): `info.version` 1.2.0 → 1.3.0. Основание — P-002 «Планшет магазина» редакции 5, утверждённый
+владельцем 2026-11-04: «P-002 утверждаю, делай»; группа А — «Да, все рекомендации (Рекоменд.)», в пояснении варианта —
+«Р-01 а»; решение — ADR-115 (15). Источник — 08 v1.20 (§2.2–§2.4, §2.7, §2.9, §2.12, §3.9, §3.13, §3.14, §3.17, §4.18.6,
+§4.18.11–§4.18.15, §4.23.1, §4.25, §9), 07 v1.17 (§5.65, §6.1, §6.1.1), 11 v1.4 (§4.3 №77–81, §4.4); решения контракта —
+`NOTES.md` §9 и шапка `parts/70_kiosk.yaml` (K1–K10). Путь `v1`, существующие пути, поля и их обязательность не менялись;
+`oneOf` не вводился. Операции планшета сервер пока не отдаёт — они появляются в пакетах сборки P-002 (пакет WP-S1A-KIOSK
+и следующие).
+
+### Добавлено
+
+- Тег `kiosk` — последним в `tags` (08 §8; `x-module: kiosk`, 06 MOD-030) — и часть `parts/70_kiosk.yaml` с десятью
+  операциями: `POST /admin/store-tablets` (`kiosk_tablets_enroll`), `GET /admin/store-tablets` (`kiosk_tablets_list`),
+  `PATCH /admin/store-tablets/{id}` (`kiosk_tablets_update`), `POST /admin/store-tablets/{id}/revoke`
+  (`kiosk_tablets_revoke`), `POST /admin/store-tablets/{id}/reconnect` (`kiosk_tablets_reconnect`) — 08 §4.18.11–§4.18.15;
+  `POST /kiosk/order-otp` (`kiosk_order_otp_request`), `POST /kiosk/orders` (`kiosk_orders_create`),
+  `GET /kiosk/orders?idempotencyKey=` (`kiosk_orders_find`), `POST /kiosk/reset` (`kiosk_reset`), `POST /kiosk/exit`
+  (`kiosk_exit`) — 08 §4.25.1–§4.25.5. У каждой — `x-permissions` по 11 §4.3 №77–81, `x-roles`, `x-step-up` и
+  `x-step-up-operation: [kiosk.manage]` (подключение, отключение, подключение заново), `x-idempotent`,
+  `x-feature-flag: KIOSK_MODE` (подключение, подключение заново, все `/kiosk/*`), `x-rate-limit-group` по 08 §2.9 «Лимиты
+  планшета магазина» (RL-ADMIN, RL-OTP-SEND, RL-FIN, RL-READ, RL-CART, RL-PIN).
+- Схемы `StoreTablet` (`lockTaskEnabled: boolean|null`, `expiresAt`), `KioskTokens`, `KioskOrderAccepted` (имена 08 §3.17)
+  и тела и ответы операций `Kiosk*`.
+- Параметр `KioskLock` — заголовок `X-Kiosk-Lock: on|off`, необязательный (08 §2.3, ADR-115 п. 26): у `/kiosk/*` и у
+  операций закрытого списка 08 §4.25 (каталог, поиск, остатки, корзина, предпросмотр, `GET /settings/public`, `GET /me`).
+- Перечни: `UserKind` + `kiosk`, `RoleCode` + `kiosk` (в том числе `UserRef.role` в `audit.createdBy` заявки с планшета),
+  `OtpPurpose` + `kiosk_order`, `NotificationKind` + `kiosk_order` (07 §6.1); схемы CHECK-перечней `OrderCreatedVia`,
+  `KioskCustomerMatch`, `StoreTabletStatus` (07 §6.1.1; имена — как в `contracts/CHANGELOG.md` [1.3.0]); `ProblemCode` +
+  `KIOSK_REVOKED`, `KIOSK_DISABLED`, `KIOSK_NETWORK_DENIED`, `KIOSK_RATE_LIMITED`, `KIOSK_EXIT_CODE_INVALID`,
+  `KIOSK_EXIT_LOCKED` после `APP_READ_ONLY` (56 кодов, порядок 08 §2.4); `PermissionCode` + `kiosk.read`, `kiosk.manage`,
+  `kiosk.order.submit`, `kiosk.self.read`, `kiosk.self.exit` (82 кода, порядок 11 §4.3); `StepUpOperation` +
+  `kiosk.manage` (08 §2.12).
+- `Order.createdVia` и `OrderSummary.createdVia` (`OrderCreatedVia`) — сервер отдаёт поле с этапа G, в 1.2.0 оно не было
+  объявлено (08 §3.9); `Order.kioskCustomerMatch` и `OrderSummary.kioskCustomerMatch` — nullable, `x-roles` сотрудников;
+  `Receiver.phoneMasked` (`readOnly`; после маскирования номера покупателя заявки с планшета `Receiver.phone = null`);
+  query `createdVia` у `GET /orders` (08 §4.8.2); элемент `awaitingPayment[]` `GET /pos/dashboard` — тот же `OrderSummary`
+  с `createdVia` (08 §4.10.1).
+- `Me.tablet` (`MeKioskTablet`: `id`, `name`, `warehouseId`) и значение `kind=kiosk` (08 §3.14); строгая форма ответа
+  планшета — схема `MeKiosk` (эталон для контрактных тестов, путями не используется — предупреждение Redocly
+  `no-unused-components`, как у `CustomerView*`).
+- `PublicSettings.kiosk {idleSeconds, idleWarningSeconds, doneSeconds}` и `PublicSettings.features.storeTablet` (env
+  `KIOSK_MODE`) — 08 §4.23.1; `AdminSettingsValues` + `kioskIdleSeconds`, `kioskIdleWarningSeconds`, `kioskDoneSeconds`,
+  `kioskOtpPerHour`, `kioskOtpPerDay`, `kioskWorkingHours`; `AdminSettingsEnv.kioskMode` — 08 §4.18.6.
+- `POST /auth/otp/verify` — ответ `404` (код `kiosk_order` сессию не выдаёт; 08 §4.1.2, 12 T-KIOSK-015).
+
+### Изменено
+
+- `GET /me`: `x-permissions` — `[profile.manage.own, kiosk.self.read]` (одно из, 08 §4.3.1); `x-roles` + `kiosk`.
+- `POST /cart/checkout-preview`: `x-permissions` — `[cart.manage.own, order.create, kiosk.order.submit]` («`cart.manage.own`
+  и одно из `order.create` | `kiosk.order.submit`», 08 §4.7.7; форма требования — в описании операции и `NOTES.md` §4);
+  `x-roles` + `kiosk`; описание — «Предпросмотр на планшете».
+- `x-roles` + `kiosk` у операций закрытого списка 08 §4.25: `GET /catalog/categories`, `/catalog/products`,
+  `/catalog/products/{id}`, `/catalog/products/{id}/variants`, `/catalog/units`, `/catalog/warehouses`,
+  `/catalog/sync/{entity}`, `GET /search/products`, `GET /search/suggest`, `GET /inventory/balances`,
+  `POST /inventory/check`, `GET /cart`, `PUT/DELETE /cart/items/{variantId}`, `GET /settings/public`.
+- Описания (без изменения схем): `POST /auth/refresh` — `401 KIOSK_REVOKED` и правила сессии планшета (08 §4.1.3);
+  `POST /auth/otp/request` — `kiosk_order` не принимается; `POST /auth/logout` и маршруты вне закрытого списка — `403` для
+  планшета (`reason: kiosk_closed_list`); `/admin/users*` — цель `kind=kiosk` → `403` (`reason: kiosk_target`), в списке
+  технического пользователя нет; `PUT /admin/settings` — границы ключей `kiosk*`; `GET /notifications` — вид
+  `kiosk_order`; `GET /pos/dashboard` — пометка «С планшета»; ответы ошибок корня (`Unauthorized`, `Forbidden`,
+  `UnprocessableEntity`, `Locked`, `TooManyRequests`), `Problem.reason`, `Problem.attemptsLeft`, `bearerAuth`.
+
+### Не внесено
+
+- `oneOf` у ответа `GET /me` и ослабление `required` схемы `Me`: форма планшета — необязательное свойство (08 §3.14;
+  `NOTES.md` §9 п. 4).
+- `x-roles: kiosk` у операций, где роль держит код, но маршрут вне закрытого списка или отвечает `403`, как у `customer`
+  (`PATCH`/`DELETE /cart`, `POST`/`DELETE /cart/customer`, `/cart/park*`, `/cart/parked*`, `GET`/`DELETE
+  /catalog/products/recent`, `GET /catalog/price-lists`, `GET /search/barcode/{value}`): предупреждения [A]
+  `check_api_permissions.py` для них законны (`NOTES.md` §7.4 п. 7).
+
+### Производные артефакты и окна
+
+- `pos-api/src/health/openapi.document.ts`: `OPENAPI_INFO_VERSION` 1.2.0 → 1.3.0, тег `kiosk` в `OPENAPI_TAGS`
+  (`src/health/openapi.document.spec.ts` зелёный).
+- `pos-api/test/e2e/rbac-matrix.e2e-spec.ts` (T-SEC-019): для `POST /kiosk/reset` роль считается допущенной, только если
+  держит все коды операции (`NOTES.md` §9 п. 5).
+- Ожидаемо красные до реализации на сервере (план сборки P-002, `parallelSafety`): `test/e2e/smoke.e2e-spec.ts`
+  «контракт ⊆ экспорт» — до пакета с последней операцией планшета (WP-S4C); сверка групп лимитов
+  (`test/catalog/catalog-rate-limit.e2e.spec.ts` — `/kiosk/orders`, `/kiosk/reset`) и состава настроек (`test:admin`,
+  `test:settings`) — до WP-S1A-KIOSK; DTO-тесты `pos-app`, которые читают схемы контракта, — до WP-A01.
+- Проверка `oasdiff breaking` — в CI (локально не запускалась): новые значения перечней в ответах — предупреждения, не
+  ошибки; новые пути, необязательные параметры и свойства — информационные.
+
 ## [1.2.0] — 2026-10-23 — выравнивание контракта по итогам этапа F (закрытие остатков этапа F)
 
 Аддитивное изменение (MINOR): `info.version` 1.1.0 → 1.2.0. Вносится то, что описано в 08 v1.15 (или 07/05) и что `pos-api`

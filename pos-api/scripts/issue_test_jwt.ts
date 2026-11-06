@@ -4,12 +4,18 @@
  *   APP_ENV=dev JWT_PRIVATE_KEY_FILE=./.tmp/jwt/dev_ed25519.pem \
  *     npx tsx scripts/issue_test_jwt.ts --role seller [--sub <uuid>] [--kind staff] [--permissions-version 1] \
  *       [--device-id <uuid>] [--sid <uuid>] [--ttl 900] [--kid dev-1]
+ *     npx tsx scripts/issue_test_jwt.ts --role kiosk --kind kiosk --sub <users.id> --device-id <device_key> \
+ *       --sid <sessions.id>        # планшет магазина (P-002, ADR-115): kind=kiosk, amr ["pin"]
  *
  * - Работает **только** при `APP_ENV=dev|staging` (значение обязательно; иначе — код выхода 2, токен не выпускается).
  * - Ключ — PEM PKCS#8 из файла `JWT_PRIVATE_KEY_FILE` (Ed25519 → `EdDSA`, P-256 → `ES256`; 09 §8.1). Прямое значение
  *   `JWT_PRIVATE_KEY` не читается: секреты — только файлом (09 §6.11, 16 §4.3). `kid` — `--kid` или `JWT_KEY_ID`.
  * - Claims — 09 §8.1 / SESS-003: `iss=optomstroy-pos`, `aud=optomstroy-api`, `sub`, `kind`, `roles[]`,
- *   `permissionsVersion`, `deviceId`, `sid`, `jti`, `iat`, `exp`, `amr` (`["sms"]`). Без ПДн.
+ *   `permissionsVersion`, `deviceId`, `sid`, `jti`, `iat`, `exp`, `amr` (`["sms"]`; у планшета магазина `kind=kiosk` —
+ *   `["pin"]`, как у токена подключения `KioskTokens`, 08 §3.17). Без ПДн.
+ * - `kind=kiosk` (06 ARCH-065; 11 SEC-138) — по умолчанию для роли `kiosk`. AuthGuard примет такой токен, только если
+ *   `users.kind = kiosk`, сессия `sid` жива и у технического пользователя есть активная строка `store_tablets` (её
+ *   создаёт `POST /admin/store-tablets`); коды `kiosk.*` засчитываются только при `kind=kiosk`.
  * - Роль — из contracts/rbac/permissions.yaml (permissions.generated.ts); в R1 одна активная роль (B-AR-02).
  * - В stdout — только токен (одна строка); диагностика — в stderr без значения ключа.
  * - В prod-образ не входит: `tsconfig.build.json` собирает только `src/**`, runtime-стадия Dockerfile копирует
@@ -29,7 +35,16 @@ export const ALLOWED_APP_ENVS = ['dev', 'staging'] as const;
 /** Верхняя граница срока тестового токена (24 ч), по умолчанию — `AUTH_ACCESS_TTL_SECONDS` = 900 (D-12). */
 export const MAX_TEST_TTL_SECONDS = 86_400;
 
-export type TokenKind = 'staff' | 'customer' | 'integration';
+export type TokenKind = 'staff' | 'customer' | 'kiosk' | 'integration';
+
+/** Допустимые `--kind`: виды субъекта 06 ARCH-065 и `integration`. */
+export const TOKEN_KINDS: readonly TokenKind[] = ['staff', 'customer', 'kiosk', 'integration'];
+
+/** Вид по умолчанию для роли: `customer`, `kiosk` (планшет магазина), `integration`, иначе `staff`. */
+export function defaultKindFor(role: RbacRole): TokenKind {
+  if (role === 'customer' || role === 'kiosk' || role === 'integration') return role;
+  return 'staff';
+}
 
 export interface TestJwtOptions {
   readonly role: RbacRole;
@@ -117,9 +132,7 @@ export async function issueTestJwt(options: TestJwtOptions, env: Env = process.e
     throw new TestJwtError('issue_test_jwt: --permissions-version должен быть целым ≥ 1');
   }
   const { key, alg } = loadSigningKey(env);
-  const kind: TokenKind =
-    options.kind ??
-    (options.role === 'customer' ? 'customer' : options.role === 'integration' ? 'integration' : 'staff');
+  const kind: TokenKind = options.kind ?? defaultKindFor(options.role);
   const iat = Math.floor((options.now ?? new Date()).getTime() / 1000);
   const kid = options.kid ?? (env.JWT_KEY_ID?.trim() || undefined);
 
@@ -129,7 +142,7 @@ export async function issueTestJwt(options: TestJwtOptions, env: Env = process.e
     permissionsVersion,
     deviceId: options.deviceId ?? randomUUID(),
     sid: options.sid ?? uuidv7(),
-    amr: ['sms'],
+    amr: kind === 'kiosk' ? ['pin'] : ['sms'],
   })
     .setProtectedHeader({ alg, typ: 'JWT', ...(kid ? { kid } : {}) })
     .setIssuer(TEST_JWT_ISSUER)
@@ -165,8 +178,8 @@ export async function main(argv: readonly string[] = process.argv.slice(2), env:
       strict: true,
     });
     if (!values.role) throw new TestJwtError(`issue_test_jwt: нужен --role (${RBAC_ROLES.join(' | ')})`);
-    if (values.kind !== undefined && !['staff', 'customer', 'integration'].includes(values.kind)) {
-      throw new TestJwtError('issue_test_jwt: --kind — staff | customer | integration');
+    if (values.kind !== undefined && !(TOKEN_KINDS as readonly string[]).includes(values.kind)) {
+      throw new TestJwtError(`issue_test_jwt: --kind — ${TOKEN_KINDS.join(' | ')}`);
     }
     const token = await issueTestJwt(
       {

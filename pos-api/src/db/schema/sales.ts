@@ -225,6 +225,10 @@ export const orders = pgTable('orders', {
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
     .default(sql`now()`),
+  kioskCustomerMatch: text('kiosk_customer_match'),
+  pdNoticeVersion: text('pd_notice_version'),
+  pdNoticeSha256: text('pd_notice_sha256'),
+  receiverPhoneMasked: text('receiver_phone_masked'),
 });
 
 /** order_items — 07 §5.38 */

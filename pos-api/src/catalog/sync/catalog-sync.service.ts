@@ -39,7 +39,9 @@ export interface CatalogSyncResult {
  * `GET /catalog/sync/{entity}` (RM-E-015; 08 §4.24, ядро §22.7). Одна страница выгрузки офлайн-кэша:
  * 1) права по сущности: `prices`/`price_lists` — `catalog.prices.read` (виды цен — `price_lists.visible_to_roles`
  *    роли, все — при `catalog.prices.read.all`; `customer` — только свой вид цены по CUST-021/INV-030, правило
- *    `CatalogViewerService`); `stock` — `inventory.read` (`customer` — по `customer_stock_display`);
+ *    `CatalogViewerService`); `stock` — `inventory.read` (`customer` — по `customer_stock_display`); планшет магазина
+ *    (`kind=kiosk`, склад закреплён — `CatalogViewer.warehouseLocked`, 08 §3.6, §4.25) — обычная цена и остатки только
+ *    склада планшета: параметр `warehouseId` → `403`, без него — склад планшета (не «все склады»);
  * 2) курсор (`since`) — подпись, сущность, срок хранения удалений (30 дней → `409 VERSION_CONFLICT cursor_expired`);
  * 3) горизонт — защита от строк незавершённых транзакций (`catalog-sync.horizon.ts`);
  * 4) строки `(updated_at, ключ) > since` по возрастанию, `limit + 1` — признак `hasMore`; `__live = false` → `deleted[]`.
@@ -80,9 +82,13 @@ export class CatalogSyncService {
     }
 
     const viewer = await this.viewers.resolve(principal);
+    if (viewer.warehouseLocked && (req.warehouseId !== undefined || !viewer.warehouse)) {
+      throw new ProblemException('FORBIDDEN', { detail: 'На планшете магазина доступен только склад планшета.' });
+    }
     if (req.warehouseId !== undefined) await this.assertWarehouse(req.warehouseId);
+    const warehouseId = viewer.warehouseLocked ? viewer.warehouse?.id : req.warehouseId;
     const priceListIds = entity === 'prices' || entity === 'price_lists' ? await this.visiblePriceLists(viewer) : [];
-    const scope = scopeFingerprint(entity, viewer, priceListIds, req.warehouseId);
+    const scope = scopeFingerprint(entity, viewer, priceListIds, warehouseId);
     if (decoded && decoded.scope !== scope) {
       // Область видимости изменилась (привязка клиента подтверждена — другой вид цены, `customer_stock_display`,
       // роль, склад): строки новой области не изменялись после `since` и в инкремент не попали бы, а строки старой —
@@ -104,7 +110,7 @@ export class CatalogSyncService {
       hasSince: decoded !== undefined,
       priceListIds,
       allPriceLists,
-      ...(entity === 'stock' && req.warehouseId !== undefined ? { warehouseId: req.warehouseId } : {}),
+      ...(entity === 'stock' && warehouseId !== undefined ? { warehouseId } : {}),
     });
     const hasMore = rows.length > req.limit;
     const page = hasMore ? rows.slice(0, req.limit) : rows;
@@ -133,7 +139,7 @@ export class CatalogSyncService {
       viewer.stockDisplay,
       viewer.lowStockThreshold,
       priceListIds.join(','),
-      req.warehouseId ?? '',
+      warehouseId ?? '',
       String(req.limit),
     ].join('|');
     const etag = weakEtag([entity, scopeKey, positionKey(decoded?.position), positionKey(next)].join('\n'));

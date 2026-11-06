@@ -120,6 +120,12 @@ void main() {
     matches('Me', const MeSecurity().toJson(), path: ['security']);
     matches('Me', const MeSession().toJson(), path: ['session']);
     matches('Me', const MeAppVersion().toJson(), path: ['appVersion']);
+    // OpenAPI 1.3.0: Me.tablet — только kind=kiosk (ADR-115).
+    matches(
+      'MeKioskTablet',
+      const MeKioskTablet(id: 't', name: 'Планшет у входа', warehouseId: 'w').toJson(),
+      required: {'id', 'name', 'warehouseId'},
+    );
   }, skip: skip);
 
   test('PublicSettings и вложенные схемы', () {
@@ -135,6 +141,13 @@ void main() {
       required: {'kind', 'value'},
     );
     matches('PublicSettings', const PublicFeatures().toJson(), path: ['features']);
+    // OpenAPI 1.3.0: тайминги автосброса планшета магазина (ADR-115).
+    matches(
+      'PublicSettings',
+      const PublicKioskSettings().toJson(),
+      path: ['kiosk'],
+      required: {'idleSeconds', 'idleWarningSeconds', 'doneSeconds'},
+    );
   }, skip: skip);
 
   group('разбор ответов', () {

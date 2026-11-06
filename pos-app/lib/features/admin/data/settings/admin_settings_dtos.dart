@@ -1,4 +1,4 @@
-// DTO-кодеки SCR-46 (contracts/openapi/pos-api.v1.yaml 1.2.0; ADR-085 — вручную): `AdminDiscountLimits`,
+// DTO-кодеки SCR-46 (contracts/openapi/pos-api.v1.yaml 1.3.0; ADR-085 — вручную): `AdminDiscountLimits`,
 // `AdminDiscountLimitsByRole`, `AdminDiscountLimitsUpdateRequest`, `AdminSettingsResponse`, `AdminSettingsValues`,
 // `AdminSettingsEnv`, `AdminSettingsUpdateRequest` (тела — `additionalProperties: false`).
 // Сверка ключей — test/features/admin/data/admin_settings_dtos_contract_test.dart.
@@ -95,7 +95,21 @@ abstract final class AdminSettingsValuesDto {
     'supportContacts',
   };
 
-  static final Set<String> jsonKeys = <String>{..._plainKeys, for (final String e in syncEntities) 'syncInterval.$e'};
+  /// Ключи планшета магазина (OpenAPI 1.3.0; 08 §4.18.6; ADR-115; секция SCR-46 «Планшеты магазина», TAB-2-11).
+  static const Set<String> kioskKeys = {
+    'kioskIdleSeconds',
+    'kioskIdleWarningSeconds',
+    'kioskDoneSeconds',
+    'kioskOtpPerHour',
+    'kioskOtpPerDay',
+    'kioskWorkingHours',
+  };
+
+  static final Set<String> jsonKeys = <String>{
+    ..._plainKeys,
+    ...kioskKeys,
+    for (final String e in syncEntities) 'syncInterval.$e',
+  };
   static const Set<String> requiredKeys = <String>{};
 
   static Map<String, Object?>? _map(JsonMap j, String key) => jObject(j, key)?.cast<String, Object?>();
@@ -144,6 +158,12 @@ abstract final class AdminSettingsValuesDto {
               label: jOpt<String>(s, 'label'),
             ),
           ),
+    kioskIdleSeconds: jInt(j, 'kioskIdleSeconds'),
+    kioskIdleWarningSeconds: jInt(j, 'kioskIdleWarningSeconds'),
+    kioskDoneSeconds: jInt(j, 'kioskDoneSeconds'),
+    kioskOtpPerHour: jInt(j, 'kioskOtpPerHour'),
+    kioskOtpPerDay: jInt(j, 'kioskOtpPerDay'),
+    kioskWorkingHours: jOpt<String>(j, 'kioskWorkingHours'),
   );
 
   /// Тело `settings` для `PUT /admin/settings` — только заданные значения.
@@ -180,6 +200,13 @@ abstract final class AdminSettingsValuesDto {
         for (final SupportContactValue c in v.supportContacts!)
           <String, dynamic>{'kind': c.kind, 'value': c.value, 'label': ?c.label},
       ],
+    'kioskIdleSeconds': ?v.kioskIdleSeconds,
+    'kioskIdleWarningSeconds': ?v.kioskIdleWarningSeconds,
+    'kioskDoneSeconds': ?v.kioskDoneSeconds,
+    'kioskOtpPerHour': ?v.kioskOtpPerHour,
+    'kioskOtpPerDay': ?v.kioskOtpPerDay,
+    // Пустая строка — сигнал «планшет не на связи» выключен (07 §5.59): отправляется как есть.
+    'kioskWorkingHours': ?v.kioskWorkingHours,
   };
 }
 
@@ -187,6 +214,8 @@ abstract final class AdminSettingsValuesDto {
 abstract final class AdminSettingsEnvDto {
   static const Set<String> jsonKeys = {
     'customerSelfService',
+    // env `KIOSK_MODE` (OpenAPI 1.3.0; ADR-115) — только чтение; в SCR-46 не показывается (02 SCR-46, версия 1.27).
+    'kioskMode',
     'debtPaymentsFromPos',
     'qrProvider',
     'qrTtlMinutes',
@@ -208,6 +237,7 @@ abstract final class AdminSettingsEnvDto {
 
   static AdminSettingsEnv fromJson(JsonMap j) => AdminSettingsEnv(
     customerSelfService: jBool(j, 'customerSelfService'),
+    kioskMode: jBool(j, 'kioskMode'),
     debtPaymentsFromPos: jBool(j, 'debtPaymentsFromPos'),
     qrProvider: jEnum(j, 'qrProvider', QrProviderMode.tryParse),
     qrTtlMinutes: jInt(j, 'qrTtlMinutes'),

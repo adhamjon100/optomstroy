@@ -2,7 +2,10 @@
 // (строки ввода), клиентская предвалидация (окончательная — сервер), список изменений для диалога diff и сборка
 // частичного `AdminSettingsValues` (`PUT /admin/settings` — только изменённые ключи) или `AdminDiscountLimits`.
 // Интервалы синхронизации: в UI — минуты 2…1440 (SYNC-021), в API — секунды (`syncInterval.<entity>`, 60…86400).
-// `CUSTOMER_SELF_SERVICE` в форму не входит — только чтение (ядро §19.2, AC-UI-46-011). Чистая логика без виджетов.
+// `CUSTOMER_SELF_SERVICE` в форму не входит — только чтение (ядро §19.2, AC-UI-46-011). Секция «Планшеты магазина»
+// (UI-46-018, `?section=kiosk`; ADR-115): шесть ключей `kiosk*` с умолчаниями кода (08 §4.18.6), часы работы — формат
+// 07 §5.59, пустое значение отправляется как `''` (сигнал выключен); `KIOSK_MODE` не показывается. Чистая логика без
+// виджетов.
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/features/admin/domain/settings/admin_settings.dart';
@@ -19,7 +22,10 @@ enum AdminSettingsSection {
   authSessions('auth_sessions'),
   appVersions('app_versions'),
   registration('registration'),
-  textsContacts('texts_contacts');
+  textsContacts('texts_contacts'),
+
+  /// «Планшеты магазина» (UI-46-018, версия 1.27; ADR-115) — последняя секция.
+  kiosk('kiosk');
 
   const AdminSettingsSection(this.value);
 
@@ -34,10 +40,34 @@ enum AdminSettingsSection {
 }
 
 /// Ошибка поля (ключи 02 SCR-46.8).
-enum SettingsFieldError { limit, receivables, lowStock, interval, otpTtl, idle, version, versionOrder, invalid, server }
+enum SettingsFieldError {
+  limit,
+  receivables,
+  lowStock,
+  interval,
+  otpTtl,
+  idle,
+  version,
+  versionOrder,
+  invalid,
+  server,
+
+  /// Часы работы магазина вне формата 07 §5.59.
+  workingHours,
+}
 
 /// Вид поля.
-enum SettingsFieldKind { integer, boolean, choice, text, money, version }
+enum SettingsFieldKind {
+  integer,
+  boolean,
+  choice,
+  text,
+  money,
+  version,
+
+  /// Часы работы магазина (`kioskWorkingHours`, 07 §5.59).
+  workingHours,
+}
 
 /// Поле `app_settings` (имя — ключ `AdminSettingsValues` API).
 final class SettingsField {
@@ -51,6 +81,7 @@ final class SettingsField {
     this.error = SettingsFieldError.invalid,
     this.unit,
     this.adminOnly = false,
+    this.fallback,
   });
 
   final String key;
@@ -66,6 +97,9 @@ final class SettingsField {
 
   /// Только `admin` со step-up (RM-G-014: «Показ остатков клиенту»).
   final bool adminOnly;
+
+  /// Значение по умолчанию кода сервера, если ключ ещё не задан (ключи планшета, 07 §5.59) — `null`: пусто.
+  final String? fallback;
 
   /// Значение поля в текущих настройках как строка ввода (`''` — не задано).
   String read(AdminSettingsValues v) {
@@ -87,13 +121,19 @@ final class SettingsField {
       'recommendedAppVersion' => v.recommendedAppVersion,
       'customerStockDisplay' => v.customerStockDisplay?.value,
       'privacyContact' => v.privacyContact,
+      'kioskIdleSeconds' => v.kioskIdleSeconds,
+      'kioskIdleWarningSeconds' => v.kioskIdleWarningSeconds,
+      'kioskDoneSeconds' => v.kioskDoneSeconds,
+      'kioskOtpPerHour' => v.kioskOtpPerHour,
+      'kioskOtpPerDay' => v.kioskOtpPerDay,
+      'kioskWorkingHours' => v.kioskWorkingHours,
       _ when key.startsWith(syncPrefix) => switch (v.syncIntervals[key.substring(syncPrefix.length)]) {
         final int sec => sec ~/ 60,
         null => null,
       },
       _ => null,
     };
-    return raw == null ? '' : '$raw';
+    return raw == null ? (fallback ?? '') : '$raw';
   }
 
   /// Ошибка ввода или `null`.
@@ -118,6 +158,10 @@ final class SettingsField {
         return SettingsVersions.parse(t) == null ? SettingsFieldError.version : null;
       case SettingsFieldKind.text:
         return max != null && t.length > max! ? error : null;
+      case SettingsFieldKind.workingHours:
+        return (max != null && t.length > max!) || !KioskWorkingHours.isValid(t)
+            ? SettingsFieldError.workingHours
+            : null;
       case SettingsFieldKind.boolean:
       case SettingsFieldKind.choice:
         return null;
@@ -166,6 +210,37 @@ abstract final class SettingsVersions {
     if (b == null) return false;
     if (a == null) return true;
     return b.entries.any((MapEntry<String, List<int>> e) => a[e.key] == null || compare(e.value, a[e.key]!) > 0);
+  }
+}
+
+/// Часы работы магазина `kiosk_working_hours` (07 §5.59; так же проверяет сервер, 08 §4.18.6): диапазоны через `;`,
+/// каждый — `день[-день] ЧЧ:ММ-ЧЧ:ММ`, дни `mon tue wed thu fri sat sun` по порядку недели, начало раньше конца
+/// (`mon-sat 08:00-20:00;sun 09:00-15:00`). Пустая строка — сигнал «планшет не на связи» выключен.
+abstract final class KioskWorkingHours {
+  /// Дни недели, понедельник — 0.
+  static const List<String> weekdays = <String>['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+  static final RegExp _part = RegExp(
+    r'^([a-z]{3})(?:-([a-z]{3}))? ([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$',
+  );
+
+  /// Образец формата (подсказка ошибки поля).
+  static const String example = 'mon-sat 08:00-20:00;sun 09:00-15:00';
+
+  static bool isValid(String text) {
+    final String t = text.trim();
+    if (t.isEmpty) return true;
+    for (final String part in t.split(';')) {
+      final RegExpMatch? m = _part.firstMatch(part.trim());
+      if (m == null) return false;
+      final int from = weekdays.indexOf(m.group(1)!);
+      final int to = m.group(2) == null ? from : weekdays.indexOf(m.group(2)!);
+      if (from < 0 || to < 0 || to < from) return false;
+      final int start = int.parse(m.group(3)!) * 60 + int.parse(m.group(4)!);
+      final int end = int.parse(m.group(5)!) * 60 + int.parse(m.group(6)!);
+      if (start >= end) return false;
+    }
+    return true;
   }
 }
 
@@ -313,6 +388,56 @@ abstract final class AdminSettingsCatalog {
       kind: SettingsFieldKind.text,
       max: 200,
     ),
+    // Планшеты магазина (08 §4.18.6: границы — предложение 08 [НЕ ПОДТВЕРЖДЕНО]; умолчания — 07 §5.59).
+    const SettingsField(
+      key: 'kioskIdleSeconds',
+      section: AdminSettingsSection.kiosk,
+      kind: SettingsFieldKind.integer,
+      min: 30,
+      max: 1800,
+      unit: 's',
+      fallback: '120',
+    ),
+    const SettingsField(
+      key: 'kioskIdleWarningSeconds',
+      section: AdminSettingsSection.kiosk,
+      kind: SettingsFieldKind.integer,
+      min: 5,
+      max: 120,
+      unit: 's',
+      fallback: '15',
+    ),
+    const SettingsField(
+      key: 'kioskDoneSeconds',
+      section: AdminSettingsSection.kiosk,
+      kind: SettingsFieldKind.integer,
+      min: 10,
+      max: 600,
+      unit: 's',
+      fallback: '60',
+    ),
+    const SettingsField(
+      key: 'kioskOtpPerHour',
+      section: AdminSettingsSection.kiosk,
+      kind: SettingsFieldKind.integer,
+      min: 1,
+      max: 1000,
+      fallback: '30',
+    ),
+    const SettingsField(
+      key: 'kioskOtpPerDay',
+      section: AdminSettingsSection.kiosk,
+      kind: SettingsFieldKind.integer,
+      min: 1,
+      max: 10000,
+      fallback: '200',
+    ),
+    const SettingsField(
+      key: 'kioskWorkingHours',
+      section: AdminSettingsSection.kiosk,
+      kind: SettingsFieldKind.workingHours,
+      max: 200,
+    ),
   ];
 
   static List<SettingsField> of(AdminSettingsSection s) =>
@@ -440,6 +565,13 @@ abstract final class SettingsValuesBuilder {
           ? null
           : CustomerStockDisplay.values.where((CustomerStockDisplay d) => d.value == stock).firstOrNull,
       privacyContact: _str(changes, 'privacyContact'),
+      kioskIdleSeconds: _int(changes, 'kioskIdleSeconds'),
+      kioskIdleWarningSeconds: _int(changes, 'kioskIdleWarningSeconds'),
+      kioskDoneSeconds: _int(changes, 'kioskDoneSeconds'),
+      kioskOtpPerHour: _int(changes, 'kioskOtpPerHour'),
+      kioskOtpPerDay: _int(changes, 'kioskOtpPerDay'),
+      // Пустое значение — не «не задано», а «сигнал выключен»: `''` уходит в `PUT` (07 §5.59).
+      kioskWorkingHours: changes.containsKey('kioskWorkingHours') ? changes['kioskWorkingHours']!.trim() : null,
     );
   }
 }

@@ -77,7 +77,7 @@ export function activitySphereErrors(code: string | null | undefined, field = 'a
 export type PinWeakReason = 'length' | 'repeated' | 'sequence' | 'birth_year';
 
 /** Минимальная длина PIN по виду учётной записи (09 §9.6: `staff` — `PIN_MIN_LENGTH_STAFF`, `customer` — 4). */
-export function pinMinLength(kind: 'staff' | 'customer', staffMinLength: number): number {
+export function pinMinLength(kind: 'staff' | 'customer' | 'kiosk', staffMinLength: number): number {
   return kind === 'staff' ? Math.max(PIN_MIN_LENGTH_CUSTOMER, Math.min(6, staffMinLength)) : PIN_MIN_LENGTH_CUSTOMER;
 }
 

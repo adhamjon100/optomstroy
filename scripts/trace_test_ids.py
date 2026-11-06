@@ -16,6 +16,13 @@ T-CAT, T-INV, T-FAV (все), T-SYNC-001…030, T-SYNC-043…046, T-ONEC-001…0
 история, долг fail-closed, привязка клиента, аудит долга, файлы документов), приёмочные наборы экранов
 T-UI-020…026, T-UI-044 и компоненты дизайн-системы T-DS-015/040/046/055/082/085.
 
+Этап G — см. блок «этап G» ниже (T-CUST, T-DEBT, T-DISC, T-TXN, T-RET, T-CASH, T-ADMIN, T-AUD и списки T-SEC/T-UI).
+
+Этап K (дорожка TAB «Планшет магазина», P-002, ADR-115 п. 31; 12 §2.15 строка «TAB», §3.23): все T-KIOSK,
+T-SEC-069…T-SEC-073, T-A11Y-023 и приёмочные наборы SCR-51…SCR-54 T-UI-051…T-UI-054 (12 §3.9.1; ревью реализации
+2026-11-06). Ворота TAB-1/TAB-2 — код 0 этапа K И исполненные наборы `test:kiosk` (в `npm run test:all`,
+проект `kiosk` CI) и `test/e2e/kiosk` (в `npm run test:e2e`); число файлов наборов на диске печатается в итоге.
+
 Ссылка на ID ищется в тестах backend (pos-api/test, pos-api/src/**/*.spec.ts, бенчмарки pos-api/test/**/bench)
 и Flutter (pos-app/test, pos-app/integration_test) — полным написанием `T-XXX-NNN` (в имени теста или комментарии).
 Статусы строки:
@@ -30,8 +37,8 @@ T-UI-020…026, T-UI-044 и компоненты дизайн-системы T-D
 выполненным только при 100 % (по одному исполняемому кейсу на AC — 12 §3.9), иначе — not_done с долей.
 
 Запуск (из корня репозитория):
-  python -I -X utf8 scripts/trace_test_ids.py [--stage D|E|F|G]          # матрица в stdout, код 0/1
-  python -I -X utf8 scripts/trace_test_ids.py [--stage D|E|F|G] --summary # только итоги
+  python -I -X utf8 scripts/trace_test_ids.py [--stage D|E|F|G|K]          # матрица в stdout, код 0/1
+  python -I -X utf8 scripts/trace_test_ids.py [--stage D|E|F|G|K] --summary # только итоги
 По умолчанию --stage D (совместимость с D_test_run.log).
 """
 from __future__ import annotations
@@ -772,11 +779,83 @@ def _select_g(tid: str, group: str, num: int, auto: str) -> bool:
     return group in G_GROUPS
 
 
+# ======================================================================================== этап K
+# Дорожка TAB «Планшет магазина» (P-002, ADR-115 п. 31; 12 §2.15 строка «TAB», §3.23; 13 §3.13): все T-KIOSK и
+# проверки безопасности планшета T-SEC-069…T-SEC-073 (в колонке «Авто?» у них «да (этап K)» без отдельной «A» —
+# этап D их не выбирает). Ворота TAB-1/TAB-2 (12 §2.15): код 0 этого этапа И исполнение наборов — `test:kiosk` в
+# `npm run test:all` и проект `kiosk` CI (`pos-api/vitest.config.cov-all.ts`); совпадение T-ID без прогона — не пасс.
+# NOT_DONE_K — ID, чей тест пишет ещё не выполненный пакет P-002 (pos-app, веб-демо) или пилот; пакет, который
+# пишет тест, удаляет свою строку (WP-A11, WP-T1, WP-T2). T-KIOSK-031 и T-KIOSK-057 остаются: пилот TAB-4-01.
+# Пакеты pos-app WP-A01…WP-A11 выполнены: их ID (в т. ч. T-KIOSK-026 и T-KIOSK-056 — WP-A10; T-KIOSK-010, T-KIOSK-027,
+# T-KIOSK-035 — WP-A11: golden SCR-51…SCR-54, integration_test/kiosk_flow_test.dart и регресс потоков integration_test
+# при LOCAL_STACK_KIOSK_MODE=true и false — запись прогона в handoff WP-A11) трассируются тестами.
+# Веб-демо TAB-3-01 (WP-T1) выполнен: сценарии демо — файлы .mjs, которые test_files() не читает, поэтому их ID
+# ведёт трасса TRACE_K (файл и строка с T-ID): T-KIOSK-034 — шаг kiosk demo/web/tools/smoke.mjs (вне релизных
+# ворот, 12 §3.23); доли веб-демо T-KIOSK-005 (закрытый список на бандле, negative.mjs), T-KIOSK-043 (документ
+# «1С» демо) и T-KIOSK-045 (адресная строка) — там же, их строки PARTIAL_K сняты. Веб-демо TAB-3-02 (WP-T2)
+# выполнен: T-KIOSK-051 — шаг kioskswitch того же smoke.mjs (вне релизных ворот), строка NOT_DONE_K снята.
+K_SEC = (69, 70, 71, 72, 73)
+# Ревью реализации 2026-11-06 (12 ред. 1.16, §3.9.1, §3.9.5): приёмочные наборы SCR-51…SCR-54 (доля AC-UI экрана в
+# тестах pos-app — ui_screens) и T-A11Y-023 (03 A11Y-023). Набор, у которого не каждый AC-UI экрана есть в тестах
+# pos-app, — not_done до этапа H: AC без тега трассируются через T-KIOSK, названные в самом AC (02 ч. F; 12 §2.15).
+# T-A11Y-023: цели касания и метки — pos-app/test/features/kiosk/kiosk_a11y_test.dart (T-ID в именах тестов), диалог
+# автосброса — трасса TRACE_K (группа «A11Y-023 …» теста монитора); строка PARTIAL_K снята (итоговая сборка 2026-11-06).
+K_UI = (51, 52, 53, 54)
+K_A11Y = (23,)
+_PILOT = 'пилот TAB-4-01, модель заказчика (Q-342)'
+
+_TO_H = 'до этапа H (12 §2.15); AC без тега в тестах pos-app — через T-KIOSK, названные в AC'
+# AC-UI экранов SCR-51…SCR-54, в строке которых в 02 T-KIOSK не назван: чем он трассируется до этапа H.
+K_AC_LINKS: dict[str, str] = {'AC-UI-52-003': 'T-KIOSK-029 (03 DS-099, DS-101)'}
+
+NOT_DONE_K: dict[str, str] = {
+    'T-KIOSK-031': _PILOT + '; эмулятор недоступен (ADR-115 п. 30): разрешения на AVD Pixel_9_Pro нет (WP-A03)',
+    'T-KIOSK-057': _PILOT + ', стабильный ключ подписи release (Q-349); репетиция на эмуляторе не выполнялась',
+    'T-UI-051': _TO_H,
+    'T-UI-052': _TO_H,
+    'T-UI-053': _TO_H,
+    'T-UI-054': _TO_H,
+}
+
+# Тест есть, но часть сценария — у ещё не выполненного пакета или на устройстве (статус «тест, частично: …»).
+PARTIAL_K: dict[str, str] = {
+    'T-KIOSK-010': 'ориентации на планшете заказчика — ' + _PILOT,
+    'T-KIOSK-029': 'обучение и подсказки системной клавиатуры — ручная часть на модели заказчика, ' + _PILOT,
+    'T-KIOSK-030': 'чёрный кадр снимка экрана — устройство, ' + _PILOT + '; эмулятор недоступен (ADR-115 п. 30)',
+}
+
+# Трасса веб-демо (WP-T1, TAB-3-01; WP-T2, TAB-3-02): «файл::строка с T-ID» в сценариях .mjs (12 §3.23).
+_SMOKE = 'demo/web/tools/smoke.mjs'
+TRACE_K: dict[str, list[str]] = {
+    # Диалог автосброса (A11Y-023: объявление, фокус, касание затемнения) — группа «A11Y-023 …» теста монитора.
+    'T-A11Y-023': ['pos-app/test/features/kiosk/kiosk_idle_monitor_test.dart::A11Y-023'],
+    'T-KIOSK-005': ['demo/web/backend/test/scenarios/negative.mjs::T-KIOSK-005 (1) каждая Bearer-операция контракта',
+                    'demo/web/backend/test/scenarios/negative.mjs::T-KIOSK-005 (3) публичные маршруты'],
+    'T-KIOSK-034': [_SMOKE + '::T-KIOSK-034 SCR-54 → «Сделать это устройство планшетом магазина»',
+                    _SMOKE + '::T-KIOSK-034 SCR-53 «Заявка № … отправлена»'],
+    'T-KIOSK-043': [_SMOKE + '::T-KIOSK-043 веб-демо: документ «1С» демо создан'],
+    'T-KIOSK-045': [_SMOKE + '::T-KIOSK-045 веб-демо: адресная строка #/auth/phone'],
+    'T-KIOSK-051': [_SMOKE + '::T-KIOSK-051 (3) снова «Планшет магазина»: тот же демо-планшет — тот же store_tablets.id',
+                    _SMOKE + '::T-KIOSK-051 (6) «Подключить этот браузер заново»',
+                    _SMOKE + '::T-KIOSK-051 (7) «Сбросить демо», затем «Планшет магазина»'],
+}
+
+# Наборы сервера дорожки (ворота TAB-1/TAB-2 (2)): число файлов на диске — для сверки с числом исполненных в отчёте.
+K_SUITES = (('pos-api/test/kiosk', '*.spec.ts'), ('pos-api/test/e2e/kiosk', '*.e2e-spec.ts'))
+
+
+def _select_k(tid: str, group: str, num: int, auto: str) -> bool:
+    return (group == 'KIOSK' or (group == 'SEC' and num in K_SEC) or (group == 'UI' and num in K_UI)
+            or (group == 'A11Y' and num in K_A11Y))
+
+
 STAGES: dict[str, Stage] = {
     'D': Stage('D — Authentication (RM-D-011 п. 1)', _select_d, {k: v for k, v in NOT_DONE_D.items() if v}),
     'E': Stage('E — Catalog (RM-E-012 п. 1; 12 §2.15)', _select_e, NOT_DONE_E, TRACE_E, PARTIAL_E, E_UI),
     'F': Stage('F — Cart and POS (RM-F-009; 12 §2.15)', _select_f, NOT_DONE_F, TRACE_F, PARTIAL_F, F_UI),
     'G': Stage('G — Cashier (RM-G-009 п. 1; 12 §2.15)', _select_g, NOT_DONE_G, TRACE_G, PARTIAL_G, G_UI),
+    'K': Stage('K — Планшет магазина (P-002, ADR-115; 12 §2.15 строка «TAB», §3.23)', _select_k, NOT_DONE_K, TRACE_K, PARTIAL_K,
+               ui_screens=K_UI),
 }
 
 
@@ -785,7 +864,8 @@ def plan_rows(root: Path, stage: Stage) -> list[list[str]]:
     seen: set[str] = set()
     for line in (root / PLAN).read_text(encoding='utf8').splitlines():
         # T-SYNC-F01…F18 (этап F): номер с префиксом F → 1001…1018 (не пересекается с T-SYNC-001…).
-        m = re.match(r'^\| (T-([A-Z]+)-(F?\d+)) \|', line)
+        # Группа с цифрами — T-A11Y-NNN (этап K: T-A11Y-023); селекторы этапов D–G группу A11Y не выбирают.
+        m = re.match(r'^\| (T-([A-Z][A-Z0-9]*)-(F?\d+)) \|', line)
         if not m or m.group(1) in seen:
             continue
         cells = [c.strip() for c in line.strip().strip('|').split('|')]
@@ -818,6 +898,21 @@ def ui_coverage(root: Path, files: dict[Path, str], screen: int) -> tuple[int, i
     app = [s for p, s in files.items() if str(p.relative_to(root)).replace('\\', '/').startswith(APP_TEST_ROOTS)]
     found = {x for s in app for x in rx.findall(s)} & total
     return len(found), len(total)
+
+
+def ui_kiosk_links(root: Path, files: dict[Path, str], screen: int) -> str:
+    """Этап K: AC-UI экрана без тега в тестах pos-app → T-KIOSK, названные в строке AC в 02 (12 §2.15)."""
+    rx = re.compile(rf'AC-UI-{screen:02d}-\d{{3}}')
+    app = [s for p, s in files.items() if str(p.relative_to(root)).replace('\\', '/').startswith(APP_TEST_ROOTS)]
+    found = {x for s in app for x in rx.findall(s)}
+    out: list[str] = []
+    for line in (root / SCREENS).read_text(encoding='utf8').splitlines():
+        m = re.match(r'^\| (AC-UI-\d{2}-\d{3}) \|', line)
+        if not m or not rx.fullmatch(m.group(1)) or m.group(1) in found:
+            continue
+        kiosk = sorted(set(re.findall(r'T-KIOSK-\d{3}', line)))
+        out.append(f"{m.group(1)} → {', '.join(kiosk) or K_AC_LINKS.get(m.group(1), 'T-KIOSK в AC не назван')}")
+    return '; '.join(out)
 
 
 def main() -> int:
@@ -871,6 +966,8 @@ def main() -> int:
             reason = stage.not_done.get(tid)
             status = 'not_done' if reason else 'НЕТ'
             where = f'AC-UI экрана в тестах pos-app: {ui[0]}/{ui[1]}; {reason or "—"}'
+            if args.stage == 'K' and reason:
+                where += ': ' + ui_kiosk_links(root, files, int(tid.split('-')[2]))
             if reason:
                 not_done += 1
                 g[2] += 1
@@ -918,6 +1015,11 @@ def main() -> int:
             f'трасса {traced}; из них частично {partial}); not_done с причиной {not_done}; '
             f'без теста и причины {missing}'
         )
+    if args.stage == 'K':
+        # Ворота TAB-1/TAB-2 (2): число файлов наборов на диске — его сверяют с числом исполненных файлов в отчёте
+        # `npm run test:all` и проекта `kiosk` CI (совпадение T-ID без исполнения пассом не считается).
+        counts = ', '.join(f'{d}/{mask}: {len(list((root / d).glob(mask)))}' for d, mask in K_SUITES)
+        print(f'Файлы наборов этапа K на диске (сверить с исполненными в test:all и CI): {counts}')
     for e in errors:
         print(f'ERROR: нет теста и причины: {e}', file=sys.stderr)
     return 1 if errors else 0

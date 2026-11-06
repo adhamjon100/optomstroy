@@ -19,6 +19,8 @@
 // `/admin/settings?section=`, `/admin/audit?from=&to=&userId=&action=&entityType=&entityId=&result=`,
 // `/reports?from=&to=&report=&groupBy=`); `/reports` — ветка оболочки `reports` (главный экран `owner`,
 // navigation.md §2.2, §14.7). Реализации меняют только тело экранов.
+// Планшет магазина (ADR-115; navigation.md §2.2, §3): SCR-54 `/admin/tablets` — маршрут ветки `admin` (вне карты ядра
+// §9, K-29); маршруты режима планшета `/kiosk*` — в kiosk_routes.dart вне оболочки.
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -31,6 +33,7 @@ import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/features/admin/presentation/audit/audit_screen.dart';
 import 'package:optomstroy/features/admin/presentation/settings/admin_settings_screen.dart';
+import 'package:optomstroy/features/admin/presentation/tablets/admin_tablets_screen.dart';
 import 'package:optomstroy/features/admin/presentation/users/admin_users_screen.dart';
 import 'package:optomstroy/features/auth/auth_providers.dart'
     show AuthSessionState, AuthSessionStatus, authSessionProvider;
@@ -307,6 +310,7 @@ class CustomerNewRoute extends GoRouteData with $CustomerNewRoute {
         TypedGoRoute<AdminUsersRoute>(path: '/admin/users'),
         TypedGoRoute<AdminSettingsRoute>(path: '/admin/settings'),
         TypedGoRoute<AdminAuditRoute>(path: '/admin/audit'),
+        TypedGoRoute<AdminTabletsRoute>(path: '/admin/tablets'),
       ],
     ),
     TypedStatefulShellBranch<ProfileBranch>(
@@ -907,6 +911,15 @@ class AdminAuditRoute extends GoRouteData with $AdminAuditRoute {
   );
 }
 
+/// SCR-54 Админ: планшеты магазина (admin — подключение, изменение, отключение; owner — только список; ADR-115).
+class AdminTabletsRoute extends GoRouteData with $AdminTabletsRoute {
+  /// Маршрут `/admin/tablets`.
+  const AdminTabletsRoute();
+
+  @override
+  Widget build(BuildContext context, GoRouterState state) => const AdminTabletsScreen();
+}
+
 /// SCR-41 Профиль (все роли).
 class ProfileRoute extends GoRouteData with $ProfileRoute {
   /// Маршрут `/profile`.
@@ -1018,9 +1031,16 @@ class PaymentNewRoute extends GoRouteData with $PaymentNewRoute {
   /// Предвыбор способа (`cash|qr_bakai`).
   final String? method;
 
+  /// Ключ экрана — по параметрам: `go('/payments/new?orderId=B')` сразу после заказа A строит новый `State` (начальная
+  /// загрузка `open()`, сброс «Получено» и «Печатать чек»), а не переиспользует прежний — у go_router ключ страницы
+  /// один для пути без query. `PaymentScreen.rootKey` остаётся на внутреннем `Scaffold` (02 SCR-38; 10 KIOSK-019).
   @override
-  Widget build(BuildContext context, GoRouterState state) =>
-      PaymentScreen(orderId: orderId, customerId: customerId, method: method);
+  Widget build(BuildContext context, GoRouterState state) => PaymentScreen(
+    key: ValueKey<String>('scr38|${orderId ?? ''}|${customerId ?? ''}|${method ?? ''}'),
+    orderId: orderId,
+    customerId: customerId,
+    method: method,
+  );
 }
 
 /// SCR-39 Заявка на возврат: создание.

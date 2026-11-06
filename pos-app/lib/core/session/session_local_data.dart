@@ -6,6 +6,12 @@
 // - строки корзины/outbox чужого `owner_user_id` в файле пользователя отправлены быть не могут (только
 //   сессией владельца, 07 §11.1 п.2) — удаляются, чтобы не остаться видимыми.
 // Файл БД закрывает владелец `appDatabaseProvider` (app/), не этот класс.
+//
+// Планшет магазина (ADR-115; 07 §11.2, DATA-304; 04 FLOW-045.A2; 11 PRIV-033 (2)):
+// [SessionLocalData.clearKioskVolatile] при каждом запуске, до первого `POST /kiosk/reset`, удаляет из файла БД
+// технического пользователя всё, что могло остаться от покупателя (корзина планшета — только на сервере, такие строки
+// не создаются; это защита на случай ошибки). Кэш каталога, `sync_meta`, настройки устройства и метка сброса без сети
+// `kiosk.pending_reset_cart_id` остаются.
 import 'package:drift/drift.dart';
 import 'package:optomstroy/core/database/app_database.dart';
 
@@ -82,4 +88,47 @@ final class SessionLocalData {
       await (_db.delete(_db.outboxActions)..where((t) => t.ownerUserId.equals(ownerUserId).not())).go();
     }
   });
+
+  /// Ключи `settings`, которые на планшете между покупателями не сохраняются (07 §11.2, DATA-304; 10 KIOSK-021):
+  /// история поиска и последний корень каталога. Имена — `CatalogSettingKeys` фичи catalog (core фичи не импортирует).
+  static const List<String> kioskVolatileSettings = <String>['search_history', 'catalog_last_root'];
+
+  /// Префиксы ключей `settings` вида списка и сортировки каталога (`catalog_view_mode.<класс окна>`,
+  /// `catalog_sort.catalog|search`) — на планшете тоже не сохраняются.
+  static const List<String> kioskVolatileSettingPrefixes = <String>['catalog_view_mode.', 'catalog_sort.'];
+
+  /// Ключи `app_meta` очереди корзины сотрудника (`DriftCartSync.conflictMetaKey`, `replaceMetaKey`): у планшета
+  /// конфликта версий в очереди и смены варианта через журнал нет.
+  static const List<String> kioskVolatileMeta = <String>['cart_version_conflict', 'cart_variant_replace'];
+
+  /// Очистка файла БД планшета магазина [ownerUserId] (технический пользователь `kind=kiosk`) при запуске, до первого
+  /// `POST /kiosk/reset` (04 FLOW-045.A2; 07 §11.2, DATA-304; 10 KIOSK-020): строки `cart_draft`, `cart_items_draft`,
+  /// `checkout_draft`, `recent_products`, `favorites_*`, `notifications_cache`, записи `outbox_actions` любого типа
+  /// (в том числе `cart.sync` и `recent.touch`), ключи `settings` истории поиска, последнего корня, вида и сортировки
+  /// каталога. Строки с чужим `owner_user_id` в файле планшета отправить нельзя (07 §11.1 п. 2) — удаляются тоже.
+  /// Метка сброса без сети (`app_meta.kiosk.pending_reset_cart_id`), кэш каталога и `sync_meta` не трогаются.
+  /// Вызывает корзина планшета (`KioskCartSync.prepare`) только для сессии `kind=kiosk`.
+  Future<void> clearKioskVolatile(String ownerUserId) => _db.transaction(() async {
+    await _db.delete(_db.cartItemsDraft).go();
+    await _db.delete(_db.cartDraft).go();
+    await _db.delete(_db.outboxActions).go();
+    await _db.delete(_db.checkoutDraft).go();
+    await _db.delete(_db.localRecentProducts).go();
+    await _db.delete(_db.localFavoritesProducts).go();
+    await _db.delete(_db.localFavoritesCustomers).go();
+    await _db.delete(_db.notificationsCache).go();
+    await (_db.delete(_db.localSettings)..where(
+          (t) =>
+              t.key.isIn(kioskVolatileSettings) |
+              Expression.or(<Expression<bool>>[
+                for (final String prefix in kioskVolatileSettingPrefixes)
+                  t.key.like('${_escapeLike(prefix)}%', escapeChar: r'\'),
+              ]),
+        ))
+        .go();
+    await (_db.delete(_db.appMeta)..where((t) => t.key.isIn(kioskVolatileMeta))).go();
+  });
+
+  /// Префикс ключа для `LIKE` (`_` и `%` — буквально).
+  static String _escapeLike(String s) => s.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_');
 }

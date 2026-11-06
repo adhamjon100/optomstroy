@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:optomstroy/design_system/components/private_input_scope.dart';
 import 'package:optomstroy/design_system/motion/ds_animations.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -28,6 +29,11 @@ enum CodeFieldStatus {
 /// Ввод кода из SMS `OtpField` (03 §9.5): 6 ячеек 48×56 (44×52 при ширине < 328),
 /// цифра `h2 24/600 tnum`, одно скрытое поле ввода; автопереход при 6-й цифре →
 /// [onCompleted]; вставка 6 цифр; `autofillHints: oneTimeCode`. Код не логируется.
+///
+/// В области «общее устройство» `PrivateInputScope` (03 §9.5, §9.74, редакция 1.19; DS-099, DS-101): без
+/// `autofillHints: oneTimeCode` (и SMS Retriever), подсказок и обучения клавиатуры, контекстного меню; вставки нет
+/// (буфер обмена не читается); системная клавиатура не открывается (`readOnly` + `TextInputType.none`) — цифры и
+/// стирание вводит `KioskKeypad` в [controller]; что делать после 6-й цифры, решает экран. Вне области — как прежде.
 class OtpField extends StatefulWidget {
   /// Создаёт поле.
   const OtpField({
@@ -42,6 +48,7 @@ class OtpField extends StatefulWidget {
     this.onFocusChange,
     this.autofocus = true,
     this.focusNode,
+    this.controller,
   });
 
   /// Подпись для screen reader («Код из SMS, 6 цифр»).
@@ -74,23 +81,35 @@ class OtpField extends StatefulWidget {
   /// Узел фокуса скрытого поля.
   final FocusNode? focusNode;
 
+  /// Значение кода, которое задаёт экран (`KioskKeypad` в `PrivateInputScope`); ячейки обновляются при каждом его
+  /// изменении, [onChanged] / [onCompleted] — только для ввода в само поле. Переход в [CodeFieldStatus.error] очищает
+  /// и его. `null` — контроллер внутри поля, как прежде.
+  final TextEditingController? controller;
+
   @override
   State<OtpField> createState() => _OtpFieldState();
 }
 
 class _OtpFieldState extends State<OtpField> with SingleTickerProviderStateMixin {
-  final TextEditingController _controller = TextEditingController();
+  TextEditingController? _ownController;
   FocusNode? _ownFocus;
   bool _focused = false;
   int _errors = 0;
   late final AnimationController _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
 
   FocusNode get _focus => widget.focusNode ?? (_ownFocus ??= FocusNode());
+  TextEditingController get _controller => widget.controller ?? (_ownController ??= TextEditingController());
 
   @override
   void initState() {
     super.initState();
     _focus.addListener(_onFocus);
+    widget.controller?.addListener(_onExternalText);
+  }
+
+  /// Значение задал экран (`KioskKeypad`): перерисовать ячейки.
+  void _onExternalText() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -102,6 +121,10 @@ class _OtpFieldState extends State<OtpField> with SingleTickerProviderStateMixin
   @override
   void didUpdateWidget(OtpField oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?.removeListener(_onExternalText);
+      widget.controller?.addListener(_onExternalText);
+    }
     if (widget.status == CodeFieldStatus.error && oldWidget.status != CodeFieldStatus.error) {
       _errors++;
       _controller.clear();
@@ -133,8 +156,9 @@ class _OtpFieldState extends State<OtpField> with SingleTickerProviderStateMixin
   @override
   void dispose() {
     _focus.removeListener(_onFocus);
+    widget.controller?.removeListener(_onExternalText);
     _ownFocus?.dispose();
-    _controller.dispose();
+    _ownController?.dispose();
     _pulse.dispose();
     super.dispose();
   }
@@ -153,6 +177,8 @@ class _OtpFieldState extends State<OtpField> with SingleTickerProviderStateMixin
     final bool reduce = context.motion.reduceMotion;
     final bool inputEnabled = widget.status == CodeFieldStatus.idle || widget.status == CodeFieldStatus.error;
     final String value = _controller.text;
+    // Область «общее устройство» (03 §9.74, DS-099): вне неё значения TextField — прежние.
+    final bool private = PrivateInputScope.of(context);
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -191,11 +217,16 @@ class _OtpFieldState extends State<OtpField> with SingleTickerProviderStateMixin
                             controller: _controller,
                             focusNode: _focus,
                             enabled: inputEnabled,
+                            readOnly: private,
                             autofocus: widget.autofocus,
                             showCursor: false,
                             enableInteractiveSelection: false,
-                            keyboardType: TextInputType.number,
-                            autofillHints: const <String>[AutofillHints.oneTimeCode],
+                            enableSuggestions: !private,
+                            autocorrect: private ? false : null,
+                            enableIMEPersonalizedLearning: !private,
+                            contextMenuBuilder: PrivateInputScope.contextMenuBuilderFor(private: private),
+                            keyboardType: private ? TextInputType.none : TextInputType.number,
+                            autofillHints: private ? null : const <String>[AutofillHints.oneTimeCode],
                             inputFormatters: <TextInputFormatter>[
                               FilteringTextInputFormatter.digitsOnly,
                               LengthLimitingTextInputFormatter(widget.length),

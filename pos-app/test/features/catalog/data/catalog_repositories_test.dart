@@ -83,7 +83,8 @@ void main() {
     clock: FixedClock(DateTime.utc(2026, 10, 19, 10)),
   );
 
-  Future<void> loadCatalog() async {
+  /// Кэш каталога; [warehouses] и [stock] — свои строки складов и остатков (иначе — один склад `wh-1`).
+  Future<void> loadCatalog({List<Object?>? warehouses, List<Object?>? stock}) async {
     responses['/catalog/sync/units'] = [
       json(
         200,
@@ -103,9 +104,13 @@ void main() {
     responses['/catalog/sync/warehouses'] = [
       json(
         200,
-        page([
-          {'id': 'wh-1', 'name': 'Основной', 'isActive': true},
-        ], cursor: 'w1'),
+        page(
+          warehouses ??
+              [
+                {'id': 'wh-1', 'name': 'Основной', 'isActive': true},
+              ],
+          cursor: 'w1',
+        ),
       ),
     ];
     responses['/catalog/sync/price_lists'] = [
@@ -177,10 +182,14 @@ void main() {
     responses['/catalog/sync/stock'] = [
       json(
         200,
-        page([
-          {'variantId': 'v-p-1', 'warehouseId': 'wh-1', 'available': '24.000', 'stockLevel': 'in_stock'},
-          {'variantId': 'v-p-2', 'warehouseId': 'wh-1', 'stockLevel': 'unknown'},
-        ], cursor: 's1'),
+        page(
+          stock ??
+              [
+                {'variantId': 'v-p-1', 'warehouseId': 'wh-1', 'available': '24.000', 'stockLevel': 'in_stock'},
+                {'variantId': 'v-p-2', 'warehouseId': 'wh-1', 'stockLevel': 'unknown'},
+              ],
+          cursor: 's1',
+        ),
       ),
     ];
     responses['/catalog/sync/images'] = [json(200, page(const [], cursor: 'i1'))];
@@ -280,6 +289,80 @@ void main() {
       final states = (await repo.localStates()).valueOrNull!;
       expect(states.single.entity, CatalogSyncEntity.stock);
       expect(states.single.staleAfter, const Duration(minutes: 10));
+    });
+  });
+
+  group('T-KIOSK-009 склад планшета в чтениях кэша (10 KIOSK-007; 02 SCR-51.9; 07 DATA-262)', () {
+    // Склад по умолчанию W1 (`is_default`), склад планшета W2; остаток кэша — только на W2 (сервер отдаёт планшету
+    // `stock` только по складу планшета).
+    setUp(
+      () => loadCatalog(
+        warehouses: [
+          {'id': 'wh-1', 'name': 'Основной', 'isActive': true, 'isDefaultForPos': true},
+          {'id': 'wh-2', 'name': 'Склад планшета', 'isActive': true},
+        ],
+        stock: [
+          {'variantId': 'v-p-1', 'warehouseId': 'wh-2', 'available': '24.000', 'stockLevel': 'in_stock'},
+        ],
+      ),
+    );
+
+    String? tablet() => 'wh-2';
+
+    test('список, карточка, поиск, штрихкод и остатки из кэша — по складу планшета, а не is_default', () async {
+      final kiosk = CatalogRepositoryImpl(remote: remote, dao: () => db.catalogDao, localWarehouseId: tablet);
+      final list = (await kiosk.cachedProducts(const CatalogQuery())).valueOrNull!;
+      final p1 = list.items.singleWhere((p) => p.id == 'p-1');
+      expect(p1.stock!.available, Qty.units(24));
+      expect(p1.stock!.warehouseId, 'wh-2');
+      expect(p1.stockUnknown, isFalse, reason: 'карточка витрины не «недоступна» из-за склада по умолчанию');
+      final card = (await kiosk.cachedProduct('p-1')).valueOrNull!;
+      expect(card.defaultVariant!.stock!.available, Qty.units(24));
+      expect(card.defaultVariant!.stock!.warehouseId, 'wh-2');
+
+      final search = SearchRepositoryImpl(remote: remote, dao: () => db.catalogDao, localWarehouseId: tablet);
+      final found = (await search.searchCached(const SearchQuery(q: 'смеситель f4252'))).valueOrNull!;
+      expect(found.items.single.stock!.available, Qty.units(24));
+      final lookup = (await search.barcodeCached('4600000000017')).valueOrNull!;
+      expect(lookup.variant.stock!.warehouseId, 'wh-2');
+
+      final inventory = InventoryRepositoryImpl(remote: remote, dao: () => db.catalogDao, localWarehouseId: tablet);
+      final balances = (await inventory.cachedBalances(['v-p-1'])).valueOrNull!;
+      expect(balances.items.single.warehouseId, 'wh-2');
+    });
+
+    test('сотрудник (склада планшета нет) — как прежде, склад is_default; явный склад вызывающего сильнее', () async {
+      final staff = CatalogRepositoryImpl(remote: remote, dao: () => db.catalogDao);
+      final list = (await staff.cachedProducts(const CatalogQuery())).valueOrNull!;
+      expect(list.items.singleWhere((p) => p.id == 'p-1').stockUnknown, isTrue, reason: 'на W1 остатка нет');
+      final kiosk = CatalogRepositoryImpl(remote: remote, dao: () => db.catalogDao, localWarehouseId: tablet);
+      final explicit = (await kiosk.cachedProduct('p-1', warehouseId: 'wh-1')).valueOrNull!;
+      expect(explicit.defaultVariant!.stock?.warehouseId, isNot('wh-2'));
+      // Остатки без склада у сотрудника — все склады, как прежде.
+      final inventory = InventoryRepositoryImpl(remote: remote, dao: () => db.catalogDao);
+      expect((await inventory.cachedBalances(['v-p-1'])).valueOrNull!.items.map((b) => b.warehouseId), ['wh-2']);
+      expect((await inventory.cachedBalances(['v-p-1'], warehouseId: 'wh-1')).valueOrNull!.items, isEmpty);
+    });
+
+    test('сеть: запросы планшета склада не получают (AC-UI-51-005 — `warehouseId` → 403)', () async {
+      final List<Map<String, dynamic>> queries = <Map<String, dynamic>>[];
+      ResponseBody capture(RequestOptions o) {
+        queries.add(o.queryParameters);
+        return json(404, problem('NOT_FOUND', 404));
+      }
+
+      responses['/catalog/products'] = [capture];
+      responses['/catalog/products/p-1'] = [capture];
+      responses['/inventory/balances'] = [capture];
+      final kiosk = CatalogRepositoryImpl(remote: remote, dao: () => db.catalogDao, localWarehouseId: tablet);
+      await kiosk.products(const CatalogQuery());
+      await kiosk.product('p-1');
+      final inventory = InventoryRepositoryImpl(remote: remote, dao: () => db.catalogDao, localWarehouseId: tablet);
+      await inventory.balances(['v-p-1']);
+      expect(queries, isNotEmpty);
+      for (final Map<String, dynamic> q in queries) {
+        expect(q.containsKey('warehouseId'), isFalse, reason: '$q');
+      }
     });
   });
 

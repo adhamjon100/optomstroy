@@ -8,6 +8,8 @@ import type { DocumentsPort } from './documents.port.js';
 import { DOCUMENTS_PORT } from './documents.port.js';
 import type { InventoryCheckPort } from './inventory-check.port.js';
 import { INVENTORY_CHECK_PORT } from './inventory-check.port.js';
+import type { KioskOrderPort } from './kiosk-order.port.js';
+import { KIOSK_ORDER_PORT } from './kiosk-order.port.js';
 import type { NotificationsPort } from './notifications.port.js';
 import { NOTIFICATIONS_PORT } from './notifications.port.js';
 import type { OnecOutboxWriter } from './onec-outbox-writer.port.js';
@@ -46,6 +48,8 @@ export interface SalesPortMap {
   [DISCOUNT_POLICY_PORT]: DiscountPolicyPort;
   [TRANSACTIONS_WRITER]: TransactionsWriter;
   [AUDIT_QUERY_PORT]: AuditQueryPort;
+  // Планшет магазина (ADR-115; 06 MOD-030): заявку с планшета создаёт модуль `orders` (`bindSalesPort` в OrdersModule).
+  [KIOSK_ORDER_PORT]: KioskOrderPort;
 }
 
 export type SalesPortToken = keyof SalesPortMap;
@@ -66,6 +70,7 @@ export const SALES_PORT_TOKENS: readonly SalesPortToken[] = [
   DISCOUNT_POLICY_PORT,
   TRANSACTIONS_WRITER,
   AUDIT_QUERY_PORT,
+  KIOSK_ORDER_PORT,
 ];
 
 /** Порт вызван, но реализация ещё не привязана (модуль-владелец не подключён / не реализован). */

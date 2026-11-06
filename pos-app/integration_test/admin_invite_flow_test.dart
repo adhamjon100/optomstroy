@@ -37,6 +37,8 @@ import 'package:optomstroy/features/registration/presentation/screens/registrati
 import 'package:optomstroy/features/settings/presentation/widgets/sessions_section.dart';
 import 'package:optomstroy/features/splash/presentation/screens/splash_screen.dart';
 
+import 'support/clean_start.dart';
+
 /// Тестовый код OTP контура (`AUTH_FIXTURES.otpCode`).
 const String _otpCode = String.fromEnvironment('E2E_OTP_CODE', defaultValue: '246810');
 
@@ -152,8 +154,8 @@ void main() {
   testWidgets('RM-D-010 п.3: admin приглашает в UI (SCR-45) → приглашённый входит по OTP → PIN → касса', (
     WidgetTester tester,
   ) async {
-    // Чистый старт: сессия и черновик прежнего прогона удаляются (идентификатор устройства остаётся).
-    await FlutterSecureStorageAdapter().deleteAll(<SecureKey>[...SecureKey.session, ...SecureKey.registration]);
+    // Чистый старт: сессия, черновик и признак планшета прежнего прогона удаляются (идентификатор устройства остаётся).
+    await FlutterSecureStorageAdapter().deleteAll(kCleanStartKeys);
     await bootstrap();
     await tester.pump();
     await pumpUntilFound(tester, find.byKey(SplashScreen.screenKey));

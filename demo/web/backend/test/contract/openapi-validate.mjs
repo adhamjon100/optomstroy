@@ -9,6 +9,8 @@
 //   4xx/5xx — всегда application/problem+json по схеме Problem; code ∈ ProblemCode, HTTP-статус ∈ допустимых
 //   статусов кода по contracts/enums.json (problemCodes[].http), поле status = HTTP-статус;
 //   204/304 — пустое тело.
+// Исключение: `me_get` 200 с `kind === 'kiosk'` (планшет магазина, 08 §3.14; контракт 1.3.0) проверяется по строгой
+// схеме MeKiosk, а не по Me операции (T-KIOSK-046; как pos-api/test/kiosk/access.spec.ts).
 // Статус, которого нет в responses операции (кроме покрытого `default`), — предупреждение, не ошибка.
 //
 // Без зависимостей, кроме pos-api/node_modules/yaml (уже установлен).
@@ -365,7 +367,11 @@ export class Contract {
         out.errors.push(`${status}: тело не JSON`);
         return out;
       }
-      if (schema) out.errors.push(...this.validate(schema, rec.json, { path: '$' }));
+      // GET /me планшета магазина (kind=kiosk; 08 §3.14; контракт 1.3.0, ADR-115): обязательность полей Me на эту
+      // форму не распространяется, эталон — строгая схема MeKiosk (как pos-api/test/kiosk/access.spec.ts, T-KIOSK-046).
+      const kioskMe = o.operationId === 'me_get' && status === 200 && isObj(rec.json) && rec.json.kind === 'kiosk' && this.doc.components?.schemas?.MeKiosk;
+      const effective = kioskMe ? { $ref: '#/components/schemas/MeKiosk' } : schema;
+      if (effective) out.errors.push(...this.validate(effective, rec.json, { path: '$' }));
       return out;
     }
     // text/csv, image/webp и т. п. — достаточно типа и непустого тела

@@ -18,6 +18,7 @@ import 'package:optomstroy/design_system/theme/app_theme.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/features/notifications/domain/entities/app_notification.dart';
+import 'package:optomstroy/features/notifications/presentation/notification_targets.dart';
 import 'package:optomstroy/features/notifications/presentation/notifiers/notifications_center_controller.dart';
 import 'package:optomstroy/features/notifications/presentation/screens/notifications_screen.dart';
 import 'package:optomstroy/features/notifications/presentation/widgets/notification_announcements.dart';
@@ -262,6 +263,22 @@ void main() {
       await tester.tap(find.byKey(NotificationTile.actionKey('n4')));
       await tester.pumpAndSettle();
       expect(find.text('settings:section=sessions'), findsOneWidget);
+    });
+
+    test('kiosk_order (ADR-115, 02 SCR-44.3) → SCR-24 заявки (go), группа «Заказы»; клиенту — без перехода', () {
+      final AppNotification n = AppNotification(
+        id: 'n9',
+        rawKind: 'kiosk_order',
+        title: 'Новая заявка с планшета № POS-2026-000124',
+        orderId: 'o9',
+        createdAt: DateTime.utc(2026, 11, 4, 4),
+        severity: NotificationSeverity.info,
+        payload: const <String, Object?>{'orderId': 'o9'},
+      );
+      expect(n.kind, NotificationKind.kioskOrder);
+      expect(NotificationTargets.of(n), const NotificationLink('/orders/o9', NotificationNavigation.go));
+      expect(NotificationTargets.of(n, customer: true), isNull);
+      expect(NotificationKindGroup.orders.kinds, contains(NotificationKind.kioskOrder));
     });
   });
 

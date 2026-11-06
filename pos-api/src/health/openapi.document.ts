@@ -29,6 +29,7 @@ export const OPENAPI_TAGS = [
   'sync',
   'admin',
   'health',
+  'kiosk',
 ] as const;
 
 export interface OpenApiDocumentHolder {
@@ -44,7 +45,7 @@ export const OPENAPI_DOCUMENT = Symbol('OPENAPI_DOCUMENT');
  * Константа, а не чтение yaml в рантайме: образ pos-api не содержит contracts/. Расхождение ловят
  * src/health/openapi.document.spec.ts и smoke.e2e-spec.ts (ревью E: RC-3, RS-11).
  */
-export const OPENAPI_INFO_VERSION = '1.2.0';
+export const OPENAPI_INFO_VERSION = '1.3.0';
 
 export function buildOpenApiDocument(app: INestApplication): OpenApiDocumentHolder {
   const builder = new DocumentBuilder()

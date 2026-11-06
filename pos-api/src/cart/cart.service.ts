@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
+import { OtpChallengesRepository } from '../auth/otp/otp-challenges.repository.js';
 import type { AuditContext } from '../common/audit/audit-context.js';
 import { type AuditEntry, AuditService } from '../common/audit/audit.service.js';
 import type { DbExecutor, DbTransaction } from '../common/audit/db-executor.js';
@@ -17,7 +18,7 @@ import {
   SalesDomainError,
   toProblemException,
 } from '../sales-domain/index.js';
-import { type CartActor, CartActorResolver, can } from './cart-actor.js';
+import { type CartActor, CartActorResolver, can, isKioskActor } from './cart-actor.js';
 import { bishkekTime, dec, fieldError, rows } from './cart-common.js';
 import { cartDto, parkedSummaryDto } from './cart-dto.js';
 import { discountStateOf, type EvaluatedCart, evaluateCart } from './cart-evaluator.js';
@@ -48,11 +49,24 @@ export interface StepUpCheck {
   (operation: string): Promise<'pin' | 'otp'>;
 }
 
+/** Итог `POST /kiosk/reset` (08 §4.25.4): новая (или, при повторе, текущая) активная корзина планшета. */
+export interface KioskResetResult {
+  readonly cart: CartDto;
+  /** Корзина, закрытая этим вызовом; `null` — повтор с id уже закрытой корзины (идемпотентно, без изменений). */
+  readonly closedCartId: string | null;
+}
+
 /**
  * Корзина (08 §4.7; 10 §7; RM-F-001, RM-F-012, RM-F-015): сервер — источник истины (D-23, D-32), одна `active` на
  * пользователя, оптимистическая блокировка `rowVersion` (`409 VERSION_CONFLICT` с `current: Cart`), отложенные
  * корзины, ручная скидка в лимите роли, режим клиента-покупателя (ядро §24.2). Каждый ответ — полная `Cart` с
  * пересчётом цен/остатков и `warnings[]`. Корзина ничего не резервирует (INV-024).
+ *
+ * Планшет магазина (`kind=kiosk`, ADR-115; 10 KIOSK-007, KIOSK-009): ветка покупателя без привязки — без клиента
+ * (`customerId = null`), без ручной скидки и отложенных корзин, обычная цена; склад корзины — только склад планшета
+ * (`user_profiles.home_warehouse_id`, не задан или неактивен → `403 FORBIDDEN` `reason: kiosk_warehouse_unavailable`),
+ * смена склада (`PATCH /cart`) и выбор клиента (`POST/DELETE /cart/customer`) — `403`. Смена склада планшета в SCR-54
+ * действует со следующей корзины (после сброса): открытая корзина склад не меняет.
  */
 @Injectable()
 export class CartService {
@@ -67,6 +81,7 @@ export class CartService {
     private readonly settings: SettingsReader,
     private readonly hmac: OtpHmacService,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly otpChallenges: OtpChallengesRepository,
   ) {}
 
   transaction<T>(fn: (tx: DbTransaction) => Promise<T>): Promise<T> {
@@ -114,7 +129,7 @@ export class CartService {
       ...(opts.manualPercentOverride !== undefined ? { manualPercentOverride: opts.manualPercentOverride } : {}),
       ...(opts.cashRounding ? { cashRounding: opts.cashRounding } : {}),
     });
-    return { e, customer: c ? customerDto(c, a.role, a.isCustomer) : null };
+    return { e, customer: c ? customerDto(c, a.role, a.isCustomer, a.subjectKind) : null };
   }
 
   async view(ex: DbExecutor, a: CartActor, cart: CartRow, revalidate = true): Promise<CartDto> {
@@ -135,10 +150,12 @@ export class CartService {
 
   /** Активная корзина пользователя под блокировкой (создаётся при отсутствии) с актуальной привязкой клиента. */
   async ensureActive(tx: DbExecutor, a: CartActor): Promise<CartRow> {
+    // Планшет: склад планшета проверяется при каждом обращении к корзине (KIOSK-007) — без него корзины нет.
+    const kioskWarehouseId = isKioskActor(a) ? await this.kioskWarehouseOrDeny(tx, a) : null;
     let cart = await this.repo.findActive(tx, a.userId, true);
     if (!cart) {
-      const warehouseId = await this.repo.defaultWarehouse(tx, a.userId);
-      const customerId = a.isCustomer ? await this.repo.confirmedCustomerOf(tx, a.userId) : null;
+      const warehouseId = kioskWarehouseId ?? (await this.repo.defaultWarehouse(tx, a.userId));
+      const customerId = await this.ownCustomerOf(tx, a);
       const priceListId = await this.pricing.resolveFor(tx, {
         userId: a.userId,
         role: a.role,
@@ -173,10 +190,11 @@ export class CartService {
 
   /**
    * Привязка корзины: `customer` — своя `confirmed`-карточка 1С (иначе без клиента, цены по умолчанию; 08 §4.7 «Корзина
-   * клиента-покупателя»); вид цены — по клиенту и роли (INV-030). Изменение → UPDATE с инкрементом версии.
+   * клиента-покупателя»); планшет магазина — всегда без клиента (KIOSK-009); вид цены — по клиенту и роли (INV-030).
+   * Изменение → UPDATE с инкрементом версии.
    */
   private async syncBinding(tx: DbExecutor, a: CartActor, cart: CartRow): Promise<CartRow> {
-    const customerId = a.isCustomer ? await this.repo.confirmedCustomerOf(tx, a.userId) : cart.customer_id;
+    const customerId = a.isCustomer ? await this.ownCustomerOf(tx, a) : cart.customer_id;
     const priceListId =
       (await this.pricing.resolveFor(tx, { userId: a.userId, role: a.role, isCustomer: a.isCustomer, customerId })) ??
       cart.price_list_id;
@@ -377,9 +395,88 @@ export class CartService {
     });
   }
 
-  /** Новая пустая `active` того же склада (после очистки/откладывания). */
+  /**
+   * `POST /kiosk/reset {cartId}` — сброс планшета магазина (08 §4.25.4; 10 KIOSK-020; 04 FLOW-045; ADR-115). **Одна
+   * транзакция:** корзина `cartId` планшета закрывается (`active → cleared`, даже пустая), создаётся новая пустая
+   * `active` (новый `id`; склад — текущий склад планшета, со следующей корзины действует смена склада в SCR-54; без
+   * клиента), коды `kiosk_order` планшета гасятся (`sent → superseded`, проверенный и не погашенный — `replayed_at`;
+   * `OtpChallengesRepository.gashKioskCodes`), аудит `cart.cleared` с `after.reason = kiosk_reset` — последним
+   * оператором записи. `rowVersion` не нужен: корзину планшета сбрасывает только сам планшет (право
+   * `kiosk.order.submit`). Идемпотентно по `cartId`: корзина планшета уже не `active` (сброшена, оформлена заявкой) →
+   * текущая активная корзина без новой корзины и без повторного гашения; чужая или несуществующая → `404`. Склад
+   * планшета не задан или неактивен → `403` `kiosk_warehouse_unavailable` до каких-либо изменений.
+   *
+   * Порядок блокировок — «коды планшета → корзина» (`lockKioskCodes`, затем корзина `FOR UPDATE`), как у транзакций,
+   * которые держат код и затем обращаются к корзине: `POST /kiosk/orders` (строка кода `FOR UPDATE` первым действием,
+   * затем `orders.cart_id` и `markConverted`; P-002 §8.5 п. 9) и `POST /kiosk/order-otp` (коды планшета →
+   * `superseded`, затем новый код со ссылкой на корзину). При обратном порядке одновременные сброс и отправка заявки
+   * одного планшета ждали бы друг друга (PostgreSQL `40P01` → 500).
+   */
+  resetForKiosk(a: CartActor, ctx: AuditContext, tabletId: string, cartId: string): Promise<KioskResetResult> {
+    if (!isKioskActor(a)) {
+      return Promise.reject(
+        new ProblemException('FORBIDDEN', { detail: 'Сброс корзины без rowVersion — только для планшета магазина.' }),
+      );
+    }
+    return this.transaction(async (tx) => {
+      await this.kioskWarehouseOrDeny(tx, a);
+      await this.lockKioskCodes(tx, tabletId);
+      const target = await this.repo.findById(tx, cartId, true);
+      if (!target || target.owner_user_id !== a.userId) throw notFound();
+      if (target.status !== 'active') {
+        return { cart: await this.view(tx, a, await this.ensureActive(tx, a)), closedCartId: null };
+      }
+      const items = await this.repo.items(tx, target.id);
+      assertDomain(() => assertCartTransition('active', 'cleared', 'clear'));
+      const now = this.clock.now();
+      // Строка корзины заблокирована (`FOR UPDATE` выше) — версия совпадает.
+      const closed = await this.repo.update(tx, target.id, target.row_version, { status: 'cleared', cleared_at: now });
+      if (!closed) throw new ProblemException('VERSION_CONFLICT', { detail: 'Корзина изменена на другом устройстве.' });
+      const fresh = await this.newActiveLike(tx, a, target);
+      const gashed = await this.otpChallenges.gashKioskCodes(tx, tabletId, now);
+      await this.audit.write(
+        ctx,
+        {
+          action: 'cart.cleared',
+          entityType: 'cart',
+          entityId: target.id,
+          after: {
+            cartId: target.id,
+            itemsCount: items.length,
+            parked: false,
+            reason: 'kiosk_reset',
+            newCartId: fresh.id,
+            codesGashed: gashed.superseded + gashed.replayed,
+          },
+        },
+        tx,
+      );
+      return { cart: await this.view(tx, a, fresh), closedCartId: target.id };
+    });
+  }
+
+  /**
+   * Блокировка действующих кодов `kiosk_order` планшета (те же строки, что гасит `gashKioskCodes`: `sent` и
+   * проверенный, ещё не погашенный) до блокировки корзины — порядок «коды → корзина» (`resetForKiosk`). Код, который
+   * сейчас гасит транзакция заявки, сброс ждёт; после её COMMIT строка уже не подходит (`replayed_at`) и пропускается.
+   */
+  private async lockKioskCodes(tx: DbExecutor, tabletId: string): Promise<void> {
+    await tx.execute(
+      sql`SELECT id FROM otp_challenges
+           WHERE kiosk_tablet_id = ${tabletId}::uuid AND purpose = 'kiosk_order'
+             AND (status = 'sent' OR (status = 'verified' AND replayed_at IS NULL))
+           ORDER BY id
+             FOR UPDATE`,
+    );
+  }
+
+  /**
+   * Новая пустая `active` того же склада (после очистки/откладывания); у планшета магазина — склада планшета (смена
+   * склада в SCR-54 действует со следующей корзины, KIOSK-007).
+   */
   private async newActiveLike(tx: DbExecutor, a: CartActor, prev: CartRow): Promise<CartRow> {
-    const customerId = a.isCustomer ? await this.repo.confirmedCustomerOf(tx, a.userId) : null;
+    const customerId = await this.ownCustomerOf(tx, a);
+    const warehouseId = isKioskActor(a) ? await this.kioskWarehouseOrDeny(tx, a) : prev.warehouse_id;
     const priceListId =
       (await this.pricing.resolveFor(tx, { userId: a.userId, role: a.role, isCustomer: a.isCustomer, customerId })) ??
       prev.price_list_id;
@@ -388,15 +485,44 @@ export class CartService {
       createdByUserId: a.userId,
       deviceKey: a.deviceId,
       customerId,
-      warehouseId: prev.warehouse_id,
+      warehouseId,
       priceListId,
       status: 'active',
     });
     return row ?? (await this.ensureActive(tx, a));
   }
 
-  /** `PATCH /cart {warehouseId}` (08 §4.7.8; ядро §19.2; INV-025): пересчёт доступности строк, позиции не удаляются. */
+  /** Карточка корзины покупателя: своя `confirmed` (режим клиента); сотрудник и планшет магазина — без клиента. */
+  private ownCustomerOf(ex: DbExecutor, a: CartActor): Promise<string | null> {
+    if (!a.isCustomer || isKioskActor(a)) return Promise.resolve(null);
+    return this.repo.confirmedCustomerOf(ex, a.userId);
+  }
+
+  /**
+   * Склад планшета магазина (10 KIOSK-007; ADR-115 п. 23): `user_profiles.home_warehouse_id`; не задан или неактивен —
+   * `403 FORBIDDEN` `reason: kiosk_warehouse_unavailable` (запасного склада нет).
+   */
+  private async kioskWarehouseOrDeny(ex: DbExecutor, a: CartActor): Promise<string> {
+    const id = await this.repo.kioskWarehouse(ex, a.userId);
+    if (!id) {
+      throw new ProblemException('FORBIDDEN', {
+        detail: 'Склад планшета не задан или неактивен. Обратитесь к администратору.',
+        reason: 'kiosk_warehouse_unavailable',
+      });
+    }
+    return id;
+  }
+
+  /**
+   * `PATCH /cart {warehouseId}` (08 §4.7.8; ядро §19.2; INV-025): пересчёт доступности строк, позиции не удаляются.
+   * Планшету магазина — `403` (склад планшета закреплён, KIOSK-007; меняет администратор в SCR-54).
+   */
   updateWarehouse(a: CartActor, ctx: AuditContext, warehouseId: string, rowVersion: number): Promise<CartDto> {
+    if (isKioskActor(a)) {
+      return Promise.reject(
+        new ProblemException('FORBIDDEN', { detail: 'На планшете магазина склад корзины не меняется.' }),
+      );
+    }
     return this.mutate(a, ctx, async (tx, cart) => {
       if (cart.warehouse_id === warehouseId) return { changed: false };
       await this.assertVersion(tx, a, cart, rowVersion);
@@ -413,12 +539,16 @@ export class CartService {
     });
   }
 
-  /** `POST /cart/customer` (08 §4.7.4; 10 CART-020, DISC-014): пересчёт вида цены и скидки клиента. */
+  /**
+   * `POST /cart/customer` (08 §4.7.4; 10 CART-020, DISC-014): пересчёт вида цены и скидки клиента. Планшету магазина —
+   * `403` (корзина без клиента, KIOSK-009).
+   */
   setCustomer(
     a: CartActor,
     ctx: AuditContext,
     r: { customerId: string; receiver: ReceiverInput | null; rowVersion: number },
   ): Promise<CartDto> {
+    if (isKioskActor(a)) return Promise.reject(kioskCustomerForbidden());
     return this.mutate(a, ctx, async (tx, cart) => {
       if (a.isCustomer) {
         const own = await this.repo.confirmedCustomerOf(tx, a.userId);
@@ -462,8 +592,9 @@ export class CartService {
     });
   }
 
-  /** `DELETE /cart/customer` (08 §4.7.4, ядро §17.4): клиент снят, цены — по виду цены по умолчанию. */
+  /** `DELETE /cart/customer` (08 §4.7.4, ядро §17.4): клиент снят, цены — по виду цены по умолчанию; планшету — `403`. */
   unsetCustomer(a: CartActor, ctx: AuditContext): Promise<CartDto> {
+    if (isKioskActor(a)) return Promise.reject(kioskCustomerForbidden());
     return this.mutate(a, ctx, async (tx, cart) => {
       // customer: корзина всегда связана со своей подтверждённой карточкой (08 §4.7) — снимать нечего.
       if (a.isCustomer) return { changed: false };
@@ -884,4 +1015,9 @@ export function assertDomain<T>(fn: () => T, extra: Readonly<Record<string, unkn
     }
     throw toProblemException(e);
   }
+}
+
+/** Планшет магазина: клиент корзины не выбирается и не снимается (10 KIOSK-005, KIOSK-009). */
+function kioskCustomerForbidden(): ProblemException {
+  return new ProblemException('FORBIDDEN', { detail: 'На планшете магазина клиент корзины не выбирается.' });
 }

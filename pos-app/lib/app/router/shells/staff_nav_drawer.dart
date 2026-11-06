@@ -86,13 +86,14 @@ String _usersLabel(AppLocalizations l10n) => l10n.admin_users_title;
 /// Ссылки группы «Другие разделы» режима [mode] (порядок — как в drawer; состав по роли — фильтр
 /// `isPathAllowedForRole`, guard G-7). У продавца «Корзина» — вкладка режима (на medium+ она открывает drawer
 /// корзины), поэтому отдельной ссылкой не повторяется; «Касса» в режиме продавца видна только `senior_seller`
-/// (navigation.md §2.2: ветка cashier у старшего продавца — через меню). Клиенту drawer не положен.
+/// (navigation.md §2.2: ветка cashier у старшего продавца — через меню). Клиенту и планшету магазина (вне оболочки,
+/// ADR-115) drawer не положен.
 List<ShellLink> shellLinksFor(AppMode mode) => switch (mode) {
   AppMode.seller => const <ShellLink>[_cashier, _parked, _orders, _transactions],
   AppMode.cashier => const <ShellLink>[_orders, _parked, _favorites, _cart],
   AppMode.admin => const <ShellLink>[_reports, _cashier, _audit, _systemSettings, _orders, _parked, _favorites, _cart],
   AppMode.owner => const <ShellLink>[_cashier, _users, _audit, _systemSettings, _orders],
-  AppMode.customer => const <ShellLink>[],
+  AppMode.customer || AppMode.kiosk => const <ShellLink>[],
 };
 
 /// Ссылка, которой соответствует [path] (самая длинная по префиксу пути), или `null`.

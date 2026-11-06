@@ -1,7 +1,7 @@
 # CI и тестовый контур «Оптомстрой POS»
 
 Задачи: **RM-C-011** (CI) и **RM-C-012** (тестовый контур), 13_IMPLEMENTATION_ROADMAP §3.3. Владелец — `OPS` (+ `QA` для RM-C-012).
-Версия 1.2 · Дата: 2026-10-21, обновлено 2026-10-28 (сверка с `infra/compose.test.yml` и `infra/docker/api/Dockerfile`, E-KI-13) и 2026-10-29 (правило слоёв DM-01, тесты веб-демо вне CI — §6, ADR-113; журнал — §9). Источники: 13 §3.3, §5.1, §5.3, §6.1; 12 §2.10–§2.11; 16 §4.1–§4.6, §8, §11; `CONTRIBUTING.md` §6; ядро R0 §20.2 п. 1–2.
+Версия 1.3 · Дата: 2026-10-21, обновлено 2026-10-28 (сверка с `infra/compose.test.yml` и `infra/docker/api/Dockerfile`, E-KI-13), 2026-10-29 (правило слоёв DM-01, тесты веб-демо вне CI — §6, ADR-113) и 2026-11-06 (число таблиц после миграции 0022, ADR-115 — §1, §3; журнал — §9). Источники: 13 §3.3, §5.1, §5.3, §6.1; 12 §2.10–§2.11; 16 §4.1–§4.6, §8, §11; `CONTRIBUTING.md` §6; ядро R0 §20.2 п. 1–2.
 
 | Файл | Назначение |
 |---|---|
@@ -42,6 +42,8 @@
 | Набор класса A (backend) | `npx vitest run logging_redaction rbac read-only idempotency app-config app-version security` | 6 файлов, 48 тестов passed |
 | Экспорт `/openapi.json` без БД | `node dist/main.js` с недоступной `DATABASE_URL` | OpenAPI 3.0.3, 3 пути; `/health` 200 |
 | `npm audit` | `npm audit --omit=dev --audit-level=high` и полный | 0 уязвимостей, код 0 |
+
+Таблица — состояние проверки 2026-10-21. После миграции `0022_kiosk_schema.sql` (таблица `store_tablets`, 07 §5.65, ADR-115) `scripts/check_tables.sql` ждёт на staging/prod 64 таблицы, на dev/test — 65 (с `dev_outbox`).
 
 ## 2. Что нужно от заказчика (до первого прогона)
 
@@ -106,7 +108,7 @@ cd pos-api && SMOKE_BASE_URL=https://localhost NODE_EXTRA_CA_CERTS=../infra/secr
 - `pos_app` — api и worker, пароль из `database_url`;
 - `pos_readonly`, `pos_backup` — без пароля.
 
-Конфигурация api и worker — профиль `staging` (12 §2.11 E3): `ONEC_MODE=fixtures`, `SMS_PROVIDER=fake`, `QR_PROVIDER=none`, `OPENAPI_PUBLIC=true`. При `staging` таблицы `dev_outbox` нет, поэтому `FakeSmsGateway` отвечает ошибкой конфигурации `CONFIG_ERROR` (код OTP через SMS в контуре не доставляется; 07 §5.63). `APP_ENV=dev` можно задать переменной окружения. Тогда migrate применит и dev-миграцию `pos-api/db/migrations-dev/` (монтируется в контейнер только для чтения; в образ не входит — AC-DATA-169) и создаст `dev_outbox`, а `make test-check` сверит 64 таблицы вместо 63.
+Конфигурация api и worker — профиль `staging` (12 §2.11 E3): `ONEC_MODE=fixtures`, `SMS_PROVIDER=fake`, `QR_PROVIDER=none`, `OPENAPI_PUBLIC=true`. При `staging` таблицы `dev_outbox` нет, поэтому `FakeSmsGateway` отвечает ошибкой конфигурации `CONFIG_ERROR` (код OTP через SMS в контуре не доставляется; 07 §5.63). `APP_ENV=dev` можно задать переменной окружения. Тогда migrate применит и dev-миграцию `pos-api/db/migrations-dev/` (монтируется в контейнер только для чтения; в образ не входит — AC-DATA-169) и создаст `dev_outbox`, а `make test-check` сверит 65 таблиц вместо 64 (с миграции 0022, ADR-115; до неё — 64 и 63).
 
 Переменные уровня compose: `API_TAG`, `BACKUP_TAG`, `POSTGRES_USER`, `POSTGRES_DB`, `BACKUP_*`. Только для тестового контура и Caddyfile: `TEST_HTTP_PORT`, `TEST_HTTPS_PORT`, `CADDY_SITE_ADDRESS`, `CADDY_TLS`, `API_UPSTREAM`. Процесс api/worker их не читает, в 16 §4.3 они не входят.
 
@@ -220,3 +222,4 @@ cd pos-api && SMOKE_BASE_URL=https://localhost NODE_EXTRA_CA_CERTS=../infra/secr
 | 1.0 | 2026-10-21 | Создан задачами RM-C-011, RM-C-012 |
 | 1.1 | 2026-10-28 | Сверка с кодом (E-KI-13, `docs/known_issues.md` v1.1): §3.2 — секреты worker (`otp_pepper`, `OTP_HMAC_SECRET_FILE`) и api, `WORKERS_ENABLED`, dev-миграции у migrate; таблица файлов — стадии `release`/`test-fixtures` Dockerfile; §5 — фикстуры 1С в слое образа `test-fixtures` вместо bind-mount, урезанный набор секретов worker; §3.2 — `FakeSmsGateway` при `staging` без `dev_outbox`. Результаты локальных проверок §1 — исторические (2026-10-21), не перезапускались |
 | 1.2 | 2026-10-29 | Веб-демо на Netlify (15 ADR-113): §6 — правило слоёв DM-01 в шаге `check_layers.py`; из тестов веб-демо в CI только DM-01 и VM-тесты `pos-app/test/app/demo/**`, остальные (сборка web, `node --test` бэкенда демо, headless-проверка, `check-site`, сверка с local-stack) — вручную перед выкладкой, вне релизных ворот; гейты для нового кода демо. `ci.yml` не менялся Уточнено по ревью веб-демо: DM-01 — белый список для `app/demo/**` (`app/demo/**`, `app/bootstrap.dart`, `core/**`, пакеты), директивы `part` проверяются; T-DEMO-001 и T-DEMO-012 блокируют PR в job `app-analyze-test`; файлы `demo/web/tools/*` и `demo/web/README.md` создают WP-N1 и WP-T2 |
+| 1.3 | 2026-11-06 | Число таблиц после миграции `0022_kiosk_schema.sql` (`store_tablets`, 07 §5.65, ADR-115; ревью реализации P-002): §1 — примечание под таблицей проверок 2026-10-21 (staging/prod — 64 таблицы, dev/test — 65), §3 — `make test-check` при `APP_ENV=dev` сверяет 65 таблиц вместо 64; таблица проверок 2026-10-21 не менялась |

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Администратор устройства планшета магазина (KioskDeviceAdminReceiver; P-002 §8.10; 16 §10.10; 13 TAB-2-09).
+  Владельцу устройства (Device Owner) lock task, ограничения UserManager.DISALLOW_*, шторка, экран блокировки и
+  приложение «Домой» доступны без политик этого списка, поэтому список пуст: приложение не получает ни стирания
+  данных, ни смены и сброса пароля, ни принудительной блокировки экрана.
+-->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies />
+</device-admin>

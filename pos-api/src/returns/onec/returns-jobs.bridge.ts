@@ -4,6 +4,7 @@ import { APP_CONFIG, type AppConfig } from '../../common/config/app-config.js';
 import { type OnecConfirmedPayload, type OnecFailedPayload, QUEUES } from '../../common/jobs/contracts/queues.js';
 import { PgBossService } from '../../common/jobs/pg-boss.service.js';
 import type { SyncEntityHandler, SyncHandlerResult, SyncRunContext } from '../../jobs/sync/sync-handler.js';
+import { OrdersRetentionService } from '../../orders/orders-retention.service.js';
 import { ReturnsRetentionService } from '../returns-retention.service.js';
 import { ReturnsOnecService } from './returns-onec.service.js';
 
@@ -41,17 +42,56 @@ async function ensureQueue(
  * `returns.onec-failed` (событие результата доставки outbox `return_request`) регистрируются только при
  * `WORKERS_ENABLED=true` (pos-worker; pos-api в минимальной конфигурации без воркера) — как `PaymentsJobsBridge`.
  * Без pg-boss (тесты `jobs: false`) ничего не делает: результаты применяются вызовом `ReturnsOnecService`.
+ *
+ * Очередь `retention.daily` (03:30 Asia/Bishkek, singleton) регистрирует только этот мост — **один** `boss.work`
+ * (второй обработчик той же очереди делил бы задания pg-boss между собой): `runDaily` — общий реестр задач сроков
+ * хранения (07 §13.3 «общим реестром задач в одном job»; 06 MOD-024 — очистку выполняет обработчик модуля-владельца):
+ * черновики заявок на возврат (`returns`) и маскирование номера покупателя в заявках с планшета (`orders`,
+ * `OrdersRetentionService`, задача TAB-1-10; ADR-115) — экспорт `OrdersModule`, внедряется конструктором (06 MOD-024:
+ * взаимодействие только через экспортируемые сервисы). Импорт `returns → orders` — только этот обработчик ретенции
+ * (`orders` модуль `returns` не импортирует, цикла нет — `npm run madge`).
  */
 @Injectable()
 export class ReturnsJobsBridge implements OnApplicationBootstrap {
   private readonly logger = new Logger('returns.jobs');
 
+  /**
+   * `ordersRetention` — задача модуля `orders` (экспорт `OrdersModule`); нет — только задача возвратов (модульные
+   * тесты моста без контекста Nest).
+   */
   constructor(
     @Inject(APP_CONFIG) private readonly config: Pick<AppConfig, 'WORKERS_ENABLED'>,
     private readonly onec: ReturnsOnecService,
     private readonly retention: ReturnsRetentionService,
     @Optional() private readonly boss?: PgBossService,
+    @Optional() private readonly ordersRetention?: OrdersRetentionService,
   ) {}
+
+  /**
+   * Один запуск `retention.daily`: задачи выполняются по очереди, сбой одной не отменяет другие (каждая идемпотентна);
+   * после всех — первая ошибка пробрасывается, и pg-boss повторяет задание (`retryLimit` 3). Итог — счётчики задач
+   * (`deleted` — черновики возвратов, `masked` — номера в заявках с планшета), без ПДн.
+   */
+  async runDaily(): Promise<Record<string, number>> {
+    const orders = this.ordersRetention;
+    const tasks: { readonly name: string; readonly run: () => Promise<Record<string, number>> }[] = [
+      { name: 'returns.drafts', run: () => this.retention.purgeExpiredDrafts() },
+      ...(orders ? [{ name: 'orders.kiosk_receiver_phone', run: () => orders.maskKioskReceiverPhones() }] : []),
+    ];
+    const out: Record<string, number> = {};
+    let failure: Error | null = null;
+    for (const t of tasks) {
+      try {
+        Object.assign(out, await t.run());
+      } catch (err) {
+        failure ??= err instanceof Error ? err : new Error(`retention.daily: задача ${t.name} не выполнена`);
+        this.logger.error({ err, task: t.name }, 'retention.daily.task_failed');
+      }
+    }
+    if (failure !== null) throw failure;
+    this.logger.log({ event: 'retention.daily', ...out });
+    return out;
+  }
 
   onApplicationBootstrap(): void {
     if (!this.boss || !this.config.WORKERS_ENABLED) return;
@@ -71,10 +111,11 @@ export class ReturnsJobsBridge implements OnApplicationBootstrap {
           if (!job) return undefined;
           return { outcome: await this.onec.onFailed(job.data) };
         });
-        // Сроки хранения (06 §7.5 `retention.daily`, 03:30 Asia/Bishkek; 07 §13.3): черновики заявок старше 7 дней.
+        // Сроки хранения (06 §7.5 `retention.daily`, 03:30 Asia/Bishkek; 07 §13.3): черновики заявок старше 7 дней
+        // и номер покупателя в заявках с планшета старше 90 дней — один обработчик очереди (runDaily).
         await ensureQueue(boss, QUEUES.retentionDaily, RETENTION_QUEUE_OPTIONS);
         await boss.work(QUEUES.retentionDaily, { pollingIntervalSeconds: 30, batchSize: 1 }, async () =>
-          this.retention.purgeExpiredDrafts(),
+          this.runDaily(),
         );
         await boss.schedule(
           QUEUES.retentionDaily,

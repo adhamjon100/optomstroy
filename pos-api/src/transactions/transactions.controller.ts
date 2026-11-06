@@ -2,7 +2,9 @@ import { Controller, Get, Header, Param, Query, Req } from '@nestjs/common';
 import { auditContextFromRequest } from '../common/audit/audit-context.js';
 import { CurrentUser } from '../common/auth/auth.decorators.js';
 import type { AuthenticatedPrincipal } from '../common/auth/principal.js';
+import { customerModeOrDeny } from '../common/auth/subject-kind.js';
 import type { RequestWithContext } from '../common/http/request-context.js';
+import { ProblemException } from '../common/problem-details/problem.exception.js';
 import { PermissionCatalog } from '../common/rbac/permission-catalog.js';
 import { RequireAnyPermission } from '../common/rbac/rbac.decorators.js';
 import { TransactionQueryService, type TransactionsViewer } from './transactions.service.js';
@@ -26,7 +28,10 @@ export class TransactionsController {
       actor: {
         userId: p.userId,
         roles: p.roles,
-        isCustomer: p.kind === 'customer',
+        // Журнал операций вне закрытого списка планшета: `kind=kiosk` — 403 (06 ARCH-065).
+        isCustomer: customerModeOrDeny(p.kind, () => {
+          throw new ProblemException('FORBIDDEN', { detail: 'Недостаточно прав для операции.' });
+        }),
         sessionId: p.sessionId,
         deviceId: p.deviceId,
         requestId: typeof req.id === 'string' ? req.id : null,

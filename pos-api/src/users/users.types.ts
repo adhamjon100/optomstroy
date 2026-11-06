@@ -39,6 +39,8 @@ export const SESSION_REVOKE_REASONS = [
   'biometric_invalidated',
   // миграция 0003 (09 §8.3 `refresh_replay`, §17 п. 19(а); DQ-03)
   'refresh_replay',
+  // миграция 0022 (планшет магазина, ADR-115): отключение администратором или аварийный выход → 401 KIOSK_REVOKED
+  'kiosk_revoked',
 ] as const;
 export type SessionRevokeReason = (typeof SESSION_REVOKE_REASONS)[number];
 

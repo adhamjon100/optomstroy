@@ -206,10 +206,15 @@ function presentCommon(o: OrderRow, c: PresentContext): Record<string, unknown> 
     totalsDiffer: o.totals_differ,
     customer: presentCustomer(c.customer),
     createdVia: o.created_via,
+    // Подсказка кассиру SCR-24 по заявке с планшета (08 §3.9; ADR-115): только сотрудникам (`x-roles` контракта —
+    // у покупателя поля нет), у других каналов — null.
+    ...(c.actor.isCustomer ? {} : { kioskCustomerMatch: o.kiosk_customer_match }),
     receiver: {
       kind: o.receiver_kind,
       name: o.receiver_name,
       phone: o.receiver_phone_e164,
+      // После маскирования номера заявки с планшета (07 §13.3; 11 PRIV-034): `phone = null`, маска — только здесь.
+      ...(o.receiver_phone_masked ? { phoneMasked: o.receiver_phone_masked } : {}),
     },
     delivery: {
       method: o.delivery_method,

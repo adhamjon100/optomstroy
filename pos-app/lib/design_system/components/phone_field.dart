@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:optomstroy/design_system/components/app_text_field.dart';
+import 'package:optomstroy/design_system/components/private_input_scope.dart';
 import 'package:optomstroy/design_system/formats/ds_phone_format.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_typography.dart';
@@ -25,6 +26,12 @@ enum PhoneFieldVariant { auth, form }
 /// Ввод телефона Кыргызстана `PhoneField` (03 §9.4): нередактируемый префикс «+996»,
 /// 9 цифр с маской `XXX XXX XXX`, вставка «0…», «996…», «+996…» нормализуется.
 /// [onChanged] получает E.164 `+996XXXXXXXXX` при 9 цифрах, иначе `null`.
+///
+/// В области «общее устройство» `PrivateInputScope` (03 §9.4, §9.74, редакция 1.19; DS-099, DS-101): без
+/// `autofillHints` (`telephoneNumberNational` не объявляется), подсказок, обучения клавиатуры, выделения,
+/// контекстного меню и вставки; системная клавиатура не открывается (`readOnly` + `TextInputType.none`) — цифры
+/// вводит `KioskKeypad` в [controller] (маска `XXX XXX XXX` — `DsPhoneFormat.groupNational`); диктор слышит число
+/// введённых цифр, а не номер (A11Y-023). Вне области — как прежде.
 class PhoneField extends StatelessWidget {
   /// Создаёт поле телефона.
   const PhoneField({
@@ -109,9 +116,14 @@ class PhoneField extends StatelessWidget {
   /// Плейсхолдер маски.
   static const String placeholder = 'XXX XXX XXX';
 
+  /// Что объявляет диктор в `PrivateInputScope` вместо номера (A11Y-023): число введённых цифр «n / 9».
+  static String digitCountLabel(String text) =>
+      '${DsPhoneFormat.nationalDigits(text)?.length ?? 0} / ${DsPhoneFormat.nationalLength}';
+
   @override
   Widget build(BuildContext context) {
     final bool auth = variant == PhoneFieldVariant.auth;
+    final bool private = PrivateInputScope.of(context);
     final TextStyle base = (auth ? context.text.h3.copyWith(fontWeight: FontWeight.w500) : context.text.bodyLg)
         .copyWith(fontFeatures: DsTypography.numeric);
     return AppTextField(
@@ -133,6 +145,8 @@ class PhoneField extends StatelessWidget {
       keyboardType: TextInputType.phone,
       textInputAction: TextInputAction.done,
       autofillHints: const <String>[AutofillHints.telephoneNumberNational],
+      keypadInput: private,
+      semanticValueOf: private ? digitCountLabel : null,
       inputFormatters: <TextInputFormatter>[
         if (onInputSignal == null) const DsPhoneInputFormatter() else _SignalingPhoneFormatter(onInputSignal!),
       ],

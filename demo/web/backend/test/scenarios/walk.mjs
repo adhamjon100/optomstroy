@@ -1,8 +1,10 @@
 // «Обход» операций, которые вызывает приложение (WP-T1; 116 операций Dio по карте api-surface
-// D:/optomstroy/.tmp/web_demo/maps/api-surface.json и openapi_ops.txt; + GET /health). Сценарии README и негативные
+// D:/optomstroy/.tmp/web_demo/maps/api-surface.json и openapi_ops.txt; + GET /health; с P-002 — 128 операций, из них
+// 126 через Dio, test/scenarios/app-operations.json). Сценарии README и негативные
 // ветки уже покрыли часть операций; здесь — остальные, по ролям, как их вызывают экраны. Каждый шаг ждёт свой
 // документированный статус (2xx или объявленный 4xx ветки).
-import { PIN, cashAmount, fillCart, orderBody, placeOrder, qty, sleep } from './dsl.mjs';
+import { OTP, PIN, cashAmount, fillCart, orderBody, placeOrder, qty, sleep } from './dsl.mjs';
+import { kioskClosedList } from './negative.mjs';
 import { period } from './readme.mjs';
 
 const enc = encodeURIComponent;
@@ -390,5 +392,81 @@ export async function walkAdmin(w) {
   await w.O.call('сверка QR: несопоставленные', 'GET', `/admin/reports/qr-reconciliation?${period()}&status=unmatched`);
 }
 
-export const WALK = [walkAuth, walkRegistration, walkCatalog, walkCart, walkOrders, walkCustomers, walkReturns, walkSync, walkAdmin];
+/**
+ * Планшет магазина (P-002, ADR-115; TAB-1-07 — строгий прогон на PGlite до пакетов приложения и демо): администратор
+ * 901 на «устройстве планшета» → step-up `kiosk.manage` → `POST /admin/store-tablets` → `GET /me` планшета
+ * (`{kind, tablet}`) → публичные настройки (`storeTablet`) → каталог → корзина → предпросмотр → `POST /kiosk/order-otp`
+ * → `POST /kiosk/orders` с кодом 246810 → восстановление по ключу → кассир 906 видит `createdVia=kiosk` → сброс →
+ * список планшетов → отключение → refresh `401 KIOSK_REVOKED` → подключение заново с того же устройства (та же строка,
+ * новый аварийный код) → аварийный выход. Номер покупателя — вымышленный (`+996 555 000 9xx`, тестовые данные).
+ * Веб-демо (WP-T1, TAB-3-01): сразу после подключения — закрытый список планшета на бандле (T-KIOSK-005,
+ * kioskClosedList в negative.mjs); панель «ДЕМО» (`GET state`) видит планшет и канал заявки `kiosk`; администратор
+ * меняет имя планшета (`PATCH /admin/store-tablets/{id}`, 10-я операция планшета в app-operations.json).
+ */
+export async function walkKiosk(w) {
+  const { ctx, A, C } = w;
+  ctx.begin('Обход: планшет магазина');
+  const NOTICE = '2026-11-04';
+  const NAME = 'Планшет у входа';
+  const T = ctx.dev('android', { name: 'планшет магазина' });
+  await T.login('+996777000901');
+  const warehouseId = (w.wh.find((x) => x.isDefaultForPos) ?? w.wh[0])?.id;
+  const en = await T.withStepUp('POST /admin/store-tablets', 'POST', '/admin/store-tablets', { body: { name: NAME, warehouseId }, expect: 201 });
+  const tablet = en.final.json?.tablet;
+  const exit1 = en.final.json?.exitCode;
+  ctx.check('подключение: без step-up → 403 STEP_UP_REQUIRED; со step-up kiosk.manage → 201 (планшет, токены, код из 8 цифр)', en.first.status === 403 && en.operation === 'kiosk.manage' && en.final.status === 201 && !!tablet?.id && /^\d{8}$/.test(String(exit1)), { first: en.first.status, operation: en.operation, final: en.final.status, code: en.final.json?.code });
+  T.token = en.final.json?.accessToken; // check-secrets: allow — токен из ответа API в прогоне, не секрет; gitleaks:allow
+  T.refresh = en.final.json?.refreshToken;
+  const me = await T.call('GET /me (планшет)', 'GET', '/me');
+  const sp = await T.call('GET /settings/public (планшет)', 'GET', '/settings/public');
+  ctx.check('планшет: GET /me → только {kind: kiosk, tablet}; storeTablet=true', me.json?.kind === 'kiosk' && me.json?.tablet?.id === tablet?.id && Object.keys(me.json ?? {}).sort().join(',') === 'kind,tablet' && sp.json?.features?.storeTablet === true, { kind: me.json?.kind, keys: Object.keys(me.json ?? {}), storeTablet: sp.json?.features?.storeTablet });
+  await kioskClosedList(w, T, tablet);
+  const cat = await T.call('GET /catalog/products (планшет)', 'GET', '/catalog/products?limit=20&inStock=true');
+  const closed = await T.call('POST /orders планшету → 403 (закрытый список)', 'POST', '/orders', { idem: true, body: {}, expect: 403 });
+  ctx.check('закрытый список: каталог 200; POST /orders → 403 kiosk_closed_list', cat.status === 200 && closed.json?.reason === 'kiosk_closed_list', { catalog: cat.status, orders: closed.status, reason: closed.json?.reason });
+  const p = w.p(5);
+  const cart = await fillCart(T, [{ p, q: '1' }], { label: 'корзина планшета' });
+  const pv = await T.call('POST /cart/checkout-preview (планшет)', 'POST', '/cart/checkout-preview', { idem: true, body: { cartId: cart.id, cartRowVersion: cart.rowVersion, paymentMethod: 'cash', delivery: { method: 'pickup' }, receiver: { kind: 'customer' } } });
+  const otp = await T.call('POST /kiosk/order-otp', 'POST', '/kiosk/order-otp', { body: { phone: '+996555000961', cartId: cart.id, noticeVersion: NOTICE }, expect: 202 });
+  const key = crypto.randomUUID();
+  const ord = await T.call('POST /kiosk/orders (код 246810)', 'POST', '/kiosk/orders', { idem: key, body: { challengeId: otp.json?.challengeId, code: OTP, cartId: pv.json?.cartId, cartRowVersion: pv.json?.cartRowVersion, previewToken: pv.json?.previewToken }, expect: [201, 202] }); // check-secrets: allow — имя поля из ответа API в прогоне, не секрет
+  const found = await T.call('GET /kiosk/orders?idempotencyKey', 'GET', `/kiosk/orders?idempotencyKey=${key}`);
+  const publicNumber = ord.json?.publicNumber;
+  ctx.check('заявка: код → 202 {challengeId, resendAfterSec}; POST /kiosk/orders → {publicNumber}; восстановление по ключу — тот же номер', pv.status === 200 && Object.keys(otp.json ?? {}).sort().join(',') === 'challengeId,resendAfterSec' && Object.keys(ord.json ?? {}).join(',') === 'publicNumber' && found.json?.publicNumber === publicNumber, { preview: pv.status, otp: otp.status, order: ord.status, found: found.status });
+  const staff = await C.call('GET /orders?createdVia=kiosk (кассир)', 'GET', '/orders?createdVia=kiosk&limit=20');
+  const mine = (staff.json?.items ?? []).find((x) => x.publicNumber === publicNumber);
+  ctx.check('кассир 906 видит заявку с планшета: createdVia=kiosk', staff.status === 200 && mine?.createdVia === 'kiosk' && 'kioskCustomerMatch' in (mine ?? {}), { status: staff.status, createdVia: mine?.createdVia, match: mine?.kioskCustomerMatch });
+  // панель «ДЕМО» (demo-control.mjs GET state): планшеты — только чтение, без хэша, счётчиков и ключа устройства; заявка — «С планшета»
+  const st = await ctx.panel('GET state');
+  const row = (st?.kiosk?.tablets ?? []).find((x) => x.id === tablet?.id);
+  const po = (st?.orders ?? []).find((x) => x.number === publicNumber);
+  ctx.check('панель «ДЕМО»: kiosk.enabled, планшет в списке (id, name, status, lastSeenAt, enrolledAt — и только они); заявка с createdVia=kiosk', st?.kiosk?.enabled === true && row?.name === NAME && row?.status === 'active' && Object.keys(row ?? {}).sort().join(',') === 'enrolledAt,id,lastSeenAt,name,status' && po?.createdVia === 'kiosk', { enabled: st?.kiosk?.enabled, tablets: st?.kiosk?.tablets?.length, keys: Object.keys(row ?? {}), order: po?.createdVia ?? null });
+  const c2 = (await T.call('GET /cart (перед сбросом)', 'GET', '/cart')).json;
+  const rs = await T.call('POST /kiosk/reset', 'POST', '/kiosk/reset', { idem: true, body: { cartId: c2?.id } });
+  ctx.check('сброс: POST /kiosk/reset → 200', rs.status === 200, { status: rs.status, code: rs.json?.code });
+  const list = await A.call('GET /admin/store-tablets', 'GET', '/admin/store-tablets');
+  ctx.check('список планшетов: планшет active', (list.json?.items ?? []).some((x) => x.id === tablet?.id && x.status === 'active'), { n: list.json?.items?.length });
+  const NAME2 = 'Планшет у входа (2)';
+  const up = await A.call('PATCH /admin/store-tablets/{id} (имя)', 'PATCH', `/admin/store-tablets/${tablet?.id}`, { idem: true, body: { name: NAME2 } });
+  const st2 = await ctx.panel('GET state');
+  ctx.check('изменение имени: PATCH /admin/store-tablets/{id} → 200 без step-up; панель «ДЕМО» показывает новое имя', up.status === 200 && up.json?.id === tablet?.id && up.json?.name === NAME2 && (st2?.kiosk?.tablets ?? []).some((x) => x.id === tablet?.id && x.name === NAME2), { status: up.status, name: up.json?.name });
+  const rv = await A.withStepUp('POST /admin/store-tablets/{id}/revoke', 'POST', `/admin/store-tablets/${tablet?.id}/revoke`, { body: {}, expect: 200 });
+  const rf = await T.call('POST /auth/refresh (планшет отключён)', 'POST', '/auth/refresh', { noAuth: true, body: { refreshToken: T.refresh }, expect: 401 });
+  const gone = await T.call('GET /cart (планшет отключён)', 'GET', '/cart', { expect: 401 });
+  ctx.check('отключение → 200; refresh и запрос планшета → 401 KIOSK_REVOKED', rv.final.status === 200 && rf.json?.code === 'KIOSK_REVOKED' && gone.json?.code === 'KIOSK_REVOKED', { revoke: rv.final.status, refresh: rf.json?.code, guard: gone.json?.code });
+  // подключение заново: администратор входит на том же устройстве (тот же X-Device-Id)
+  const R = ctx.dev('android', { deviceId: T.deviceId, name: 'админ 901 на планшете' });
+  await R.login('+996777000901');
+  const rc = await R.withStepUp('POST /admin/store-tablets/{id}/reconnect', 'POST', `/admin/store-tablets/${tablet?.id}/reconnect`, { body: {}, expect: 200 });
+  const exit2 = rc.final.json?.exitCode;
+  ctx.check('подключение заново → 200: тот же tablet.id, новый аварийный код', rc.final.status === 200 && rc.final.json?.tablet?.id === tablet?.id && /^\d{8}$/.test(String(exit2)) && exit2 !== exit1, { first: rc.first.status, final: rc.final.status, same: rc.final.json?.tablet?.id === tablet?.id });
+  T.token = rc.final.json?.accessToken; // check-secrets: allow — токен из ответа API в прогоне, не секрет; gitleaks:allow
+  T.refresh = rc.final.json?.refreshToken;
+  const me2 = await T.call('GET /me (планшет после подключения заново)', 'GET', '/me');
+  const ex = await T.call('POST /kiosk/exit', 'POST', '/kiosk/exit', { body: { code: exit2 }, expect: 200 });
+  const after = await T.call('GET /me (после выхода)', 'GET', '/me', { expect: 401 });
+  ctx.check('аварийный выход: 200 {}; сессия планшета завершена', me2.status === 200 && ex.status === 200 && Object.keys(ex.json ?? {}).length === 0 && after.status === 401, { me: me2.status, exit: ex.status, after: after.status });
+}
+
+export const WALK = [walkAuth, walkRegistration, walkCatalog, walkCart, walkOrders, walkCustomers, walkReturns, walkSync, walkAdmin, walkKiosk];
 export { sleep, orderBody, cashAmount };

@@ -28,6 +28,8 @@ const SUITES = [
   'favorites',
   'search',
   'images',
+  // Планшет магазина (ADR-115 п. 31; 12 §2.15): серверные тесты планшета — test/kiosk (CI api-integration).
+  'kiosk',
 ];
 
 export default defineConfig({

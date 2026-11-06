@@ -44,6 +44,7 @@ export const notificationKindEnum = pgEnum('notification_kind', [
   'system',
   'payment_status',
   'return_status',
+  'kiosk_order',
 ]);
 export const onecSyncStateEnum = pgEnum('onec_sync_state', ['unknown', 'pending', 'linked', 'missing', 'ambiguous']);
 export const orderStatusEnum = pgEnum('order_status', [
@@ -65,6 +66,7 @@ export const otpPurposeEnum = pgEnum('otp_purpose', [
   'phone_change_old',
   'phone_change_new',
   'customer_link',
+  'kiosk_order',
 ]);
 export const otpStatusEnum = pgEnum('otp_status', [
   'sent',
@@ -123,6 +125,7 @@ export const roleCodeEnum = pgEnum('role_code', [
   'owner',
   'customer',
   'integration',
+  'kiosk',
 ]);
 export const sessionKindEnum = pgEnum('session_kind', ['standard', 'biometric']);
 export const smsStatusEnum = pgEnum('sms_status', ['queued', 'sent', 'delivered', 'failed', 'expired']);
@@ -167,5 +170,5 @@ export const transactionKindEnum = pgEnum('transaction_kind', [
   'return_requested',
 ]);
 export const transactionSourceEnum = pgEnum('transaction_source', ['pos', 'onec']);
-export const userKindEnum = pgEnum('user_kind', ['staff', 'customer']);
+export const userKindEnum = pgEnum('user_kind', ['staff', 'customer', 'kiosk']);
 export const userStatusEnum = pgEnum('user_status', ['pending', 'pending_activation', 'active', 'blocked', 'deleted']);

@@ -83,6 +83,13 @@ abstract final class ErrorTexts {
       ErrorKeys.returnAlreadyInOnec => l10n.return_already_in_onec,
       ErrorKeys.returnNotReturnable => l10n.return_not_returnable,
       ErrorKeys.returnsDisabled => l10n.return_disabled,
+      // Планшет магазина (ADR-115; 03 §16.5).
+      ErrorKeys.kioskRevoked => l10n.error_kiosk_revoked,
+      ErrorKeys.kioskDisabled => l10n.error_kiosk_disabled,
+      ErrorKeys.kioskNetworkDenied => l10n.error_kiosk_network_denied,
+      ErrorKeys.kioskRateLimited => l10n.error_kiosk_rate_limited,
+      ErrorKeys.kioskExitCodeInvalid => l10n.error_kiosk_exit_code_invalid,
+      ErrorKeys.kioskExitLocked => l10n.error_kiosk_exit_locked,
       _ => null,
     };
   }

@@ -63,6 +63,8 @@ final class DioOrdersRepository implements OrdersRepository {
         if (query.statuses.isNotEmpty) 'status': query.statuses.map((OrderStatus s) => s.value).join(','),
         'customerId': ?query.customerId,
         'createdBy': ?query.createdBy,
+        // Чип «С планшета» SCR-25 (UI-25-014): одно значение `createdVia` (08 §4.8.2; ADR-115).
+        if (query.createdVia != null) 'createdVia': query.createdVia!.value,
         if (query.from != null) 'from': _date(query.from!),
         if (query.to != null) 'to': _date(query.to!),
         if (query.paymentMethod != null) 'paymentMethod': query.paymentMethod!.value,

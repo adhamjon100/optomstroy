@@ -24,6 +24,11 @@ class AppMetaDao extends DatabaseAccessor<AppDatabase> with _$AppMetaDaoMixin {
   /// сущность перезагружается без `since` (DATA-262; ядро v1.9 §24.2). Ключа нет в 07 §11.2 — EQ (раздел FIX).
   static const String catalogStockScopeKey = 'catalog_stock_scope';
 
+  /// Метка сброса планшета магазина без сети (07 §11.2, строка `app_meta`; 04 FLOW-045.A1; 10 KIOSK-020): значение —
+  /// только id корзины, закрытие которой сервер ещё не подтвердил (без ПДн и `rowVersion`). Пишет и снимает корзина
+  /// планшета (`KioskCartSync`); первым запросом при запуске и при связи — `POST /kiosk/reset` с этим id.
+  static const String kioskPendingResetCartIdKey = 'kiosk.pending_reset_cart_id';
+
   Future<String?> read(String key) async =>
       (await (select(appMeta)..where((t) => t.key.equals(key))).getSingleOrNull())?.value;
 

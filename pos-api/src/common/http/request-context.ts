@@ -4,7 +4,12 @@
  */
 export interface Principal {
   readonly userId: string;
-  readonly kind: 'staff' | 'customer' | 'integration';
+  /**
+   * Вид субъекта `SubjectKind` (common/auth/subject-kind.ts; 06 ARCH-065) или служебный `integration`; `kiosk` —
+   * технический пользователь планшета магазина (ADR-115). Литерал, а не импорт: правило lint `common/**` запрещает
+   * путь `../auth/*`; совпадение с `SubjectKind` сверяет subject-kind.spec.ts.
+   */
+  readonly kind: 'staff' | 'customer' | 'kiosk' | 'integration';
   /** Коды role_code (08 §2.2: в R1 одна активная роль, maxItems 1). */
   readonly roles: readonly string[];
   readonly status?: 'active' | 'pending_activation';

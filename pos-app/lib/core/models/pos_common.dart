@@ -70,16 +70,20 @@ final class LineQuantity {
 /// Получатель заказа (`Receiver`). ПДн получателя ([name], [phoneE164]) клиент не сохраняет на диск
 /// (`checkout_draft` — без ПДн, ядро §19.4) и не логирует.
 final class Receiver {
-  const Receiver({required this.kind, this.name, this.phoneE164});
+  const Receiver({required this.kind, this.name, this.phoneE164, this.phoneMasked});
 
   /// Получатель — сам клиент.
-  const Receiver.customer() : kind = ReceiverKind.customer, name = null, phoneE164 = null;
+  const Receiver.customer() : kind = ReceiverKind.customer, name = null, phoneE164 = null, phoneMasked = null;
 
   final ReceiverKind kind;
   final String? name;
 
   /// `+996XXXXXXXXX` (PhoneE164).
   final String? phoneE164;
+
+  /// Маска номера (`phoneMasked`, только в ответах, OpenAPI 1.3.0): номер покупателя заявки с планшета магазина после
+  /// маскирования (07 §13.3; ADR-115) — тогда [phoneE164] = `null`. В теле запроса не передаётся.
+  final String? phoneMasked;
 
   @override
   String toString() => 'Receiver(${kind.value})';

@@ -68,8 +68,9 @@ export class AdminReportsController {
     return body;
   }
 
+  /** Отчёты — только сотрудникам: `customer`, планшет магазина `kiosk` и любой иной вид — `403` (06 ARCH-065). */
   private assertStaff(req: Req): void {
-    if (principalOf(req).kind === 'customer') {
+    if (principalOf(req).kind !== 'staff') {
       throw new ProblemException('FORBIDDEN', { detail: 'Недостаточно прав для операции.' });
     }
   }

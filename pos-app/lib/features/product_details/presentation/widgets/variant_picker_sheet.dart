@@ -3,8 +3,13 @@
 // строки корзины-черновика (INV-015, CART-002). Варианты без остатка видны, но не добавляются
 // («Нет», AC-UI-15-003). Тап по названию — выбрать вариант в SCR-14. Закрытие без CTA корзину
 // не меняет (AC-UI-15-009). Этап E: строки пишутся в локальный черновик (этап F — сервер).
+// Ни одна строка не добавлена — снекбар ошибки («Корзина не сохранена» без связи, иначе «Не удалось выполнить»), а не
+// «Добавлено 0». Слой карточки планшета без связи, при `426` и метке сброса передаёт `addBlocked` — степперы и CTA
+// неактивны (02 UI-51-010, AC-UI-51-006, AC-UI-51-009).
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:optomstroy/core/error/failure.dart';
+import 'package:optomstroy/core/error/result.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/core/utils/qty.dart';
@@ -29,11 +34,16 @@ import 'package:optomstroy/features/product_details/presentation/widgets/product
 import 'package:optomstroy/features/product_details/presentation/widgets/product_sections.dart';
 
 /// Открыть SCR-15: compact — нижний лист, medium — лист 560 по центру, expanded — диалог 380.
+/// [addBlocked] — добавление недоступно (слой карточки планшета без связи, при `426`, при метке сброса).
 Future<void> showVariantPickerSheet(
   BuildContext context, {
   required ProductDetailsState state,
   required ProductDetailsNotifier notifier,
-}) => presentVariantSheet(context, (BuildContext ctx) => VariantPickerSheet(state: state, notifier: notifier));
+  bool addBlocked = false,
+}) => presentVariantSheet(
+  context,
+  (BuildContext ctx) => VariantPickerSheet(state: state, notifier: notifier, addBlocked: addBlocked),
+);
 
 /// Показ SCR-15 по классу окна (02 SCR-15.2): compact — нижний лист `fullHeight`, medium — лист 560 по центру,
 /// expanded — диалог 380. Общий для режима «Все варианты списком» и режима смены варианта строки (CART-005).
@@ -81,10 +91,13 @@ Future<void> presentVariantSheet(BuildContext context, WidgetBuilder body) {
 
 /// Содержимое SCR-15 (режим «Все варианты списком»).
 class VariantPickerSheet extends ConsumerStatefulWidget {
-  const VariantPickerSheet({super.key, required this.state, required this.notifier});
+  const VariantPickerSheet({super.key, required this.state, required this.notifier, this.addBlocked = false});
 
   final ProductDetailsState state;
   final ProductDetailsNotifier notifier;
+
+  /// Добавление недоступно: CTA и степперы строк неактивны.
+  final bool addBlocked;
 
   /// Поиск по артикулу — при большем числе вариантов (UI-15-006).
   static const int searchThreshold = 8;
@@ -155,17 +168,22 @@ class _VariantPickerSheetState extends ConsumerState<VariantPickerSheet> {
   }
 
   Future<void> _submit() async {
-    if (_busy || _qty.isEmpty) return;
+    if (_busy || _qty.isEmpty || widget.addBlocked) return;
     setState(() => _busy = true);
     final CartDraftRepository cart = ref.read(cartDraftRepositoryProvider);
     int added = 0;
+    Failure? failure;
     for (final Variant v in _s.variants) {
       final Qty? q = _qty[v.id];
       if (q == null) continue;
-      final r = await cart.add(
+      final Result<CartDraftLine> r = await cart.add(
         CartDraftAdd(variantId: v.id, quantity: q, priceSnapshot: v.price?.amount, stockSnapshot: v.stock?.available),
       );
-      if (r.isSuccess) added++;
+      if (r case FailureResult<CartDraftLine>(failure: final Failure f)) {
+        failure ??= f;
+      } else {
+        added++;
+      }
     }
     if (!mounted) return;
     final AppLocalizations l10n = AppLocalizations.of(context);
@@ -173,6 +191,14 @@ class _VariantPickerSheetState extends ConsumerState<VariantPickerSheet> {
     Navigator.of(context).pop();
     await widget.notifier.reloadCart();
     if (messenger != null && messenger.mounted) {
+      // Ничего не добавлено — ошибка, а не «Добавлено 0»: без связи (и при метке сброса планшета) — «Корзина не
+      // сохранена», иначе — «Не удалось выполнить. Повторите».
+      final bool none = added == 0;
+      final String message = !none
+          ? l10n.variant_added_snackbar(added)
+          : (failure is NetworkFailure || (failure is UnknownFailure && failure.cause is KioskCartResetPending)
+                ? l10n.cart_header_save_failed
+                : l10n.error_internal);
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         SnackBar(
@@ -180,7 +206,7 @@ class _VariantPickerSheetState extends ConsumerState<VariantPickerSheet> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           padding: EdgeInsets.zero,
-          content: AppSnackbar(message: l10n.variant_added_snackbar(added), variant: AppSnackbarVariant.success),
+          content: AppSnackbar(message: message, variant: none ? AppSnackbarVariant.error : AppSnackbarVariant.success),
         ),
       );
     }
@@ -247,7 +273,7 @@ class _VariantPickerSheetState extends ConsumerState<VariantPickerSheet> {
           label: l10n.variant_add_cta(PriceText.format(_sum())),
           // Диктор — сумма без «запятой» и нулевых тыйынов (ADR-114 п. 4, ревью R2C-04).
           semanticLabel: l10n.variant_add_cta(PriceText.spoken(_sum())),
-          onPressed: _qty.isEmpty || _busy || _s.cta == ProductCta.hidden ? null : _submit,
+          onPressed: _qty.isEmpty || _busy || widget.addBlocked || _s.cta == ProductCta.hidden ? null : _submit,
           loading: _busy,
           size: AppButtonSize.l,
           expand: true,
@@ -325,10 +351,11 @@ class _VariantPickerSheetState extends ConsumerState<VariantPickerSheet> {
               increaseLabel: l10n.ds_qty_increase_a11y,
               decreaseLabel: l10n.ds_qty_decrease_a11y,
               onIncrement:
-                  r.available != null && (q.isZero ? r.initialFor() : q + r.stepFor()).milli > r.available!.milli
+                  widget.addBlocked ||
+                      (r.available != null && (q.isZero ? r.initialFor() : q + r.stepFor()).milli > r.available!.milli)
                   ? null
                   : () => _inc(v),
-              onDecrement: q.isZero ? null : () => _dec(v),
+              onDecrement: q.isZero || widget.addBlocked ? null : () => _dec(v),
             ),
         ],
       ),

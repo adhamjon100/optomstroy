@@ -29,7 +29,8 @@ export interface StoredSettings {
 }
 
 export interface SettingsContext {
-  readonly kind: 'staff' | 'customer';
+  /** `users.kind`; `kiosk` (ADR-115) сюда не доходит: `/me/*` вне закрытого списка планшета (08 §4.25). */
+  readonly kind: 'staff' | 'customer' | 'kiosk';
   readonly roles: readonly string[];
   readonly platform?: string | null;
   /** `SESSION_IDLE_LOCK_MINUTES` (30) — значение по умолчанию и максимум для `staff`. */

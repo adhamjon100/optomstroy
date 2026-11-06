@@ -6,6 +6,11 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto
 
 /** Длина OTP — 6 десятичных цифр, ведущие нули сохраняются (09 §5.1; NIST SP 800-63B-4). */
 export const OTP_CODE_LENGTH = 6;
+/**
+ * Длина аварийного кода выхода планшета магазина — 8 десятичных цифр, ведущие нули сохраняются (11 SEC-140; 09 §8.9
+ * п. 5; OpenAPI `KioskTokens.exitCode` `^\d{8}$`).
+ */
+export const EXIT_CODE_LENGTH = 8;
 /** `sms_outbox.provider_message_id` — 12 символов `[A-Za-z0-9]` (R0 §18.2 п. 9; CHECK 07 §5.61). */
 export const PROVIDER_MESSAGE_ID_LENGTH = 12;
 /** Непрозрачный токен — 32 байта (256 бит) → base64url 43 символа (refresh, registration; 09 §8.2, 08 §2.2). */
@@ -18,6 +23,16 @@ export function generateOtpCode(): string {
   return randomInt(0, 10 ** OTP_CODE_LENGTH)
     .toString()
     .padStart(OTP_CODE_LENGTH, '0');
+}
+
+/**
+ * Аварийный код выхода планшета `00000000…99999999` (`crypto.randomInt` — без смещения по модулю; 11 SEC-140).
+ * Показывается администратору один раз; в БД — только `Argon2id(pepper ∥ код ∥ tablet_id)` (ExitCodeHasher).
+ */
+export function generateExitCode(): string {
+  return randomInt(0, 10 ** EXIT_CODE_LENGTH)
+    .toString()
+    .padStart(EXIT_CODE_LENGTH, '0');
 }
 
 /** Случайная строка `[A-Za-z0-9]{length}` с равномерным распределением символов (randomInt на символ). */

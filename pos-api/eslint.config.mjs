@@ -20,6 +20,8 @@ const MODULES = [
   'admin',
   'notifications',
   'health',
+  // Режим «Планшет магазина» (06 MOD-030, ADR-115): common/** не импортирует src/kiosk.
+  'kiosk',
 ];
 
 export default tseslint.config(

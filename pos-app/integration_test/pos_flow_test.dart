@@ -91,6 +91,8 @@ import 'package:optomstroy/features/session_ui/presentation/widgets/step_up_dial
 import 'package:optomstroy/features/splash/presentation/screens/splash_screen.dart';
 import 'package:printing/printing.dart' show PdfPreview;
 
+import 'support/clean_start.dart';
+
 /// Тестовый код OTP контура (`AUTH_FIXTURES.otpCode`).
 const String _otpCode = String.fromEnvironment('E2E_OTP_CODE', defaultValue: '246810');
 
@@ -423,7 +425,7 @@ Future<void> _expectCompleteEnabled(WidgetTester tester) => pumpUntilFound(
 
 Future<void> _cleanStart(WidgetTester tester) async {
   _printer.files.clear();
-  await FlutterSecureStorageAdapter().deleteAll(<SecureKey>[...SecureKey.session, ...SecureKey.registration]);
+  await FlutterSecureStorageAdapter().deleteAll(kCleanStartKeys);
   await bootstrap(overrides: _overrides());
   await tester.pump();
   await pumpUntilFound(tester, find.byKey(SplashScreen.screenKey));
@@ -442,7 +444,13 @@ Future<void> _restartApp(WidgetTester tester, String pin) async {
   await pumpUntilFound(tester, find.byType(PinField));
   await _settle(tester);
   await _enterPin(tester, pin);
-  await pumpUntilFound(tester, find.byKey(_catalogRoot), timeout: const Duration(seconds: 60));
+  // Каталог после разблокировки: SCR-10 или стартовая категория SCR-12 — на medium и шире голый `/catalog` уходит на
+  // `/catalog/c/{id}` (ADR-114, AC-UI-10-033); ожидание одного SCR-10 гонялось с этим переходом (прогон WP-A11).
+  await pumpUntilFound(
+    tester,
+    find.byWidgetPredicate((Widget w) => w.key == _catalogRoot || w.key == const ValueKey<String>('stub-SCR-12')),
+    timeout: const Duration(seconds: 60),
+  );
 }
 
 Future<void> _phoneAndOtp(WidgetTester tester, String nationalPhone) async {

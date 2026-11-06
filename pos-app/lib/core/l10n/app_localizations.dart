@@ -303,6 +303,48 @@ abstract class AppLocalizations {
   /// **'Сущности: {entities}. По умолчанию на сервере: {value}'**
   String admin_settings_interval_group_hint(String entities, String value);
 
+  /// Экран: SCR-46. ч. E; планшет магазина, ADR-115, версия 1.27; секция «Планшеты магазина»; `kiosk_done_seconds` (по умолчанию 60, Р-09 (а)). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Номер заявки на экране, с'**
+  String get admin_settings_kiosk_done;
+
+  /// Экран: SCR-46. ч. E; планшет магазина, ADR-115, версия 1.27; секция «Планшеты магазина»; `kiosk_idle_seconds` (по умолчанию 120, Р-09 (а)). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Автосброс без касаний, с'**
+  String get admin_settings_kiosk_idle;
+
+  /// Экран: SCR-46. ч. E; планшет магазина, ADR-115, версия 1.27; секция «Планшеты магазина»; `kiosk_idle_warning_seconds` (по умолчанию 15, Р-09 (а)) — обратный отсчёт «Вы ещё здесь?». Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Предупреждение перед сбросом, с'**
+  String get admin_settings_kiosk_idle_warning;
+
+  /// Экран: SCR-46. ч. E; планшет магазина, ADR-115, версия 1.27; секция «Планшеты магазина»; `kiosk_otp_per_day` (по умолчанию 200, RL-OTP-KIOSK). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Кодов с одного планшета в сутки'**
+  String get admin_settings_kiosk_otp_per_day;
+
+  /// Экран: SCR-46. ч. E; планшет магазина, ADR-115, версия 1.27; секция «Планшеты магазина»; `kiosk_otp_per_hour` (по умолчанию 30, RL-OTP-KIOSK). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Кодов с одного планшета в час'**
+  String get admin_settings_kiosk_otp_per_hour;
+
+  /// Экран: SCR-46. ч. E; планшет магазина, ADR-115, версия 1.27; секция «Планшеты магазина»; `kiosk_working_hours`, формат — 07 §5.59; значения — Q-341. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Часы работы магазина (для сигнала «планшет не на связи»)'**
+  String get admin_settings_kiosk_working_hours;
+
+  /// Экран: SCR-46. ч. E; планшет магазина, ADR-115, версия 1.27; подпись пустого значения `kiosk_working_hours` (ответ владельца 2026-11-04 «Пока заглушки»). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Не заданы — сигнал выключен'**
+  String get admin_settings_kiosk_working_hours_empty;
+
   /// Экран: SCR-46. ч. E; валидация. Источник: 02 §7
   ///
   /// In ru, this message translates to:
@@ -392,6 +434,12 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Долги'**
   String get admin_settings_section_debts;
+
+  /// Экран: SCR-46. ч. E; планшет магазина, ADR-115, версия 1.27; секции; шесть общих настроек всех планшетов (Р-09 (а)). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Планшеты магазина'**
+  String get admin_settings_section_kiosk;
 
   /// Экран: SCR-46. ч. E; секции. Источник: 02 §7
   ///
@@ -806,6 +854,48 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Подтверждена скидка сверх лимита'**
   String get audit_action_discount_over_limit_approved;
+
+  /// Экран: SCR-47. ч. E; планшет магазина, ADR-115, версия 1.27; событие `kiosk.enrolled` (11 §7.2). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Планшет подключён'**
+  String get audit_action_kiosk_enrolled;
+
+  /// Экран: SCR-47. ч. E; планшет магазина, ADR-115, версия 1.27; событие `kiosk.exit_code_used` (11 §7.2). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Аварийный выход с планшета'**
+  String get audit_action_kiosk_exit_code_used;
+
+  /// Экран: SCR-47. ч. E; планшет магазина, ADR-115, версия 1.27; событие `kiosk.limit_reached` (11 §7.2). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Лимит кодов планшета исчерпан'**
+  String get audit_action_kiosk_limit_reached;
+
+  /// Экран: SCR-47. ч. E; планшет магазина, ADR-115, версия 1.27; событие `kiosk.network_denied` (11 §7.2). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Запрос планшета вне сети магазина'**
+  String get audit_action_kiosk_network_denied;
+
+  /// Экран: SCR-47. ч. E; планшет магазина, ADR-115, версия 1.27; событие `kiosk.reconnected` (11 §7.2). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Планшет подключён заново'**
+  String get audit_action_kiosk_reconnected;
+
+  /// Экран: SCR-47. ч. E; планшет магазина, ADR-115, версия 1.27; событие `kiosk.revoked` (11 §7.2). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Планшет отключён'**
+  String get audit_action_kiosk_revoked;
+
+  /// Экран: SCR-47. ч. E; планшет магазина, ADR-115, версия 1.27; событие `kiosk.updated` (11 §7.2). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Планшет изменён'**
+  String get audit_action_kiosk_updated;
 
   /// Экран: SCR-47. ч. E; добавлено при сборке 1.1 из п. 8 экрана. Источник: 02 §7
   ///
@@ -5061,6 +5151,42 @@ abstract class AppLocalizations {
   /// **'Не удалось выполнить. Повторите'**
   String get error_internal;
 
+  /// Общий ключ (владелец 03, ядро §18.1/§19.1). Источник: 03 §16.5 (код KIOSK_DISABLED)
+  ///
+  /// In ru, this message translates to:
+  /// **'Режим планшета выключен'**
+  String get error_kiosk_disabled;
+
+  /// Общий ключ (владелец 03, ядро §18.1/§19.1). Источник: 03 §16.5 (код KIOSK_EXIT_CODE_INVALID)
+  ///
+  /// In ru, this message translates to:
+  /// **'Неверный аварийный код'**
+  String get error_kiosk_exit_code_invalid;
+
+  /// Общий ключ (владелец 03, ядро §18.1/§19.1). Источник: 03 §16.5 (код KIOSK_EXIT_LOCKED)
+  ///
+  /// In ru, this message translates to:
+  /// **'Аварийный выход временно заблокирован'**
+  String get error_kiosk_exit_locked;
+
+  /// Общий ключ (владелец 03, ядро §18.1/§19.1). Источник: 03 §16.5 (код KIOSK_NETWORK_DENIED)
+  ///
+  /// In ru, this message translates to:
+  /// **'Планшет не в сети магазина'**
+  String get error_kiosk_network_denied;
+
+  /// Общий ключ (владелец 03, ядро §18.1/§19.1). Источник: 03 §16.5 (код KIOSK_RATE_LIMITED)
+  ///
+  /// In ru, this message translates to:
+  /// **'Слишком много кодов с этого планшета. Обратитесь к продавцу'**
+  String get error_kiosk_rate_limited;
+
+  /// Общий ключ (владелец 03, ядро §18.1/§19.1). Источник: 03 §16.5 (код KIOSK_REVOKED)
+  ///
+  /// In ru, this message translates to:
+  /// **'Планшет отключён администратором'**
+  String get error_kiosk_revoked;
+
   /// Экран: SCR-12/14. ч. B. Источник: 02 §7
   ///
   /// In ru, this message translates to:
@@ -5901,6 +6027,378 @@ abstract class AppLocalizations {
   /// **'Недавние товары'**
   String get home_recent_title;
 
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; колонка списка, `store_tablets.last_app_version`; `{version}` — String. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Версия приложения: {version}'**
+  String kiosk_admin_app_version(String version);
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; отказ подключения на compact (P-002 §8.8). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Режим планшета работает на экране шириной от 600 точек. Используйте планшет 10–11″'**
+  String get kiosk_admin_compact_refused;
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; действие строки: имя и склад. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Изменить'**
+  String get kiosk_admin_edit;
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; `EmptyState` списка. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Планшетов пока нет'**
+  String get kiosk_admin_empty;
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; подключение на самом планшете, step-up, `kiosk.manage`; скрыта при `features.storeTablet=false`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Сделать это устройство планшетом магазина'**
+  String get kiosk_admin_enroll;
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; после подключения и подключения заново; `{code}` — String, 8 цифр. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Аварийный код выхода: {code}. Он показывается один раз'**
+  String kiosk_admin_exit_code(String code);
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; под аварийным кодом (P-002 §8.9 п. 2). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Запишите код и уберите в конверт в сейфе. Новый код выдаётся при каждом подключении'**
+  String get kiosk_admin_exit_code_keep;
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; срок сессии планшета (180 дней); `{date}` — String. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Подключение действует до {date}'**
+  String kiosk_admin_expires(String date);
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; за 30 дней до конца срока; `warning` с иконкой; `{date}` — String. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Подключение заканчивается {date}. Подключите планшет заново'**
+  String kiosk_admin_expires_soon(String date);
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; колонка списка, `store_tablets.last_seen_at`; `{time}` — String. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Последняя связь: {time}'**
+  String kiosk_admin_last_seen(String time);
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; `lockTaskEnabled` false или null (веб, Windows, Android без Device Owner); `warning` с иконкой. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Закрепление не включено'**
+  String get kiosk_admin_lock_off;
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; `lockTaskEnabled=true` (заголовок `X-Kiosk-Lock: on`). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Закрепление включено'**
+  String get kiosk_admin_lock_on;
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; поле подключения и «Изменить»; колонка списка. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Имя планшета'**
+  String get kiosk_admin_name_label;
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; на самом планшете, step-up; скрыта при `features.storeTablet=false`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Подключить заново этот планшет'**
+  String get kiosk_admin_reconnect;
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; заголовок выбора записи при подключении заново. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Выберите планшет для подключения заново'**
+  String get kiosk_admin_reconnect_pick;
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; step-up, `kiosk.manage`; работает и при `KIOSK_MODE=false`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Отключить планшет'**
+  String get kiosk_admin_revoke;
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; `ConfirmDialog` destructive; `{name}` — String. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Отключить планшет «{name}»? Он сразу перестанет работать'**
+  String kiosk_admin_revoke_confirm(String name);
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; `store_tablets.status=active`; `StatusChip` success. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Подключён'**
+  String get kiosk_admin_status_active;
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; `store_tablets.status=revoked`; `StatusChip` neutral. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Отключён'**
+  String get kiosk_admin_status_revoked;
+
+  /// Экран: SCR-54; SCR-45 (ссылка). ч. F; планшет магазина, ADR-115, версия 1.27; заголовок экрана и пункт перехода из SCR-45. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Планшеты магазина'**
+  String get kiosk_admin_title;
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; версия планшета ниже рекомендуемой (P-002 §8.11 п. 1). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Нужна новая версия приложения'**
+  String get kiosk_admin_update_needed;
+
+  /// Экран: SCR-54. ч. F; планшет магазина, ADR-115, версия 1.27; поле подключения и «Изменить»; колонка списка; склад кассы (ADR-115 п. 24). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Склад'**
+  String get kiosk_admin_warehouse_label;
+
+  /// Экран: SCR-52. ч. F; планшет магазина, ADR-115, версия 1.27; шаг «Телефон»: `KIOSK_RATE_LIMITED`, `OTP_LOCKED`, лимиты номера — без подробностей. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Не удаётся отправить код. Обратитесь к продавцу'**
+  String get kiosk_call_seller;
+
+  /// Экран: SCR-52. ч. F; планшет магазина, ADR-115, версия 1.27; шаг «Код» → шаг «Телефон»; новый код вытесняет прежний. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Изменить номер'**
+  String get kiosk_change_phone;
+
+  /// Экран: SCR-51 (drawer корзины). ч. F; планшет магазина, ADR-115, версия 1.27; CTA корзины планшета → SCR-52 `?step=phone`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Оформить заявку'**
+  String get kiosk_checkout_button;
+
+  /// Экран: SCR-52. ч. F; планшет магазина, ADR-115, версия 1.27; шаг «Код»: `OTP_EXPIRED`, код вытеснен или погашен. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Код больше не действует. Получите новый код'**
+  String get kiosk_code_expired;
+
+  /// Экран: SCR-52. ч. F; планшет магазина, ADR-115, версия 1.27; шаг «Код»: `422 OTP_INVALID` (`attemptsLeft`); `{n}` — int. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Неверный код. Осталось попыток: {n}'**
+  String kiosk_code_invalid(int n);
+
+  /// Экран: SCR-52. ч. F; планшет магазина, ADR-115, версия 1.27; шаг «Код»; `{phoneMasked}` — String, маску строит приложение (`DsPhoneFormat.masked`, 03 §9.4): ответ сервера номер не повторяет. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Код отправлен на {phoneMasked}'**
+  String kiosk_code_sent_to(String phoneMasked);
+
+  /// Экран: SCR-52. ч. F; планшет магазина, ADR-115, версия 1.27; заголовок шага «Код». Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Введите код из SMS'**
+  String get kiosk_code_title;
+
+  /// Экран: SCR-52. ч. F; ADR-115, версия 1.28; шаг «Код» без действующего кода в памяти (`429 OTP_RATE_LIMITED` на номер, код которого вытеснен или очищен «Назад»): вместо UI-52-008; `{seconds}` — int. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Новый код можно получить через {seconds} с'**
+  String kiosk_code_wait(int seconds);
+
+  /// Экран: SCR-53. ч. F; планшет магазина, ADR-115, версия 1.27; сброс сразу; без нажатия — через `kiosk_done_seconds`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Готово'**
+  String get kiosk_done;
+
+  /// Экран: SCR-51 (аварийный выход). ч. F; планшет магазина, ADR-115, версия 1.27; `422 KIOSK_EXIT_CODE_INVALID` (`attemptsLeft`) или проверка на устройстве; `{n}` — int. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Неверный код. Осталось попыток: {n}'**
+  String kiosk_exit_code_invalid(int n);
+
+  /// Экран: SCR-51 (аварийный выход). ч. F; планшет магазина, ADR-115, версия 1.27; подпись поля; ввод — `KioskKeypad` (03 §9.74). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Аварийный код (8 цифр)'**
+  String get kiosk_exit_code_label;
+
+  /// Экран: SCR-51 (аварийный выход). ч. F; планшет магазина, ADR-115, версия 1.27; `423 KIOSK_EXIT_LOCKED` (`retryAfter`) или пауза на устройстве: 5 неверных — 15 мин; `{minutes}` — int. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Слишком много попыток. Повторите через {minutes} мин'**
+  String kiosk_exit_locked(int minutes);
+
+  /// Экран: SCR-51 (аварийный выход); SCR-01. ч. F; планшет магазина, ADR-115, версия 1.27; после проверки кода на устройстве (P-002 §8.9 п. 2). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Выход выполнен без связи. Отключите этот планшет в списке «Планшеты магазина»'**
+  String get kiosk_exit_offline_hint;
+
+  /// Экран: SCR-51 (аварийный выход). ч. F; планшет магазина, ADR-115, версия 1.27; CTA. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Выйти из режима планшета'**
+  String get kiosk_exit_submit;
+
+  /// Экран: SCR-51 (аварийный выход). ч. F; планшет магазина, ADR-115, версия 1.27; долгое нажатие на логотип 5 с (P-002 §8.9 п. 2). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Аварийный выход из режима планшета'**
+  String get kiosk_exit_title;
+
+  /// Экран: SCR-52. ч. F; планшет магазина, ADR-115, версия 1.27; CTA шага «Телефон», активна при 9 цифрах номера. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Получить код'**
+  String get kiosk_get_code;
+
+  /// Экран: SCR-51 (диалог автосброса). ч. F; планшет магазина, ADR-115, версия 1.27; обратный отсчёт `kiosk_idle_warning_seconds` (FLOW-045); `{seconds}` — int. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Через {seconds} с корзина очистится'**
+  String kiosk_idle_body(int seconds);
+
+  /// Экран: SCR-51 (диалог автосброса). ч. F; планшет магазина, ADR-115, версия 1.27; основное действие `ConfirmDialog` countdown (03 §9.45): таймер заново. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Продолжить'**
+  String get kiosk_idle_continue;
+
+  /// Экран: SCR-51 (диалог автосброса). ч. F; планшет магазина, ADR-115, версия 1.27; заголовок `ConfirmDialog` countdown (03 §9.45). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Вы ещё здесь?'**
+  String get kiosk_idle_title;
+
+  /// Экран: SCR-51. ч. F; планшет магазина, ADR-115, версия 1.27; состояние при `403 KIOSK_NETWORK_DENIED`; сессия не отзывается. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Планшет не в сети магазина. Обратитесь к продавцу'**
+  String get kiosk_network_denied;
+
+  /// Экран: SCR-52 (лист «Подробнее»). ч. F; планшет магазина, ADR-115, версия 1.27; полный текст информирования — раздел `kiosk_order_notice` версии 2026-11-04 файла `contracts/legal/notices_ru.md` (ADR-115 п. 16): девять абзацев через один пробел (строки ARB однострочные); метки «ТРЕБУЕТ РЕШЕНИЯ ЗАКАЗЧИКА» — часть текста этой версии, их заполнение — новая версия. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Номер телефона нужен, чтобы оформить заявку и найти вашу карточку клиента. Мы отправим SMS с кодом. Номер хранится в заявке и в журнале SMS, передаётся в 1С магазина и SMS-провайдеру. Оператор данных (владелец записей): юридическое лицо магазина «Оптомстрой» — [ТРЕБУЕТ РЕШЕНИЯ ЗАКАЗЧИКА: Q-340]. Ответственный за персональные данные и его контакт: [ТРЕБУЕТ РЕШЕНИЯ ЗАКАЗЧИКА: Q-340]. Цель: оформить заявку с планшета магазина и найти по номеру вашу карточку клиента в учётной системе магазина, чтобы кассир выдал заказ и принял оплату. Данные: номер телефона и состав заявки (товары и количество). Имя и другие сведения на планшете не спрашиваются. Основание: исполнение договора — вы сами просите оформить заявку (ст. 79 Цифрового кодекса Кыргызской Республики). Код из SMS подтверждает, что номер ваш. Учётная запись в приложении не создаётся. Где хранятся: на сервере магазина в Кыргызской Республике. На планшете номер не сохраняется: после отправки заявки и после ухода покупателя экран очищается. Кому передаются: учётной системе магазина 1С — номер записывается в заказ как телефон получателя; SMS-провайдеру SMSPro — номер и код, чтобы отправить SMS. Сроки: заявка хранится 3 года. Номер в заявке скрывается через 90 дней после выдачи или отмены заявки, а если заявку никто не выдал и не отменил — через 90 дней после её создания. Запись о запросе кода хранится 30 дней, журнал отправки SMS — 90 дней. Номер в заказе 1С хранится: [ТРЕБУЕТ РЕШЕНИЯ ЗАКАЗЧИКА: Q-339]. Ваши права: узнать, какие данные о вас есть, уточнить их, потребовать удаления или ограничения обработки, возразить против обработки. Учётная запись для этого не нужна: обратитесь к ответственному за персональные данные (контакт выше) или спросите продавца, как это сделать.'**
+  String get kiosk_notice_full;
+
+  /// Экран: SCR-52 (лист «Подробнее»). ч. F; планшет магазина, ADR-115, версия 1.27; заголовок листа полного текста. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Как мы используем номер телефона'**
+  String get kiosk_notice_full_title;
+
+  /// Экран: SCR-52. ч. F; планшет магазина, ADR-115, версия 1.27; шаг «Телефон»: открывает лист с полным текстом информирования. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Подробнее'**
+  String get kiosk_notice_more;
+
+  /// Экран: SCR-52. ч. F; планшет магазина, ADR-115, версия 1.27; шаг «Телефон», над «Получить код»; дословно первый абзац — раздел `kiosk_order_notice` версии 2026-11-04 файла `contracts/legal/notices_ru.md` (ADR-115 п. 16); окончательный текст — после юриста (Q-348): новая версия — новый раздел файла и правка этой строки. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Номер телефона нужен, чтобы оформить заявку и найти вашу карточку клиента. Мы отправим SMS с кодом. Номер хранится в заявке и в журнале SMS, передаётся в 1С магазина и SMS-провайдеру.'**
+  String get kiosk_notice_short;
+
+  /// Экран: SCR-51. ч. F; планшет магазина, ADR-115, версия 1.27; баннер: каталог из кэша, «В корзину» и «Оформить заявку» недоступны. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Нет связи. Смотреть товары можно, отправить заявку — нет. Обратитесь к продавцу'**
+  String get kiosk_offline;
+
+  /// Экран: SCR-52. ч. F; планшет магазина, ADR-115, версия 1.27; прочие отказы отправки и связь не вернулась за 15 мин. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Заявку не удалось отправить. Обратитесь к продавцу'**
+  String get kiosk_order_failed;
+
+  /// Экран: SCR-53. ч. F; планшет магазина, ADR-115, версия 1.27; под номером заявки; сумм и клиента нет. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Подойдите к кассе и назовите номер заявки. Оплата — на кассе'**
+  String get kiosk_order_sent_body;
+
+  /// Экран: SCR-53. ч. F; планшет магазина, ADR-115, версия 1.27; крупно; `{number}` — String, `publicNumber`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Заявка № {number} отправлена'**
+  String kiosk_order_sent_title(String number);
+
+  /// Экран: SCR-52. ч. F; планшет магазина, ADR-115, версия 1.27; заголовок шага «Телефон»; ввод — `KioskKeypad` (03 §9.74). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Введите номер телефона'**
+  String get kiosk_phone_title;
+
+  /// Экран: SCR-51 (шапка). ч. F; планшет магазина, ADR-115, версия 1.27; чип шапки: договорные цены на планшете не показываются (Р-05 (а)). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Обычные цены магазина'**
+  String get kiosk_price_chip;
+
+  /// Экран: SCR-51 (drawer корзины); SCR-53. ч. F; планшет магазина, ADR-115, версия 1.27; подпись под итогом корзины и на экране «Заявка отправлена». Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Договорные цены применит кассир'**
+  String get kiosk_price_note;
+
+  /// Экран: SCR-51. ч. F; планшет магазина, ADR-115, версия 1.27; срок сессии планшета вышел (`401 SESSION_REVOKED`): витрины нет, закрепление остаётся. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Планшет нужно подключить заново. Обратитесь к продавцу'**
+  String get kiosk_reconnect_needed;
+
+  /// Экран: SCR-52. ч. F; планшет магазина, ADR-115, версия 1.27; шаг «Код», таймер по `resendAfterSec`; `{seconds}` — int. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Получить код повторно через {seconds} с'**
+  String kiosk_resend_in(int seconds);
+
+  /// Экран: SCR-51. ч. F; планшет магазина, ADR-115, версия 1.27; состояние при `401 KIOSK_REVOKED`, затем SCR-01. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Планшет отключён администратором'**
+  String get kiosk_revoked;
+
+  /// Экран: SCR-52. ч. F; планшет магазина, ADR-115, версия 1.27; CTA шага «Код». Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Отправить заявку'**
+  String get kiosk_send_order;
+
+  /// Экран: SCR-52. ч. F; планшет магазина, ADR-115, версия 1.27; состояние отправки (до ≈ 19 с, таймаут клиента 30 с), кнопки недоступны. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Отправляем заявку…'**
+  String get kiosk_sending;
+
+  /// Экран: SCR-51 (шапка; диалог автосброса). ч. F; планшет магазина, ADR-115, версия 1.27; кнопка шапки и второе действие диалога автосброса — сброс (FLOW-045). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Начать заново'**
+  String get kiosk_start_over;
+
+  /// Экран: SCR-52 → SCR-51 (drawer корзины). ч. F; планшет магазина, ADR-115, версия 1.27; отказ по остатку или количеству: возврат к корзине с отмеченными строками, тот же код в течение 60 с. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Товара стало меньше. Проверьте количество и отправьте заявку ещё раз'**
+  String get kiosk_stock_changed;
+
+  /// Экран: SCR-51. ч. F; планшет магазина, ADR-115, версия 1.27; `KIOSK_MODE=false` (`403 KIOSK_DISABLED`, `features.storeTablet=false`); без «Выйти», в отличие от UI-50-015. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Сервис временно недоступен. Обратитесь к продавцу'**
+  String get kiosk_unavailable;
+
+  /// Экран: SCR-51; SCR-90 (вариант планшета). ч. F; планшет магазина, ADR-115, версия 1.27; `426 APP_UPDATE_REQUIRED`: как «Нет связи», без диалога загрузки SCR-90 (P-002 §8.11 п. 3). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Планшет нужно обновить. Обратитесь к продавцу'**
+  String get kiosk_update_needed;
+
   /// Экран: SCR-06. ч. A. Источник: 02 §7
   ///
   /// In ru, this message translates to:
@@ -6014,6 +6512,12 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Продажа в долг заблокирована'**
   String get notification_kind_credit_blocked;
+
+  /// Экран: SCR-44. ч. E; планшет магазина, ADR-115, версия 1.27; вид `kiosk_order` (кассир, старший продавец); заголовок уведомления — с сервера (`notifications.title_ru`). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Заявка с планшета'**
+  String get notification_kind_kiosk_order;
 
   /// Экран: SCR-44. ч. E. Источник: 02 §7
   ///
@@ -6236,6 +6740,12 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Показать QR'**
   String get order_action_show_qr;
+
+  /// Экран: SCR-24; SCR-25; SCR-30. ч. C; планшет магазина, ADR-115, версия 1.27; пометка канала `createdVia=kiosk` — `StatusChip` neutral с иконкой (03 §9.39). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'С планшета'**
+  String get order_badge_kiosk;
 
   /// Экран: SCR-24. ч. C. Источник: 02 §7
   ///
@@ -6711,6 +7221,36 @@ abstract class AppLocalizations {
   /// **'1С'**
   String get order_history_source_onec;
 
+  /// Экран: SCR-24. ч. C; планшет магазина, ADR-115, версия 1.27; `kioskCustomerMatch=ambiguous`; заявка на «Розничного покупателя». Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Клиент не определён — выберите карточку'**
+  String get order_kiosk_match_ambiguous;
+
+  /// Экран: SCR-24. ч. C; планшет магазина, ADR-115, версия 1.27; `kioskCustomerMatch=none`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Новый покупатель'**
+  String get order_kiosk_match_none;
+
+  /// Экран: SCR-24. ч. C; планшет магазина, ADR-115, версия 1.27; подсказка при `ambiguous` и `none` (P-002 §9): «Повторить заказ» (UI-24-011), затем отмена заявки. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Повторить заказ на карточку клиента'**
+  String get order_kiosk_match_repeat_hint;
+
+  /// Экран: SCR-24. ч. C; планшет магазина, ADR-115, версия 1.27; `kioskCustomerMatch=single`, короткая пометка. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Клиент найден по номеру'**
+  String get order_kiosk_match_single;
+
+  /// Экран: SCR-24. ч. C; планшет магазина, ADR-115, версия 1.27; `single`: имя карточки и сверка кассиром (P-002 §8.7 п. 5); `{name}` — String. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Клиент найден по номеру: {name}. Спросите имя покупателя и сверьте с карточкой до оплаты'**
+  String order_kiosk_match_single_check(String name);
+
   /// Экран: SCR-24. ч. C. Источник: 02 §7
   ///
   /// In ru, this message translates to:
@@ -6890,6 +7430,12 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'В работе'**
   String get orders_chip_in_progress;
+
+  /// Экран: SCR-25. ч. C; планшет магазина, ADR-115, версия 1.27; чип фильтра `createdVia=kiosk` (P-002 §8.7 п. 7). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'С планшета'**
+  String get orders_chip_kiosk;
 
   /// Экран: SCR-25. ч. C. Источник: 02 §7
   ///
@@ -9998,6 +10544,12 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Интеграция'**
   String get role_integration;
+
+  /// Название роли (общий ключ 03 §16.5, правило 03 §16.2 role_<code>). Текст — 07 §5.4 roles.name_ru (B-AR-11)
+  ///
+  /// In ru, this message translates to:
+  /// **'Планшет магазина'**
+  String get role_kiosk;
 
   /// Название роли (общий ключ 03 §16.5, правило 03 §16.2 role_<code>). Текст — 07 §5.4 roles.name_ru (B-AR-11)
   ///

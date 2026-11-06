@@ -3,7 +3,8 @@ import { APP_CONFIG, type AppConfig } from '../../common/config/app-config.js';
 import { SettingsReader } from '../../common/settings/settings-reader.js';
 
 /**
- * Эффективная политика OTP/сессий/PIN (09 §5.3–§5.4, §8.2, §8.8, §9.6; D-10, D-12, D-48). Источник — env 16 §4.3;
+ * Эффективная политика OTP/сессий/PIN (09 §5.3–§5.4, §8.2, §8.8, §8.9, §9.6; D-10, D-12, D-48; сроки планшета магазина —
+ * ADR-115, Р-22 (а)). Источник — env 16 §4.3;
  * ключи `app_settings` 07 §5.59 `otp.ttl_seconds`, `otp.max_attempts`, `session.staff_refresh_days` переопределяют
  * env (RM-D-001 п. 1 «параметры из app_settings»), если значение — целое в коридоре 09 (иначе игнорируется).
  */
@@ -28,13 +29,19 @@ export interface OtpPolicy {
 export interface SessionPolicy {
   readonly refreshTtlStaffDays: number;
   readonly refreshTtlCustomerDays: number;
+  /** Абсолютный срок сессии планшета магазина — 180 дн (`AUTH_REFRESH_TTL_KIOSK_DAYS`; 09 §8.9 п. 2, Р-22 (а)). */
+  readonly refreshTtlKioskDays: number;
   readonly idleStaffHours: number;
   readonly idleCustomerDays: number;
+  /** Простой сессии планшета магазина — 7 дн (`AUTH_REFRESH_IDLE_KIOSK_DAYS`; 09 §8.9 п. 2, Р-22 (а)). */
+  readonly idleKioskDays: number;
   readonly graceSeconds: number;
   readonly idleLockMinutes: number;
   /** Лимит одновременных устройств (09 §8.2: staff 3, customer 5 — предложение, Q-154). */
   readonly maxSessionsStaff: number;
   readonly maxSessionsCustomer: number;
+  /** Планшет магазина — одна сессия на технического пользователя (09 §8.9 п. 2; ADR-115). */
+  readonly maxSessionsKiosk: number;
   readonly registrationTokenTtlSeconds: number;
   readonly stepUpTtlSeconds: number;
   readonly pinMaxAttempts: number;
@@ -87,12 +94,15 @@ export class AuthPolicyService {
       session: {
         refreshTtlStaffDays: c.AUTH_REFRESH_TTL_STAFF_DAYS,
         refreshTtlCustomerDays: c.AUTH_REFRESH_TTL_CUSTOMER_DAYS,
+        refreshTtlKioskDays: c.AUTH_REFRESH_TTL_KIOSK_DAYS,
         idleStaffHours: c.AUTH_REFRESH_IDLE_STAFF_HOURS,
         idleCustomerDays: c.AUTH_REFRESH_IDLE_CUSTOMER_DAYS,
+        idleKioskDays: c.AUTH_REFRESH_IDLE_KIOSK_DAYS,
         graceSeconds: c.AUTH_REFRESH_GRACE_SECONDS,
         idleLockMinutes: c.SESSION_IDLE_LOCK_MINUTES,
         maxSessionsStaff: 3,
         maxSessionsCustomer: 5,
+        maxSessionsKiosk: 1,
         registrationTokenTtlSeconds: REGISTRATION_TOKEN_TTL_SECONDS,
         stepUpTtlSeconds: STEP_UP_TTL_SECONDS,
         pinMaxAttempts: c.PIN_MAX_ATTEMPTS,

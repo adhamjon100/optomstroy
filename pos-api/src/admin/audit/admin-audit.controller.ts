@@ -27,16 +27,18 @@ export class AdminAuditController {
   @Header('Cache-Control', 'no-store')
   async list(@Req() req: RequestWithContext, @Query() raw: Record<string, unknown>): Promise<Record<string, unknown>> {
     const p = principalOf(req);
+    // Журнал аудита — только сотрудникам: `customer`, планшет магазина `kiosk` и любой иной вид — 403 (06 ARCH-065).
+    if (p.kind !== 'staff') throw new ProblemException('FORBIDDEN', { detail: 'Недостаточно прав для операции.' });
     const query: AdminAuditQuery = parseAdminAuditQuery(raw);
     const viewer: SalesActor = {
       userId: p.userId,
       roles: p.roles,
-      isCustomer: p.kind === 'customer',
+      isCustomer: false,
+      subjectKind: 'staff',
       sessionId: p.sessionId,
       deviceId: p.deviceId,
       requestId: typeof req.id === 'string' ? req.id : null,
     };
-    if (viewer.isCustomer) throw new ProblemException('FORBIDDEN', { detail: 'Недостаточно прав для операции.' });
     const page = await this.audits.list(null, viewer, query);
     await this.audit.write(auditContextFromRequest(req), {
       action: 'audit.viewed',

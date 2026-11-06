@@ -4,7 +4,7 @@ import { type ConsumedRegistrationToken, RegistrationTokenService } from '../aut
 import { SessionIssuer } from '../auth/sessions/session-issuer.service.js';
 import { SessionStore } from '../auth/sessions/session-store.js';
 import { AuthStateCache } from '../common/auth/auth-state.js';
-import { applyAuditGucs, type AuditContext } from '../common/audit/audit-context.js';
+import { applyAuditGucs, type AuditContext, toRbacRole } from '../common/audit/audit-context.js';
 import { AuditService } from '../common/audit/audit.service.js';
 import type { DbExecutor } from '../common/audit/db-executor.js';
 import { CLOCK, type Clock } from '../common/auth/clock.js';
@@ -437,7 +437,7 @@ export class RegistrationService {
           ...meta.ctx,
           ...sessionCtx,
           actorUserId: user.id,
-          actorRole: roles[0] ?? null,
+          actorRole: toRbacRole(roles[0]),
         };
         for (const g of granted) {
           if (!g.changed) continue;

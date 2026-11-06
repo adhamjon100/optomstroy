@@ -1,7 +1,8 @@
 // Строка заказа SCR-25 (02 UI-25-006…UI-25-009): compact — 72, medium — 56 (анатомия по образцу `TransactionRow`
 // 03 §9.38: иконка `receipt` в круге 40, номер и клиент, дата, сумма и `StatusChip`), expanded — строка таблицы 48
 // (№ POS / № 1С, дата, клиент, сумма, оплачено, статус, документы). «Оплачено» и статус — раздельно
-// (SRC-E-168/169): «Оплачен», «X из Y» или «Долг» (`credit`).
+// (SRC-E-168/169): «Оплачен», «X из Y» или «Долг» (`credit`). У заявки с планшета магазина рядом со статусом —
+// пометка «С планшета» (UI-25-015, ADR-115).
 import 'package:flutter/material.dart';
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
@@ -15,6 +16,7 @@ import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/design_system/tokens/ds_typography.dart';
 import 'package:optomstroy/features/orders/domain/entities/order.dart';
 import 'package:optomstroy/features/orders/presentation/orders_format.dart';
+import 'package:optomstroy/features/orders/presentation/widgets/order_sections.dart' show OrderKioskBadge;
 
 /// Ширины колонок таблицы expanded (flex).
 const List<int> _flex = <int>[3, 2, 3, 2, 2, 3];
@@ -66,13 +68,22 @@ class OrderPaidLabel extends StatelessWidget {
 /// Строка списка compact (72) / medium (56).
 class OrdersListRow extends StatelessWidget {
   /// Создаёт строку.
-  const OrdersListRow({super.key, required this.order, required this.onTap, this.dense = false});
+  const OrdersListRow({
+    super.key,
+    required this.order,
+    required this.onTap,
+    this.dense = false,
+    this.kioskBadge = false,
+  });
 
   final OrderSummary order;
   final VoidCallback onTap;
 
   /// medium — 56.
   final bool dense;
+
+  /// Пометка «С планшета» рядом со статусом (UI-25-015; решает экран: `createdVia=kiosk` и сотрудник).
+  final bool kioskBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -125,13 +136,27 @@ class OrdersListRow extends StatelessWidget {
                       ),
                     if (!dense) ...<Widget>[
                       SizedBox(height: context.space.s1),
-                      OrderStatusChip(status: order.status, dense: true),
+                      if (kioskBadge)
+                        Wrap(
+                          spacing: context.space.s1,
+                          runSpacing: context.space.s1,
+                          children: <Widget>[
+                            OrderStatusChip(status: order.status, dense: true),
+                            OrderKioskBadge(key: ValueKey<String>('order-row-kiosk-${order.id}')),
+                          ],
+                        )
+                      else
+                        OrderStatusChip(status: order.status, dense: true),
                     ],
                   ],
                 ),
               ),
               SizedBox(width: context.space.s3),
               if (dense) ...<Widget>[
+                if (kioskBadge) ...<Widget>[
+                  OrderKioskBadge(key: ValueKey<String>('order-row-kiosk-${order.id}')),
+                  SizedBox(width: context.space.s2),
+                ],
                 OrderStatusChip(status: order.status, dense: true),
                 SizedBox(width: context.space.s3),
               ],
@@ -211,10 +236,20 @@ class OrdersTableHeader extends StatelessWidget {
 /// Строка таблицы expanded (48).
 class OrdersTableRow extends StatelessWidget {
   /// Создаёт строку.
-  const OrdersTableRow({super.key, required this.order, required this.onTap, this.onPrint, this.printEnabled = true});
+  const OrdersTableRow({
+    super.key,
+    required this.order,
+    required this.onTap,
+    this.onPrint,
+    this.printEnabled = true,
+    this.kioskBadge = false,
+  });
 
   final OrderSummary order;
   final VoidCallback onTap;
+
+  /// Пометка «С планшета» рядом со статусом (UI-25-015; решает экран: `createdVia=kiosk` и сотрудник).
+  final bool kioskBadge;
 
   /// Меню печати UI-25-009 (`null` — колонки нет: нет права).
   final ValueChanged<BuildContext>? onPrint;
@@ -292,7 +327,17 @@ class OrdersTableRow extends StatelessWidget {
                 5,
                 Align(
                   alignment: AlignmentDirectional.centerStart,
-                  child: OrderStatusChip(status: order.status, dense: true),
+                  // Строка 48: при нехватке ширины пометка переносится под статус (два чипа по 20).
+                  child: kioskBadge
+                      ? Wrap(
+                          spacing: context.space.s1,
+                          runSpacing: 2,
+                          children: <Widget>[
+                            OrderStatusChip(status: order.status, dense: true),
+                            OrderKioskBadge(key: ValueKey<String>('order-row-kiosk-${order.id}')),
+                          ],
+                        )
+                      : OrderStatusChip(status: order.status, dense: true),
                 ),
               ),
               if (onPrint != null)

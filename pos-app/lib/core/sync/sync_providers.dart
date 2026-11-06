@@ -97,10 +97,12 @@ final catalogSyncEngineProvider = Provider<CatalogSyncEngine>((ref) {
   return engine;
 });
 
-/// Область видимости остатков кэша `stock` для текущего пользователя: клиент — `customer:<customer_stock_display>`
-/// (из `/settings/public`, пока настройки не получены — `null`); сотрудник — `null` (область не меняется).
+/// Область видимости остатков кэша `stock` для текущего пользователя: покупатель — клиент и планшет магазина (`kiosk`,
+/// склад планшета; 10 KIOSK-007, ADR-115 п. 23) — `customer:<customer_stock_display>` (из `/settings/public`, пока
+/// настройки не получены — `null`); сотрудник — `null` (область не меняется).
 final catalogStockScopeProvider = Provider<String?>((ref) {
-  if (ref.watch(syncViewerRoleProvider) != RoleCode.customer) return null;
+  final RoleCode? role = ref.watch(syncViewerRoleProvider);
+  if (role != RoleCode.customer && role != RoleCode.kiosk) return null;
   final snapshot = ref.watch(publicSettingsProvider);
   if (snapshot.source == PublicSettingsSource.defaults) return null;
   final display = CustomerStockDisplay.tryParse(snapshot.settings.customerStockDisplay) ?? CustomerStockDisplay.status;

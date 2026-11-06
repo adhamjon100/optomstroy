@@ -36,6 +36,7 @@ import 'package:optomstroy/features/registration/presentation/screens/registrati
 import 'package:optomstroy/features/registration/presentation/screens/registration_security_screen.dart';
 import 'package:optomstroy/features/splash/presentation/screens/splash_screen.dart';
 
+import 'support/clean_start.dart';
 import 'support/fixture_phones.dart';
 
 /// Тестовый код OTP контура (`AUTH_FIXTURES.otpCode`).
@@ -119,10 +120,11 @@ Future<void> _expectCompleteEnabled(WidgetTester tester) async {
   );
 }
 
-/// Чистый старт: сессия и черновик регистрации прежнего прогона удаляются (идентификатор устройства остаётся).
+/// Чистый старт: сессия, черновик регистрации и признак планшета прежнего прогона удаляются (идентификатор устройства
+/// остаётся; `support/clean_start.dart`).
 Future<void> _cleanStart(WidgetTester tester) async {
   final FlutterSecureStorageAdapter storage = FlutterSecureStorageAdapter();
-  await storage.deleteAll(<SecureKey>[...SecureKey.session, ...SecureKey.registration]);
+  await storage.deleteAll(kCleanStartKeys);
   await bootstrap();
   await tester.pump();
   await pumpUntilFound(tester, find.byKey(SplashScreen.screenKey));

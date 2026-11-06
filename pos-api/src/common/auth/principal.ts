@@ -6,6 +6,10 @@ import type { AmrValue, TokenKind } from './jwt.service.js';
  * (common/http) полями токена — их читают step-up, logout, аудит.
  */
 export interface AuthenticatedPrincipal extends Principal {
+  /**
+   * Вид субъекта из claim `kind` (= `users.kind`, `SubjectKind` — 06 ARCH-065): `staff | customer | kiosk`, без
+   * `integration`. Ветки по виду — исчерпывающим разбором subject-kind.ts, не двоичной проверкой.
+   */
   readonly kind: TokenKind;
   readonly status: 'active' | 'pending_activation';
   readonly sessionId: string;

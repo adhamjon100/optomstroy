@@ -13,6 +13,7 @@ abstract final class AdminLabels {
     RoleCode.owner => l10n.role_owner,
     RoleCode.customer => l10n.role_customer,
     RoleCode.integration => l10n.role_integration,
+    RoleCode.kiosk => l10n.role_kiosk,
   };
 
   /// Неизвестная роль показывается кодом (совместимость вперёд, 08 §2.11).
@@ -30,6 +31,8 @@ abstract final class AdminLabels {
     RoleCode.owner => Icons.verified_user_rounded,
     RoleCode.customer => Icons.person_rounded,
     RoleCode.integration => Icons.settings_ethernet_rounded,
+    // Планшет магазина (02 UI-45-025, UI-54-002: `tablet_android`; ADR-115).
+    RoleCode.kiosk => Icons.tablet_android_rounded,
   };
 
   static String userStatus(AppLocalizations l10n, String value) => switch (UserStatus.tryParse(value)) {

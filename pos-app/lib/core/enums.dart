@@ -1,17 +1,18 @@
 // GENERATED FILE — DO NOT EDIT.
-// Source: contracts/enums.json (optomstroy-pos-enums 1.2.0, sha256 3e1a7b459ff5b94974e57aa4b3b82b2b88942b0c84fb3e21f8a60b1198357d0a)
+// Source: contracts/enums.json (optomstroy-pos-enums 1.3.0, sha256 f0c79cf87a4e3ad0a4d4f5d2641fdb14b0d21fafc0cd1693312641c9dd1bb00b)
 // Generator: scripts/gen_enums.py (RM-B-009). Owners: 07 §6.1/§6.1.1, 08 §2.4/§3.8 (R0 §18.1).
 // ignore_for_file: lines_longer_than_80_chars
 
-const String enumsContractVersion = '1.2.0';
+const String enumsContractVersion = '1.3.0';
 
 // ===== 07 §6.1 — типы PostgreSQL (CREATE TYPE … AS ENUM) =====
 
-/// user_kind — 07 §6.1 (CREATE TYPE). Источник: ядро §6.
+/// user_kind — 07 §6.1 (CREATE TYPE). Источник: ядро §6; kiosk — ADR-115 (07 §19 п. 31).
 /// Используется: users.kind.
 enum UserKind {
   staff('staff'),
-  customer('customer');
+  customer('customer'),
+  kiosk('kiosk');
 
   const UserKind(this.value);
 
@@ -50,7 +51,7 @@ enum UserStatus {
   }
 }
 
-/// role_code — 07 §6.1 (CREATE TYPE). Источник: ядро §6.
+/// role_code — 07 §6.1 (CREATE TYPE). Источник: ядро §6; kiosk — ADR-115 (07 §19 п. 31).
 /// Используется: roles.code, user_invitations.role, role_discount_limits.role, price_lists.visible_to_roles[], audit_logs.actor_role.
 enum RoleCode {
   seller('seller'),
@@ -59,7 +60,8 @@ enum RoleCode {
   admin('admin'),
   owner('owner'),
   customer('customer'),
-  integration('integration');
+  integration('integration'),
+  kiosk('kiosk');
 
   const RoleCode(this.value);
 
@@ -392,7 +394,7 @@ enum OutboxStatus {
   }
 }
 
-/// notification_kind — 07 §6.1 (CREATE TYPE). Источник: ядро §6 + §17.3.
+/// notification_kind — 07 §6.1 (CREATE TYPE). Источник: ядро §6 + §17.3; kiosk_order — ADR-115 (07 §19 п. 31).
 /// Используется: notifications.kind.
 enum NotificationKind {
   syncError('sync_error'),
@@ -402,7 +404,8 @@ enum NotificationKind {
   creditBlocked('credit_blocked'),
   system('system'),
   paymentStatus('payment_status'),
-  returnStatus('return_status');
+  returnStatus('return_status'),
+  kioskOrder('kiosk_order');
 
   const NotificationKind(this.value);
 
@@ -502,15 +505,16 @@ enum StepUpMethod {
   }
 }
 
-/// otp_purpose — 07 §6.1 (CREATE TYPE). Источник: РЕШЕНИЕ: ядро §17.3, §18.2 п.7; карточка §5.11.
-/// Используется: otp_challenges.purpose; тело POST /auth/otp/request (08).
+/// otp_purpose — 07 §6.1 (CREATE TYPE). Источник: РЕШЕНИЕ: ядро §17.3, §18.2 п.7; карточка §5.11; kiosk_order — ADR-115.
+/// Используется: otp_challenges.purpose; тело POST /auth/otp/request (08; kiosk_order им не принимается — только POST /kiosk/order-otp).
 /// Не используются: login.
 enum OtpPurpose {
   loginOrRegister('login_or_register'),
   stepUp('step_up'),
   phoneChangeOld('phone_change_old'),
   phoneChangeNew('phone_change_new'),
-  customerLink('customer_link');
+  customerLink('customer_link'),
+  kioskOrder('kiosk_order');
 
   const OtpPurpose(this.value);
 
@@ -1078,7 +1082,7 @@ enum InvitationRole {
 }
 
 /// session_revoke_reason — 07 §6.1.1 (CHECK). Поля: sessions.revoke_reason.
-/// Источник: D-12, ядро §18.2 п.8; 09 §8.3, миграция 0003 (EQ-AUTH-03, ADR-088).
+/// Источник: D-12, ядро §18.2 п.8; 09 §8.3, миграция 0003 (EQ-AUTH-03, ADR-088); ADR-115 (миграция 0022).
 enum SessionRevokeReason {
   logout('logout'),
   logoutAll('logout_all'),
@@ -1092,7 +1096,8 @@ enum SessionRevokeReason {
   sessionLimit('session_limit'),
   deviceMismatch('device_mismatch'),
   biometricInvalidated('biometric_invalidated'),
-  refreshReplay('refresh_replay');
+  refreshReplay('refresh_replay'),
+  kioskRevoked('kiosk_revoked');
 
   const SessionRevokeReason(this.value);
 
@@ -1154,7 +1159,7 @@ enum TokenDenyReason {
 }
 
 /// rate_limit_scope — 07 §6.1.1 (CHECK). Поля: rate_limit_counters.scope.
-/// Источник: D-10, D-44; миграция 0003 (EQ-AUTH-01, ADR-088).
+/// Источник: D-10, D-44; миграция 0003 (EQ-AUTH-01, ADR-088); ADR-115 (миграция 0022).
 enum RateLimitScope {
   otpPhone15m('otp_phone_15m'),
   otpPhone24h('otp_phone_24h'),
@@ -1169,7 +1174,9 @@ enum RateLimitScope {
   otpGlobal1m('otp_global_1m'),
   otpVerifyIp10m('otp_verify_ip_10m'),
   pinUserDevice10m('pin_user_device_10m'),
-  adminUser1m('admin_user_1m');
+  adminUser1m('admin_user_1m'),
+  otpKioskTablet1h('otp_kiosk_tablet_1h'),
+  otpKioskTablet24h('otp_kiosk_tablet_24h');
 
   const RateLimitScope(this.value);
 
@@ -1239,6 +1246,26 @@ enum IntegrationTokenRevokeReason {
   /// Значение по строке; `null` — неизвестное значение (совместимость вперёд).
   static IntegrationTokenRevokeReason? tryParse(String? value) {
     for (final item in IntegrationTokenRevokeReason.values) {
+      if (item.value == value) return item;
+    }
+    return null;
+  }
+}
+
+/// store_tablet_status — 07 §6.1.1 (CHECK). Поля: store_tablets.status.
+/// Источник: ADR-115 (07 §5.65, миграция 0022).
+enum StoreTabletStatus {
+  active('active'),
+  revoked('revoked');
+
+  const StoreTabletStatus(this.value);
+
+  /// Значение в API и БД — ровно как в документе-владельце.
+  final String value;
+
+  /// Значение по строке; `null` — неизвестное значение (совместимость вперёд).
+  static StoreTabletStatus? tryParse(String? value) {
+    for (final item in StoreTabletStatus.values) {
       if (item.value == value) return item;
     }
     return null;
@@ -1355,10 +1382,11 @@ enum RefundIntent {
 }
 
 /// order_created_via — 07 §6.1.1 (CHECK). Поля: orders.created_via.
-/// Источник: ядро v1.9 §24.2.
+/// Источник: ядро v1.9 §24.2; ADR-115 (миграция 0022).
 enum OrderCreatedVia {
   staff('staff'),
-  customer('customer');
+  customer('customer'),
+  kiosk('kiosk');
 
   const OrderCreatedVia(this.value);
 
@@ -1368,6 +1396,27 @@ enum OrderCreatedVia {
   /// Значение по строке; `null` — неизвестное значение (совместимость вперёд).
   static OrderCreatedVia? tryParse(String? value) {
     for (final item in OrderCreatedVia.values) {
+      if (item.value == value) return item;
+    }
+    return null;
+  }
+}
+
+/// kiosk_customer_match — 07 §6.1.1 (CHECK). Поля: orders.kiosk_customer_match.
+/// Источник: ADR-115 (07 §5.37, миграция 0022).
+enum KioskCustomerMatch {
+  single('single'),
+  ambiguous('ambiguous'),
+  none('none');
+
+  const KioskCustomerMatch(this.value);
+
+  /// Значение в API и БД — ровно как в документе-владельце.
+  final String value;
+
+  /// Значение по строке; `null` — неизвестное значение (совместимость вперёд).
+  static KioskCustomerMatch? tryParse(String? value) {
+    for (final item in KioskCustomerMatch.values) {
       if (item.value == value) return item;
     }
     return null;
@@ -1638,12 +1687,13 @@ enum PrintPaper {
 }
 
 /// sms_template_key — 07 §6.1.1 (CHECK). Поля: sms_outbox.template_key.
-/// Источник: D-11.
+/// Источник: D-11; ADR-115 (миграция 0022).
 enum SmsTemplateKey {
   otpLogin('otp_login'),
   otpStepUp('otp_step_up'),
   otpPhoneChange('otp_phone_change'),
-  otpCustomerLink('otp_customer_link');
+  otpCustomerLink('otp_customer_link'),
+  otpKioskOrder('otp_kiosk_order');
 
   const SmsTemplateKey(this.value);
 
@@ -1799,7 +1849,13 @@ enum ProblemCode {
   webhookSignatureInvalid('WEBHOOK_SIGNATURE_INVALID', [401]),
   qrUnavailable('QR_UNAVAILABLE', [503]),
   consentRequired('CONSENT_REQUIRED', [422]),
-  appReadOnly('APP_READ_ONLY', [503]);
+  appReadOnly('APP_READ_ONLY', [503]),
+  kioskRevoked('KIOSK_REVOKED', [401]),
+  kioskDisabled('KIOSK_DISABLED', [403]),
+  kioskNetworkDenied('KIOSK_NETWORK_DENIED', [403]),
+  kioskRateLimited('KIOSK_RATE_LIMITED', [429]),
+  kioskExitCodeInvalid('KIOSK_EXIT_CODE_INVALID', [422]),
+  kioskExitLocked('KIOSK_EXIT_LOCKED', [423]);
 
   const ProblemCode(this.value, this.httpStatuses);
 
@@ -1820,9 +1876,9 @@ enum ProblemCode {
 
 /// Реестр типов PostgreSQL: имя типа → значения в порядке CREATE TYPE (07 §6.1).
 const Map<String, List<String>> dbEnumValues = {
-  'user_kind': ['staff', 'customer'],
+  'user_kind': ['staff', 'customer', 'kiosk'],
   'user_status': ['pending', 'pending_activation', 'active', 'blocked', 'deleted'],
-  'role_code': ['seller', 'cashier', 'senior_seller', 'admin', 'owner', 'customer', 'integration'],
+  'role_code': ['seller', 'cashier', 'senior_seller', 'admin', 'owner', 'customer', 'integration', 'kiosk'],
   'customer_link_status': ['proposed', 'confirmed', 'rejected', 'conflict'],
   'cart_status': ['active', 'parked', 'converted', 'cleared'],
   'order_status': ['draft', 'submitting', 'submit_failed', 'pending_approval', 'awaiting_payment', 'approved', 'awaiting_shipment', 'shipped', 'partially_returned', 'closed', 'cancelled'],
@@ -1836,12 +1892,12 @@ const Map<String, List<String>> dbEnumValues = {
   'sync_mode': ['full', 'incremental', 'manual', 'reconcile'],
   'sync_run_status': ['queued', 'running', 'success', 'partial', 'failed'],
   'outbox_status': ['pending', 'sending', 'sent', 'confirmed', 'failed', 'dead', 'cancelled'],
-  'notification_kind': ['sync_error', 'order_status', 'cart_price_changed', 'cart_stock_changed', 'credit_blocked', 'system', 'payment_status', 'return_status'],
+  'notification_kind': ['sync_error', 'order_status', 'cart_price_changed', 'cart_stock_changed', 'credit_blocked', 'system', 'payment_status', 'return_status', 'kiosk_order'],
   'invitation_status': ['pending', 'accepted', 'revoked', 'expired'],
   'device_platform': ['android', 'ios', 'windows'],
   'session_kind': ['standard', 'biometric'],
   'step_up_method': ['pin', 'biometric', 'otp'],
-  'otp_purpose': ['login_or_register', 'step_up', 'phone_change_old', 'phone_change_new', 'customer_link'],
+  'otp_purpose': ['login_or_register', 'step_up', 'phone_change_old', 'phone_change_new', 'customer_link', 'kiosk_order'],
   'otp_status': ['sent', 'verified', 'expired', 'locked', 'failed_delivery', 'superseded'],
   'consent_kind': ['personal_data', 'sms', 'biometrics_device', 'activity_sphere', 'face_scan'],
   'attribute_value_type': ['text', 'number', 'boolean', 'list'],
@@ -1871,19 +1927,21 @@ const Map<String, List<String>> dbEnumValues = {
 const Map<String, List<String>> checkListValues = {
   'user_profiles.locale': ['ru', 'ky', 'en'],
   'user_invitations.role': ['seller', 'cashier', 'senior_seller', 'admin', 'owner'],
-  'sessions.revoke_reason': ['logout', 'logout_all', 'reuse_detected', 'admin', 'phone_changed', 'role_changed', 'expired', 'device_revoked', 'blocked', 'session_limit', 'device_mismatch', 'biometric_invalidated', 'refresh_replay'],
+  'sessions.revoke_reason': ['logout', 'logout_all', 'reuse_detected', 'admin', 'phone_changed', 'role_changed', 'expired', 'device_revoked', 'blocked', 'session_limit', 'device_mismatch', 'biometric_invalidated', 'refresh_replay', 'kiosk_revoked'],
   'token_denylist.token_kind': ['access', 'registration', 'step_up'],
   'token_denylist.reason': ['logout', 'logout_all', 'role_changed', 'blocked', 'used', 'revoked'],
-  'rate_limit_counters.scope': ['otp_phone_15m', 'otp_phone_24h', 'otp_ip_1h', 'otp_device_24h', 'login_ip_1h', 'step_up_user_1h', 'webhook_ip_1m', 'otp_ip_10m', 'otp_ip_24h', 'otp_device_10m', 'otp_global_1m', 'otp_verify_ip_10m', 'pin_user_device_10m', 'admin_user_1m'],
+  'rate_limit_counters.scope': ['otp_phone_15m', 'otp_phone_24h', 'otp_ip_1h', 'otp_device_24h', 'login_ip_1h', 'step_up_user_1h', 'webhook_ip_1m', 'otp_ip_10m', 'otp_ip_24h', 'otp_device_10m', 'otp_global_1m', 'otp_verify_ip_10m', 'pin_user_device_10m', 'admin_user_1m', 'otp_kiosk_tablet_1h', 'otp_kiosk_tablet_24h'],
   'integration_tokens.scope': ['onec_inbound'],
   'integration_tokens.source': ['operator_script'],
   'integration_tokens.revoke_reason': ['rotated', 'incident', 'disabled', 'expired'],
+  'store_tablets.status': ['active', 'revoked'],
   'receivable_documents.kind': ['invoice', 'payment', 'return', 'discount', 'adjustment'],
   'receivable_documents.status': ['posted', 'not_posted', 'due'],
   'payments.review_reason': ['amount_mismatch', 'unknown_reference', 'no_webhook', 'late_payment'],
   'orders.cancel_reason_code': ['customer_refused', 'duplicate', 'error', 'other'],
   'orders.refund_intent': ['none', 'refund', 'advance'],
-  'orders.created_via': ['staff', 'customer'],
+  'orders.created_via': ['staff', 'customer', 'kiosk'],
+  'orders.kiosk_customer_match': ['single', 'ambiguous', 'none'],
   'payments.qr_provider': ['none', 'onec', 'bakai'],
   'return_requests.onec_result': ['money_refunded', 'offset_against_debt', 'pending'],
   'return_requests.approval_reason': ['return_threshold_exceeded'],
@@ -1898,6 +1956,6 @@ const Map<String, List<String>> checkListValues = {
   'app_settings.value_type': ['boolean', 'integer', 'string', 'json', 'duration', 'money', 'percent'],
   'app_settings.customer_stock_display': ['status', 'quantity'],
   'print_jobs.paper': ['a4', 'thermal80'],
-  'sms_outbox.template_key': ['otp_login', 'otp_step_up', 'otp_phone_change', 'otp_customer_link'],
+  'sms_outbox.template_key': ['otp_login', 'otp_step_up', 'otp_phone_change', 'otp_customer_link', 'otp_kiosk_order'],
   'sms_outbox.provider': ['smspro', 'fake'],
 };

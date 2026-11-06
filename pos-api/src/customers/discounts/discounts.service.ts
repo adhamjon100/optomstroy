@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { principalOf } from '../../admin/users/shared/principal.js';
 import type { DbExecutor } from '../../common/audit/db-executor.js';
 import type { AuthenticatedPrincipal } from '../../common/auth/principal.js';
+import { customerModeOrDeny } from '../../common/auth/subject-kind.js';
 import { APP_CONFIG, type AppConfig } from '../../common/config/app-config.js';
 import { DRIZZLE } from '../../common/db/database.module.js';
 import type { RequestWithContext } from '../../common/http/request-context.js';
@@ -34,7 +35,10 @@ function actorOf(p: AuthenticatedPrincipal): SalesActor {
   return {
     userId: p.userId,
     roles: p.roles,
-    isCustomer: p.kind === 'customer',
+    // Правила скидок вне закрытого списка планшета: `kind=kiosk` — 403 (06 ARCH-065).
+    isCustomer: customerModeOrDeny(p.kind, () => {
+      throw new ProblemException('FORBIDDEN', { detail: 'Недостаточно прав для операции.' });
+    }),
     sessionId: p.sessionId,
     deviceId: p.deviceId,
   };
@@ -155,7 +159,7 @@ export class DiscountsService {
         .filter((l) => l.canApproveOverLimit && this.roleCanApprove(l.role))
         .map((l) => l.role);
       body.limitsByRole = Object.fromEntries(
-        limits.filter((l) => STAFF_ROLES.includes(l.role)).map((l) => [l.role, l.maxPercent]),
+        limits.filter((l) => (STAFF_ROLES as readonly string[]).includes(l.role)).map((l) => [l.role, l.maxPercent]),
       );
     }
     return body;

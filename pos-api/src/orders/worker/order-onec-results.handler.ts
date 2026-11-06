@@ -16,7 +16,7 @@ import type { OutboxRow } from '../../jobs/outbox/outbox-delivery.port.js';
 import { isSalesDomainError } from '../../sales-domain/domain-error.js';
 import { assertOutboxTransition } from '../../sales-domain/outbox/outbox-status.js';
 import type { OutboxStatus } from '../../common/enums.js';
-import { OrderProjector, parseOnecOrderDocument } from '../order-projection.js';
+import { isKioskOrder, OrderProjector, parseOnecOrderDocument } from '../order-projection.js';
 import { findOrder, findOutboxById, type OrderRow } from '../order.repository.js';
 
 /** Минимальный журнал (pino-совместимый). */
@@ -51,6 +51,9 @@ const OUTBOX_AUDIT: AuditContext = systemActor('outbox');
  *   уведомление (08 §4.8.4);
  * - `dead` элемента заказа: уведомление `sync_error` администраторам и автору (10 ORD-031, 07 §8.2);
  * - `outbox.reconcile-aggregates`: повторное применение «потерянных» результатов (07 §8.2).
+ * Заявка с планшета (`created_via='kiosk'`; 10 KIOSK-030; 08 §3.13, §4.8.4; P-002 §8.7 п. 8–9): состав в корзину
+ * автора (технического пользователя) не восстанавливается ни активной, ни отложенной корзиной; автору уведомления не
+ * создаются — вместо него события отказа 1С, отмены и `dead` получают роли `cashier` и `senior_seller`.
  */
 export class OrderOnecResultsHandler {
   private readonly projector: OrderProjector;
@@ -139,18 +142,22 @@ export class OrderOnecResultsHandler {
         await tx.execute(sql`
           UPDATE orders SET cancel_requested_at = NULL, row_version = row_version + 1, updated_at = now()
            WHERE id = ${o.id}::uuid`);
-        for (const userId of new Set([o.created_by_user_id, o.cancel_requested_by_user_id].filter(isStr))) {
-          await this.notify(tx, {
-            userId,
-            kind: 'order_status',
-            severity: 'warning',
-            title: `Заказ ${o.public_number}: 1С отклонила отмену`,
-            body: `1С не отменила заказ ${o.public_number}: ${message}`,
-            payload: { orderId: o.id, status: o.status },
-            // Отмену можно запросить снова (строка cancel переотправляется) — ключ включает момент запроса.
-            dedupeKey: `order_cancel_rejected:${o.id}:${ob.id}:${new Date(o.cancel_requested_at).getTime()}`,
-          });
+        const kiosk = isKioskOrder(o);
+        const rejectedCancel = {
+          kind: 'order_status' as const,
+          severity: 'warning' as const,
+          title: `Заказ ${o.public_number}: 1С отклонила отмену`,
+          body: `1С не отменила заказ ${o.public_number}: ${message}`,
+          payload: { orderId: o.id, status: o.status },
+          // Отмену можно запросить снова (строка cancel переотправляется) — ключ включает момент запроса.
+          dedupeKey: `order_cancel_rejected:${o.id}:${ob.id}:${new Date(o.cancel_requested_at).getTime()}`,
+        };
+        // Заявка с планшета: автору — нет; запросившему отмену — да, и ролям `cashier`, `senior_seller` (KIOSK-030).
+        const authors = kiosk ? [] : [o.created_by_user_id];
+        for (const userId of new Set([...authors, o.cancel_requested_by_user_id].filter(isStr))) {
+          await this.notify(tx, { ...rejectedCancel, userId });
         }
+        if (kiosk) await this.projector.notifyKioskStaff(tx, o.id, rejectedCancel);
         return 'applied';
       }
       if (o.status !== 'submitting' || o.onec_ref !== null) return 'skipped';
@@ -173,31 +180,38 @@ export class OrderOnecResultsHandler {
         // Деньги получены — заказ отклонён 1С (10 ORD-035 п. 2, ядро §22.9; ревью F-orders-1c-2): платёж остаётся
         // `received`; задача outbox заказа (`failed`) и неотправленные задачи платежей → `cancelled` (технический
         // повтор ORD-027 не выполняется); состав → корзина автора `parked`; уведомление `payment_status` кассиру,
-        // принявшему деньги, и автору заказа.
+        // принявшему деньги, и автору заказа. Заявка с планшета: корзины и уведомления автору нет — кассиру,
+        // принявшему деньги, и ролям `cashier`, `senior_seller` (KIOSK-030).
         await this.withdrawOutbox(tx, o.id, ob.id);
         await this.afterCancelled(tx, o);
         await this.restoreCart(tx, o, true);
         const receivers = await tx.execute<{ user_id: string }>(sql`
           SELECT DISTINCT received_by_user_id::text AS user_id FROM payments
            WHERE order_id = ${o.id}::uuid AND status = 'received' AND received_by_user_id IS NOT NULL`);
-        const recipients = new Set([o.created_by_user_id, ...receivers.rows.map((x) => x.user_id)]);
+        const kiosk = isKioskOrder(o);
+        const authors = kiosk ? [] : [o.created_by_user_id];
+        const recipients = new Set([...authors, ...receivers.rows.map((x) => x.user_id)]);
+        const rejectedPaid = {
+          kind: 'payment_status' as const,
+          severity: 'error' as const,
+          title: `Заказ ${o.public_number} отклонён 1С, деньги получены`,
+          body: `Заказ ${o.public_number} отменён: ${message}. Оформите в 1С возврат или аванс клиенту.`,
+          payload: { orderId: o.id, status: 'cancelled', task: 'refund_or_advance' },
+          dedupeKey: `order_rejected_paid:${o.id}`,
+        };
         for (const userId of recipients) {
-          await this.notify(tx, {
-            userId,
-            kind: 'payment_status',
-            severity: 'error',
-            title: `Заказ ${o.public_number} отклонён 1С, деньги получены`,
-            body: `Заказ ${o.public_number} отменён: ${message}. Оформите в 1С возврат или аванс клиенту.`,
-            payload: { orderId: o.id, status: 'cancelled', task: 'refund_or_advance' },
-            dedupeKey: `order_rejected_paid:${o.id}`,
-          });
+          await this.notify(tx, { ...rejectedPaid, userId });
         }
+        if (kiosk) await this.projector.notifyKioskStaff(tx, o.id, rejectedPaid);
       }
       return 'applied';
     });
   }
 
-  /** `dead` элемента outbox заказа: уведомление `sync_error` администраторам и автору (ORD-031). */
+  /**
+   * `dead` элемента outbox заказа: уведомление `sync_error` администраторам и автору (ORD-031); у заявки с планшета
+   * вместо автора — роли `cashier` и `senior_seller` (10 KIOSK-030; P-002 §11 ORD-026, ORD-031).
+   */
   async onDead(
     row: Pick<OutboxRow, 'id' | 'aggregateType' | 'aggregateId' | 'operation'>,
     reason: string,
@@ -215,7 +229,8 @@ export class OrderOnecResultsHandler {
         dedupeKey: `outbox_dead:${row.id}`,
       };
       await this.notifyRole(null, 'admin', input);
-      await this.notify(null, { ...input, userId: o.created_by_user_id });
+      if (isKioskOrder(o)) await this.projector.notifyKioskStaff(null, o.id, input);
+      else await this.notify(null, { ...input, userId: o.created_by_user_id });
     } catch (e) {
       this.d.log.error({ err: e, outboxId: row.id }, 'orders.outbox_dead.notify_failed');
     }
@@ -369,6 +384,8 @@ export class OrderOnecResultsHandler {
   }
 
   private async restoreCart(tx: SalesTx, o: OrderRow, forceParked = false): Promise<void> {
+    // Заявка с планшета: ни активной, ни отложенной корзины у технического пользователя (10 KIOSK-030).
+    if (isKioskOrder(o)) return;
     if (!this.d.cart) {
       this.d.log.warn({ orderId: o.id }, 'orders.restore_cart.skipped: CartReader недоступен в pos-worker (FQ-ORD-05)');
       return;

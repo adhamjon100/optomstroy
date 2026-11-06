@@ -141,6 +141,8 @@ abstract base class OrderHeader {
     this.idempotencyKey,
     this.createdAt,
     this.createdBy,
+    this.createdVia,
+    this.kioskCustomerMatch,
   });
 
   final String id;
@@ -192,6 +194,14 @@ abstract base class OrderHeader {
 
   /// Автор заказа (`audit.createdBy`, UserRef без телефона) — шапка SCR-24.
   final UserRef? createdBy;
+
+  /// Канал заказа (`createdVia`, 07 §5.37; OpenAPI 1.3.0): `kiosk` — заявка с планшета магазина (ADR-115), пометка
+  /// «С планшета» SCR-24/25/30; `null` — поле не пришло или значение неизвестно (совместимость вперёд).
+  final OrderCreatedVia? createdVia;
+
+  /// Итог поиска карточки по номеру покупателя заявки с планшета (`kioskCustomerMatch`, 08 §3.9): подсказка кассиру
+  /// SCR-24; задан только у `createdVia=kiosk` и только сотрудникам.
+  final KioskCustomerMatch? kioskCustomerMatch;
 }
 
 /// Строка списка заказов (`OrderSummary`).
@@ -234,6 +244,8 @@ final class OrderSummary extends OrderHeader {
     super.idempotencyKey,
     super.createdAt,
     super.createdBy,
+    super.createdVia,
+    super.kioskCustomerMatch,
     this.itemsCount,
     this.paymentsSummary = const <String, Object?>{},
   });
@@ -285,6 +297,8 @@ final class Order extends OrderHeader {
     super.idempotencyKey,
     super.createdAt,
     super.createdBy,
+    super.createdVia,
+    super.kioskCustomerMatch,
     this.payments = const <Payment>[],
     this.history = const <OrderStatusEntry>[],
     this.warnings = const <ApiWarning>[],
@@ -337,12 +351,13 @@ enum OrdersSort {
   final String value;
 }
 
-/// Параметры `GET /orders` (SCR-25: `/orders?status=&from=&to=&customerId=&mine=`).
+/// Параметры `GET /orders` (SCR-25: `/orders?status=&from=&to=&customerId=&mine=&createdVia=`).
 final class OrdersQuery {
   const OrdersQuery({
     this.statuses = const <OrderStatus>{},
     this.customerId,
     this.createdBy,
+    this.createdVia,
     this.from,
     this.to,
     this.paymentMethod,
@@ -359,6 +374,10 @@ final class OrdersQuery {
 
   /// Автор заказа — только при `order.read.all` («Мои» для кассира = свой id).
   final String? createdBy;
+
+  /// Канал заказа (`createdVia`, одно значение; OpenAPI 1.3.0): чип «С планшета» SCR-25 (UI-25-014) — `kiosk`, только
+  /// при `order.read.all` (ADR-115, 10 KIOSK-018).
+  final OrderCreatedVia? createdVia;
   final DateTime? from;
   final DateTime? to;
   final PaymentMethod? paymentMethod;

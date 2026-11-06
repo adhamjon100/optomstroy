@@ -2,8 +2,11 @@ import type { RoleCode, UserKind, UserStatusValue } from '../../../users/users.t
 
 /**
  * Ограничения целей админских операций (object-level, 11 §4.1 п. 5): права проверяет RbacGuard по
- * permissions.yaml, а «кто над кем» — эти чистые функции (11 SEC-040, SEC-043, SEC-131, SEC-136; ядро §21 п. 3;
- * 08 §4.18.1–§4.18.3, §4.18.9, §4.18.10). Deny by default: всё, что не разрешено явно, — отказ.
+ * permissions.yaml, а «кто над кем» — эти чистые функции (11 SEC-040, SEC-043, SEC-131, SEC-136, SEC-142; ядро §21
+ * п. 3; 08 §4.18, §4.18.1–§4.18.3, §4.18.9, §4.18.10). Deny by default: всё, что не разрешено явно, — отказ.
+ * Технический пользователь планшета магазина (`kind=kiosk`, ADR-115 п. 19) — цель ни одной операции `/admin/users/*`:
+ * каждая политика первой отвечает `403 kiosk_target` (планшет управляется только `/admin/store-tablets*`), поэтому
+ * проверки вида ниже (`customer_target`, «не активный сотрудник») видят только `staff` и `customer`.
  */
 export interface PolicyActor {
   readonly userId: string;
@@ -41,7 +44,9 @@ export type PolicyDenyReason =
   /** Аварийный код для `admin`/`owner` (SEC-131). */
   | 'privileged_target'
   /** Роль не создаётся приглашением/`POST /admin/users` (SEC-136 п. 2: только seller/cashier/senior_seller). */
-  | 'role_not_invitable';
+  | 'role_not_invitable'
+  /** Цель — технический пользователь планшета магазина `kind=kiosk` (ADR-115 п. 19; 11 SEC-142; 08 §4.18). */
+  | 'kiosk_target';
 
 const OK: PolicyDecision = { ok: true };
 const PRIVILEGED: ReadonlySet<string> = new Set(['admin', 'owner']);
@@ -64,10 +69,21 @@ const invalid = (rule: string, field: string, message: string): PolicyDecision =
 export const isAdminActor = (a: PolicyActor): boolean => a.roles.includes('admin');
 export const isOwnerActor = (a: PolicyActor): boolean => a.roles.includes('owner') && !a.roles.includes('admin');
 const targetIsOwner = (t: PolicyTarget): boolean => t.roles.includes('owner');
+/** Цель — планшет магазина (`kind=kiosk`): `/admin/users/*` к нему не применяются (11 SEC-142). */
+const targetIsKiosk = (t: PolicyTarget): boolean => t.kind === 'kiosk';
 const targetIsPrivileged = (t: PolicyTarget): boolean => t.roles.some((r) => PRIVILEGED.has(r));
+
+/**
+ * `GET /admin/users/{id}` (users.read; 08 §4.18.1): карточка любого пользователя, кроме технического пользователя
+ * планшета (`403 kiosk_target` — его карточка — `GET /admin/store-tablets`, 11 SEC-142).
+ */
+export function canViewTarget(target: PolicyTarget): PolicyDecision {
+  return targetIsKiosk(target) ? forbid('kiosk_target') : OK;
+}
 
 /** `PATCH /admin/users/{id}` (users.manage): над собой — можно (только fullName); `admin` над `owner` — нет. */
 export function canUpdateProfile(actor: PolicyActor, target: PolicyTarget): PolicyDecision {
+  if (targetIsKiosk(target)) return forbid('kiosk_target');
   if (actor.userId === target.id) return OK;
   if (!isAdminActor(actor)) return forbid('owner_scope_limited');
   if (targetIsOwner(target)) return forbid('owner_role_reserved');
@@ -76,6 +92,7 @@ export function canUpdateProfile(actor: PolicyActor, target: PolicyTarget): Poli
 
 /** `POST /admin/users/{id}/block` (users.manage, только `admin`): не себя, не `owner`. */
 export function canBlock(actor: PolicyActor, target: PolicyTarget): PolicyDecision {
+  if (targetIsKiosk(target)) return forbid('kiosk_target');
   if (actor.userId === target.id) return forbid('self_target');
   if (!isAdminActor(actor)) return forbid('owner_scope_limited');
   if (targetIsOwner(target)) return forbid('owner_role_reserved');
@@ -87,6 +104,7 @@ export function canBlock(actor: PolicyActor, target: PolicyTarget): PolicyDecisi
  * цели, кроме `owner`; `owner` — только цели с ролью `admin`/`owner` (ядро §21 п. 3).
  */
 export function canLogoutAll(actor: PolicyActor, target: PolicyTarget): PolicyDecision {
+  if (targetIsKiosk(target)) return forbid('kiosk_target');
   if (actor.userId === target.id) return forbid('self_target');
   if (isAdminActor(actor)) return targetIsOwner(target) ? forbid('owner_role_reserved') : OK;
   if (isOwnerActor(actor)) return targetIsPrivileged(target) ? OK : forbid('owner_scope_limited');
@@ -95,6 +113,7 @@ export function canLogoutAll(actor: PolicyActor, target: PolicyTarget): PolicyDe
 
 /** `DELETE /admin/users/{id}/pin` (users.pin.reset, только `admin`): не себя, не `customer`, не `owner`. */
 export function canResetPin(actor: PolicyActor, target: PolicyTarget): PolicyDecision {
+  if (targetIsKiosk(target)) return forbid('kiosk_target');
   if (actor.userId === target.id) return forbid('self_target');
   if (!isAdminActor(actor)) return forbid('owner_scope_limited');
   if (target.kind === 'customer') return forbid('customer_target');
@@ -104,9 +123,11 @@ export function canResetPin(actor: PolicyActor, target: PolicyTarget): PolicyDec
 
 /**
  * `POST /admin/users/{id}/emergency-login-code` (users.emergency_code.issue, только `admin`; SEC-131, 08 §4.18.10):
- * себе и целям с ролью `admin`/`owner` → 403; цель не `kind=staff` или не `status=active` → 422.
+ * себе и целям с ролью `admin`/`owner` → 403; цель `kind=kiosk` → 403 `kiosk_target` (11 SEC-043, SEC-142); цель не
+ * `kind=staff` или не `status=active` → 422.
  */
 export function canIssueEmergencyCode(actor: PolicyActor, target: PolicyTarget): PolicyDecision {
+  if (targetIsKiosk(target)) return forbid('kiosk_target');
   if (actor.userId === target.id) return forbid('self_target');
   if (!isAdminActor(actor)) return forbid('owner_scope_limited');
   if (targetIsPrivileged(target)) return forbid('privileged_target');
@@ -118,7 +139,10 @@ export function canIssueEmergencyCode(actor: PolicyActor, target: PolicyTarget):
 
 /**
  * `PUT /admin/users/{id}/roles` (users.roles.assign; 08 §4.18.2; SEC-040, SEC-043, SEC-136 п. 4; ядро §21 п. 3):
- * - `integration` → 422 `integration_role` (ядро §18.2 п. 4); `customer` → 422 `role_not_assignable`;
+ * - цель `kind=kiosk` → 403 `kiosk_target` первой проверкой (11 SEC-142: роль планшета не назначается и не снимается,
+ *   технический пользователь не становится сотрудником);
+ * - `integration` → 422 `integration_role` (ядро §18.2 п. 4); `customer`, `kiosk` и иные роли вне `STAFF_ROLES` →
+ *   422 `role_not_assignable` (`is_assignable=false`, 07 §5.4);
  * - цель `pending_activation` → 422 `user_pending_activation` (активация — `POST /admin/users`); иные статусы,
  *   кроме `active`/`blocked`, → 422 `user_status`;
  * - смена своей роли → 403 `self_target` (SEC-043; повтор той же роли — no-op сервиса, но только после политики);
@@ -126,6 +150,7 @@ export function canIssueEmergencyCode(actor: PolicyActor, target: PolicyTarget):
  * - `owner`: только назначение ролей `admin`/`owner` → иначе 403 `owner_scope_limited` (12 T-SEC-043).
  */
 export function canAssignRole(actor: PolicyActor, target: PolicyTarget, role: string): PolicyDecision {
+  if (targetIsKiosk(target)) return forbid('kiosk_target');
   if (role === 'integration') {
     return invalid('integration_role', 'roles', 'Роль integration не назначается пользователю (технический токен).');
   }

@@ -5,14 +5,18 @@
 # 08 §2.12 (значения operation step-up). Ядро R0 v1.9 (§24) имеет приоритет.
 # Пути (paths) добавляют авторы модулей в parts/NN_<module>.yaml — правила в ../NOTES.md.
 # Имена схем — PascalCase как в 08; поля — camelCase; enum-значения — snake_case ровно как 07 §6.
+# 1.3.0 (2026-11-04): планшет магазина (P-002, ADR-115; 08 v1.20, 07 v1.17, 11 v1.4) — ../CHANGELOG.md [1.3.0],
+# ../NOTES.md §9; операции планшета — parts/70_kiosk.yaml.
 # =====================================================================================
 openapi: 3.0.3
 info:
   title: Optomstroy POS API
-  version: "1.2.0"
+  version: "1.3.0"
   description: >
     REST/JSON API pos-api (NestJS) для pos-app (Flutter: Android, Windows, iOS) — сотрудники и (R1, ядро §24.2)
-    клиенты-покупатели, а также входящий обмен 1С (вариант C-2) и вебхук банка (только QR_PROVIDER=bakai, R2).
+    клиенты-покупатели, общий планшет магазина в торговом зале (технический пользователь kind=kiosk, флаг
+    KIOSK_MODE, по умолчанию false — 08 §4.25, ADR-115), а также входящий обмен 1С (вариант C-2) и вебхук банка
+    (только QR_PROVIDER=bakai, R2).
     Ошибки — RFC 9457 application/problem+json с машинным полем code (закрытый перечень 08 §2.4).
     Деньги — строки с 2 знаками + currency KGS; количества — строки с точностью единицы (≤ 3 знаков);
     время — UTC ISO-8601 с суффиксом Z; идентификаторы — UUID в нижнем регистре.
@@ -101,6 +105,9 @@ tags:
   - name: settings
     description: "Публичные настройки и флаги функций /settings/public (08 §4.23). Модуль D-06: admin (settings)."
     x-module: admin
+  - name: kiosk
+    description: "Планшет магазина: подключение, список, изменение, отключение и подключение заново /admin/store-tablets* (08 §4.18.11–§4.18.15), код и заявка с планшета, сброс и аварийный выход /kiosk/* (08 §4.25; ADR-115). Модуль D-06: kiosk (06 MOD-030)."
+    x-module: kiosk
 paths: {}
 components:
   # -----------------------------------------------------------------------------------
@@ -114,6 +121,8 @@ components:
       description: >
         Access JWT (EdDSA/ES256, kid; TTL 15 мин для всех ролей; iss=optomstroy-pos, aud=optomstroy-api).
         Нет/невалиден → 401 UNAUTHENTICATED; отозванная сессия → 401 SESSION_REVOKED; устаревшие права → 401 TOKEN_STALE (08 §2.2).
+        Сессия планшета магазина (kind=kiosk), отозванная администратором или аварийным выходом (revoke_reason=kiosk_revoked),
+        → 401 KIOSK_REVOKED (08 §2.2; ADR-115).
     stepUpToken:
       type: apiKey
       in: header
@@ -155,6 +164,18 @@ components:
       required: false
       description: "Платформа клиента; обязателен с R2, в R1 — мягкий режим (08 §2.11, Q-153); иное значение → VALIDATION_FAILED rule platform."
       schema: { $ref: "#/components/schemas/DevicePlatform" }
+    KioskLock:
+      name: X-Kiosk-Lock
+      in: header
+      required: false
+      description: >
+        Состояние закрепления планшета магазина (08 §2.3; ADR-115 п. 26): on — приложение — владелец устройства
+        (Device Owner) и режим lock task включён; off — иначе (веб, Windows, Android без Device Owner). Приложение передаёт
+        заголовок на каждом запросе сессии планшета (kind=kiosk); у других субъектов сервер его не читает. Нет заголовка
+        или иное значение — сохранённое значение не меняется (запрос не отклоняется). Сервер пишет значение в
+        store_tablets.lock_task_enabled не чаще раза в 60 с вместе с last_seen_at; SCR-54 показывает его как
+        StoreTablet.lockTaskEnabled. С 1.3.0.
+      schema: { type: string, enum: ["on", "off"] }
     RequestId:
       name: X-Request-Id
       in: header
@@ -320,7 +341,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
     Unauthorized:
-      description: "401 — UNAUTHENTICATED, TOKEN_STALE, SESSION_REVOKED, REGISTRATION_TOKEN_INVALID, PIN_INVALID, UNLOCK_REQUIRED (reason: idle_lock | refresh_replay | emergency_code — 08 §2.4), WEBHOOK_SIGNATURE_INVALID."
+      description: "401 — UNAUTHENTICATED, TOKEN_STALE, SESSION_REVOKED, REGISTRATION_TOKEN_INVALID, PIN_INVALID, UNLOCK_REQUIRED (reason: idle_lock | refresh_replay | emergency_code — 08 §2.4), WEBHOOK_SIGNATURE_INVALID, KIOSK_REVOKED (сессия планшета магазина отозвана администратором или аварийным выходом — 08 §2.2)."
       headers:
         X-Request-Id: { $ref: "#/components/headers/XRequestId" }
         X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
@@ -329,7 +350,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
     Forbidden:
-      description: "403 — FORBIDDEN (нет permission, чужой объект, роль не допускает поле/действие) или STEP_UP_REQUIRED (stepUp.operation, stepUp.allowedMethods)."
+      description: "403 — FORBIDDEN (нет permission, чужой объект, роль не допускает поле/действие; у планшета магазина — reason kiosk_closed_list, kiosk_warehouse_unavailable, kiosk_target — 08 §2.4), STEP_UP_REQUIRED (stepUp.operation, stepUp.allowedMethods), KIOSK_DISABLED (KIOSK_MODE=false), KIOSK_NETWORK_DENIED (адрес вне KIOSK_ALLOWED_CIDRS)."
       headers:
         X-Request-Id: { $ref: "#/components/headers/XRequestId" }
         X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
@@ -381,7 +402,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
     UnprocessableEntity:
-      description: "422 — бизнес-валидация: VALIDATION_FAILED (семантика), OTP_INVALID, OTP_EXPIRED, IDEMPOTENCY_KEY_REUSED, PRICE_CHANGED, STOCK_INSUFFICIENT, VARIANT_UNAVAILABLE, QTY_NOT_MULTIPLE, QTY_BELOW_MIN, DISCOUNT_LIMIT_EXCEEDED, CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED, RECEIVABLES_STALE, ONEC_REJECTED, CUSTOMER_NOT_IDENTIFIED, CART_EMPTY, RETURN_QTY_EXCEEDED, CONSENT_REQUIRED."
+      description: "422 — бизнес-валидация: VALIDATION_FAILED (семантика), OTP_INVALID, OTP_EXPIRED, IDEMPOTENCY_KEY_REUSED, PRICE_CHANGED, STOCK_INSUFFICIENT, VARIANT_UNAVAILABLE, QTY_NOT_MULTIPLE, QTY_BELOW_MIN, DISCOUNT_LIMIT_EXCEEDED, CREDIT_BLOCKED, CREDIT_LIMIT_EXCEEDED, RECEIVABLES_STALE, ONEC_REJECTED, CUSTOMER_NOT_IDENTIFIED, CART_EMPTY, RETURN_QTY_EXCEEDED, CONSENT_REQUIRED, KIOSK_EXIT_CODE_INVALID (attemptsLeft)."
       headers:
         X-Request-Id: { $ref: "#/components/headers/XRequestId" }
         X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
@@ -390,7 +411,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
     Locked:
-      description: "423 — OTP_LOCKED, PIN_LOCKED (retryAfter — до разблокировки; PIN_LOCKED несёт until — 08 §2.4)."
+      description: "423 — OTP_LOCKED, PIN_LOCKED (retryAfter — до разблокировки; PIN_LOCKED несёт until — 08 §2.4), KIOSK_EXIT_LOCKED (retryAfter; 5 неверных аварийных кодов подряд — пауза 15 мин)."
       headers:
         X-Request-Id: { $ref: "#/components/headers/XRequestId" }
         Retry-After: { $ref: "#/components/headers/RetryAfter" }
@@ -407,7 +428,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
     TooManyRequests:
-      description: "429 — RATE_LIMITED (группа 08 §2.9) или OTP_RATE_LIMITED (RL-OTP-SEND*); Retry-After обязателен."
+      description: "429 — RATE_LIMITED (группа 08 §2.9), OTP_RATE_LIMITED (RL-OTP-SEND*) или KIOSK_RATE_LIMITED (лимит кодов планшета RL-OTP-KIOSK); Retry-After обязателен."
       headers:
         X-Request-Id: { $ref: "#/components/headers/XRequestId" }
         Retry-After: { $ref: "#/components/headers/RetryAfter" }
@@ -507,7 +528,8 @@ components:
       type: string
       description: >
         Машинный код ошибки — ПОЛНЫЙ закрытый перечень 08 §2.4 (ядро §7, §16 п.4, §17.4, §18.2 п.5 + [НОВОЕ ИМЯ]
-        RETURN_QTY_EXCEEDED, WEBHOOK_SIGNATURE_INVALID, QR_UNAVAILABLE). Клиент ветвится только по code и status;
+        RETURN_QTY_EXCEEDED, WEBHOOK_SIGNATURE_INVALID, QR_UNAVAILABLE; с 1.3.0 — шесть кодов планшета магазина KIOSK_*
+        [НОВОЕ ИМЯ — ADR-115], 56 кодов). Клиент ветвится только по code и status;
         неизвестный code обрабатывается как INTERNAL того же HTTP-класса (совместимость вперёд).
       enum:
         - VALIDATION_FAILED
@@ -560,6 +582,12 @@ components:
         - QR_UNAVAILABLE
         - CONSENT_REQUIRED
         - APP_READ_ONLY
+        - KIOSK_REVOKED
+        - KIOSK_DISABLED
+        - KIOSK_NETWORK_DENIED
+        - KIOSK_RATE_LIMITED
+        - KIOSK_EXIT_CODE_INVALID
+        - KIOSK_EXIT_LOCKED
     ProblemFieldError:
       type: object
       required: [field, message, rule]
@@ -578,6 +606,9 @@ components:
         RFC 9457 problem+json (08 §2.4, §3.3). type — https://api.<домен>/problems/<code-kebab>; instance — urn:request:<requestId>.
         errors[] — только VALIDATION_FAILED и бизнес-валидации; conflicts[] — только PRICE_CHANGED/STOCK_INSUFFICIENT/VARIANT_UNAVAILABLE.
         Стек-трейсы, SQL, имена таблиц — никогда. Прочие поля — по коду ошибки (08 §2.4).
+        Ответы планшету магазина (kind=kiosk) очищаются до записи в хранилище идемпотентности (08 §2.4 «Коды и отказы
+        планшета магазина» п. 3; 11 SEC-141): conflicts[] — только variantId, kind, stockLevel; VERSION_CONFLICT — без
+        current; ONEC_REJECTED — без onec и текста 1С в detail.
       properties:
         type: { type: string, format: uri, description: "URI вида https://api.<домен>/problems/<code-kebab> (например, …/problems/price-changed); может не резолвиться — это идентификатор (08 §2.4)." }
         title: { type: string }
@@ -593,7 +624,7 @@ components:
           type: array
           items: { $ref: "#/components/schemas/CartConflict" }
         retryAfter: { type: integer, minimum: 0, description: "Дублирует заголовок Retry-After." }
-        attemptsLeft: { type: integer, minimum: 0, description: "OTP_INVALID, PIN_INVALID." }
+        attemptsLeft: { type: integer, minimum: 0, description: "OTP_INVALID, PIN_INVALID, KIOSK_EXIT_CODE_INVALID." }
         stepUp:
           type: object
           description: "STEP_UP_REQUIRED: клиент передаёт operation в POST /auth/step-up без изменений (08 §2.12)."
@@ -619,6 +650,10 @@ components:
             Для 422 PRICE_CHANGED по previewToken — preview_token_invalid, preview_cart_changed, preview_payment_method_changed,
             preview_total_changed (08 §2.4 «Уточнения … этапа F» п. 1); для 503 ONEC_UNAVAILABLE корзины — catalog_not_loaded
             (08 §4.7.1 «Уточнения» п. 2). Значения перечислены справочно (с 1.2.0); поле остаётся строкой.
+            Планшет магазина (08 §2.4 «Коды и отказы планшета магазина», §2.7; с 1.3.0): 403 FORBIDDEN — kiosk_closed_list
+            (маршрут вне закрытого списка 08 §4.25), kiosk_warehouse_unavailable (склад планшета не задан или неактивен),
+            kiosk_target (операция /admin/users/* над пользователем kind=kiosk); 422 IDEMPOTENCY_KEY_REUSED подключения и
+            подключения заново планшета — replay_used (повтор после использования сессии планшета).
             Для 401 UNLOCK_REQUIRED (08 §2.4, «Расширения Problem по реализации»; 09 §8.3, §8.8, §6.13): idle_lock — idle-блокировка
             staff на Windows; refresh_replay — поздний повтор refresh у пользователя с PIN (standard-сессия; пользователю без PIN
             приходит 401 SESSION_REVOKED с reason refresh_replay и сессия отзывается, 09 §8.3); emergency_code — сессия аварийного кода
@@ -737,9 +772,18 @@ components:
         deviceId: { type: string }
 
     # ===== Enum-ы (владелец значений — 07 §6.1 / §6.1.1; 08 §3) =====
-    UserKind: { type: string, enum: [staff, customer] }
+    UserKind:
+      type: string
+      enum: [staff, customer, kiosk]
+      description: "user_kind 07 §6.1; kiosk — технический пользователь планшета магазина (ADR-115; 08 §2.2, §4.25), с 1.3.0."
     UserStatus: { type: string, enum: [pending, pending_activation, active, blocked, deleted] }
-    RoleCode: { type: string, enum: [seller, cashier, senior_seller, admin, owner, customer, integration] }
+    RoleCode:
+      type: string
+      enum: [seller, cashier, senior_seller, admin, owner, customer, integration, kiosk]
+      description: >
+        role_code 07 §6.1; kiosk — неназначаемая техническая роль планшета магазина (is_assignable=false; ADR-115, 11 §4.2),
+        с 1.3.0; выдаётся только при подключении планшета (POST /admin/store-tablets). Встречается и в UserRef.role
+        (audit.createdBy заявки с планшета).
     CustomerLinkStatus: { type: string, enum: [proposed, confirmed, rejected, conflict] }
     CartStatus: { type: string, enum: [active, parked, converted, cleared] }
     OrderStatus:
@@ -771,7 +815,8 @@ components:
     OutboxOperation: { type: string, enum: [create, cancel] }
     NotificationKind:
       type: string
-      enum: [sync_error, order_status, cart_price_changed, cart_stock_changed, credit_blocked, system, payment_status, return_status]
+      enum: [sync_error, order_status, cart_price_changed, cart_stock_changed, credit_blocked, system, payment_status, return_status, kiosk_order]
+      description: "notification_kind 07 §6.1; kiosk_order — «Новая заявка с планшета № {number}» ролям cashier и senior_seller, payload {orderId} (08 §3.13; ADR-115), с 1.3.0."
     NotificationSeverity: { type: string, enum: [info, warning, error] }
     InvitationStatus: { type: string, enum: [pending, accepted, revoked, expired] }
     DevicePlatform: { type: string, enum: [android, ios, windows] }
@@ -782,7 +827,10 @@ components:
       description: "step_up_method 07; в R1 биометрия как метод step-up не принимается (ядро §19.3)."
     OtpPurpose:
       type: string
-      enum: [login_or_register, step_up, phone_change_old, phone_change_new, customer_link]
+      enum: [login_or_register, step_up, phone_change_old, phone_change_new, customer_link, kiosk_order]
+      description: >
+        otp_purpose 07 §6.1; kiosk_order — код заявки с планшета магазина (с 1.3.0, ADR-115): выдаёт только
+        POST /kiosk/order-otp, принимает только POST /kiosk/orders; сессию не выдаёт (POST /auth/otp/verify → 404).
     ConsentKind:
       type: string
       enum: [personal_data, sms, biometrics_device, activity_sphere, face_scan]
@@ -833,9 +881,25 @@ components:
       description: "Причина отказа в продаже в долг — ровно пять значений ядра §22.4 в редакции §23 п.5 (08 §3.8)."
     CartConflictKind: { type: string, enum: [price_changed, stock_insufficient, variant_unavailable, qty_not_multiple, qty_below_min] }
     Locale: { type: string, enum: [ru, ky, en], default: ru }
+    # CHECK-перечни планшета магазина (07 §6.1.1; contracts/enums.json checkLists; ADR-115; с 1.3.0)
+    OrderCreatedVia:
+      type: string
+      enum: [staff, customer, kiosk]
+      description: "orders.created_via (CHECK orders_created_via_chk, 07 §5.37, §6.1.1 order_created_via): канал заказа — сотрудник, покупатель в приложении, планшет магазина."
+    KioskCustomerMatch:
+      type: string
+      enum: [single, ambiguous, none]
+      description: >
+        orders.kiosk_customer_match (07 §5.37, §6.1.1): итог поиска карточки по номеру покупателя при создании заявки с
+        планшета — single (одна надёжная карточка), ambiguous (карточек несколько, кассир выбирает), none (карточки нет,
+        новый покупатель); 08 §3.9, §4.25.2.
+    StoreTabletStatus:
+      type: string
+      enum: [active, revoked]
+      description: "store_tablets.status (07 §5.65, §6.1.1 store_tablet_status)."
     PermissionCode:
       type: string
-      description: "Канонический словарь permissions — 11 §4.3 (77 кодов: №1–76 и 42a). customer.update и reports.export в R1 зарезервированы."
+      description: "Канонический словарь permissions — 11 §4.3 (82 кода: №1–81 и 42a; №77–81 — планшет магазина, ADR-115, с 1.3.0). customer.update и reports.export в R1 зарезервированы."
       enum:
         - catalog.read
         - catalog.prices.read
@@ -914,6 +978,11 @@ components:
         - return.approve
         - customer.link.self_resolve
         - users.emergency_code.issue
+        - kiosk.read
+        - kiosk.manage
+        - kiosk.order.submit
+        - kiosk.self.read
+        - kiosk.self.exit
     StepUpOperation:
       type: string
       description: "Значения operation step-up (08 §2.12): узкие profile.*/session.* + коды 11 §4.3 с собственным step-up. Клиент не составляет operation сам."
@@ -939,6 +1008,7 @@ components:
         - users.roles.assign
         - users.pin.reset
         - users.emergency_code.issue
+        - kiosk.manage
         - session.revoke.any
         - invitations.manage
         - settings.app.update
@@ -1678,7 +1748,10 @@ components:
       type: object
       required: [kind]
       additionalProperties: false
-      description: "Получатель; ПДн получателя клиент не сохраняет в checkout_draft (ядро §19.4)."
+      description: >
+        Получатель; ПДн получателя клиент не сохраняет в checkout_draft (ядро §19.4). Заявка с планшета магазина
+        (createdVia=kiosk; 08 §3.9, ADR-115): kind=customer, name=null, phone — номер, подтверждённый кодом kiosk_order;
+        после маскирования номера (через 90 дней — 07 §13.3, 11 PRIV-015) phone=null и phoneMasked.
       properties:
         kind: { $ref: "#/components/schemas/ReceiverKind" }
         name: { type: string, maxLength: 150, nullable: true }
@@ -1686,6 +1759,14 @@ components:
           allOf: [ { $ref: "#/components/schemas/PhoneE164" } ]
           type: string
           nullable: true
+          description: "null — в том числе после маскирования номера покупателя заявки с планшета (тогда есть phoneMasked); формат PhoneE164 не ослабляется."
+        phoneMasked:
+          allOf: [ { $ref: "#/components/schemas/PhoneMasked" } ]
+          type: string
+          readOnly: true
+          description: >
+            Только в ответах и только после маскирования номера покупателя заявки с планшета — orders.receiver_phone_masked
+            (08 §3.9; ADR-115); в теле запроса не передаётся. С 1.3.0.
     PrintOptions:
       type: object
       additionalProperties: false
@@ -1745,6 +1826,21 @@ components:
           type: object
           nullable: true
           description: "Ролевое представление Customer без сумм долга (только флаги)."
+        createdVia:
+          allOf: [ { $ref: "#/components/schemas/OrderCreatedVia" } ]
+          description: >
+            Канал заказа — orders.created_via (07 §5.37): сервер отдаёт всем ролям с этапа G (order-presenter), в контракт
+            внесено в 1.3.0 вместе со значением kiosk (08 §3.9; ADR-115).
+        kioskCustomerMatch:
+          allOf: [ { $ref: "#/components/schemas/KioskCustomerMatch" } ]
+          type: string
+          nullable: true
+          x-roles: [seller, cashier, senior_seller, admin, owner]
+          description: >
+            Подсказка кассиру SCR-24 по заявке с планшета — orders.kiosk_customer_match: single — «Клиент найден по номеру»,
+            ambiguous — «Клиент не определён — выберите карточку», none — «Новый покупатель». Задан только у
+            createdVia=kiosk, у других каналов — null. Только сотрудникам (staff); покупателю (customer) поле не отдаётся
+            (08 §3.9; ADR-115). С 1.3.0.
         receiver: { $ref: "#/components/schemas/Receiver" }
         delivery: { $ref: "#/components/schemas/Delivery" }
         warehouseId: { type: string, format: uuid }
@@ -2168,10 +2264,18 @@ components:
     Me:
       type: object
       required: [id, kind, status, roles, permissions, permissionsVersion]
-      description: "GET /me — источник правды клиента о ролях и правах; permissions[] — для скрытия кнопок, НЕ защита (SRC-C-133)."
+      description: >
+        GET /me — источник правды клиента о ролях и правах; permissions[] — для скрытия кнопок, НЕ защита (SRC-C-133).
+        Планшет магазина (kind=kiosk; 08 §3.14, §4.3.1; ADR-115; с 1.3.0): ответ — только kind и tablet (строгая форма —
+        схема MeKiosk), без id, телефона, ФИО, ролей, прав, сессий, настроек, согласий и клиента (11 SEC-141;
+        12 T-KIOSK-046); обязательность прочих полей (required) на эту форму не распространяется. oneOf намеренно не
+        вводится: изменение аддитивное (08 §2.11), для staff и customer состав Me не меняется.
       properties:
         id: { type: string, format: uuid }
         kind: { $ref: "#/components/schemas/UserKind" }
+        tablet:
+          allOf: [ { $ref: "#/components/schemas/MeKioskTablet" } ]
+          description: "Только kind=kiosk (08 §3.14; ADR-115): планшет вызывающего технического пользователя. У staff и customer поля нет. С 1.3.0."
         status: { $ref: "#/components/schemas/UserStatus" }
         roles:
           type: array
@@ -2212,6 +2316,26 @@ components:
             recommended: { type: string, nullable: true, example: "1.5.0" }
         apiVersion: { type: string, example: "1.0" }
         serverTime: { type: string, format: date-time }
+    MeKioskTablet:
+      type: object
+      required: [id, name, warehouseId]
+      additionalProperties: false
+      description: "Me.tablet (08 §3.14): планшет магазина вызывающего технического пользователя kind=kiosk (ADR-115). С 1.3.0."
+      properties:
+        id: { type: string, format: uuid, description: "store_tablets.id." }
+        name: { type: string, minLength: 2, maxLength: 150, example: "Планшет у входа", description: "user_profiles.full_name технического пользователя." }
+        warehouseId: { type: string, format: uuid, description: "Склад планшета — user_profiles.home_warehouse_id." }
+    MeKiosk:
+      type: object
+      required: [kind, tablet]
+      additionalProperties: false
+      description: >
+        Строгая форма ответа GET /me для kind=kiosk (08 §3.14, §4.3.1; 12 T-KIOSK-046): только kind и tablet. В ответе
+        операции схема — Me (без oneOf, аддитивно); MeKiosk — эталон для контрактных тестов, как CustomerView*
+        (NOTES §5 п.4, §9). С 1.3.0.
+      properties:
+        kind: { type: string, enum: [kiosk] }
+        tablet: { $ref: "#/components/schemas/MeKioskTablet" }
 
     # ===== Приглашения, публичные настройки (08 §4.18.4, §4.23.1) =====
     Invitation:
@@ -2265,6 +2389,17 @@ components:
           type: string
           nullable: true
         customerStockDisplay: { $ref: "#/components/schemas/CustomerStockDisplay" }
+        kiosk:
+          type: object
+          required: [idleSeconds, idleWarningSeconds, doneSeconds]
+          description: >
+            Общие для всех планшетов магазина настройки автосброса (08 §4.18.6, §4.23.1; ADR-115, Р-09 (а)): ключи
+            kiosk_idle_seconds, kiosk_idle_warning_seconds, kiosk_done_seconds, иначе значения по умолчанию из кода (120, 15,
+            60 с). Отдаётся всем ролям при любом KIOSK_MODE; лимиты кодов и часы работы планшету не отдаются. С 1.3.0.
+          properties:
+            idleSeconds: { type: integer, minimum: 30, maximum: 1800, example: 120, description: "Автосброс планшета без касаний, секунды." }
+            idleWarningSeconds: { type: integer, minimum: 5, maximum: 120, example: 15, description: "Обратный отсчёт «Вы ещё здесь?» перед сбросом, секунды." }
+            doneSeconds: { type: integer, minimum: 10, maximum: 600, example: 60, description: "Номер заявки на экране SCR-53 до сброса, секунды." }
         features:
           type: object
           properties:
@@ -2273,3 +2408,8 @@ components:
             qrProvider: { $ref: "#/components/schemas/QrProviderMode" }
             qrWebhook: { type: boolean, description: "QR_PROVIDER=bakai (R2) и qr.enabled." }
             debtPaymentsFromPos: { type: boolean, description: "env DEBT_PAYMENTS_FROM_POS (Q-152)." }
+            storeTablet:
+              type: boolean
+              description: >
+                env KIOSK_MODE — режим «Планшет магазина» (только env, по умолчанию false; от CUSTOMER_SELF_SERVICE не
+                зависит; 08 §4.23.1, ADR-115). До входа (без Bearer) клиент считает false. С 1.3.0.

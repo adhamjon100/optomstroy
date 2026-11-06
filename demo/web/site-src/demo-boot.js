@@ -7,6 +7,8 @@
  *  4. demo/build.json → ключ эпохи; сменился — предупреждение «Демо обновлено» → очистка. Файла нет (404) или он
  *     испорчен — «Сайт демо собран неполностью» (демо не запускается); сбой сети/5xx — только с сохранённым ключом.
  *     Хранилище, на котором эпоха уже запускалась, запоминается (optomstroy.demo.storageKind) и выбирается снова.
+ *     Затем — отложенное переключение «планшет магазина ↔ обычный вход» (demo-kiosk.js, P-002 TAB-3-02): данные
+ *     приложения в хранилище браузера переносятся, пока ни воркер, ни Flutter не запущены.
  *  5. navigator.storage.persist() — один раз; новое поколение тома (fencing).
  *  6. Воркер backend/backend.js (demo-bridge.js, init) и параллельно flutter_bootstrap.js.
  *  7. Экран загрузки скрывается, когда есть и первый кадр Flutter (window.__posOnFlutterFirstFrame), и `ready`
@@ -50,6 +52,7 @@
     lockResult: null,
     lastWipe: null,
     build: null,
+    kiosk: null,
     storage: null,
     firstFrame: false,
     hidden: false,
@@ -221,6 +224,47 @@
     };
     B._shutdown({ timeoutMs: 2000 }).then(go, go);
     setTimeout(go, 3000);
+  }
+
+  // «Планшет магазина ↔ обычный вход» (P-002 TAB-3-02; demo-kiosk.js): флаг → (из режима планшета — гашение экрана:
+  // приложение само сбрасывает корзину планшета) → ответы моста → остановка воркера → перезагрузка; перенос данных
+  // приложения — при загрузке, до Flutter (как сброс). to: 'normal' | 'kiosk' | 'reconnect'.
+  var KIOSK_TITLES = {
+    normal: 'Возвращаемся к обычному входу…',
+    kiosk: 'Возвращаем планшет магазина…',
+    reconnect: 'Готовим подключение заново…',
+  };
+  function kioskSwitch(to) {
+    if (!P.kiosk || !P.kiosk.request(to)) {
+      step('kiosk-switch-refused', { to: to });
+      return false;
+    }
+    step('kiosk-switch-request', { to: to, tablet: P.kiosk.isTablet() });
+    if (P.panel && P.panel.mounted) {
+      try {
+        P.panel.close(false);
+      } catch (e) { /* ignore */ }
+    }
+    if (boot.hidden) {
+      overlay({ title: KIOSK_TITLES[to] || 'Переключаем режим…', text: ['Сохраняем данные приложения в этом браузере и перезагружаем страницу.'] });
+    } else {
+      view('loading');
+      clearNotice();
+      stage(KIOSK_TITLES[to] || 'Переключаем режим…', 5);
+    }
+    var done = false;
+    var go = function () {
+      if (done) return;
+      done = true;
+      global.location.replace(global.location.pathname);
+    };
+    var before = P.kiosk.isTablet() && to !== 'kiosk' && B.isReady ? P.kiosk.screenOff(B) : P.kiosk.waitIdle(B, 0, 1500);
+    before.then(function (r) {
+      step('kiosk-switch-settled', r);
+      return B._shutdown({ timeoutMs: 2000 });
+    }).then(go, go);
+    setTimeout(go, 8000);
+    return true;
   }
 
   function showFatal(f) {
@@ -543,6 +587,8 @@
     boot.storageSurprise = surprise;
     if (surprise) toast(surprise, 15000);
     else if (B.info && B.info.storage === 'memory') toast('Данные демо не сохранятся после перезагрузки: браузер не дал сохранить их.');
+    var switched = P.kiosk && boot.kiosk ? P.kiosk.resultText(boot.kiosk) : null;
+    if (switched) toast(switched, boot.kiosk.ok ? 8000 : 15000);
     if (B.storageHealth && !B.storageHealth.ok) showStorageBanner(B.storageHealth);
   }
 
@@ -743,6 +789,23 @@
       }
       return null;
     }).then(function () {
+      // P-002 TAB-3-02: отложенное переключение «планшет ↔ обычный вход» и проверка отложенных данных — после замка,
+      // сброса и эпохи, до воркера и Flutter (demo-kiosk.js). Сбой здесь загрузку не останавливает.
+      if (!P.kiosk) return null;
+      var run;
+      try {
+        if (P.kiosk.pending()) stage('Переключаем режим…', 10);
+        run = P.kiosk.atBoot(boot.build);
+      } catch (e) {
+        run = Promise.reject(e);
+      }
+      return run.then(function (r) {
+        boot.kiosk = r;
+        if (r) step('kiosk-switch', r);
+      }, function (e) {
+        step('kiosk-switch-error', { message: String(e && e.message || e) });
+      });
+    }).then(function () {
       keepDevParams();
       if (!boot.build.failed) P.reset.rememberEpoch(boot.build);
       view('loading');
@@ -788,6 +851,7 @@
   }
 
   boot.resetDemo = resetDemo;
+  boot.kioskSwitch = kioskSwitch;
   boot.main = main;
   boot.reload = reload;
   P.boot = boot;

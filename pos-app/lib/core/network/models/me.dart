@@ -17,6 +17,10 @@ abstract class Me with _$Me {
     required List<String> roles,
     required List<String> permissions,
     required int permissionsVersion,
+
+    /// `Me.tablet` (OpenAPI 1.3.0) — только `kind=kiosk`: планшет магазина вызывающего технического пользователя
+    /// (08 §3.14; ADR-115). У `staff` и `customer` поля нет.
+    MeKioskTablet? tablet,
     String? discountLimitPercent,
     MeProfile? profile,
     MeCustomerLink? customerLink,
@@ -43,6 +47,19 @@ abstract class Me with _$Me {
 
   @override
   String toString() => 'Me(id: $id, kind: $kind, roles: $roles)';
+}
+
+/// `MeKioskTablet` (08 §3.14; ADR-115): планшет магазина технического пользователя `kind=kiosk`.
+@Freezed(toStringOverride: false)
+abstract class MeKioskTablet with _$MeKioskTablet {
+  const factory MeKioskTablet({required String id, required String name, required String warehouseId}) = _MeKioskTablet;
+
+  const MeKioskTablet._();
+
+  factory MeKioskTablet.fromJson(Map<String, dynamic> json) => _$MeKioskTabletFromJson(json);
+
+  @override
+  String toString() => 'MeKioskTablet(id: $id)';
 }
 
 /// `Profile`.

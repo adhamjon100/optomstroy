@@ -128,6 +128,27 @@ class AppLocalizationsKy extends AppLocalizations {
   }
 
   @override
+  String get admin_settings_kiosk_done => 'Номер заявки на экране, с';
+
+  @override
+  String get admin_settings_kiosk_idle => 'Автосброс без касаний, с';
+
+  @override
+  String get admin_settings_kiosk_idle_warning => 'Предупреждение перед сбросом, с';
+
+  @override
+  String get admin_settings_kiosk_otp_per_day => 'Кодов с одного планшета в сутки';
+
+  @override
+  String get admin_settings_kiosk_otp_per_hour => 'Кодов с одного планшета в час';
+
+  @override
+  String get admin_settings_kiosk_working_hours => 'Часы работы магазина (для сигнала «планшет не на связи»)';
+
+  @override
+  String get admin_settings_kiosk_working_hours_empty => 'Не заданы — сигнал выключен';
+
+  @override
   String get admin_settings_limit_error => 'Введите значение от 0 до 100 % с шагом 0,5';
 
   @override
@@ -176,6 +197,9 @@ class AppLocalizationsKy extends AppLocalizations {
 
   @override
   String get admin_settings_section_debts => 'Долги';
+
+  @override
+  String get admin_settings_section_kiosk => 'Планшеты магазина';
 
   @override
   String get admin_settings_section_limits => 'Лимиты скидок';
@@ -403,6 +427,27 @@ class AppLocalizationsKy extends AppLocalizations {
 
   @override
   String get audit_action_discount_over_limit_approved => 'Подтверждена скидка сверх лимита';
+
+  @override
+  String get audit_action_kiosk_enrolled => 'Планшет подключён';
+
+  @override
+  String get audit_action_kiosk_exit_code_used => 'Аварийный выход с планшета';
+
+  @override
+  String get audit_action_kiosk_limit_reached => 'Лимит кодов планшета исчерпан';
+
+  @override
+  String get audit_action_kiosk_network_denied => 'Запрос планшета вне сети магазина';
+
+  @override
+  String get audit_action_kiosk_reconnected => 'Планшет подключён заново';
+
+  @override
+  String get audit_action_kiosk_revoked => 'Планшет отключён';
+
+  @override
+  String get audit_action_kiosk_updated => 'Планшет изменён';
 
   @override
   String get audit_action_order_cancel_requested => 'Запрошена отмена заказа';
@@ -2976,6 +3021,24 @@ class AppLocalizationsKy extends AppLocalizations {
   String get error_internal => 'Не удалось выполнить. Повторите';
 
   @override
+  String get error_kiosk_disabled => 'Режим планшета выключен';
+
+  @override
+  String get error_kiosk_exit_code_invalid => 'Неверный аварийный код';
+
+  @override
+  String get error_kiosk_exit_locked => 'Аварийный выход временно заблокирован';
+
+  @override
+  String get error_kiosk_network_denied => 'Планшет не в сети магазина';
+
+  @override
+  String get error_kiosk_rate_limited => 'Слишком много кодов с этого планшета. Обратитесь к продавцу';
+
+  @override
+  String get error_kiosk_revoked => 'Планшет отключён администратором';
+
+  @override
   String get error_not_found => 'Не найдено';
 
   @override
@@ -3462,6 +3525,224 @@ class AppLocalizationsKy extends AppLocalizations {
   String get home_recent_title => 'Недавние товары';
 
   @override
+  String kiosk_admin_app_version(String version) {
+    return 'Версия приложения: $version';
+  }
+
+  @override
+  String get kiosk_admin_compact_refused =>
+      'Режим планшета работает на экране шириной от 600 точек. Используйте планшет 10–11″';
+
+  @override
+  String get kiosk_admin_edit => 'Изменить';
+
+  @override
+  String get kiosk_admin_empty => 'Планшетов пока нет';
+
+  @override
+  String get kiosk_admin_enroll => 'Сделать это устройство планшетом магазина';
+
+  @override
+  String kiosk_admin_exit_code(String code) {
+    return 'Аварийный код выхода: $code. Он показывается один раз';
+  }
+
+  @override
+  String get kiosk_admin_exit_code_keep =>
+      'Запишите код и уберите в конверт в сейфе. Новый код выдаётся при каждом подключении';
+
+  @override
+  String kiosk_admin_expires(String date) {
+    return 'Подключение действует до $date';
+  }
+
+  @override
+  String kiosk_admin_expires_soon(String date) {
+    return 'Подключение заканчивается $date. Подключите планшет заново';
+  }
+
+  @override
+  String kiosk_admin_last_seen(String time) {
+    return 'Последняя связь: $time';
+  }
+
+  @override
+  String get kiosk_admin_lock_off => 'Закрепление не включено';
+
+  @override
+  String get kiosk_admin_lock_on => 'Закрепление включено';
+
+  @override
+  String get kiosk_admin_name_label => 'Имя планшета';
+
+  @override
+  String get kiosk_admin_reconnect => 'Подключить заново этот планшет';
+
+  @override
+  String get kiosk_admin_reconnect_pick => 'Выберите планшет для подключения заново';
+
+  @override
+  String get kiosk_admin_revoke => 'Отключить планшет';
+
+  @override
+  String kiosk_admin_revoke_confirm(String name) {
+    return 'Отключить планшет «$name»? Он сразу перестанет работать';
+  }
+
+  @override
+  String get kiosk_admin_status_active => 'Подключён';
+
+  @override
+  String get kiosk_admin_status_revoked => 'Отключён';
+
+  @override
+  String get kiosk_admin_title => 'Планшеты магазина';
+
+  @override
+  String get kiosk_admin_update_needed => 'Нужна новая версия приложения';
+
+  @override
+  String get kiosk_admin_warehouse_label => 'Склад';
+
+  @override
+  String get kiosk_call_seller => 'Не удаётся отправить код. Обратитесь к продавцу';
+
+  @override
+  String get kiosk_change_phone => 'Изменить номер';
+
+  @override
+  String get kiosk_checkout_button => 'Оформить заявку';
+
+  @override
+  String get kiosk_code_expired => 'Код больше не действует. Получите новый код';
+
+  @override
+  String kiosk_code_invalid(int n) {
+    return 'Неверный код. Осталось попыток: $n';
+  }
+
+  @override
+  String kiosk_code_sent_to(String phoneMasked) {
+    return 'Код отправлен на $phoneMasked';
+  }
+
+  @override
+  String get kiosk_code_title => 'Введите код из SMS';
+
+  @override
+  String kiosk_code_wait(int seconds) {
+    return 'Новый код можно получить через $seconds с';
+  }
+
+  @override
+  String get kiosk_done => 'Готово';
+
+  @override
+  String kiosk_exit_code_invalid(int n) {
+    return 'Неверный код. Осталось попыток: $n';
+  }
+
+  @override
+  String get kiosk_exit_code_label => 'Аварийный код (8 цифр)';
+
+  @override
+  String kiosk_exit_locked(int minutes) {
+    return 'Слишком много попыток. Повторите через $minutes мин';
+  }
+
+  @override
+  String get kiosk_exit_offline_hint => 'Выход выполнен без связи. Отключите этот планшет в списке «Планшеты магазина»';
+
+  @override
+  String get kiosk_exit_submit => 'Выйти из режима планшета';
+
+  @override
+  String get kiosk_exit_title => 'Аварийный выход из режима планшета';
+
+  @override
+  String get kiosk_get_code => 'Получить код';
+
+  @override
+  String kiosk_idle_body(int seconds) {
+    return 'Через $seconds с корзина очистится';
+  }
+
+  @override
+  String get kiosk_idle_continue => 'Продолжить';
+
+  @override
+  String get kiosk_idle_title => 'Вы ещё здесь?';
+
+  @override
+  String get kiosk_network_denied => 'Планшет не в сети магазина. Обратитесь к продавцу';
+
+  @override
+  String get kiosk_notice_full =>
+      'Номер телефона нужен, чтобы оформить заявку и найти вашу карточку клиента. Мы отправим SMS с кодом. Номер хранится в заявке и в журнале SMS, передаётся в 1С магазина и SMS-провайдеру. Оператор данных (владелец записей): юридическое лицо магазина «Оптомстрой» — [ТРЕБУЕТ РЕШЕНИЯ ЗАКАЗЧИКА: Q-340]. Ответственный за персональные данные и его контакт: [ТРЕБУЕТ РЕШЕНИЯ ЗАКАЗЧИКА: Q-340]. Цель: оформить заявку с планшета магазина и найти по номеру вашу карточку клиента в учётной системе магазина, чтобы кассир выдал заказ и принял оплату. Данные: номер телефона и состав заявки (товары и количество). Имя и другие сведения на планшете не спрашиваются. Основание: исполнение договора — вы сами просите оформить заявку (ст. 79 Цифрового кодекса Кыргызской Республики). Код из SMS подтверждает, что номер ваш. Учётная запись в приложении не создаётся. Где хранятся: на сервере магазина в Кыргызской Республике. На планшете номер не сохраняется: после отправки заявки и после ухода покупателя экран очищается. Кому передаются: учётной системе магазина 1С — номер записывается в заказ как телефон получателя; SMS-провайдеру SMSPro — номер и код, чтобы отправить SMS. Сроки: заявка хранится 3 года. Номер в заявке скрывается через 90 дней после выдачи или отмены заявки, а если заявку никто не выдал и не отменил — через 90 дней после её создания. Запись о запросе кода хранится 30 дней, журнал отправки SMS — 90 дней. Номер в заказе 1С хранится: [ТРЕБУЕТ РЕШЕНИЯ ЗАКАЗЧИКА: Q-339]. Ваши права: узнать, какие данные о вас есть, уточнить их, потребовать удаления или ограничения обработки, возразить против обработки. Учётная запись для этого не нужна: обратитесь к ответственному за персональные данные (контакт выше) или спросите продавца, как это сделать.';
+
+  @override
+  String get kiosk_notice_full_title => 'Как мы используем номер телефона';
+
+  @override
+  String get kiosk_notice_more => 'Подробнее';
+
+  @override
+  String get kiosk_notice_short =>
+      'Номер телефона нужен, чтобы оформить заявку и найти вашу карточку клиента. Мы отправим SMS с кодом. Номер хранится в заявке и в журнале SMS, передаётся в 1С магазина и SMS-провайдеру.';
+
+  @override
+  String get kiosk_offline => 'Нет связи. Смотреть товары можно, отправить заявку — нет. Обратитесь к продавцу';
+
+  @override
+  String get kiosk_order_failed => 'Заявку не удалось отправить. Обратитесь к продавцу';
+
+  @override
+  String get kiosk_order_sent_body => 'Подойдите к кассе и назовите номер заявки. Оплата — на кассе';
+
+  @override
+  String kiosk_order_sent_title(String number) {
+    return 'Заявка № $number отправлена';
+  }
+
+  @override
+  String get kiosk_phone_title => 'Введите номер телефона';
+
+  @override
+  String get kiosk_price_chip => 'Обычные цены магазина';
+
+  @override
+  String get kiosk_price_note => 'Договорные цены применит кассир';
+
+  @override
+  String get kiosk_reconnect_needed => 'Планшет нужно подключить заново. Обратитесь к продавцу';
+
+  @override
+  String kiosk_resend_in(int seconds) {
+    return 'Получить код повторно через $seconds с';
+  }
+
+  @override
+  String get kiosk_revoked => 'Планшет отключён администратором';
+
+  @override
+  String get kiosk_send_order => 'Отправить заявку';
+
+  @override
+  String get kiosk_sending => 'Отправляем заявку…';
+
+  @override
+  String get kiosk_start_over => 'Начать заново';
+
+  @override
+  String get kiosk_stock_changed => 'Товара стало меньше. Проверьте количество и отправьте заявку ещё раз';
+
+  @override
+  String get kiosk_unavailable => 'Сервис временно недоступен. Обратитесь к продавцу';
+
+  @override
+  String get kiosk_update_needed => 'Планшет нужно обновить. Обратитесь к продавцу';
+
+  @override
   String get link_body_conflict =>
       'Найдено несколько карточек с вашим номером. Администратор магазина проверит данные и свяжется с вами';
 
@@ -3522,6 +3803,9 @@ class AppLocalizationsKy extends AppLocalizations {
 
   @override
   String get notification_kind_credit_blocked => 'Продажа в долг заблокирована';
+
+  @override
+  String get notification_kind_kiosk_order => 'Заявка с планшета';
 
   @override
   String get notification_kind_order_status => 'Статус заказа';
@@ -3654,6 +3938,9 @@ class AppLocalizationsKy extends AppLocalizations {
 
   @override
   String get order_action_show_qr => 'Показать QR';
+
+  @override
+  String get order_badge_kiosk => 'С планшета';
 
   @override
   String order_banner_cancel_requested(String time) {
@@ -3927,6 +4214,23 @@ class AppLocalizationsKy extends AppLocalizations {
   String get order_history_source_onec => '1С';
 
   @override
+  String get order_kiosk_match_ambiguous => 'Клиент не определён — выберите карточку';
+
+  @override
+  String get order_kiosk_match_none => 'Новый покупатель';
+
+  @override
+  String get order_kiosk_match_repeat_hint => 'Повторить заказ на карточку клиента';
+
+  @override
+  String get order_kiosk_match_single => 'Клиент найден по номеру';
+
+  @override
+  String order_kiosk_match_single_check(String name) {
+    return 'Клиент найден по номеру: $name. Спросите имя покупателя и сверьте с карточкой до оплаты';
+  }
+
+  @override
   String get order_not_found => 'Заказ не найден или недоступен';
 
   @override
@@ -4037,6 +4341,9 @@ class AppLocalizationsKy extends AppLocalizations {
 
   @override
   String get orders_chip_in_progress => 'В работе';
+
+  @override
+  String get orders_chip_kiosk => 'С планшета';
 
   @override
   String get orders_chip_shipped => 'Отгружены';
@@ -5847,6 +6154,9 @@ class AppLocalizationsKy extends AppLocalizations {
 
   @override
   String get role_integration => 'Интеграция';
+
+  @override
+  String get role_kiosk => 'Планшет магазина';
 
   @override
   String get role_owner => 'Руководитель';
