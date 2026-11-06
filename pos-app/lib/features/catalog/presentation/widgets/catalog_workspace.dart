@@ -514,6 +514,12 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
   /// `true` — переход ещё не выполнен (список корня не запрашивается, заголовок и сетка — скелетон). Дерево не
   /// загрузилось или пусто — откат к «Все товары» (`false`). compact, `customer`, экран вне семейства страницы
   /// `/catalog` и вне роутера — без перехода.
+  ///
+  /// Переход назначается и выполняется, только пока экран виден и роутер показывает этот голый `/catalog`
+  /// ([_showsBareRoot]). Ветка «Каталог» оболочки остаётся смонтированной за другой веткой (`StatefulShellRoute`,
+  /// Offstage): если пользователь ушёл в другой раздел, пока грузились дерево или настройки, переход не выполняется —
+  /// иначе скрытый каталог вернул бы его из раздела в каталог (регрессия integration 2026-11-06: SCR-47 → SCR-12).
+  /// Выбор откладывается до возврата в ветку (`TickerMode` снова включён — экран перестраивается).
   bool _awaitingStart(CategoryTreeState tree, WindowClass wc, RoleCode? role) {
     if (_startRedirecting && widget.mode == CatalogScreenMode.root) {
       return true;
@@ -533,6 +539,10 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
       _startResolved = true;
       return false;
     }
+    if (!_showsBareRoot(r)) {
+      // Ветка скрыта или над экраном другая запись: выбор — когда экран снова будет виден на голом `/catalog`.
+      return true;
+    }
     if (!_prefsLoaded) {
       return true;
     }
@@ -551,9 +561,34 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
       if (!mounted || widget.mode != CatalogScreenMode.root) {
         return;
       }
+      if (!_bareRoot(widget) || !_showsBareRoot(r)) {
+        // Адрес сменился в этом же кадре (другой раздел, запись поверх): переход не выполняется, выбор — заново, когда
+        // экран снова будет виден на голом `/catalog` (смена адреса и `TickerMode` перестраивают экран).
+        _startRedirecting = false;
+        _startResolved = false;
+        return;
+      }
       Router.neglect(context, () => r.go(location));
     });
     return true;
+  }
+
+  /// Экран виден (ветка «Каталог» активна, экран не закрыт страницей — `TickerMode`) и верхняя запись применённой
+  /// конфигурации роутера — этот голый `/catalog` (без записи `push` поверх, без `all=1`, подборки и фильтров — признак
+  /// [_bareRoot]). Применённая конфигурация меняется раньше, чем перестраиваются ветки оболочки.
+  bool _showsBareRoot(GoRouter r) {
+    if (!_tickerOn) {
+      return false;
+    }
+    final RouteMatchList config = r.routerDelegate.currentConfiguration;
+    if (config.isEmpty ||
+        config.isError ||
+        config.fullPath != CatalogPaths.catalog() ||
+        config.last is ImperativeRouteMatch) {
+      return false;
+    }
+    final Map<String, String> qp = config.uri.queryParameters;
+    return qp['all'] != '1' && qp['preset'] == null && (qp['f'] ?? '').isEmpty;
   }
 
   /// Запоминает корень пути открытой категории как последний (`catalog_last_root`, на пользователя).

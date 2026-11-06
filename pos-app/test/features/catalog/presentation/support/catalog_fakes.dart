@@ -197,6 +197,9 @@ class FakeCatalogRepository implements CatalogRepository {
   final List<CatalogQuery> cachedCalls = <CatalogQuery>[];
   int categoryCalls = 0;
   final Gate gate = Gate();
+
+  /// Задержка ответа сети дерева категорий (`categories`): дерево ещё грузится.
+  final Gate treeGate = Gate();
   Result<CategoryTree>? categoriesResult;
   List<Warehouse> warehouseList = const <Warehouse>[
     Warehouse(id: 'w-main', name: 'Основной', isDefaultForPos: true),
@@ -211,6 +214,7 @@ class FakeCatalogRepository implements CatalogRepository {
     bool inStockOnly = false,
   }) async {
     categoryCalls++;
+    await treeGate.wait();
     return categoriesResult ?? Success<CategoryTree>(tree);
   }
 

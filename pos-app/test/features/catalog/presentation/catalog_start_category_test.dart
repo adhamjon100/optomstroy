@@ -2,7 +2,10 @@
 // корневой категории — при первом входе на корне с наибольшим `productCount` (при равенстве — первом по `sortOrder`),
 // затем на последнем открытом этим пользователем корне (`catalog_last_root`); «Все товары» — `/catalog?all=1` по
 // заголовку «Каталог» колонки (лента — корневые категории); compact и `customer` — без перехода. Поиск в категории —
-// «Поиск: «q»», корень выделен, лента корня с выбранной «Все товары»; крошки — только при глубине ≥ 3.
+// «Поиск: «q»», корень выделен, лента корня с выбранной «Все товары»; крошки — только при глубине ≥ 3. Переход на
+// стартовую категорию — только пока каталог виден на голом `/catalog`: уход в другой раздел оболочки до перехода
+// (настройки или дерево дочитаны позже, уход в том же кадре) адрес раздела не меняет, возврат вкладкой — тот же переход
+// (регрессия integration 2026-11-06, cashier_flow_test SCR-47).
 // Настоящие маршруты приложения (`$appRoutes`), фейки каталога (данные синтетические). Ревью RP-02: число избранных
 // после входа — по серверу (кэш избранного обновляется при подписке, а не только на SCR-40).
 import 'dart:async';
@@ -19,7 +22,10 @@ import 'package:optomstroy/core/error/result.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/category_tile.dart';
 import 'package:optomstroy/design_system/components/product_image.dart';
+import 'package:optomstroy/design_system/components/view_mode_segmented.dart';
 import 'package:optomstroy/design_system/theme/app_theme.dart';
+import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
+import 'package:optomstroy/features/admin/admin_providers.dart';
 import 'package:optomstroy/features/catalog/domain/entities/catalog_query.dart';
 import 'package:optomstroy/features/catalog/domain/entities/category.dart';
 import 'package:optomstroy/features/catalog/domain/entities/product.dart';
@@ -29,6 +35,8 @@ import 'package:optomstroy/features/catalog/presentation/widgets/catalog_logo.da
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_sidebar.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_toolbar.dart';
 
+import '../../admin/support/fake_admin_repository.dart' show FakeAdminUsersRepository;
+import '../../admin/support/fake_admin_settings.dart' show FakeAuditLogRepository;
 import 'support/catalog_fakes.dart';
 
 GoRouter _appRouter(String initial) => GoRouter(routes: $appRoutes, initialLocation: initial);
@@ -102,6 +110,59 @@ final class _RefreshingShelf implements CatalogShelfPort, CatalogFavoritesRefres
 
   Future<void> dispose() => _ids.close();
 }
+
+/// Настройки каталога, чтение которых задерживается до [release] (как медленное чтение drift `settings` после входа).
+final class _SlowPrefs implements CatalogPrefs {
+  final InMemoryCatalogPrefs _inner = InMemoryCatalogPrefs();
+  final Completer<void> _ready = Completer<void>();
+
+  void release() => _ready.complete();
+
+  @override
+  Future<ProductViewMode?> viewMode(WindowClass windowClass) => _inner.viewMode(windowClass);
+
+  @override
+  Future<void> setViewMode(WindowClass windowClass, ProductViewMode mode) => _inner.setViewMode(windowClass, mode);
+
+  @override
+  Future<CatalogSort?> sort({required bool search}) async {
+    await _ready.future;
+    return _inner.sort(search: search);
+  }
+
+  @override
+  Future<void> setSort(CatalogSort sort, {required bool search}) => _inner.setSort(sort, search: search);
+
+  @override
+  Future<bool?> sidebarCollapsed() => _inner.sidebarCollapsed();
+
+  @override
+  Future<void> setSidebarCollapsed(bool value) => _inner.setSidebarCollapsed(value);
+
+  @override
+  Future<String?> lastRoot() => _inner.lastRoot();
+
+  @override
+  Future<void> setLastRoot(String categoryId) => _inner.setLastRoot(categoryId);
+}
+
+/// Раздел другой ветки оболочки, в который сотрудник уходит из каталога (SCR-47, как в регрессии integration).
+const String _awayLocation = '/admin/audit';
+
+/// Фейки SCR-47 (журнал и список сотрудников фильтра) — раздел [_awayLocation] строится без сети.
+List<Override> _awayOverrides() => <Override>[
+  adminUsersRepositoryProvider.overrideWithValue(FakeAdminUsersRepository()),
+  auditLogRepositoryProvider.overrideWithValue(FakeAuditLogRepository()),
+];
+
+/// Запросы списка товаров стартовой категории (запрос скрытого каталога — признак перехода из другого раздела).
+int _startCategoryCalls(CatalogHarness h, String id) =>
+    h.catalog.productCalls.where((CatalogQuery q) => q.filter.categoryId == id).length +
+    h.catalog.cachedCalls.where((CatalogQuery q) => q.filter.categoryId == id).length;
+
+/// Вернуться в ветку «Каталог» вкладкой оболочки (`goBranch` — сохранённый адрес ветки, голый `/catalog`).
+void _goCatalogBranch(WidgetTester tester) =>
+    tester.widget<StatefulNavigationShell>(find.byType(StatefulNavigationShell)).goBranch(0);
 
 void main() {
   test('RP-02: число избранных после входа — по серверу; кэш обновляется один раз на пользователя', () async {
@@ -276,6 +337,81 @@ void main() {
       await _pumpApp(tester, h, router);
       expect(_location(router), '/catalog');
       expect(find.byKey(const ValueKey<String>('stub-SCR-10')), findsOneWidget);
+    });
+
+    // Регрессия integration 2026-11-06 (cashier_flow_test, SCR-47): ветка «Каталог» остаётся смонтированной за другой
+    // веткой оболочки; переход на стартовую категорию, назначенный после ухода в другой раздел, возвращал сотрудника
+    // из раздела в каталог. Переход выполняется, только пока экран виден на голом `/catalog`; после возврата — тот же.
+    group('T-CAT-040: уход в другой раздел до перехода на стартовую категорию', () {
+      Future<void> expectStaysAway(WidgetTester tester, CatalogHarness h, GoRouter router) async {
+        expect(_location(router), _awayLocation, reason: 'скрытый каталог не возвращает из другого раздела');
+        expect(_startCategoryCalls(h, 'c-mix'), 0, reason: 'скрытый каталог не запрашивает стартовую категорию');
+        expect(_wholeCatalogCalls(h), 0);
+        // Возврат вкладкой — голый `/catalog` ветки и тот же переход на стартовую категорию.
+        _goCatalogBranch(tester);
+        await settle(tester, frames: 10);
+        expect(_location(router), '/catalog/c/c-mix');
+        expect(find.byKey(const ValueKey<String>('stub-SCR-12')), findsOneWidget);
+        expect(_title(tester), 'Смесители');
+        expect(_wholeCatalogCalls(h), 0);
+      }
+
+      testWidgets('настройки дочитаны после ухода — адрес раздела не меняется', (tester) async {
+        setWindow(tester, kExpanded);
+        final _SlowPrefs prefs = _SlowPrefs();
+        final CatalogHarness h = CatalogHarness(prefs: prefs, extra: _awayOverrides());
+        final GoRouter router = _appRouter('/catalog');
+        addTearDown(router.dispose);
+        await _pumpApp(tester, h, router);
+        expect(_location(router), '/catalog', reason: 'настройки ещё читаются — переход не назначен');
+
+        router.go(_awayLocation);
+        await settle(tester, frames: 10);
+        expect(_location(router), _awayLocation);
+        prefs.release();
+        await settle(tester, frames: 10);
+        await expectStaysAway(tester, h, router);
+      });
+
+      testWidgets('дерево категорий пришло после ухода — адрес раздела не меняется', (tester) async {
+        setWindow(tester, kExpanded);
+        final CatalogHarness h = CatalogHarness(extra: _awayOverrides());
+        h.catalog.treeGate.hold();
+        final GoRouter router = _appRouter('/catalog');
+        addTearDown(router.dispose);
+        await _pumpApp(tester, h, router);
+        expect(_location(router), '/catalog', reason: 'дерево ещё грузится — переход не назначен');
+
+        router.go(_awayLocation);
+        await settle(tester, frames: 10);
+        h.catalog.treeGate.release();
+        await settle(tester, frames: 10);
+        await expectStaysAway(tester, h, router);
+      });
+
+      testWidgets('уход в том же кадре, в котором назначен переход, — переход отменяется', (tester) async {
+        setWindow(tester, kExpanded);
+        final CatalogHarness h = CatalogHarness(extra: _awayOverrides());
+        h.catalog.treeGate.hold();
+        final GoRouter router = _appRouter('/catalog');
+        addTearDown(router.dispose);
+        await _pumpApp(tester, h, router);
+        expect(_location(router), '/catalog');
+
+        // Дерево пришло: экран перестраивается в следующем кадре и назначает переход после кадра; уход в другой раздел
+        // выполняется раньше в том же кадре (обратный вызов зарегистрирован до перестроения).
+        h.catalog.treeGate.release();
+        await tester.idle();
+        bool left = false;
+        WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+          left = true;
+          router.go(_awayLocation);
+        });
+        await tester.pump();
+        expect(left, isTrue);
+        await settle(tester, frames: 10);
+        await expectStaysAway(tester, h, router);
+      });
     });
 
     testWidgets('пустое дерево — «Все товары»', (tester) async {
