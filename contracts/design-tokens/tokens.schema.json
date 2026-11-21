@@ -214,7 +214,7 @@
     "layout": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sidebarNarrow", "sidebarWide", "sidebarCollapsed", "rail", "cartNarrow", "cartWide", "productPanel", "contentMaxLarge", "cardMinWidth", "topBarHeight", "navDrawer", "cartDrawer", "catalogColumn", "catalogCardMinWidth", "gridMinColumns", "gridMaxColumns"],
+      "required": ["sidebarNarrow", "sidebarWide", "sidebarCollapsed", "rail", "cartNarrow", "cartWide", "productPanel", "contentMaxLarge", "cardMinWidth", "topBarHeight", "navDrawer", "cartDrawer", "catalogColumn", "catalogCardMinWidth", "gridMinColumns", "gridMaxColumns", "gridCardMaxWidth"],
       "properties": {
         "sidebarNarrow": { "$ref": "#/$defs/gridSize" },
         "sidebarWide": { "$ref": "#/$defs/gridSize" },
@@ -231,7 +231,8 @@
         "catalogColumn": { "$ref": "#/$defs/gridSize", "description": "Ширина колонки категорий SCR-10/11/12 на medium+." },
         "catalogCardMinWidth": { "$ref": "#/$defs/gridSize", "description": "Минимальная ширина карточки сетки каталога SCR-10/11/12 (cardMinWidth 160 остаётся для SCR-40/50)." },
         "gridMinColumns": { "type": "integer", "minimum": 1 },
-        "gridMaxColumns": { "type": "integer", "minimum": 1 }
+        "gridMaxColumns": { "type": "integer", "minimum": 1, "description": "Предел колонок сетки SCR-50 (03 §7.3); общий предел по классу окна — breakpoint.*.productColumnsMax." },
+        "gridCardMaxWidth": { "$ref": "#/$defs/gridSize", "description": "Наибольшая ширина карточки сетки товаров (03 §7.3, ADR-114, уточнение 2026-11-18): шире — область товаров не растягивается, остаток справа пустой." }
       }
     },
     "catalog": {
@@ -474,13 +475,14 @@
     "windowClass": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["min", "maxExclusive", "pageMargin", "columns", "columnGap"],
+      "required": ["min", "maxExclusive", "pageMargin", "columns", "columnGap", "productColumnsMax"],
       "properties": {
         "min": { "type": "integer", "minimum": 0 },
         "maxExclusive": { "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] },
         "pageMargin": { "$ref": "#/$defs/gridSize" },
         "columns": { "type": "integer", "minimum": 1 },
-        "columnGap": { "$ref": "#/$defs/gridSize" }
+        "columnGap": { "$ref": "#/$defs/gridSize" },
+        "productColumnsMax": { "type": "integer", "minimum": 2, "description": "Наибольшее число колонок сетки товаров в классе окна (03 §7.3, ADR-114, уточнение 2026-11-18)." }
       }
     },
     "densityLevel": {

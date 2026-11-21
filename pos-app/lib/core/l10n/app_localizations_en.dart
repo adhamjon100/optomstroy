@@ -563,6 +563,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get auth_bio_offer_title => 'Входить по биометрии?';
 
   @override
+  String get auth_bio_prompt_face => 'Вход по лицу или отпечатку';
+
+  @override
   String get auth_blocked_message => 'Доступ закрыт. Обратитесь к администратору магазина';
 
   @override
@@ -2919,6 +2922,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get ds_onec_down =>
       '1С недоступна: заказы будут отправлены позже; продажа в долг — только по актуальным данным о долге';
+
+  @override
+  String get ds_paste_blocked_hint =>
+      'Браузер не разрешил вставку из буфера обмена. Нажмите Ctrl+V (на Mac — ⌘V) или откройте меню в самом поле';
 
   @override
   String get ds_price_missing => 'Цена не указана';
@@ -6412,17 +6419,48 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settings_bio_ios => 'Вход по Face ID / Touch ID';
 
   @override
+  String get settings_bio_mode_strong => 'Только отпечаток (надёжнее)';
+
+  @override
+  String get settings_bio_mode_title => 'Способ входа';
+
+  @override
+  String get settings_bio_mode_weak => 'Лицо или отпечаток (проще, защита ниже)';
+
+  @override
   String get settings_bio_open_system => 'Настроить в системе';
 
   @override
   String get settings_bio_unavailable => 'Биометрия на устройстве недоступна или не настроена';
 
   @override
+  String get settings_bio_upgrade_hint =>
+      'На телефоне есть более надёжный вход по отпечатку. Выключите и включите вход заново, чтобы перейти';
+
+  @override
+  String get settings_bio_weak_needs_pin => 'Сначала задайте PIN — он нужен не реже раза в сутки';
+
+  @override
+  String get settings_bio_weak_note =>
+      'Распознавание лица на этом телефоне упрощённое: защита ниже, чем у отпечатка. Не реже раза в сутки приложение попросит PIN';
+
+  @override
   String get settings_bio_windows => 'Windows Hello перед вводом PIN';
 
   @override
+  String get settings_bio_windows_key => 'Вход через Windows Hello';
+
+  @override
+  String get settings_bio_windows_key_needs_pin =>
+      'Сначала задайте PIN приложения — он остаётся запасным способом входа';
+
+  @override
+  String get settings_bio_windows_key_note =>
+      'Вход без PIN приложения: Windows Hello примет лицо, отпечаток или PIN Windows. PIN приложения остаётся запасным способом и подтверждает важные действия';
+
+  @override
   String get settings_bio_windows_note =>
-      'Windows Hello только подтверждает присутствие. Вход всегда завершается PIN приложения';
+      'Windows Hello (лицо, отпечаток или PIN Windows) только подтверждает присутствие. Вход всегда завершается PIN приложения';
 
   @override
   String get settings_conflict => 'Настройки изменены на другом устройстве. Показаны актуальные значения';
@@ -6441,6 +6479,32 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settings_device_name_error => 'От 1 до 60 символов';
+
+  @override
+  String get settings_hello_busy => 'Windows Hello сейчас занят. Повторите попытку';
+
+  @override
+  String get settings_hello_disabled_by_policy => 'Windows Hello отключён политикой этого компьютера';
+
+  @override
+  String get settings_hello_key_disabled =>
+      'Вход через Windows Hello без PIN сейчас выключен. Можно включить Windows Hello перед вводом PIN';
+
+  @override
+  String get settings_hello_key_no_prf =>
+      'Браузер не поддерживает вход без PIN. Windows Hello включён перед вводом PIN';
+
+  @override
+  String get settings_hello_key_shared_device =>
+      'На этом компьютере входили и другие пользователи, поэтому вход без PIN недоступен. Можно включить Windows Hello перед вводом PIN';
+
+  @override
+  String get settings_hello_no_device =>
+      'Windows Hello на этом компьютере недоступен. Для входа по лицу нужна камера с поддержкой Windows Hello (инфракрасная)';
+
+  @override
+  String get settings_hello_not_configured =>
+      'Windows Hello не настроен. Настройте лицо, отпечаток или PIN в параметрах Windows: «Учётные записи» → «Варианты входа»';
 
   @override
   String get settings_language_en => 'English';
@@ -6465,6 +6529,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settings_pin_changed => 'PIN изменён';
+
+  @override
+  String get settings_pin_delete_hello_key_active =>
+      'Сначала выключите вход через Windows Hello: без PIN он не работает';
+
+  @override
+  String get settings_pin_delete_weak_active => 'Сначала выключите вход по лицу: без PIN он не работает';
 
   @override
   String get settings_pin_error_mismatch => 'PIN не совпадает. Введите ещё раз';
@@ -7409,10 +7480,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get unlock_bio_button => 'Войти по биометрии';
 
   @override
+  String get unlock_bio_button_face => 'Войти по лицу или отпечатку';
+
+  @override
+  String get unlock_bio_pin_due => 'Пора ввести PIN. Введите PIN';
+
+  @override
+  String get unlock_bio_weak_disabled => 'Вход по лицу выключен. Введите PIN';
+
+  @override
   String get unlock_forgot_pin => 'Забыли PIN?';
 
   @override
   String get unlock_hello_button => 'Windows Hello';
+
+  @override
+  String get unlock_hello_failed => 'Windows Hello не подтвердил вход. Введите PIN';
+
+  @override
+  String get unlock_hello_key_button => 'Войти через Windows Hello';
+
+  @override
+  String get unlock_hello_key_lost =>
+      'Ключ Windows Hello на этом компьютере больше не действует. Введите PIN и включите вход заново в настройках';
+
+  @override
+  String get unlock_hello_key_unavailable => 'Вход через Windows Hello выключен на этом компьютере. Введите PIN';
 
   @override
   String get unlock_hello_verified => 'Подтверждено Windows Hello · введите PIN';

@@ -8,6 +8,35 @@
 `enums.json`, `python -I -X utf8 scripts/check_enums.py` (0 расхождений) и генерация: `cd pos-api && npm run gen:enums`
 (`pos-api/src/common/enums.ts`), `pos-app/lib/core/enums.dart` — тем же `scripts/gen_enums.py` (руками не правятся).
 
+## [1.4.0] — 2026-11-08 — вход по лицу на всех платформах (ADR-116)
+
+Минорное изменение: `version` 1.3.0 → 1.4.0, только новое значение (в конец перечня) и новые перечни. Основание — ответы
+владельца 2026-11-07 (выбраны все три варианта вопроса «Где должен работать вход по лицу?») и 2026-11-08 (Q-353 — «Всем
+(Рекоменд.)», Q-355 — «Лицо без PIN (Рекоменд.)»); решение — ADR-116 (15, приложение Р). Значения — по 07 v1.18 §5.9,
+§5.66, §6.1.1; DDL — миграция `pos-api/migrations/0024_face_login.sql` (вносит пакет сервера; до неё
+`scripts/check_enum_triangle.py` [3] ожидаемо показывает расхождение CHECK `sessions.revoke_reason`, перечни
+`hello_keys.*` — информационно: таблицы в DDL ещё нет). Число типов БД не изменилось (45); удалённых и переименованных
+значений нет; `problemCodes` не менялись (нового кода ошибки нет — причины `UNLOCK_REQUIRED` в OpenAPI).
+
+### Добавлено
+
+- `checkLists`: `session_revoke_reason` + `biometric_weak_disabled` (уровень W Android запрещён `AUTH_BIO_ALLOW_WEAK`, 07 §5.9).
+- `checkLists`, новые перечни (имя — по имени поля, `NOTES_enums.md` «Решения при неоднозначностях» п. 2) после
+  `store_tablet_status`, в порядке строк 07 §6.1.1: `hello_key_algorithm` (`hello_keys.algorithm`: `RS256`),
+  `hello_key_source` (`hello_keys.source`: `windows_hello`, `webauthn_prf`), `hello_key_revoke_reason`
+  (`hello_keys.revoke_reason`: `disabled`, `replaced`, `invalidated`, `policy_off`, `shared_device`, `logout_all`,
+  `phone_changed`, `kiosk_connect`, `blocked`, `pin_reset`; 07 §5.66). В OpenAPI 1.4.0 первые два выставлены схемами
+  `HelloKeyAlgorithm`, `HelloKeySource`; причину отзыва API не отдаёт.
+- Доработка 2026-11-18 (пакет сервера W2 LF-2-06, до выпуска 1.4.0 — версия не меняется): `hello_key_revoke_reason`
+  + `blocked` (блокировка пользователя администратором) и `pin_reset` (сброс PIN администратором) в конец перечня —
+  08 §4.18.3, §4.18.9, 09 BIO-040 `[ВЫВОД исполнителя]`; CHECK `hello_keys_revoke_reason_chk` в той же миграции 0024
+  (ещё не выпущена).
+
+### Изменено
+
+- `source` строки `session_revoke_reason` — ссылка на ADR-116 (миграция 0024).
+- Сгенерированы заново `pos-api/src/common/enums.ts` и `pos-app/lib/core/enums.dart` (`scripts/gen_enums.py`).
+
 ## [1.3.0] — 2026-11-04 — режим «Планшет магазина» (P-002, ADR-115)
 
 Минорное изменение: `version` 1.2.0 → 1.3.0, только новые значения (в конец перечней) и новые перечни. Основание —

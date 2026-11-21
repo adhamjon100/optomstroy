@@ -544,7 +544,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          PriceText(amount: t.ordersTotal ?? Money.zero, variant: PriceTextVariant.card),
+          // Итог карточки в узкой колонке (окно 600, крупный текст) — начертание на ступень меньше, а не обрезка.
+          PriceText(amount: t.ordersTotal ?? Money.zero, variant: PriceTextVariant.card, stepDownToFit: true),
           Text(
             l10n.reports_orders_count(count),
             style: context.text.caption.copyWith(color: context.colors.textSecondary),
@@ -620,7 +621,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             Text(l10n.reports_debt_total, style: context.text.caption.copyWith(color: context.colors.textSecondary)),
-            PriceText(amount: total, variant: PriceTextVariant.card),
+            PriceText(amount: total, variant: PriceTextVariant.card, stepDownToFit: true),
             SizedBox(height: context.space.s2),
             Row(
               children: <Widget>[

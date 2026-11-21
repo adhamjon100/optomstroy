@@ -13,7 +13,12 @@ import 'package:optomstroy/features/registration/data/repositories/registration_
 import 'package:optomstroy/features/registration/registration_providers.dart';
 
 final _deviceBiometricsImplProvider = Provider<DeviceBiometricsImpl>(
-  (ref) => DeviceBiometricsImpl(ref.watch(biometricAuthenticatorProvider), ref.watch(secureStorageProvider)),
+  (ref) => DeviceBiometricsImpl(
+    ref.watch(biometricAuthenticatorProvider),
+    ref.watch(secureStorageProvider),
+    // Гейт Windows Hello — по пользователю сессии, открытой `201 /registration/complete` (09 BIO-034).
+    currentUserId: () => ref.read(sessionControllerProvider).userId,
+  ),
 );
 
 final List<Override> registrationOverrides = <Override>[

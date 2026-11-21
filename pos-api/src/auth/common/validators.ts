@@ -109,6 +109,24 @@ export function ForbiddenField(options?: ValidationOptions): PropertyDecorator {
   );
 }
 
+/**
+ * Строка base64url без `=` длиной `min…max` (rule `max_length`, как прочие строки 08 §2.14): подпись ключа Windows Hello
+ * `POST /auth/unlock {signature}` (OpenAPI `AuthUnlockRequest.signature`, 342…683 знака — RSA 2048…4096; ADR-116).
+ */
+export function IsBase64UrlText(min: number, max: number, options?: ValidationOptions): PropertyDecorator {
+  return ValidateBy(
+    {
+      name: 'max_length',
+      validator: {
+        validate: (v: unknown) =>
+          typeof v === 'string' && v.length >= min && v.length <= max && /^[A-Za-z0-9_-]+$/.test(v),
+        defaultMessage: () => `Строка base64url ${min}…${max} символов`,
+      },
+    },
+    options,
+  );
+}
+
 export function IsBool(options?: ValidationOptions): PropertyDecorator {
   return ValidateBy(
     {

@@ -41,8 +41,12 @@ abstract interface class LoginProtectionRepository {
 
   /// Включить вход по биометрии: Android/iOS — `POST /me/biometrics {enabled, biometricClass, consent}`
   /// (step-up `profile.biometrics.toggle`) → системный диалог → токен под ключом Keystore/Keychain;
-  /// Windows — только подтверждение Windows Hello (локальный UX-гейт).
-  Future<BiometricToggleOutcome> enableBiometrics(BiometricPromptCopy prompt);
+  /// Windows — только подтверждение Windows Hello (локальный UX-гейт). Android: [tier] — способ UI-42-027 (по
+  /// умолчанию уровень S; уровень W — `biometricClass: class2` и секрет без криптопривязки, 15 ADR-116 п. 2).
+  Future<BiometricToggleOutcome> enableBiometrics(
+    BiometricPromptCopy prompt, {
+    BiometricLoginTier tier = BiometricLoginTier.strong,
+  });
 
   /// Выключить: `POST /me/biometrics {enabled:false}` (Android/iOS) → удаление ключа и токена.
   Future<BiometricToggleOutcome> disableBiometrics();

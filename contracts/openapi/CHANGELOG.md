@@ -9,6 +9,68 @@
 Собранный файл не редактируется вручную: правки вносятся в `parts/*.yaml`, затем
 `python -I -X utf8 scripts/build_openapi.py` (правила — `NOTES.md` §1, §7).
 
+## [1.4.0] — 2026-11-08 — вход по лицу на всех платформах (ADR-116)
+
+Аддитивное изменение (MINOR): `info.version` 1.3.0 → 1.4.0. Основание — ответы владельца 2026-11-07 (выбраны все три
+варианта вопроса «Где должен работать вход по лицу?») и 2026-11-08 (Q-353 — «Всем (Рекоменд.)», Q-355 — «Лицо без PIN
+(Рекоменд.)»); решение — ADR-116 (15, приложение Р). Источник — 08 v1.21 (§2.2, §2.4, §2.9, §3.14, §4.1.2, §4.1.5,
+§4.1.8, §4.1.10, §4.3.3, §4.3.5–§4.3.7, §4.18.3, §4.18.11, §4.18.15, §9), 07 v1.18 (§5.9, §5.66, §6.1.1); решения
+контракта — `NOTES.md` §10 и шапка `parts/10_auth.yaml` (A10–A14). Путь `v1`, существующие пути, поля и их
+обязательность не менялись; `oneOf` не вводился; нового кода ошибки нет. Сервер изменение пока не отдаёт — его вносит
+пакет сервера; на рабочем контуре `AUTH_BIO_ALLOW_WEAK=off` и `AUTH_WINDOWS_HELLO_KEY=off` (16 §4.3).
+
+### Добавлено
+
+- `POST /auth/unlock/challenge` (`auth_unlock_challenge`; 08 §4.1.10): публичный, `RL-PIN`; тело
+  `AuthUnlockChallengeRequest {method: hello_key, refreshToken}`, ответ `AuthUnlockChallengeResponse {challenge,
+  expiresAt}` (challenge — `optomstroy-hello-unlock/v1:` + base64url 32 байт, 120 с); отказ — `401 UNLOCK_REQUIRED`
+  `hello_key_unavailable`.
+- `AuthUnlockRequest`: `method` + `hello_key`; свойства `signature` (RSASSA-PKCS1-v1_5 / SHA-256 над challenge, base64url)
+  и `helloKeyInvalidated` (с `method: pin` — отзыв ключа устройства) — 08 §4.1.8.
+- `Problem.reason` для `401 UNLOCK_REQUIRED`: `x-unlock-required-reasons` + `bio_weak_pin_due`, `bio_weak_disabled`,
+  `hello_key_unavailable`, `hello_key_invalid` (08 §2.4 «Причины `UNLOCK_REQUIRED` входа по лицу»); описание ответа
+  `Unauthorized`.
+- `MeBiometricsRequest.biometricClass` + `class2` (уровень W Android); свойство `helloKey` — схема `MeBiometricsHelloKey
+  {publicKey, algorithm, source}` (ключ Windows Hello, 08 §4.3.6); `MeBiometricsResponse.reason` +
+  `weak_biometrics_disabled`, `hello_key_disabled`, `hello_key_shared_device`.
+- Схемы CHECK-перечней `HelloKeyAlgorithm` (`RS256`), `HelloKeySource` (`windows_hello`, `webauthn_prf`) — 07 §6.1.1,
+  `contracts/enums.json` 1.4.0.
+- `Me.security`: `biometricsPlatform` + `android_class2`, `windows_hello_key` (в конце перечня); `biometricWeakAllowed`,
+  `windowsHelloKeyAllowed` (08 §3.14).
+
+### Изменено
+
+- Описания (без изменения схем): `POST /auth/unlock` (методы, порядок проверок, продление срока уровня W, аудит);
+  `POST /auth/otp/verify` (продление срока W, правило `personal`); `POST /auth/logout-all`,
+  `POST /admin/users/{id}/logout-all`, `POST /me/phone/change/confirm`, `POST /me/consents`, `POST /admin/store-tablets`,
+  `POST /admin/store-tablets/{id}/reconnect` — отзыв ключей Windows Hello (`hello_keys.revoke_reason`); `POST /me/biometrics`
+  (правила `class2` и `helloKey`).
+- `DELETE /me/pin`: правила `weak_biometrics_active`, `hello_key_active` (`400 VALIDATION_FAILED`) и
+  `login_protection_required` (`422`) — в описании; в `responses` добавлены `400` и `422` (`422` сервер отдавал и раньше,
+  08 §4.3.5 «Уточнения»).
+
+### Уточнено (2026-11-18; только текст описаний — схема, пути, права, обязательность и `x-*` не менялись, `info.version` остаётся 1.4.0: версия не выпущена, см. «Исключение для не выпущенной версии» в шапке; 08 §4.1.10, 09 §9.2 W2 п. 2, BIO-040)
+
+- `POST /auth/unlock/challenge` (и решение A10 в шапке `parts/10_auth.yaml`, описание `Problem.reason`): refresh
+  проверяется так же, как в `POST /auth/unlock` — отказ по самой сессии теперь `401 SESSION_REVOKED` (неизвестный или
+  отозванный refresh; `reason` `expired` и `device_mismatch` — с отзывом сессии, `blocked`, `reuse_detected` — с отзывом
+  семьи) или `401 KIOSK_REVOKED`, а не `UNLOCK_REQUIRED hello_key_unavailable`; прежний refresh в окне грации и при
+  позднем повторе получает challenge той же сессии. `hello_key_unavailable` — только отказ по ключу, субъекту и переменной
+  (на него приложение снимает признак ключа). Оба кода уже были в ответе `401` (`Unauthorized`). Основание — ревью пакета
+  сервера W2: на истёкшую после выходных сессию приложение удаляло ключ Windows Hello, который сервер ещё принимал
+  (`[ВЫВОД исполнителя]` по 09 BIO-040).
+
+### Производные артефакты и окна
+
+- `pos-api/src/health/openapi.document.ts`: `OPENAPI_INFO_VERSION` 1.3.0 → 1.4.0 (`src/health/openapi.document.spec.ts`
+  зелёный).
+- `scripts/check_api_permissions.py`: `/auth/unlock/challenge` — в `PUBLIC_PATHS` (11 §4.3.1, SEC-013).
+- Ожидаемо красные до реализации (пакеты сервера и приложения дорожки входа по лицу): `pos-api`
+  `test/e2e/smoke.e2e-spec.ts` «контракт ⊆ экспорт»; `pos-app` `test/features/auth/data/auth_dto_contract_test.dart`
+  (`AuthUnlockRequest`) и `test/core/network/models/dto_schema_test.dart` (`Me.security`).
+- Проверка `oasdiff breaking` — в CI (локально не запускалась): новые значения перечней в ответах — предупреждения; новый
+  путь, необязательные свойства и значения перечней запросов — информационные.
+
 ## [1.3.0] — 2026-11-04 — режим «Планшет магазина» (P-002, ADR-115)
 
 Аддитивное изменение (MINOR): `info.version` 1.2.0 → 1.3.0. Основание — P-002 «Планшет магазина» редакции 5, утверждённый

@@ -1,0 +1,102 @@
+{
+  "_note": "тестовые данные",
+  "description": "Опциональный метод (could): цены по видам цен и остатки по складам",
+  "operation": "GET /pos/v1/catalog/{ref}",
+  "kind": "response",
+  "status": 200,
+  "body": {
+    "product": {
+      "type": "Catalog_Номенклатура",
+      "ref": "a1b2c3d4-0000-4000-8000-000000000001",
+      "dataVersion": "AAAAAgAAAAA=",
+      "deletionMark": false,
+      "isFolder": false,
+      "code": "00001234",
+      "description": "Смеситель для кухни однорычажный",
+      "fullName": "Смеситель для кухни однорычажный, хром",
+      "sku": "KX-1245",
+      "parentRef": "a1b2c3d4-0000-4000-8000-0000000000aa",
+      "baseUnitRef": "a1b2c3d4-0000-4000-8000-0000000000e1",
+      "kindRef": "a1b2c3d4-0000-4000-8000-0000000000c3",
+      "descriptionText": null,
+      "imageFileRef": "a1b2c3d4-0000-4000-8000-0000000000f1",
+      "isWeighted": false,
+      "attributes": []
+    },
+    "variants": [
+      {
+        "type": "Catalog_ХарактеристикиНоменклатуры",
+        "ref": "a1b2c3d4-0000-4000-8000-000000000101",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "code": "000000001",
+        "description": "Хром",
+        "ownerRef": "a1b2c3d4-0000-4000-8000-000000000001",
+        "ownerType": "Catalog_Номенклатура",
+        "sku": null,
+        "attributes": []
+      }
+    ],
+    "packagings": [
+      {
+        "type": "Catalog_УпаковкиЕдиницыИзмерения",
+        "ref": "a1b2c3d4-0000-4000-8000-000000000201",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "description": "Коробка (6 шт)",
+        "ownerRef": "a1b2c3d4-0000-4000-8000-000000000001",
+        "ownerType": "Catalog_Номенклатура",
+        "unitRef": "a1b2c3d4-0000-4000-8000-0000000000e1",
+        "factor": "6.000"
+      }
+    ],
+    "barcodes": [
+      {
+        "type": "InformationRegister_ШтрихкодыНоменклатуры",
+        "ref": "4600000000015",
+        "barcode": "4600000000015",
+        "productRef": "a1b2c3d4-0000-4000-8000-000000000001",
+        "variantRef": "a1b2c3d4-0000-4000-8000-000000000101",
+        "packagingRef": null,
+        "barcodeType": null
+      }
+    ],
+    "prices": [
+      {
+        "priceListRef": "e5f6a7b8-0000-4000-8000-000000000001",
+        "variantRef": "a1b2c3d4-0000-4000-8000-000000000101",
+        "packagingRef": null,
+        "price": "2350.00"
+      },
+      {
+        "priceListRef": "e5f6a7b8-0000-4000-8000-000000000002",
+        "variantRef": "a1b2c3d4-0000-4000-8000-000000000101",
+        "packagingRef": null,
+        "price": "2150.00"
+      },
+      {
+        "priceListRef": "e5f6a7b8-0000-4000-8000-000000000002",
+        "variantRef": "a1b2c3d4-0000-4000-8000-000000000101",
+        "packagingRef": "a1b2c3d4-0000-4000-8000-000000000201",
+        "price": "12600.00"
+      }
+    ],
+    "stock": [
+      {
+        "warehouseRef": "d4e5f6a7-0000-4000-8000-000000000001",
+        "variantRef": "a1b2c3d4-0000-4000-8000-000000000101",
+        "onHand": "16.000",
+        "reserved": "2.000",
+        "available": "14.000"
+      },
+      {
+        "warehouseRef": "d4e5f6a7-0000-4000-8000-000000000002",
+        "variantRef": "a1b2c3d4-0000-4000-8000-000000000101",
+        "onHand": "3.000",
+        "reserved": "0.000",
+        "available": "3.000"
+      }
+    ],
+    "snapshotAt": "2026-10-21T13:39:05+06:00"
+  }
+}

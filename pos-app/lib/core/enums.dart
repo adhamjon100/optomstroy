@@ -1,9 +1,9 @@
 // GENERATED FILE — DO NOT EDIT.
-// Source: contracts/enums.json (optomstroy-pos-enums 1.3.0, sha256 f0c79cf87a4e3ad0a4d4f5d2641fdb14b0d21fafc0cd1693312641c9dd1bb00b)
+// Source: contracts/enums.json (optomstroy-pos-enums 1.4.0, sha256 a049b3d218888ec9afcd8980dca0b9635ff71e76445dbb522be7596b5ef211a6)
 // Generator: scripts/gen_enums.py (RM-B-009). Owners: 07 §6.1/§6.1.1, 08 §2.4/§3.8 (R0 §18.1).
 // ignore_for_file: lines_longer_than_80_chars
 
-const String enumsContractVersion = '1.3.0';
+const String enumsContractVersion = '1.4.0';
 
 // ===== 07 §6.1 — типы PostgreSQL (CREATE TYPE … AS ENUM) =====
 
@@ -1082,7 +1082,7 @@ enum InvitationRole {
 }
 
 /// session_revoke_reason — 07 §6.1.1 (CHECK). Поля: sessions.revoke_reason.
-/// Источник: D-12, ядро §18.2 п.8; 09 §8.3, миграция 0003 (EQ-AUTH-03, ADR-088); ADR-115 (миграция 0022).
+/// Источник: D-12, ядро §18.2 п.8; 09 §8.3, миграция 0003 (EQ-AUTH-03, ADR-088); ADR-115 (миграция 0022); ADR-116 (миграция 0024).
 enum SessionRevokeReason {
   logout('logout'),
   logoutAll('logout_all'),
@@ -1097,7 +1097,8 @@ enum SessionRevokeReason {
   deviceMismatch('device_mismatch'),
   biometricInvalidated('biometric_invalidated'),
   refreshReplay('refresh_replay'),
-  kioskRevoked('kiosk_revoked');
+  kioskRevoked('kiosk_revoked'),
+  biometricWeakDisabled('biometric_weak_disabled');
 
   const SessionRevokeReason(this.value);
 
@@ -1266,6 +1267,73 @@ enum StoreTabletStatus {
   /// Значение по строке; `null` — неизвестное значение (совместимость вперёд).
   static StoreTabletStatus? tryParse(String? value) {
     for (final item in StoreTabletStatus.values) {
+      if (item.value == value) return item;
+    }
+    return null;
+  }
+}
+
+/// hello_key_algorithm — 07 §6.1.1 (CHECK). Поля: hello_keys.algorithm.
+/// Источник: ADR-116 (07 §5.66, миграция 0024).
+enum HelloKeyAlgorithm {
+  rs256('RS256');
+
+  const HelloKeyAlgorithm(this.value);
+
+  /// Значение в API и БД — ровно как в документе-владельце.
+  final String value;
+
+  /// Значение по строке; `null` — неизвестное значение (совместимость вперёд).
+  static HelloKeyAlgorithm? tryParse(String? value) {
+    for (final item in HelloKeyAlgorithm.values) {
+      if (item.value == value) return item;
+    }
+    return null;
+  }
+}
+
+/// hello_key_source — 07 §6.1.1 (CHECK). Поля: hello_keys.source.
+/// Источник: ADR-116 (07 §5.66, миграция 0024).
+enum HelloKeySource {
+  windowsHello('windows_hello'),
+  webauthnPrf('webauthn_prf');
+
+  const HelloKeySource(this.value);
+
+  /// Значение в API и БД — ровно как в документе-владельце.
+  final String value;
+
+  /// Значение по строке; `null` — неизвестное значение (совместимость вперёд).
+  static HelloKeySource? tryParse(String? value) {
+    for (final item in HelloKeySource.values) {
+      if (item.value == value) return item;
+    }
+    return null;
+  }
+}
+
+/// hello_key_revoke_reason — 07 §6.1.1 (CHECK). Поля: hello_keys.revoke_reason.
+/// Источник: ADR-116; 09 BIO-040 (07 §5.66, миграция 0024).
+enum HelloKeyRevokeReason {
+  disabled('disabled'),
+  replaced('replaced'),
+  invalidated('invalidated'),
+  policyOff('policy_off'),
+  sharedDevice('shared_device'),
+  logoutAll('logout_all'),
+  phoneChanged('phone_changed'),
+  kioskConnect('kiosk_connect'),
+  blocked('blocked'),
+  pinReset('pin_reset');
+
+  const HelloKeyRevokeReason(this.value);
+
+  /// Значение в API и БД — ровно как в документе-владельце.
+  final String value;
+
+  /// Значение по строке; `null` — неизвестное значение (совместимость вперёд).
+  static HelloKeyRevokeReason? tryParse(String? value) {
+    for (final item in HelloKeyRevokeReason.values) {
       if (item.value == value) return item;
     }
     return null;
@@ -1927,7 +1995,7 @@ const Map<String, List<String>> dbEnumValues = {
 const Map<String, List<String>> checkListValues = {
   'user_profiles.locale': ['ru', 'ky', 'en'],
   'user_invitations.role': ['seller', 'cashier', 'senior_seller', 'admin', 'owner'],
-  'sessions.revoke_reason': ['logout', 'logout_all', 'reuse_detected', 'admin', 'phone_changed', 'role_changed', 'expired', 'device_revoked', 'blocked', 'session_limit', 'device_mismatch', 'biometric_invalidated', 'refresh_replay', 'kiosk_revoked'],
+  'sessions.revoke_reason': ['logout', 'logout_all', 'reuse_detected', 'admin', 'phone_changed', 'role_changed', 'expired', 'device_revoked', 'blocked', 'session_limit', 'device_mismatch', 'biometric_invalidated', 'refresh_replay', 'kiosk_revoked', 'biometric_weak_disabled'],
   'token_denylist.token_kind': ['access', 'registration', 'step_up'],
   'token_denylist.reason': ['logout', 'logout_all', 'role_changed', 'blocked', 'used', 'revoked'],
   'rate_limit_counters.scope': ['otp_phone_15m', 'otp_phone_24h', 'otp_ip_1h', 'otp_device_24h', 'login_ip_1h', 'step_up_user_1h', 'webhook_ip_1m', 'otp_ip_10m', 'otp_ip_24h', 'otp_device_10m', 'otp_global_1m', 'otp_verify_ip_10m', 'pin_user_device_10m', 'admin_user_1m', 'otp_kiosk_tablet_1h', 'otp_kiosk_tablet_24h'],
@@ -1935,6 +2003,9 @@ const Map<String, List<String>> checkListValues = {
   'integration_tokens.source': ['operator_script'],
   'integration_tokens.revoke_reason': ['rotated', 'incident', 'disabled', 'expired'],
   'store_tablets.status': ['active', 'revoked'],
+  'hello_keys.algorithm': ['RS256'],
+  'hello_keys.source': ['windows_hello', 'webauthn_prf'],
+  'hello_keys.revoke_reason': ['disabled', 'replaced', 'invalidated', 'policy_off', 'shared_device', 'logout_all', 'phone_changed', 'kiosk_connect', 'blocked', 'pin_reset'],
   'receivable_documents.kind': ['invoice', 'payment', 'return', 'discount', 'adjustment'],
   'receivable_documents.status': ['posted', 'not_posted', 'due'],
   'payments.review_reason': ['amount_mismatch', 'unknown_reference', 'no_webhook', 'late_payment'],

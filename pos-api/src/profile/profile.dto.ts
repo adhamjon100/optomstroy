@@ -12,10 +12,12 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { CONSENT_KIND_VALUES } from '../common/enums.js';
+import { CONSENT_KIND_VALUES, HELLO_KEY_SOURCE_VALUES } from '../common/enums.js';
 import {
   ForbiddenField,
   IsBirthYearShape,
+  IsHelloKeyAlgorithm,
+  IsHelloPublicKeyShape,
   IsOtpCode,
   IsPhoneE164,
   IsPinFormat,
@@ -127,14 +129,40 @@ export class MeBiometricsConsent {
   granted!: boolean;
 }
 
-/** `MeBiometricsRequest` (08 §4.3.6). */
+/**
+ * `MeBiometricsHelloKey` (08 §4.3.6; 07 §5.66; ADR-116): открытый ключ Windows Hello устройства (W2). Форма —
+ * base64url SPKI DER 342…1366 знаков, `RS256` (rule `hello_key_format`); модуль RSA 2048…4096 бит и экспоненту 65537
+ * проверяет сервис (`parseHelloPublicKey`). `source` сервер только записывает.
+ */
+export class MeBiometricsHelloKey {
+  @IsHelloPublicKeyShape()
+  publicKey!: string;
+
+  @IsHelloKeyAlgorithm()
+  algorithm!: 'RS256';
+
+  @IsIn(HELLO_KEY_SOURCE_VALUES)
+  source!: (typeof HELLO_KEY_SOURCE_VALUES)[number];
+}
+
+/**
+ * `MeBiometricsRequest` (08 §4.3.6). `class2` — уровень W Android (Class 2, без криптопривязки; ADR-116): только
+ * `platform=android`, при `AUTH_BIO_ALLOW_WEAK`, разрешающем субъекта, и заданном PIN. `windows_hello` + `helloKey` —
+ * ключ Windows Hello (W2, ADR-116): только `platform=windows`, при `AUTH_WINDOWS_HELLO_KEY` и заданном PIN; `helloKey`
+ * без `windows_hello` → rule `hello_key` (сервис).
+ */
 export class MeBiometricsRequest {
   @IsBoolean()
   enabled!: boolean;
 
   @IsOptional()
-  @IsIn(['class3', 'ios', 'windows_hello'])
-  biometricClass?: 'class3' | 'ios' | 'windows_hello';
+  @IsIn(['class3', 'ios', 'windows_hello', 'class2'])
+  biometricClass?: 'class3' | 'ios' | 'windows_hello' | 'class2';
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => MeBiometricsHelloKey)
+  helloKey?: MeBiometricsHelloKey;
 
   @IsOptional()
   @ValidateNested()

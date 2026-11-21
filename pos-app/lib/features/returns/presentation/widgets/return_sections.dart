@@ -12,6 +12,7 @@ import 'package:optomstroy/design_system/components/app_radio.dart';
 import 'package:optomstroy/design_system/components/app_section_header.dart';
 import 'package:optomstroy/design_system/components/app_text_field.dart';
 import 'package:optomstroy/design_system/components/error_state.dart';
+import 'package:optomstroy/design_system/components/keep_words_text.dart';
 import 'package:optomstroy/design_system/components/order_status_chip.dart';
 import 'package:optomstroy/design_system/components/quantity_stepper.dart';
 import 'package:optomstroy/design_system/components/return_item_row.dart';
@@ -333,12 +334,18 @@ class ReturnAmountSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        // Узкая правая колонка окна заявки (expanded: 40 % от 720) при крупном тексте: «Предварительно:» и сумма не
+        // разрываются внутри — начертание на ступень меньше (T-UI-117, пакет own-server:GAP-APP).
         Semantics(
           liveRegion: true,
-          child: Text(
+          child: DsKeepWordsText(
             l10n.return_amount(ReturnsFormat.money(total ?? Money.zero)),
-            key: totalKey,
+            textKey: totalKey,
             style: context.text.priceOf(context.text.h3).copyWith(color: c.textPrimary),
+            fallback: <TextStyle>[
+              context.text.priceOf(context.text.title).copyWith(color: c.textPrimary),
+              context.text.priceOf(context.text.bodyLg).copyWith(color: c.textPrimary),
+            ],
           ),
         ),
         SizedBox(height: context.space.s2),
@@ -478,8 +485,11 @@ class ReturnSkeleton extends StatelessWidget {
   /// Создаёт скелетон.
   const ReturnSkeleton({super.key});
 
+  // Низкое окно (телефон в ландшафте): скелетон обрезается снизу, а не выходит за край (указание владельца
+  // 2026-11-18, 15 §5.8 (3); прежде — на 45–97 lp).
   @override
-  Widget build(BuildContext context) => Padding(
+  Widget build(BuildContext context) => SingleChildScrollView(
+    physics: const NeverScrollableScrollPhysics(),
     padding: EdgeInsets.all(context.space.s4),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

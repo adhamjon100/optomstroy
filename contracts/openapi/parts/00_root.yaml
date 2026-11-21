@@ -7,11 +7,13 @@
 # Имена схем — PascalCase как в 08; поля — camelCase; enum-значения — snake_case ровно как 07 §6.
 # 1.3.0 (2026-11-04): планшет магазина (P-002, ADR-115; 08 v1.20, 07 v1.17, 11 v1.4) — ../CHANGELOG.md [1.3.0],
 # ../NOTES.md §9; операции планшета — parts/70_kiosk.yaml.
+# 1.4.0 (2026-11-08): вход по лицу на всех платформах (ADR-116; 08 v1.21, 07 v1.18, 09 v1.13, 11 v1.5) —
+# ../CHANGELOG.md [1.4.0], ../NOTES.md §10; путь challenge и тела — parts/10_auth.yaml (решения A10–A14).
 # =====================================================================================
 openapi: 3.0.3
 info:
   title: Optomstroy POS API
-  version: "1.3.0"
+  version: "1.4.0"
   description: >
     REST/JSON API pos-api (NestJS) для pos-app (Flutter: Android, Windows, iOS) — сотрудники и (R1, ядро §24.2)
     клиенты-покупатели, общий планшет магазина в торговом зале (технический пользователь kind=kiosk, флаг
@@ -341,7 +343,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
     Unauthorized:
-      description: "401 — UNAUTHENTICATED, TOKEN_STALE, SESSION_REVOKED, REGISTRATION_TOKEN_INVALID, PIN_INVALID, UNLOCK_REQUIRED (reason: idle_lock | refresh_replay | emergency_code — 08 §2.4), WEBHOOK_SIGNATURE_INVALID, KIOSK_REVOKED (сессия планшета магазина отозвана администратором или аварийным выходом — 08 §2.2)."
+      description: "401 — UNAUTHENTICATED, TOKEN_STALE, SESSION_REVOKED, REGISTRATION_TOKEN_INVALID, PIN_INVALID, UNLOCK_REQUIRED (reason: idle_lock | refresh_replay | emergency_code | bio_weak_pin_due | bio_weak_disabled | hello_key_unavailable | hello_key_invalid — 08 §2.4), WEBHOOK_SIGNATURE_INVALID, KIOSK_REVOKED (сессия планшета магазина отозвана администратором или аварийным выходом — 08 §2.2)."
       headers:
         X-Request-Id: { $ref: "#/components/headers/XRequestId" }
         X-Min-App-Version: { $ref: "#/components/headers/XMinAppVersion" }
@@ -659,7 +661,15 @@ components:
             приходит 401 SESSION_REVOKED с reason refresh_replay и сессия отзывается, 09 §8.3); emergency_code — сессия аварийного кода
             (первый запрос до разблокировки PIN). Клиент на любое значение показывает SCR-08 и вызывает POST /auth/unlock;
             неизвестное значение обрабатывается так же (совместимость вперёд). Список — x-unlock-required-reasons.
-          x-unlock-required-reasons: [idle_lock, refresh_replay, emergency_code]
+            Вход по лицу (с 1.4.0; 08 §2.4 «Причины UNLOCK_REQUIRED входа по лицу», ADR-116) — только в ответах
+            POST /auth/unlock и POST /auth/unlock/challenge, без ротации refresh и без отзыва стандартной сессии:
+            bio_weak_pin_due — уровень W Android: срок PIN (AUTH_BIO_WEAK_REAUTH_HOURS) прошёл, PIN заблокирован или не задан;
+            bio_weak_disabled — уровень W запрещён AUTH_BIO_ALLOW_WEAK, семья W отозвана; hello_key_unavailable — ключ
+            Windows Hello не принимается (нет, отозван, AUTH_WINDOWS_HELLO_KEY=off, правило personal, не Windows, планшет,
+            refresh не стандартной сессии); отказ по самой сессии и у challenge — SESSION_REVOKED или KIOSK_REVOKED, как у
+            POST /auth/unlock (уточнено 2026-11-18); hello_key_invalid — challenge нет, истёк, другой сессии или подпись неверна.
+            Клиент показывает поле PIN на SCR-08 (09 §9.3).
+          x-unlock-required-reasons: [idle_lock, refresh_replay, emergency_code, bio_weak_pin_due, bio_weak_disabled, hello_key_unavailable, hello_key_invalid]
         until:
           type: string
           format: date-time
@@ -897,6 +907,15 @@ components:
       type: string
       enum: [active, revoked]
       description: "store_tablets.status (07 §5.65, §6.1.1 store_tablet_status)."
+    # CHECK-перечни входа по лицу (07 §6.1.1; contracts/enums.json checkLists; ADR-116; с 1.4.0)
+    HelloKeyAlgorithm:
+      type: string
+      enum: [RS256]
+      description: "hello_keys.algorithm (07 §5.66, §6.1.1 hello_key_algorithm): RSASSA-PKCS1-v1_5 с SHA-256, ключ RSA 2048…4096 бит."
+    HelloKeySource:
+      type: string
+      enum: [windows_hello, webauthn_prf]
+      description: "hello_keys.source (07 §5.66, §6.1.1 hello_key_source): windows_hello — KeyCredentialManager приложения Windows; webauthn_prf — браузер на Windows в веб-демо (ключ WebCrypto под PRF)."
     PermissionCode:
       type: string
       description: "Канонический словарь permissions — 11 §4.3 (82 кода: №1–81 и 42a; №77–81 — планшет магазина, ADR-115, с 1.3.0). customer.update и reports.export в R1 зарезервированы."
@@ -2293,7 +2312,23 @@ components:
           properties:
             pinSet: { type: boolean }
             biometricsEnabled: { type: boolean }
-            biometricsPlatform: { type: string, enum: [android_class3, ios, windows_hello_gate, none] }
+            biometricsPlatform:
+              type: string
+              enum: [android_class3, ios, windows_hello_gate, none, android_class2, windows_hello_key]
+              description: >
+                Биометрия устройства запроса (08 §3.14). android_class2 — живая семья уровня W (Class 2, без криптопривязки);
+                windows_hello_key — живой ключ Windows Hello устройства (W2); windows_hello_gate — Windows без ключа (гейт W1
+                сервер не хранит). android_class2 и windows_hello_key — с 1.4.0 (ADR-116), в конце перечня.
+            biometricWeakAllowed:
+              type: boolean
+              description: >
+                С 1.4.0 (08 §3.14; ADR-116, 09 BIO-030): AUTH_BIO_ALLOW_WEAK разрешает уровень W этому субъекту (all; customer —
+                только kind=customer) и устройство запроса platform=android. PIN — отдельно (pinSet). Отсутствие поля — false.
+            windowsHelloKeyAllowed:
+              type: boolean
+              description: >
+                С 1.4.0 (08 §3.14; ADR-116, 09 BIO-038): AUTH_WINDOWS_HELLO_KEY ≠ off, устройство запроса platform=windows и, при
+                personal, с этим device_key за 30 дней не входил другой пользователь. Отсутствие поля — false.
         consents:
           type: array
           items: { $ref: "#/components/schemas/Consent" }

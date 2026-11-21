@@ -140,8 +140,10 @@ final class AuthFailure extends Failure {
   /// `Problem.until` у `423 PIN_LOCKED` — момент снятия блокировки PIN (UTC); до него вход только по OTP.
   final DateTime? lockedUntil;
 
-  /// `Problem.reason` у `401 UNLOCK_REQUIRED` (`idle_lock` | `refresh_replay` | `emergency_code`); строка контракта,
-  /// неизвестное значение сохраняется как есть — обработка та же (SCR-08).
+  /// `Problem.reason` у `401 UNLOCK_REQUIRED` (`idle_lock` | `refresh_replay` | `emergency_code`; вход по лицу —
+  /// `bio_weak_pin_due` | `bio_weak_disabled` | `hello_key_unavailable` | `hello_key_invalid`, перечень —
+  /// `UnlockRequiredReason` core/network/models/problem.dart); строка контракта, неизвестное значение сохраняется
+  /// как есть — обработка та же (SCR-08).
   final String? unlockReason;
 
   @override

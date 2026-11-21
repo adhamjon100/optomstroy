@@ -158,34 +158,43 @@ class _KioskFullScreenState extends StatelessWidget {
       KioskStatus.none || KioskStatus.ready || KioskStatus.updateNeeded => ('', ErrorStateTone.info),
     };
     final (Color bg, Color fg, IconData icon) = ErrorState.toneOf(c, tone);
+    // Указание владельца 2026-11-18 (15 §5.8 (3); 02 UI-51-015): в низком окне (ландшафт, масштаб текста 1,3)
+    // иллюстрация и текст прокручиваются, а не выходят за край (прежде — на 13 lp).
     return ColoredBox(
       color: c.background,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Semantics(
-              liveRegion: true,
-              container: true,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  ExcludeSemantics(
-                    child: Container(
-                      width: 160,
-                      height: 160,
-                      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-                      child: Icon(icon, size: 56, color: fg),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) => SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: box.maxHeight, minWidth: box.maxWidth),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Semantics(
+                    liveRegion: true,
+                    container: true,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        ExcludeSemantics(
+                          child: Container(
+                            width: 160,
+                            height: 160,
+                            decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+                            child: Icon(icon, size: 56, color: fg),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          message,
+                          textAlign: TextAlign.center,
+                          style: context.text.h3.copyWith(color: c.textPrimary),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  Text(
-                    message,
-                    textAlign: TextAlign.center,
-                    style: context.text.h3.copyWith(color: c.textPrimary),
-                  ),
-                ],
+                ),
               ),
             ),
           ),

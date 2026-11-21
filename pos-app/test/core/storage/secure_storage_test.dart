@@ -41,4 +41,17 @@ void main() {
     await tokens.clearSession();
     expect(storage.values, {SecureKey.deviceId: 'dev'});
   });
+
+  test('T-BIO-028: clearSession (выход, SESSION_REVOKED) удаляет кэш профиля с userId, но не признак Windows Hello '
+      'по userId (11 SEC-145, SEC-092)', () async {
+    const String gate = '["0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4f01"]';
+    final storage = InMemorySecureStorage({
+      SecureKey.deviceId: 'dev',
+      SecureKey.refreshToken: 'r',
+      SecureKey.profileCache: '{"userId":"0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4f01"}',
+      SecureKey.helloGateUsers: gate,
+    });
+    await TokenStore(storage).clearSession();
+    expect(storage.values, {SecureKey.deviceId: 'dev', SecureKey.helloGateUsers: gate});
+  });
 }

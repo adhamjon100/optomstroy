@@ -5,7 +5,14 @@
 // сетка — минимум карточки [CatalogProductView.minCardWidth] (SCR-10/11/12 — 176), высота ячейки
 // `kProductCardGridExtent`; «Список» medium+ — отдельные карточки с зазором 8; «Компакт» — таблица в белом контейнере
 // с обводкой. Количество товара в корзине («В корзине · N — ещё +1») — подписка карточки на своё значение.
+// Пределы сетки (ADR-114, уточнение 2026-11-18 — указание владельца «сетка товаров должна меняться… но поставь
+// ограничения»; 03 §7.3): колонки — по ширине области от минимума карточки, не меньше 2 и не больше предела класса окна
+// (compact 3, medium 4, expanded 5, large 6 — токены 1.4.0, пакет own-server:GAP-APP; в 1.3.0 было 3 / 4 / 7 / 9); шире
+// предела × 280 область товаров (блоки над списком и список) не растягивается и стоит по центру своей зоны — пустые
+// полосы поровну слева и справа (прежде область стояла у начала, справа оставалась одна широкая пустая полоса). Одно
+// правило для всех сеток товаров: SCR-10/11/12, SCR-50, SCR-51.
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -68,7 +75,7 @@ class CatalogProductView extends StatelessWidget {
     this.inert = false,
     this.minCardWidth = DsBreakpoints.cardMinWidth,
     this.gridGap,
-    this.uncappedColumns = false,
+    this.maxColumns,
   });
 
   final CatalogListState state;
@@ -110,9 +117,10 @@ class CatalogProductView extends StatelessWidget {
   /// Зазор сетки; `null` — 16 на compact/medium, 12 на expanded+ (SCR-50). SCR-10/11/12 — 16.
   final double? gridGap; // money-double: allow — зазор сетки в lp
 
-  /// Сетка без предела колонок (SCR-10/11/12 по прототипу, ADR-114: 9 колонок при 1920); `false` — не больше
-  /// `DsBreakpoints.gridMaxColumns` (SCR-50).
-  final bool uncappedColumns;
+  /// Свой предел колонок экрана поверх предела класса окна (`DsBreakpoints.gridMaxColumnsFor`): SCR-50 —
+  /// `DsBreakpoints.gridMaxColumns` (6); `null` — только предел класса окна (SCR-10/11/12, SCR-51; ADR-114, уточнение
+  /// 2026-11-18: до него сетка сотрудника была без верхнего предела).
+  final int? maxColumns;
 
   bool get _withHeader => headerSlivers.isNotEmpty;
 
@@ -124,14 +132,38 @@ class CatalogProductView extends StatelessWidget {
   double _gap() => // money-double: allow — геометрия UI (lp)
       gridGap ?? (windowClass == WindowClass.compact || windowClass == WindowClass.medium ? 16 : 12);
 
-  /// Колонки сетки при ширине контента [width] и зазоре [gap].
+  /// Колонки сетки при ширине контента [width] и зазоре [gap]: от минимума карточки, в пределах класса окна.
   int _columns(double width, double gap) => // money-double: allow — геометрия UI (lp)
   DsBreakpoints.gridColumns(
     width,
     gap,
+    windowClass: windowClass,
     minCardWidth: minCardWidth,
-    maxColumns: uncappedColumns ? null : DsBreakpoints.gridMaxColumns,
+    maxColumns: maxColumns,
   );
+
+  /// Наибольшая ширина области товаров с полями [padding]: предел колонок класса окна по 280 и зазоры (03 §7.3).
+  /// Шире — блоки над списком и список занимают эту ширину по центру зоны, пустые полосы поровну по краям.
+  double _maxExtent(double gap) => // money-double: allow — геометрия UI (lp)
+      DsBreakpoints.gridMaxContentWidth(DsBreakpoints.gridColumnsCap(windowClass, maxColumns: maxColumns), gap) +
+      padding.horizontal;
+
+  /// [sliver] в пределах ширины [maxExtent] по центру зоны шириной [available]: шире предела — пустые полосы по краям
+  /// так, чтобы по центру стояли сами карточки (поля [padding] каталога несимметричны: 8 у колонки категорий, 24 у края
+  /// окна), уже — во всю зону. Обёртка одного вида при любой ширине (смена окна не пересоздаёт блоки и карточки); ключ
+  /// обёртки — по ключу сливера: смена фазы и ошибка над списком не пересоздают блоки (как без обёртки).
+  Widget _bounded(Widget sliver, _Lp maxExtent, _Lp available) => SliverPadding(
+    key: sliver.key == null ? null : ValueKey<Key>(sliver.key!),
+    padding: _bands(maxExtent, available),
+    sliver: sliver,
+  );
+
+  /// Пустые полосы слева и справа от области шириной [maxExtent] в зоне [available] (см. [_bounded]); уже — нули.
+  EdgeInsets _bands(_Lp maxExtent, _Lp available) {
+    final _Lp extra = math.max<_Lp>(0, available - maxExtent);
+    final _Lp start = (extra / 2 + (padding.right - padding.left) / 2).clamp(0.0, extra);
+    return EdgeInsets.only(left: start, right: extra - start);
+  }
 
   /// Высота ячейки сетки без переноса «/ шт» (скелетон; крупный шрифт — выше; поиск — с бейджем совпадения).
   double _extent(BuildContext context, {bool priceWraps = false}) => // money-double: allow — геометрия UI
@@ -169,6 +201,7 @@ class CatalogProductView extends StatelessWidget {
     if (_withHeader && state.phase != CatalogListPhase.ready) {
       // Та же структура (LayoutBuilder → CustomScrollView), что у готового списка: смена фазы (пусто, ошибка,
       // скелетон ↔ товары) не пересоздаёт блоки над списком (заголовок, лента подкатегорий, панель управления).
+      final double bound = _maxExtent(_gap()); // money-double: allow — геометрия UI (lp)
       return LayoutBuilder(
         builder: (BuildContext context, BoxConstraints box) => CustomScrollView(
           key: const ValueKey<String>('catalog-products'),
@@ -176,8 +209,11 @@ class CatalogProductView extends StatelessWidget {
           physics: const AlwaysScrollableScrollPhysics(),
           cacheExtent: 600,
           slivers: <Widget>[
-            ...headerSlivers,
-            SliverToBoxAdapter(key: const ValueKey<String>('catalog-phase-body'), child: _phaseBody(context, l10n)),
+            for (final Widget s in <Widget>[
+              ...headerSlivers,
+              SliverToBoxAdapter(key: const ValueKey<String>('catalog-phase-body'), child: _phaseBody(context, l10n)),
+            ])
+              _bounded(s, bound, box.maxWidth),
           ],
         ),
       );
@@ -226,20 +262,27 @@ class CatalogProductView extends StatelessWidget {
       ProductViewMode.grid => LayoutBuilder(
         builder: (BuildContext context, BoxConstraints box) {
           final double gap = _gap(); // money-double: allow — геометрия UI (lp)
-          final double width = box.maxWidth - padding.horizontal; // money-double: allow — геометрия UI (lp)
-          final int cols = _columns(width, gap);
-          return GridView.builder(
-            padding: padding,
-            shrinkWrap: _withHeader,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: cols,
-              mainAxisSpacing: gap,
-              crossAxisSpacing: gap,
-              mainAxisExtent: _extent(context),
+          // Область — не шире предела сетки (03 §7.3), по центру зоны (как у готового списка).
+          final double area = math.min(box.maxWidth, _maxExtent(gap)); // money-double: allow — геометрия UI (lp)
+          final int cols = _columns(area - padding.horizontal, gap);
+          return Padding(
+            padding: _bands(_maxExtent(gap), box.maxWidth),
+            child: SizedBox(
+              width: area,
+              child: GridView.builder(
+                padding: padding,
+                shrinkWrap: _withHeader,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cols,
+                  mainAxisSpacing: gap,
+                  crossAxisSpacing: gap,
+                  mainAxisExtent: _extent(context),
+                ),
+                itemCount: cols * 2,
+                itemBuilder: (BuildContext context, int i) => const ProductCardSkeleton.grid(),
+              ),
             ),
-            itemCount: cols * 2,
-            itemBuilder: (BuildContext context, int i) => const ProductCardSkeleton.grid(),
           );
         },
       ),
@@ -324,7 +367,11 @@ class CatalogProductView extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints box) {
         final double gap = _gap(); // money-double: allow — геометрия UI (lp)
-        final double contentWidth = box.maxWidth - padding.horizontal; // money-double: allow — геометрия UI (lp)
+        // Область товаров — не шире предела сетки (03 §7.3; ADR-114, уточнение 2026-11-18): при очень широком окне
+        // или отдалении в браузере карточки не шире 280, блоки над списком и список — по центру зоны.
+        final double bound = _maxExtent(gap); // money-double: allow — геометрия UI (lp)
+        final double contentWidth = // money-double: allow — геометрия UI (lp)
+            math.min(box.maxWidth, bound) - padding.horizontal;
         final int cols = _columns(contentWidth, gap);
         final bool compactTable = view == ProductViewMode.compact && table;
         // Карточка ищется по id товара, а не по позиции: при обновлении выборки (кэш → сеть, смена категории)
@@ -424,7 +471,7 @@ class CatalogProductView extends StatelessWidget {
           controller: scrollController,
           physics: _withHeader ? const AlwaysScrollableScrollPhysics() : null,
           cacheExtent: 600,
-          slivers: slivers,
+          slivers: <Widget>[for (final Widget s in slivers) _bounded(s, bound, box.maxWidth)],
         );
       },
     );

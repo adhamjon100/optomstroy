@@ -24,8 +24,9 @@ gen_hex() {
   fi
 }
 
-gen_hex pg_password 24            # суперпользователь образа postgres (инициализация, backup)
+gen_hex pg_password 24            # суперпользователь образа postgres (инициализация)
 gen_hex db_migrator_password 24   # роль pos_migrate — владелец схемы (07 DATA-012; читает только migrate)
+gen_hex db_backup_password 24     # роль pos_backup — сервис backup (pg_read_all_data; 10-roles.sh)
 gen_hex otp_pepper 32             # HMAC OTP (api и worker — 16 §4.4, EQ-AUTH-08)
 gen_hex pin_pepper 32             # pepper Argon2id PIN (только api)
 
@@ -53,8 +54,8 @@ fi
 
 # Права. Compose без Swarm монтирует file-секреты bind-mount'ом с владельцем и правами хоста, а процессы
 # контейнеров работают под своими uid (api/worker/migrate — 10001, backup — 10002, postgres — 999). Поэтому
-# ОДНОРАЗОВЫМ тестовым секретам даются права 644 (каталог 755). Для prod/staging на сервере — 600 и владелец
-# по 16 §4.2 (infra/env/README.md §3); этот скрипт там не применяется.
+# ОДНОРАЗОВЫМ тестовым секретам даются права 644 (каталог 755). Для prod/staging на сервере — 640, владелец
+# optomstroy, группа optomstroy-secrets по 16 §4.2 (infra/env/README.md §3); этот скрипт там не применяется.
 chmod 755 "$OUT"
 chmod 644 "$OUT"/*
 echo "секреты тестового контура: $OUT (значения не выводятся)"

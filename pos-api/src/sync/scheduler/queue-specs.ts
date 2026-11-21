@@ -13,6 +13,10 @@ const DAY = 86_400;
 /**
  * Параметры очередей pg-boss (06 §7.5; 07 §8.2; ядро §22.1). Порядок важен: очередь «мёртвых писем»
  * создаётся раньше очередей, которые на неё ссылаются (FK в схеме pg-boss).
+ *
+ * Очереди — без `partition: true` (07 DATA-012): тогда `create_queue()` под `pos_app` только вставляет строку
+ * в `pgboss.queue`; секционированная очередь создавала бы свою таблицу (DDL), а DDL у `pos_app` нет — схему pg-boss
+ * ставит мигратор (`src/db/pgboss-install.ts`).
  */
 export function queueSpecs(cfg: Pick<SchedulerConfig, 'sync'>): QueueSpec[] {
   const syncRetry = {

@@ -491,4 +491,209 @@ describe('auth/sessions e2e (RM-D-003)', () => {
     const bio = await t.unlock({ method: 'biometric', refreshToken: after.body.refreshToken }, s.deviceKey);
     expect(bio.status).toBe(400);
   });
+
+  /**
+   * Уровень W Android — «лицо или отпечаток» (Class 2) без криптопривязки (15 ADR-116 п. 2; 08 §4.1.8, API-200;
+   * 09 BIO-031, BIO-032; 11 SEC-144; 07 DATA-306; 12 §3.24 T-BIO-023…T-BIO-025; пакет LF-2-01). Семья W создаётся
+   * здесь напрямую (как семья S в тесте выше): включение `POST /me/biometrics {biometricClass: class2}` — T-BIO-022
+   * (test/profile/profile.profile-spec.ts). «Рестарт» с другой `AUTH_BIO_ALLOW_WEAK` — новое Nest-приложение на той же БД.
+   */
+  describe('уровень W Android: срок PIN, блокировка PIN, запрет переменной (ADR-116)', () => {
+    const HOUR = 3_600_000;
+    const DAY = 24 * HOUR;
+
+    async function weakMode(mode: 'off' | 'customer' | 'all'): Promise<void> {
+      if (t.config.AUTH_BIO_ALLOW_WEAK === mode) return;
+      t.config = Object.freeze({ ...t.config, AUTH_BIO_ALLOW_WEAK: mode });
+      await t.restart();
+    }
+
+    afterAll(async () => {
+      await weakMode('off'); // как в остальных тестах файла (значение по умолчанию env)
+    });
+
+    /** Биометрическая семья устройства сессии `sid`: уровень W (`weakReauthDueAt`) или S (`null`). */
+    async function bioFamily(
+      s: { readonly userId: string; readonly sid: string },
+      opts: { readonly dueInMs?: number | null; readonly ttlMs?: number } = {},
+    ) {
+      const deviceId = (await sessionRow(s.sid)).device_id as string;
+      const token = generateOpaqueToken();
+      const now = t.clock.now().getTime();
+      const dueInMs = opts.dueInMs === undefined ? DAY : opts.dueInMs;
+      const row = await new SessionsRepository(t.fdb.db).create({
+        userId: s.userId,
+        deviceId,
+        refreshHash: sha256(token),
+        kind: 'biometric',
+        expiresAt: new Date(now + (opts.ttlMs ?? 30 * DAY)),
+        idleExpiresAt: new Date(now + Math.min(opts.ttlMs ?? 14 * DAY, 14 * DAY)),
+        amr: ['sms', 'bio'],
+        weakReauthDueAt: dueInMs === null ? null : new Date(now + dueInMs),
+      });
+      await t.pool.query('UPDATE devices SET biometric_enrolled_at = now() WHERE id = $1', [deviceId]);
+      await t.pool.query('UPDATE user_profiles SET biometrics_enabled = true WHERE user_id = $1', [s.userId]);
+      return { token, id: row.id, deviceId };
+    }
+
+    const dueOf = async (sid: string) => new Date((await sessionRow(sid)).weak_reauth_due_at as string).getTime();
+
+    async function unlockAudit(sid: string): Promise<JsonBody[]> {
+      const r = await t.pool.query<{ after: JsonBody }>(
+        `SELECT after FROM audit_logs WHERE entity_id = $1 AND action = 'auth.unlock' AND level = 'app' ORDER BY seq`,
+        [sid],
+      );
+      return r.rows.map((x) => x.after);
+    }
+
+    it('T-BIO-023 (1)–(3): после 24 ч — 401 UNLOCK_REQUIRED bio_weak_pin_due без ротации и отзыва; PIN продлевает срок, тот же токен W снова проходит (без refresh_replay); вход по SMS на устройстве продлевает, PIN на другом — нет', async () => {
+      await weakMode('all');
+      const c = await signedIn({ kind: 'customer', role: 'customer' });
+      const w = await bioFamily(c);
+      const before = await sessionRow(w.id);
+      t.tick(DAY + 60_000);
+      const due = await t.unlock({ method: 'biometric', refreshToken: w.token }, c.deviceKey);
+      expect(due.status).toBe(401);
+      expect(due.body).toMatchObject({ code: 'UNLOCK_REQUIRED', reason: 'bio_weak_pin_due' });
+      expect(due.body.accessToken).toBeUndefined();
+      const afterDue = await sessionRow(w.id);
+      expect(Buffer.compare(afterDue.refresh_hash, before.refresh_hash)).toBe(0);
+      expect(afterDue.rotated_at).toBeNull();
+      expect(afterDue.revoked_at).toBeNull();
+      expect((await unlockAudit(w.id)).at(-1)).toMatchObject({
+        method: 'biometric',
+        bioStrength: 'weak',
+        reason: 'bio_weak_pin_due',
+      });
+
+      // (2) PIN на этом устройстве → срок = now + AUTH_BIO_WEAK_REAUTH_HOURS (24); тот же токен W → 200, срок не меняется
+      const pin = await t.unlock({ method: 'pin', refreshToken: c.refresh, pin: PIN }, c.deviceKey);
+      expect(pin.status).toBe(200);
+      const extended = t.clock.now().getTime() + DAY;
+      expect(await dueOf(w.id)).toBe(extended);
+      t.tick();
+      const face = await t.unlock({ method: 'biometric', refreshToken: w.token }, c.deviceKey);
+      expect(face.status).toBe(200);
+      expect(face.body).toMatchObject({ sid: w.id, amr: ['sms', 'bio'] });
+      const rotated = await sessionRow(w.id);
+      expect(rotated.revoked_at).toBeNull();
+      expect(rotated.revoke_reason).toBeNull();
+      expect(await dueOf(w.id)).toBe(extended); // ротация срок не меняет (DATA-306)
+      expect((await unlockAudit(w.id)).at(-1)).toMatchObject({ method: 'biometric', bioStrength: 'weak' });
+
+      // (3) вход по SMS на этом устройстве → срок = момент входа + 24 ч; PIN на другом устройстве — без продления
+      t.tick(HOUR);
+      const relogin = await t.login(c.phone, { deviceKey: c.deviceKey });
+      expect(relogin.status).toBe(200);
+      const loginDue = t.clock.now().getTime() + DAY;
+      expect(await dueOf(w.id)).toBe(loginDue);
+      t.tick(HOUR);
+      const other = await t.login(c.phone, { deviceKey: freshDevice() });
+      expect(other.status).toBe(200);
+      const otherPin = await t.unlock(
+        { method: 'pin', refreshToken: other.body.refreshToken, pin: PIN },
+        other.deviceKey,
+      );
+      expect(otherPin.status).toBe(200);
+      expect(await dueOf(w.id)).toBe(loginDue);
+    });
+
+    it('T-BIO-023 (4), (5): PIN заблокирован (5 неверных) или снят — лицо → bio_weak_pin_due; вход по SMS снимает блокировку и продлевает срок', async () => {
+      await weakMode('all');
+      const c = await signedIn({ kind: 'customer', role: 'customer' });
+      const w = await bioFamily(c);
+      for (let i = 1; i <= 5; i++) {
+        const bad = await t.unlock({ method: 'pin', refreshToken: c.refresh, pin: '000000' }, c.deviceKey);
+        expect(bad.status).toBe(i < 5 ? 401 : 423);
+      }
+      const locked = await t.unlock({ method: 'biometric', refreshToken: w.token }, c.deviceKey);
+      expect(locked.status).toBe(401);
+      expect(locked.body).toMatchObject({ code: 'UNLOCK_REQUIRED', reason: 'bio_weak_pin_due' });
+      expect((await sessionRow(w.id)).revoked_at).toBeNull();
+      t.tick();
+      expect((await t.login(c.phone, { deviceKey: c.deviceKey })).status).toBe(200);
+      const ok = await t.unlock({ method: 'biometric', refreshToken: w.token }, c.deviceKey);
+      expect(ok.status).toBe(200);
+      // (5) PIN снят (как DELETE /admin/users/{id}/pin): не задан → тот же отказ, секрет на устройстве не отзывается
+      await t.pool.query('DELETE FROM app_pins WHERE user_id = $1', [c.userId]);
+      const noPin = await t.unlock({ method: 'biometric', refreshToken: ok.body.refreshToken }, c.deviceKey);
+      expect(noPin.status).toBe(401);
+      expect(noPin.body).toMatchObject({ code: 'UNLOCK_REQUIRED', reason: 'bio_weak_pin_due' });
+      expect((await sessionRow(w.id)).revoked_at).toBeNull();
+    });
+
+    it('T-BIO-024: запрет переменной после рестарта — семья W отозвана (biometric_weak_disabled), 401 bio_weak_disabled; семья S и стандартная сессия живы; customer — запрет только сотруднику', async () => {
+      await weakMode('all');
+      const s = await signedIn();
+      const ws = await bioFamily(s, { ttlMs: 7 * DAY });
+      // у того же сотрудника — семья S на другом устройстве (запрет её не касается)
+      t.tick(); // повторный код на тот же номер — после паузы OTP_RESEND_COOLDOWN_SECONDS
+      const second = await t.login(s.phone, { deviceKey: freshDevice() });
+      expect(second.status).toBe(200);
+      const strong = await bioFamily(
+        { userId: s.userId, sid: second.body.sid as string },
+        { dueInMs: null, ttlMs: 7 * DAY },
+      );
+      const c = await signedIn({ kind: 'customer', role: 'customer' });
+      const wc = await bioFamily(c);
+
+      // (2) customer: сотруднику уровень W запрещён, покупателю — нет
+      await weakMode('customer');
+      const staffFace = await t.unlock({ method: 'biometric', refreshToken: ws.token }, s.deviceKey);
+      expect(staffFace.status).toBe(401);
+      expect(staffFace.body).toMatchObject({ code: 'UNLOCK_REQUIRED', reason: 'bio_weak_disabled' });
+      const revoked = await sessionRow(ws.id);
+      expect(revoked.revoked_at).not.toBeNull();
+      expect(revoked.revoke_reason).toBe('biometric_weak_disabled');
+      const dev = await t.pool.query('SELECT biometric_enrolled_at FROM devices WHERE id = $1', [ws.deviceId]);
+      expect(dev.rows[0].biometric_enrolled_at).toBeNull();
+      const disabled = await t.pool.query<{ after: JsonBody }>(
+        `SELECT after FROM audit_logs WHERE entity_id = $1 AND action = 'auth.biometrics.disabled' AND level = 'app'`,
+        [ws.deviceId],
+      );
+      expect(disabled.rows.map((r) => r.after)).toEqual([
+        expect.objectContaining({ reason: 'biometric_weak_disabled', bioStrength: 'weak', revokedSessions: 1 }),
+      ]);
+      expect((await sessionRow(s.sid)).revoked_at).toBeNull();
+      expect((await t.unlock({ method: 'pin', refreshToken: s.refresh, pin: PIN }, s.deviceKey)).status).toBe(200);
+      const strongFace = await t.unlock({ method: 'biometric', refreshToken: strong.token }, second.deviceKey);
+      expect(strongFace.status).toBe(200);
+      expect((await unlockAudit(strong.id)).at(-1)).toMatchObject({ method: 'biometric', bioStrength: 'strong' });
+      const customerFace = await t.unlock({ method: 'biometric', refreshToken: wc.token }, c.deviceKey);
+      expect(customerFace.status).toBe(200);
+
+      // (1) off: семья W покупателя тоже отзывается при следующей разблокировке; стандартная сессия и PIN работают
+      await weakMode('off');
+      const off = await t.unlock({ method: 'biometric', refreshToken: customerFace.body.refreshToken }, c.deviceKey);
+      expect(off.status).toBe(401);
+      expect(off.body).toMatchObject({ code: 'UNLOCK_REQUIRED', reason: 'bio_weak_disabled' });
+      expect((await sessionRow(wc.id)).revoke_reason).toBe('biometric_weak_disabled');
+      expect((await t.unlock({ method: 'pin', refreshToken: c.refresh, pin: PIN }, c.deviceKey)).status).toBe(200);
+      const again = await t.unlock({ method: 'biometric', refreshToken: customerFace.body.refreshToken }, c.deviceKey);
+      expect(again.status).toBe(401);
+      expect(again.body.code).toBe('SESSION_REVOKED');
+      // семья S не уровня W: запрет переменной её не касается
+      const strongAgain = await t.unlock(
+        { method: 'biometric', refreshToken: strongFace.body.refreshToken },
+        second.deviceKey,
+      );
+      expect(strongAgain.status).toBe(200);
+    });
+
+    it('T-BIO-025 (1), BIO-024: уровень W не подтверждает step-up — method bio/biometric → 400 VALIDATION_FAILED', async () => {
+      await weakMode('all');
+      const c = await signedIn({ kind: 'customer', role: 'customer' });
+      const w = await bioFamily(c);
+      const face = await t.unlock({ method: 'biometric', refreshToken: w.token }, c.deviceKey);
+      expect(face.status).toBe(200);
+      for (const method of ['bio', 'biometric', 'bio+pin']) {
+        const r = await t
+          .bearer('post', '/auth/step-up', face.body.accessToken as string, c.deviceKey)
+          .send({ method, operation: 'profile.pin.set' });
+        expect(r.status).toBe(400);
+        expect(r.body.code).toBe('VALIDATION_FAILED');
+        expect(r.body.errors[0].field).toBe('method');
+      }
+    });
+  });
 });

@@ -100,7 +100,12 @@ python -I -X utf8 scripts/check_contrast.py                        # код 1 п
 5. **`pagePadding*`.** 03 §17.4 требует геттеры `pagePaddingCompact/Medium/Large` (16/24/32). Это «боковые поля» из 03 §7.2, поэтому они реализованы как `EdgeInsets.symmetric(horizontal: …)`. Для `expanded` боковое поле 24 — то же, что `pagePaddingMedium`.
 6. **`DsBreakpoints`.**
    - Добавлен чистый помощник `forWidth(double)`. Через него работает `of(context)` по `MediaQuery.sizeOf`, и его удобно тестировать.
-   - `gridColumns` реализует формулу 03 §7.3: `max(2, min(6, floor((W+gap)/(160+gap))))`.
+   - `gridColumns` реализует формулу 03 §7.3: `max(2, min(6, floor((W+gap)/(160+gap))))`. С 1.3.0 (ADR-114, уточнение
+     2026-11-18): `max(2, min(предел, floor((W+gap)/(minCardWidth+gap))))`, где предел — `gridColumnsCap(windowClass,
+     maxColumns:)`: `breakpoint.*.productColumnsMax` класса окна (3 / 4 / 5 / 6 с 1.4.0; в 1.3.0 — 3 / 4 / 7 / 9) и,
+     если задан, предел экрана (SCR-50 — 6); шире `gridMaxContentWidth(предел, gap)` (карточки по `gridCardMaxWidth`
+     280) область товаров не растягивается и с 1.4.0 стоит по центру своей зоны — это делает вызывающий код
+     (`CatalogProductView`).
    - Ограничение W ≤ 1200 на `large` применяет вызывающий код: так записано в 03 §7.3 «W — ширина контентной зоны».
    - Все 14 контрольных значений таблицы 03 §7.3 проверены smoke-тестом (§5).
 7. **`DsDensityValues.gridGap`.** Зазор сетки 16/12 взят из 03 §7.3, где он привязан к плотности. Добавлен рядом с полями 03 §17.4. `forWindowClass` строится из `density.*.windowClasses`. Инвариант генератора: каждый класс окна принадлежит ровно одной плотности.
@@ -175,7 +180,8 @@ python -I -X utf8 scripts/check_contrast.py                        # код 1 п
       экрана выбора товаров, шапки и drawer корзины. `blurRadius` Flutter = blur CSS, как у `e1…e3`; разницу
       гауссова размытия Chrome и Flutter оценивает сверка снимков (WP-QA).
     - **`DsCatalogMetrics`** лежит в `ds_breakpoints.dart` (новый файл не нужен; генератор выводит 8 файлов, как и
-      раньше). `gridColumns(..., maxColumns: null)` снимает верхний предел 6 только для каталога сотрудника.
+      раньше). `gridColumns(..., maxColumns: null)` снимает верхний предел 6 только для каталога сотрудника (до 1.3.0; с
+      1.3.0 у каждой сетки товаров — предел класса окна, `maxColumns` — только свой предел экрана).
     - **Inter 800.** `Inter-ExtraBold.ttf` — статический экземпляр из `pos-app/assets/fonts/Inter/Inter-Variable.ttf`
       (fontTools 4.60.0, wght=800, opsz=14, `SOURCE_DATE_EPOCH` = метка исходного файла — сборка воспроизводима, sha256 в
       `SOURCE.txt`). Подключён в `pubspec.yaml` весом 800 и в `ds_test_support.dart`.

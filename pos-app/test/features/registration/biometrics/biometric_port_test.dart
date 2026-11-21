@@ -7,6 +7,7 @@ import 'package:local_auth/local_auth.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:optomstroy/core/biometrics/biometric_authenticator.dart';
 import 'package:optomstroy/core/biometrics/biometric_crypto_channel.dart';
+import 'package:optomstroy/core/biometrics/hello_gate_users.dart';
 import 'package:optomstroy/core/biometrics/windows_hello_gate.dart';
 import 'package:optomstroy/core/storage/secure_storage.dart';
 import 'package:optomstroy/features/registration/data/repositories/device_biometrics_impl.dart';
@@ -24,14 +25,29 @@ class FakeGateway implements LocalAuthGateway {
   bool result;
   LocalAuthException? error;
 
+  /// Параметры последнего диалога: гейт Windows Hello вызывает `local_auth` как прежде (по умолчанию).
+  ({bool biometricOnly, bool sensitiveTransaction, BiometricPromptText? texts})? lastOptions;
+
   @override
-  Future<bool> authenticate(String reason) async {
+  Future<bool> authenticate(
+    String reason, {
+    bool biometricOnly = false,
+    bool sensitiveTransaction = true,
+    BiometricPromptText? texts,
+  }) async {
+    lastOptions = (biometricOnly: biometricOnly, sensitiveTransaction: sensitiveTransaction, texts: texts);
     if (error != null) throw error!;
     return result;
   }
 
   @override
   Future<bool> isDeviceSupported() async => supported;
+
+  @override
+  Future<bool> canCheckBiometrics() async => supported;
+
+  @override
+  Future<List<BiometricType>> availableBiometrics() async => const <BiometricType>[];
 }
 
 const BiometricPromptText _prompt = BiometricPromptText(title: 'Вход', cancel: 'Отмена', subtitle: 's');
@@ -136,7 +152,13 @@ void main() {
     });
 
     test('подтверждение присутствия и отмена', () async {
-      expect((await WindowsHelloGate(FakeGateway()).confirmPresence(_prompt)).isSuccess, isTrue);
+      final FakeGateway gateway = FakeGateway();
+      expect((await WindowsHelloGate(gateway).confirmPresence(_prompt)).isSuccess, isTrue);
+      expect(gateway.lastOptions, (
+        biometricOnly: false,
+        sensitiveTransaction: true,
+        texts: null,
+      ), reason: 'на Windows — прежний вызов local_auth (biometricOnly не поддерживается)');
       expect(
         (await WindowsHelloGate(FakeGateway(result: false)).confirmPresence(_prompt)).error,
         BiometricError.cancelled,
@@ -222,6 +244,30 @@ void main() {
       await DeviceBiometricsImpl(auth, storage).discard();
       verify(() => auth.clear()).called(1);
       expect(storage.values.containsKey(SecureKey.biometricsEnabled), isFalse);
+    });
+
+    test('T-BIO-028: SCR-04 Windows — гейт после 201 пишется по userId сессии, не в общий признак; '
+        'без userId — диалог Hello не показывается', () async {
+      const String userA = '0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4f01';
+      const BiometricPromptCopy copy = BiometricPromptCopy(title: 't', cancel: 'c');
+      when(() => auth.confirmPresence(any())).thenAnswer((_) async => const BiometricResult<void>.success(null));
+      expect(
+        await DeviceBiometricsImpl(auth, storage, currentUserId: () => userA).confirmPresence(copy),
+        BiometricEnrollmentResult.enabled,
+      );
+      expect(await HelloGateUsers(storage).read(), <String>{userA});
+      expect(storage.values.containsKey(SecureKey.biometricsEnabled), isFalse);
+
+      expect(await DeviceBiometricsImpl(auth, storage).confirmPresence(copy), BiometricEnrollmentResult.failed);
+      verify(() => auth.confirmPresence(any())).called(1);
+
+      when(
+        () => auth.confirmPresence(any()),
+      ).thenAnswer((_) async => const BiometricResult<void>.failure(BiometricError.cancelled));
+      expect(
+        await DeviceBiometricsImpl(auth, storage, currentUserId: () => userA).confirmPresence(copy),
+        BiometricEnrollmentResult.cancelled,
+      );
     });
   });
 }

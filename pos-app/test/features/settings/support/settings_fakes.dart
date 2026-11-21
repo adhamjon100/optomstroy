@@ -115,7 +115,8 @@ final class FakeProtectionRepository implements LoginProtectionRepository {
   @override
   Future<Result<void>> removePin() async {
     calls.add('removePin');
-    return const Success<void>(null);
+    final Failure? f = removePinFailure;
+    return f == null ? const Success<void>(null) : FailureResult<void>(f);
   }
 
   @override
@@ -124,9 +125,21 @@ final class FakeProtectionRepository implements LoginProtectionRepository {
     return stepUpGranted;
   }
 
+  /// Уровень последнего включения (UI-42-027) и заголовок его диалога.
+  BiometricLoginTier? lastTier;
+  String? lastPromptTitle;
+
+  /// `removePin` отвечает этой ошибкой (например, `weak_biometrics_active`).
+  Failure? removePinFailure;
+
   @override
-  Future<BiometricToggleOutcome> enableBiometrics(BiometricPromptCopy prompt) async {
+  Future<BiometricToggleOutcome> enableBiometrics(
+    BiometricPromptCopy prompt, {
+    BiometricLoginTier tier = BiometricLoginTier.strong,
+  }) async {
     calls.add('enableBio');
+    lastTier = tier;
+    lastPromptTitle = prompt.title;
     return enableOutcome;
   }
 
@@ -206,6 +219,45 @@ final class FakeBiometricAuthenticator implements BiometricAuthenticator {
     return const BiometricResult<void>.success(null);
   }
 }
+
+/// Порт с уровнем W (как `AndroidBiometricAuthenticator`; 15 ADR-116 п. 2): запись секрета W — [storeWeak] (диалог
+/// `local_auth` «лицо или отпечаток»), секрет — в [stored], уровень — в `cap.storedTier` задаёт тест.
+final class FakeWeakBiometricAuthenticator extends FakeBiometricAuthenticator implements BiometricWeakStore {
+  FakeWeakBiometricAuthenticator(super.cap, {this.weakResult = const BiometricResult<void>.success(null)});
+
+  BiometricResult<void> weakResult;
+  String? storedWeak;
+  final List<String> weakTitles = <String>[];
+
+  @override
+  Future<BiometricResult<void>> storeWeak(String secret, BiometricPromptText prompt) async {
+    weakTitles.add(prompt.title);
+    if (weakResult.isSuccess) {
+      storedWeak = secret;
+      stored = secret;
+    }
+    return weakResult;
+  }
+}
+
+/// Телефон с отпечатком Class 3 и слабым лицом (оба уровня; [stored] — уровень сохранённого секрета).
+BiometricCapability androidStrongAndWeak({BiometricTier? stored}) => BiometricCapability(
+  kind: BiometricKind.androidClass3,
+  availability: BiometricAvailability.available,
+  cryptoBinding: true,
+  weakAvailability: BiometricAvailability.available,
+  storedTier: stored,
+);
+
+/// Телефон только со слабым лицом (Class 2): уровень S недоступен.
+BiometricCapability androidWeakOnly({BiometricTier? stored}) => BiometricCapability(
+  kind: BiometricKind.androidClass2,
+  availability: BiometricAvailability.unsupported,
+  cryptoBinding: false,
+  reason: 'weak_only',
+  weakAvailability: BiometricAvailability.available,
+  storedTier: stored,
+);
 
 const BiometricCapability androidClass3 = BiometricCapability(
   kind: BiometricKind.androidClass3,

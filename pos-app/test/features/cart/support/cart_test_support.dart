@@ -372,12 +372,14 @@ List<Override> cartOverrides({
   RoleCode role = RoleCode.seller,
   OnlineStatus online = OnlineStatus.online,
   String? userId = 'user-1',
+  Override? onlineOverride,
 }) => <Override>[
   cartSyncProvider.overrideWithValue(sync),
   cartRepositoryProvider.overrideWithValue(repo),
   cartViewerRoleProvider.overrideWithValue(role),
   cartViewerUserIdProvider.overrideWithValue(userId),
-  cartOnlineStatusProvider.overrideWithValue(online),
+  // [onlineOverride] — статус сети, который тест меняет по ходу (сеть пропала после загрузки); иначе — [online].
+  onlineOverride ?? cartOnlineStatusProvider.overrideWithValue(online),
   clockProvider.overrideWithValue(FixedClock(cartNow)),
 ];
 

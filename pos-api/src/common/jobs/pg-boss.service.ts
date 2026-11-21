@@ -1,13 +1,17 @@
 import { Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import { PgBoss } from 'pg-boss';
+import { PG_BOSS_RUNTIME_OPTIONS } from './pg-boss-runtime.js';
 
-export const PG_BOSS_SCHEMA = 'pgboss';
+export { PG_BOSS_SCHEMA } from './pg-boss-runtime.js';
 
 /**
  * Экземпляр pg-boss процесса API (D-44: очереди только в PostgreSQL). В API он нужен для публикации задач
  * (`send`) и проверки готовности; обработчики, расписания и обслуживание (`supervise`, `schedule`) включает
  * только worker (RM-C-007, `WORKERS_ENABLED`). Старт не блокирует запуск HTTP: при недоступной БД сервис
  * повторяет попытку, а `/health/ready` отвечает 503, пока pg-boss не готов.
+ *
+ * Схему pg-boss API не создаёт и не мигрирует (`PG_BOSS_RUNTIME_OPTIONS`, 07 DATA-012): её ставит `migrate` под
+ * `pos_migrate`. Не установлена или устарела — те же повторы и 503 до прогона мигратора.
  */
 @Injectable()
 export class PgBossService implements OnModuleInit, OnApplicationShutdown {
@@ -33,8 +37,8 @@ export class PgBossService implements OnModuleInit, OnApplicationShutdown {
       const attempt = async (): Promise<void> => {
         if (this.stopping) return resolve();
         const boss = new PgBoss({
+          ...PG_BOSS_RUNTIME_OPTIONS,
           connectionString: this.connectionString,
-          schema: PG_BOSS_SCHEMA,
           application_name: 'pos-api:pg-boss',
           supervise: false,
           schedule: false,

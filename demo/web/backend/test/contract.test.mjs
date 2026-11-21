@@ -104,9 +104,10 @@ describe('валидатор: синтетические схемы', () => {
 describe('валидатор: настоящий контракт pos-api.v1.yaml', () => {
   const R = contract();
   const problem = (status, code, extra = {}) => ({ type: `https://api.example/problems/${code.toLowerCase()}`, title: 't', status, code, requestId: 'r', ...extra });
-  // OpenAPI 1.3.0 (планшет магазина, ADR-115): 141 + 10 операций `70_kiosk.yaml` = 151.
-  test('операции: 151, пути с литералами и параметрами', () => {
-    assert.equal(R.ops.length, 151);
+  // OpenAPI 1.3.0 (планшет магазина, ADR-115): 141 + 10 операций `70_kiosk.yaml` = 151; 1.4.0 (вход по лицу, ADR-116):
+  // + `auth_unlock_challenge` (POST /auth/unlock/challenge) = 152.
+  test('операции: 152, пути с литералами и параметрами', () => {
+    assert.equal(R.ops.length, 152);
     assert.equal(R.matchOperation('GET', '/api/v1/catalog/products/recent').operationId, 'catalog_products_recent_list');
     assert.equal(R.matchOperation('GET', `/api/v1/catalog/products/${id}`).operationId, 'catalog_products_get');
     assert.equal(R.matchOperation('GET', '/health').operationId, 'health_liveness_get');

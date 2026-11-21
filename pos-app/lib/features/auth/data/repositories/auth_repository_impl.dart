@@ -127,7 +127,11 @@ final class AuthRepositoryImpl implements AuthRepository {
       });
 
   @override
-  Future<Result<UnlockSuccess>> unlockWithPin({required String pin, bool biometricInvalidated = false}) async {
+  Future<Result<UnlockSuccess>> unlockWithPin({
+    required String pin,
+    bool biometricInvalidated = false,
+    bool helloKeyInvalidated = false,
+  }) async {
     final String? refresh = await _readRefresh();
     if (refresh == null) {
       return const FailureResult<UnlockSuccess>(AuthFailure(AuthReason.sessionRevoked));
@@ -139,6 +143,7 @@ final class AuthRepositoryImpl implements AuthRepository {
           refreshToken: refresh,
           pin: pin,
           biometricInvalidated: biometricInvalidated ? true : null,
+          helloKeyInvalidated: helloKeyInvalidated ? true : null,
         ),
       );
       await _onSession(accessToken: r.accessToken, refreshToken: r.refreshToken);
@@ -170,6 +175,41 @@ final class AuthRepositoryImpl implements AuthRepository {
     return result;
   }
 
+  /// Challenge ключа Windows Hello (W2; 08 §4.1.10): только текущий refresh этой сессии; refresh не ротируется.
+  @override
+  Future<Result<String>> helloKeyChallenge() async {
+    final String? refresh = await _readRefresh();
+    if (refresh == null) {
+      return const FailureResult<String>(AuthFailure(AuthReason.sessionRevoked));
+    }
+    final Result<String> result = await ErrorMapper.guard(() async {
+      final AuthUnlockChallengeResponseDto r = await _remote.unlockChallenge(
+        AuthUnlockChallengeRequestDto(refreshToken: refresh),
+      );
+      return r.challenge;
+    });
+    await _onFailure(result.failureOrNull);
+    return result;
+  }
+
+  /// Вход по ключу Windows Hello без PIN (W2; 08 §4.1.8; 09 BIO-039): ротация и `unlocked_until` — как у PIN.
+  @override
+  Future<Result<UnlockSuccess>> unlockWithHelloKey({required String signature}) async {
+    final String? refresh = await _readRefresh();
+    if (refresh == null) {
+      return const FailureResult<UnlockSuccess>(AuthFailure(AuthReason.sessionRevoked));
+    }
+    final Result<UnlockSuccess> result = await ErrorMapper.guard(() async {
+      final AuthUnlockResponseDto r = await _remote.unlock(
+        AuthUnlockRequestDto(method: UnlockMethod.helloKey.value, refreshToken: refresh, signature: signature),
+      );
+      await _onSession(accessToken: r.accessToken, refreshToken: r.refreshToken);
+      return UnlockSuccess(profile: await cachedProfile());
+    });
+    await _onFailure(result.failureOrNull);
+    return result;
+  }
+
   @override
   Future<bool> hasStoredSession() async => await _readRefresh() != null;
 
@@ -180,6 +220,7 @@ final class AuthRepositoryImpl implements AuthRepository {
     final CachedProfile? cached = await _profileCache?.read();
     if (cached == null || cached.isEmpty) return SessionProfile.unknown;
     return _profile = SessionProfile(
+      userId: cached.userId,
       kind: cached.kind,
       roles: cached.roles,
       status: cached.status,
@@ -197,11 +238,16 @@ final class AuthRepositoryImpl implements AuthRepository {
   }
 
   /// Профиль входа → память и кэш холодного старта. `pinSet=false` не кэшируется (`null`): PIN могут задать после
-  /// входа (первый вход сотрудника, SCR-42), а устаревшее `false` скрыло бы клавиатуру PIN на SCR-08.
+  /// входа (первый вход сотрудника, SCR-42), а устаревшее `false` скрыло бы клавиатуру PIN на SCR-08. `userId` —
+  /// `Me.id` (02 §0.4, ред. 1.30); ответ без `user` не стирает `userId`, который SessionController только что записал
+  /// для этой сессии.
   Future<void> _remember(SessionProfile profile) async {
     _profile = profile;
-    await _profileCache?.write(
+    final ProfileCacheStore? cache = _profileCache;
+    if (cache == null) return;
+    await cache.write(
       CachedProfile(
+        userId: profile.userId ?? (await cache.read())?.userId,
         kind: profile.kind,
         status: profile.status,
         roles: profile.roles,
@@ -235,6 +281,7 @@ final class AuthRepositoryImpl implements AuthRepository {
       return SessionProfile.unknown;
     }
     return SessionProfile(
+      userId: me.id,
       kind: me.userKind,
       roles: me.roleCodes,
       status: me.userStatus,

@@ -3,8 +3,9 @@
 // (проверка только на сервере, `POST /auth/unlock`), «Забыли PIN?», «Войти по номеру телефона», «Сменить аккаунт».
 // `PIN_INVALID` → «Осталось попыток: {attemptsLeft}» (из ответа; `/auth/refresh` не вызывается);
 // `PIN_LOCKED` → нампад недоступен, «Войти по SMS»; сеть — «Нет подключения. Для входа нужна сеть».
-// Биометрия (Android/iOS, криптопривязка) — экран SCR-08 фичи auth (RM-D-007/008) через
-// `SessionGate.lockScreenBuilder`; этот слой — PIN-вариант по умолчанию.
+// В приложении слой блокировки — SCR-08 фичи auth (`UnlockSessionLayer`: биометрия S/W, ключ Windows Hello W2, гейт
+// W1, PIN) через `SessionGate.lockScreenBuilder` (app/app.dart `appLockScreen`; 02 SCR-08.2 «idle — как cold»,
+// 09 §8.8); этот слой — PIN-вариант по умолчанию, когда `lockScreenBuilder` не задан (тесты слоя сессии).
 // compact — полноэкранный лист; medium/expanded — диалог 480 по центру.
 import 'dart:async';
 

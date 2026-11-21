@@ -10,6 +10,10 @@
 //
 // Контроллер реализует [AuthSessionHooks] и подключается к AuthInterceptor основного Dio.
 //
+// Вход по лицу, Windows W1 (15 ADR-116 п. 3; 09 BIO-034; 02 §0.4, ред. 1.30): при каждом входе и разблокировке `sub`
+// access-токена пишется в кэш профиля (`userId` для холодного старта), прежний признак Windows Hello ключей сессии
+// переносится на этот `userId` (разблокировка) или удаляется (вход) — [SessionController._rememberUser].
+//
 // Планшет магазина (`kind=kiosk`; P-002 §8.2 п. 5–8, §8.9; 09 §8.9; ADR-115 п. 12, п. 26; 13 TAB-2-10):
 // - признак планшета (core/session/kiosk_marker.dart) — вне ключей сессии: холодный старт по признаку открывает
 //   `/kiosk` без блокировки холодного старта и без сети (`userKind = kiosk`, `userId` из признака — кэш каталога);
@@ -34,6 +38,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 import 'package:optomstroy/core/biometrics/biometric_authenticator.dart';
 import 'package:optomstroy/core/biometrics/biometric_providers.dart';
+import 'package:optomstroy/core/biometrics/hello_gate_users.dart';
+import 'package:optomstroy/core/biometrics/hello_key_users.dart';
+import 'package:optomstroy/core/biometrics/windows_hello_key.dart';
 import 'package:optomstroy/core/database/app_database.dart';
 import 'package:optomstroy/core/di/core_providers.dart';
 import 'package:optomstroy/core/enums.dart';
@@ -46,6 +53,7 @@ import 'package:optomstroy/core/session/idle_lock_monitor.dart';
 import 'package:optomstroy/core/session/kiosk_exit_code_hash.dart';
 import 'package:optomstroy/core/session/kiosk_marker.dart';
 import 'package:optomstroy/core/session/pending_logout.dart';
+import 'package:optomstroy/core/session/profile_cache.dart';
 import 'package:optomstroy/core/session/session_api.dart';
 import 'package:optomstroy/core/session/session_local_data.dart';
 import 'package:optomstroy/core/session/session_policy.dart';
@@ -283,8 +291,10 @@ class SessionController extends Notifier<SessionState> implements AuthSessionHoo
     return completer.future;
   }
 
-  /// Вход выполнен (OTP, регистрация, приглашение): access — в память, refresh — в secure storage.
+  /// Вход выполнен (OTP, регистрация, приглашение): access — в память, refresh — в secure storage. Тот же вызов
+  /// завершает разблокировку SCR-08 (AuthRepositoryImpl): сессия до него заблокирована.
   Future<void> establish({required String accessToken, required String refreshToken}) async {
+    final bool unlocking = state.isLocked;
     // 02 UI-41-005 п. 5: перед входом (в т. ч. другого пользователя) — доставка отложенного выхода прежней сессии.
     await _deliverPendingLogout();
     final claims = AccessTokenClaims.tryParse(accessToken);
@@ -308,6 +318,33 @@ class SessionController extends Notifier<SessionState> implements AuthSessionHoo
     );
     _completeWaiter(true);
     _startIdle();
+    await _rememberUser(claims, unlock: unlocking);
+  }
+
+  /// `userId` сессии — в кэш профиля для холодного старта (02 §0.4, ред. 1.30; 09 BIO-034; 15 ADR-116 п. 3).
+  /// [unlock] — разблокировка той же сессии: кэш прежней версии без `userId` дополняется, прежний признак
+  /// `windows_hello` ключей сессии переносится на `userId` (первая разблокировка после обновления). Вход (OTP,
+  /// регистрация): кэш другого или неизвестного пользователя заменяется, прежний признак удаляется — его владелец
+  /// неизвестен. Планшет магазина кэша профиля не ведёт. Сбой хранилища вход не прерывает (ожидание — не дольше
+  /// [SessionPolicy.storageTimeout]).
+  Future<void> _rememberUser(AccessTokenClaims? claims, {required bool unlock}) async {
+    final String? userId = claims?.subject;
+    if (userId == null || claims?.kind == UserKind.kiosk.value) return;
+    Future<void> remember() async {
+      await ProfileCacheStore(_storage).rememberUser(userId, unlock: unlock);
+      final HelloGateUsers gate = HelloGateUsers(_storage);
+      if (unlock) {
+        await gate.adoptLegacy(userId);
+      } else {
+        await gate.dropLegacy();
+      }
+    }
+
+    try {
+      await _withTimeout<void>(remember(), _policy.storageTimeout);
+    } on Object catch (e) {
+      _log.warning('userId в кэше профиля не записан: ${e.runtimeType}');
+    }
   }
 
   /// Сессия планшета магазина на этом устройстве (SCR-54: подключение и подключение заново — FLOW-043.S6; вызывает
@@ -390,6 +427,7 @@ class SessionController extends Notifier<SessionState> implements AuthSessionHoo
     switch (response) {
       case UnlockOk(:final tokens):
         await _tokens.saveTokens(accessToken: tokens.accessToken, refreshToken: tokens.refreshToken);
+        await _rememberUser(AccessTokenClaims.tryParse(tokens.accessToken), unlock: true);
         _unlocked(tokens.accessToken);
         return const UnlockSucceeded();
       case UnlockFailed(:final error):
@@ -409,6 +447,7 @@ class SessionController extends Notifier<SessionState> implements AuthSessionHoo
     switch (response) {
       case UnlockOk(:final tokens):
         await _tokens.saveTokens(accessToken: tokens.accessToken, refreshToken: standard);
+        await _rememberUser(AccessTokenClaims.tryParse(tokens.accessToken), unlock: true);
         _unlocked(tokens.accessToken);
         return UnlockSucceeded(newBiometricRefresh: tokens.refreshToken);
       case UnlockFailed(:final error):
@@ -758,11 +797,30 @@ class SessionController extends Notifier<SessionState> implements AuthSessionHoo
     }
   }
 
+  /// BIO-037: закрытые ключи W2 в хранилище ключей Windows — до удаления признаков `auth.hello_key_users` (иначе найти
+  /// их нечем). Ключи всех пользователей списка, не только администратора: сервер отзывает все ключи Windows Hello
+  /// устройства (`kiosk_connect`), признаки всех пользователей удаляются ниже. `DeleteAsync` — без диалога; удаление
+  /// best effort: сбой или таймаут в журнал (без `userId`), подключение планшета продолжается.
+  Future<void> _deleteHelloKeys() async {
+    final Object helloKey = ref.read(biometricAuthenticatorProvider);
+    if (helloKey is! BiometricHelloKey) return;
+    for (final String userId in await HelloKeyUsers(_storage).read()) {
+      try {
+        final bool ok = await helloKey.deleteHelloKey(userId).timeout(const Duration(seconds: 5));
+        if (!ok) _log.fine('ключ Windows Hello не найден или не удалён');
+      } on Object catch (e) {
+        _log.warning('ключ Windows Hello не удалён: ${e.runtimeType}');
+      }
+    }
+  }
+
   /// «Готово» после аварийного кода (SCR-54 UI-54-014; FLOW-043.S6, A2; 09 §8.9 п. 1, п. 6, п. 7; 11 SEC-133 —
   /// исключение ADR-115): это устройство становится планшетом магазина.
   /// 1. Данные администратора: ключи защищённого хранилища — по одному (общий `deleteAll` плагина не вызывается),
   ///    кроме `device.id`; refresh перезаписывает токен планшета (без момента «нет refresh»); `biometric_refresh` и
-  ///    ключ Keystore — хуки очистки; step-up и `sid` — из памяти.
+  ///    ключ Keystore — хуки очистки; step-up и `sid` — из памяти. Закрытые ключи W2 в хранилище ключей Windows
+  ///    (`optomstroy.hello.v1.<userId>`) — [BiometricHelloKey.deleteHelloKey] для каждого пользователя из
+  ///    `auth.hello_key_users`, до удаления самого списка (09 BIO-037; [_deleteHelloKeys]).
   /// 2. Хэш аварийного кода, признак планшета и токены планшета — [establishKiosk]: администратор → планшет без
   ///    промежуточного `unauthenticated` (G-1 увёл бы на SCR-01); G-15 открывает SCR-51.
   /// 3. Файл БД администратора `pos_<admin>.db`: корень открывает БД планшета и закрывает прежнюю — после закрытия файл
@@ -789,6 +847,7 @@ class SessionController extends Notifier<SessionState> implements AuthSessionHoo
     _idle.stop();
     _stepUp.clear();
     _sessionId = null;
+    await _deleteHelloKeys();
     for (final SecureKey key in SecureKey.values) {
       // `device.id` — устройство то же (08 §2.2); refresh перезапишет токен планшета.
       if (key == SecureKey.deviceId || key == SecureKey.refreshToken) continue;

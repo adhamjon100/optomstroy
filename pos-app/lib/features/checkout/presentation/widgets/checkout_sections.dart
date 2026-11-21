@@ -23,6 +23,8 @@ import 'package:optomstroy/design_system/components/option_tile.dart';
 import 'package:optomstroy/design_system/components/payment_method_card.dart';
 import 'package:optomstroy/design_system/components/phone_field.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
+import 'package:optomstroy/design_system/layout/title_trailing_bar.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/design_system/tokens/ds_typography.dart';
@@ -832,37 +834,59 @@ class CheckoutItemsSection extends StatelessWidget {
         color: conflict ? c.warningContainer : null,
         border: conflict ? Border(left: BorderSide(color: c.error, width: 3)) : null,
       ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) {
+          final String perUnit = '$qty$unit';
+          final TextStyle perUnitStyle = context.text.caption.copyWith(
+            color: c.textSecondary,
+            fontFeatures: DsTypography.numeric,
+          );
+          final TextStyle totalStyle = context.text.body.copyWith(
+            fontWeight: FontWeight.w600,
+            color: c.textPrimary,
+            fontFeatures: DsTypography.numeric,
+          );
+          final String? total = l.lineTotal == null ? null : CheckoutFormats.money(l.lineTotal!);
+          final Widget title = Text(
+            name.isEmpty ? (l.sku ?? l.variantId) : name,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: context.text.body.copyWith(color: c.textPrimary),
+          );
+          final Widget perUnitText = Text(perUnit, style: perUnitStyle);
+          // «N × цена» и сумма строки не помещаются рядом (телефон, окно 600 при крупном тексте) — сумма строкой ниже
+          // у конца: цена и сумма не переносятся внутри «сом» и не сжимаются (T-UI-117, пакет own-server:GAP-APP).
+          final bool stacked =
+              total != null &&
+              dsTextWidth(context, perUnit, perUnitStyle) + 8 + dsTextWidth(context, total, totalStyle) > box.maxWidth;
+          if (stacked) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Text(
-                  name.isEmpty ? (l.sku ?? l.variantId) : name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.text.body.copyWith(color: c.textPrimary),
-                ),
-                Text(
-                  '$qty$unit',
-                  style: context.text.caption.copyWith(color: c.textSecondary, fontFeatures: DsTypography.numeric),
+                title,
+                perUnitText,
+                Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: Text(total, style: totalStyle),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          if (l.lineTotal != null)
-            Text(
-              CheckoutFormats.money(l.lineTotal!),
-              style: context.text.body.copyWith(
-                fontWeight: FontWeight.w600,
-                color: c.textPrimary,
-                fontFeatures: DsTypography.numeric,
+            );
+          }
+          return Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[title, perUnitText],
+                ),
               ),
-            ),
-        ],
+              const SizedBox(width: 8),
+              if (total != null) Text(total, style: totalStyle),
+            ],
+          );
+        },
       ),
     );
   }
@@ -952,15 +976,12 @@ class CheckoutTotals extends StatelessWidget {
             ),
           );
     if (compact) {
-      return Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(l10n.checkout_summary_total, style: context.text.body.copyWith(color: c.textPrimary)),
-          ),
-          Flexible(
-            child: FittedBox(fit: BoxFit.scaleDown, child: totalText),
-          ),
-        ],
+      // Сумма не делит строку пополам с подписью: целиком у конца, не помещается рядом — строкой ниже (360 × 1,5;
+      // T-UI-117, пакет own-server:GAP-APP); `FittedBox` — только защита, если сумма шире всей строки.
+      return TitleTrailingBar(
+        spacing: context.space.s2,
+        title: Text(l10n.checkout_summary_total, style: context.text.body.copyWith(color: c.textPrimary)),
+        trailing: FittedBox(fit: BoxFit.scaleDown, child: totalText),
       );
     }
     final TextStyle row = context.text.body.copyWith(color: c.textPrimary, fontFeatures: DsTypography.numeric);

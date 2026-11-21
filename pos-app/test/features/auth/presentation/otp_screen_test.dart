@@ -19,6 +19,7 @@ import 'package:optomstroy/features/auth/presentation/notifiers/auth_flow_notifi
 import 'package:optomstroy/features/auth/presentation/screens/otp_screen.dart';
 import 'package:optomstroy/features/auth/presentation/screens/phone_screen.dart';
 
+import '../../../support/fake_clipboard.dart';
 import '../support/fakes.dart';
 
 Finder get _code => find.descendant(of: find.byKey(OtpScreen.screenKey), matching: find.byType(EditableText));
@@ -106,6 +107,37 @@ void main() {
     final AuthHarness h = AuthHarness();
     await _toOtp(tester, h, platform: TargetPlatform.windows);
     expect(tester.widget<AppButton>(find.byKey(OtpScreen.submitKey)).onPressed, isNull);
+  });
+
+  testWidgets(
+    'T-UI-002 (AC-UI-02-003): Windows Ctrl+V «481 903» заполняет 6 ячеек и вызывает ровно один POST /auth/otp/verify',
+    (WidgetTester tester) async {
+      final FakeClipboard clipboard = FakeClipboard(tester, '481 903');
+      final AuthHarness h = AuthHarness();
+      await _toOtp(tester, h, platform: TargetPlatform.windows);
+      await tester.tap(_code);
+      await tester.pump();
+      await pressCtrlV(tester);
+      await tester.pump();
+      expect(clipboard.reads, 1);
+      expect(h.repository.verifiedCodes, <String>['481903']);
+      await _settleNav(tester);
+      expect(h.location, AuthPaths.catalog);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets('T-UI-002 (02 SCR-02.4 п. 5): вставка SMS в частично заполненное поле — первые 6 цифр, один verify', (
+    WidgetTester tester,
+  ) async {
+    final AuthHarness h = AuthHarness();
+    await _toOtp(tester, h);
+    await _enterCode(tester, '12');
+    tester.testTextInput.updateEditingValue(
+      pasteInto(tester.widget<EditableText>(_code).controller.value, 'Kod: 481903. Optomstroy'),
+    );
+    await tester.pump();
+    expect(h.repository.verifiedCodes, <String>['481903']);
   });
 
   testWidgets('OTP_EXPIRED → «Код устарел. Запросите новый», ссылка повторной отправки активна', (

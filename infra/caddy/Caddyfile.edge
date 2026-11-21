@@ -1,0 +1,95 @@
+# pos-proxy серверных контуров — общий caddy проекта optomstroy-edge (infra/compose.edge.yml; 16 §4.4 прим. 4, §4.5, §11).
+# Правила: Caddy НЕ аутентифицирует и НЕ авторизует (DEPLOY-049) — все решения о доступе принимает api.
+# Сайты — файлы /etc/caddy/sites/*.caddy (infra/caddy/sites/): prod.caddy — всегда, test.caddy — когда включена
+# тестовая копия (compose.edge.test.yml). Каждый сайт подключает сниппет api_site с двумя аргументами:
+#   {args[0]} — upstream api (имя контейнера в edge-сети контура: optomstroy-prod-api-1:3000 / optomstroy-test-api-1:3000);
+#   {args[1]} — каталог фото контура внутри caddy (/srv/media/prod / /srv/media/test, только чтение).
+# Тело сниппета совпадает с сайтом infra/caddy/Caddyfile (CI-контур) с точностью до этих двух подстановок и
+# комментариев — расхождение ловит check_compose_prod.py. Правка правил — в ОБОИХ файлах.
+# Параметры из окружения контейнера: CADDY_SITE_ADDRESS, CADDY_TEST_SITE_ADDRESS (имена сайтов), CADDY_TLS (e-mail ACME).
+{
+	# Админ-API не нужен: конфигурация меняется только пересозданием контейнера (bin/dc-edge up -d --force-recreate).
+	admin off
+	# Журнал самого Caddy — JSON в stdout (docker logs), как и у api (pino, RM-C-010).
+	log default {
+		output stdout
+		format json
+	}
+}
+
+(api_site) {
+	encode zstd gzip
+
+	# Заголовки безопасности — 11 SEC-003, SEC-018; 08 §2.3; R6 §7.2. preload в HSTS — только по решению заказчика (Q-032).
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'none'"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+		-X-Powered-By
+	}
+
+	# requestId (08 §2.3, RM-C-010): X-Request-Id клиента передаётся в api как есть; без заголовка — UUID Caddy.
+	@noRequestId not header X-Request-Id
+	request_header @noRequestId X-Request-Id {http.request.uuid}
+
+	# Фото: контент-адресуемые пути, неизменяемый кэш (D-30); файл — images/{sha}/{size}.webp в каталоге фото контура.
+	# Только GET/HEAD; иное (листинг, временные .tmp, произвольные имена) → 404; immutable — только найденному файлу.
+	@image {
+		method GET HEAD
+		path_regexp ^/images/[0-9a-f]{64}/(thumb|card|full)(\.webp)?$
+	}
+	handle @image {
+		root * {args[1]}
+		@stored file {path}.webp {path}
+		header @stored Cache-Control "public, max-age=31536000, immutable"
+		try_files {path}.webp {path}
+		file_server
+	}
+	handle /images/* {
+		respond 404
+	}
+
+	# Readiness (/health/ready) — только из внутренних сетей (ARCH-006): снаружи → 404. Liveness /health — для монитора.
+	handle /health* {
+		@readyExternal {
+			path /health/ready /health/ready/*
+			not remote_ip private_ranges
+		}
+		respond @readyExternal 404
+		reverse_proxy {args[0]}
+	}
+
+	# Входящие интеграции (16 §4.6): токен/подпись/IP-allowlist проверяет только api; X-Forwarded-For клиента не доверяется.
+	handle /api/v1/integrations/* {
+		reverse_proxy {args[0]} {
+			transport http {
+				read_timeout 30s
+			}
+		}
+	}
+
+	# API. read_timeout 30s покрывает long-polling GET /api/v1/payments/{id}?wait= (≤ 25 с, R0 §17.4).
+	handle /api/* {
+		reverse_proxy {args[0]} {
+			transport http {
+				read_timeout 30s
+			}
+		}
+	}
+
+	# Всё остальное — 404 (веб-таргет вне R1, D-39). QR-вебхук банка — только R2 (16 §4.5), здесь его нет.
+	handle {
+		respond 404
+	}
+
+	# Access-log — JSON в stdout контейнера (docker logs, ротация json-file 20 МБ × 5).
+	log {
+		output stdout
+		format json
+	}
+}
+
+import /etc/caddy/sites/*.caddy

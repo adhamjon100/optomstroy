@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/design_system/components/price_text.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 
@@ -62,7 +63,8 @@ class CartSummary extends StatelessWidget {
   /// Итог сервера; `null` — ещё не рассчитан («—»; при [loading] — скелетон).
   final Money? total;
 
-  /// «предварительно»; `null` — метка скрыта.
+  /// «предварительно»; `null` — метка скрыта. В строке «Итого» метке — остаток места (уже — с многоточием), сумме — её
+  /// полная ширина; не помещаются оба — сумма строкой ниже (T-UI-117).
   final String? preliminaryLabel;
 
   /// Итог `display 32/700` (expanded); иначе `h2 24/700`.
@@ -96,6 +98,18 @@ class CartSummary extends StatelessWidget {
 
   /// Ключ примечания UI-20-034 (тесты).
   static const Key noteKey = ValueKey<String>('cart-summary-note');
+
+  /// Наименьшая ширина метки «предварительно» в строке «Итого» (lp): уже — сумма строкой ниже.
+  static const double _preliminaryMin = 48;
+
+  /// Метка «предварительно»: [maxWidth] `null` — `Flexible` (остаток строки делится с другими flex-детьми); иначе —
+  /// не flex-ребёнок не шире [maxWidth] (сумма — единственный flex-ребёнок строки и получает свою полную ширину).
+  static Widget _preliminaryText(Text text, double? maxWidth) => maxWidth == null
+      ? Flexible(child: text)
+      : ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          child: text,
+        );
 
   @override
   Widget build(BuildContext context) {
@@ -176,35 +190,72 @@ class CartSummary extends StatelessWidget {
           if (rows.isNotEmpty && !drawer) Divider(height: context.space.s4, thickness: 1, color: c.border),
           ConstrainedBox(
             constraints: BoxConstraints(minHeight: drawer ? 0 : 48),
-            child: Row(
-              // Drawer (прототип): «Итого» и сумма — по базовой линии (`align-items: baseline`).
-              crossAxisAlignment: drawer ? CrossAxisAlignment.baseline : CrossAxisAlignment.center,
-              textBaseline: TextBaseline.alphabetic,
-              children: <Widget>[
-                Text(
-                  totalLabel,
-                  style: drawer
-                      ? context.text.totalLabel.copyWith(color: c.textPrimary)
-                      : context.text.title.copyWith(fontWeight: FontWeight.w600, color: c.textPrimary),
-                ),
-                if (preliminaryLabel != null) ...<Widget>[
-                  SizedBox(width: context.space.s2),
-                  Icon(Icons.schedule_rounded, size: 16, color: c.textSecondary),
-                  SizedBox(width: context.space.s1),
-                  Flexible(
-                    child: Text(
-                      preliminaryLabel!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.text.caption.copyWith(color: c.textSecondary),
+            // «Итого» и сумма не помещаются в строку (телефон, крупный текст; drawer планшета 360) — сумма строкой ниже
+            // у конца целиком, а не уменьшается `FittedBox` (T-UI-117, пакет own-server:GAP-APP); помещаются — прежняя
+            // строка. `FittedBox` — только защита, если сумма шире всей строки.
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints box) {
+                final TextStyle labelStyle = drawer
+                    ? context.text.totalLabel.copyWith(color: c.textPrimary)
+                    : context.text.title.copyWith(fontWeight: FontWeight.w600, color: c.textPrimary);
+                final Widget label = Text(totalLabel, style: labelStyle);
+                final double need =
+                    t == null ||
+                        loading // money-double: allow — геометрия UI (lp)
+                    ? 0
+                    : dsTextWidth(context, totalLabel, labelStyle) +
+                          (preliminaryLabel == null ? 0 : context.space.s2 + 16 + context.space.s1 + _preliminaryMin) +
+                          context.space.s2 +
+                          dsTextWidth(context, PriceText.format(t, fixed2: true), totalStyle);
+                final bool stacked = box.hasBoundedWidth && need > box.maxWidth;
+                // Метка «предварительно» в строке с суммой — не flex-ребёнок: `Row` делит свободное место поровну
+                // между flex-детьми, и `Flexible` метки отнимал у `Expanded` суммы половину — сумма уменьшалась
+                // `FittedBox` (×0,63…0,84 на 360…420; ревью own-server:FIX-app). Метке — остаток строки сверх оценки
+                // [need] (не меньше [_preliminaryMin]), сумме — её полная ширина. Итог неизвестен (`need` = 0:
+                // скелетон, «—») или сумма строкой ниже — прежний `Flexible`.
+                final double? preliminaryMax = stacked || need == 0 || !box.hasBoundedWidth
+                    ? null
+                    : box.maxWidth - need + _preliminaryMin;
+                final List<Widget> preliminary = <Widget>[
+                  if (preliminaryLabel != null) ...<Widget>[
+                    SizedBox(width: context.space.s2),
+                    Icon(Icons.schedule_rounded, size: 16, color: c.textSecondary),
+                    SizedBox(width: context.space.s1),
+                    _preliminaryText(
+                      Text(
+                        preliminaryLabel!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.caption.copyWith(color: c.textSecondary),
+                      ),
+                      preliminaryMax,
                     ),
-                  ),
-                ],
-                SizedBox(width: context.space.s2),
-                Expanded(
-                  child: Align(alignment: AlignmentDirectional.centerEnd, child: totalValue),
-                ),
-              ],
+                  ],
+                ];
+                if (stacked) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Row(children: <Widget>[label, ...preliminary]),
+                      Align(alignment: AlignmentDirectional.centerEnd, child: totalValue),
+                    ],
+                  );
+                }
+                return Row(
+                  // Drawer (прототип): «Итого» и сумма — по базовой линии (`align-items: baseline`).
+                  crossAxisAlignment: drawer ? CrossAxisAlignment.baseline : CrossAxisAlignment.center,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: <Widget>[
+                    label,
+                    ...preliminary,
+                    SizedBox(width: context.space.s2),
+                    Expanded(
+                      child: Align(alignment: AlignmentDirectional.centerEnd, child: totalValue),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
           if (note != null)

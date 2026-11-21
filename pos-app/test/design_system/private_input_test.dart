@@ -271,14 +271,17 @@ void main() {
           // PhoneField: автозаполнение номера и клавиатура `phone`.
           expect(_field(tester, _phone).autofillHints, <String>[AutofillHints.telephoneNumberNational]);
           expect(_field(tester, _phone).keyboardType, TextInputType.phone);
-          // OtpField: `oneTimeCode`, цифровая клавиатура, выделения нет (как прежде).
+          // OtpField: `oneTimeCode`, цифровая клавиатура; выделение включено ради вставки (02 SCR-02.4 п. 5), но
+          // скрыто — ручки нулевые, лупы нет (вставка на экранах входа, 2026-11-08).
           final TextField code = _field(tester, _otp);
           expect(code.autofillHints, <String>[AutofillHints.oneTimeCode]);
           expect(code.keyboardType, TextInputType.number);
           expect(code.readOnly, isFalse);
           expect(code.enableSuggestions, isTrue);
           expect(code.autocorrect, isNull);
-          expect(code.enableInteractiveSelection, isFalse);
+          expect(code.enableInteractiveSelection, isTrue);
+          expect(code.selectionControls?.getHandleSize(20), Size.zero);
+          expect(code.magnifierConfiguration, TextMagnifierConfiguration.disabled);
           expect(identical(code.contextMenuBuilder, defaultMenu), isTrue);
           // SearchBar: значения TextField по умолчанию.
           final TextField s = _field(tester, _searchCompact);

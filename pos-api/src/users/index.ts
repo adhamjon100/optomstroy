@@ -1,5 +1,12 @@
 export { PgAuthStateReader } from './auth-state.reader.js';
 export { DevicesRepository, type UpsertDeviceInput } from './devices.repository.js';
+export {
+  type CreateHelloKeyInput,
+  type HelloKeyFilter,
+  type HelloKeyRow,
+  HelloKeysRepository,
+  type RevokedHelloKey,
+} from './hello-keys.repository.js';
 export { type CreateSessionInput, type RotateSessionInput, SessionsRepository } from './sessions.repository.js';
 export { type DenyTokenInput, TokenDenylistRepository } from './token-denylist.repository.js';
 export { type CreateProfileInput, type ProfilePatch, UserProfilesRepository } from './user-profiles.repository.js';

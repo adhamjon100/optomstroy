@@ -374,6 +374,12 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check ${PIP_PACKAGES}
           python -I -X utf8 infra/docker/scripts/check_compose_test.py infra/compose.test.yml
+      - name: "Комплект сервера заказчика — статическая проверка (check_compose_prod.py, test_lib.sh, bash -n)"
+        run: |
+          python -I -X utf8 infra/docker/scripts/check_compose_prod.py infra/compose.prod.yml
+          bash infra/docker/scripts/test_lib.sh
+          for f in infra/scripts/*.sh infra/scripts/dc infra/scripts/dc-edge; do bash -n "$f"; done
+          sh -n infra/docker/backup/backup.sh
       - name: "make test-up (секреты → build → migrate → docker compose -f infra/compose.test.yml up -d)"
         run: make test-up PYTHON=python
       - name: "make test-check (compose config: ports; check_tables; повтор migrate; backup once)"

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/design_system/components/app_progress.dart';
 import 'package:optomstroy/design_system/components/price_text.dart';
+import 'package:optomstroy/design_system/components/private_input_scope.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 
@@ -25,6 +26,10 @@ enum DiscountInputState {
 ///
 /// Компонент не вычисляет суммы (D-23): [amount] — `discountTotal` ответа сервера. Разбор и проверку значения,
 /// debounce и отправку выполняет вызывающий ([onChanged], [onSubmitted]).
+///
+/// Меню поля — как у `AppTextField` (`PrivateInputScope.contextMenuBuilderFor`): вне веб-сборки — меню `TextField`
+/// по умолчанию, в веб-демо — меню поля дизайн-системы, над которым открывается меню браузера с «Вставить» (15
+/// ADR-113 п. 1, уточнение 2026-11-08).
 class DiscountInput extends StatelessWidget {
   /// Создаёт поле скидки.
   const DiscountInput({
@@ -116,6 +121,7 @@ class DiscountInput extends StatelessWidget {
           enabled: enabled,
           onChanged: onChanged,
           onSubmitted: onSubmitted,
+          contextMenuBuilder: PrivateInputScope.contextMenuBuilderFor(private: PrivateInputScope.of(context)),
           textAlign: TextAlign.end,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           inputFormatters: <TextInputFormatter>[formatter, LengthLimitingTextInputFormatter(6)],
@@ -132,7 +138,9 @@ class DiscountInput extends StatelessWidget {
             border: border,
             enabledBorder: border,
             disabledBorder: border.copyWith(borderSide: BorderSide(color: c.border)),
-            focusedBorder: border.copyWith(borderSide: BorderSide(color: error ? c.error : c.primaryText, width: 2)),
+            // Фокус — нейтральная `textPrimary`, как у `AppTextField`: фирменную `primaryText` не отличить от `error`
+            // после отказа по лимиту (Q-357; пакет wave2:APP-POLISH).
+            focusedBorder: border.copyWith(borderSide: BorderSide(color: error ? c.error : c.textPrimary, width: 2)),
           ),
         ),
       ),

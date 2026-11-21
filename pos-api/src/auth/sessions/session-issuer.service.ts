@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { AuditContext } from '../../common/audit/audit-context.js';
 import type { DbExecutor } from '../../common/audit/db-executor.js';
 import { CLOCK, type Clock } from '../../common/auth/clock.js';
 import { type AmrValue, type IssuedToken, JwtService } from '../../common/auth/jwt.service.js';
@@ -8,6 +9,7 @@ import { DevicesRepository } from '../../users/devices.repository.js';
 import { SessionsRepository } from '../../users/sessions.repository.js';
 import type { DevicePlatform, DeviceRow, RoleCode, SessionAmr, SessionRow, UserRow } from '../../users/users.types.js';
 import { AuthPolicyService, type SessionPolicy } from '../common/auth-policy.js';
+import { HelloKeyService } from './hello-key.service.js';
 import { SessionStore } from './session-store.js';
 
 export interface LoginDeviceInfo {
@@ -31,6 +33,11 @@ export interface LoginSessionInput {
    * и не заблокированном PIN — `unlocked_until = now()` (первый запрос → 401 UNLOCK_REQUIRED, разблокировка PIN).
    */
   readonly emergency?: { readonly requireUnlock: boolean };
+  /**
+   * Контекст аудита вызывающего: при `AUTH_WINDOWS_HELLO_KEY=personal` выдача сессии отзывает ключи Windows Hello других
+   * пользователей этой установки (`shared_device`, ADR-116) — с записью `auth.biometrics.disabled`.
+   */
+  readonly audit?: AuditContext;
 }
 
 export interface IssuedSession {
@@ -50,6 +57,8 @@ export interface KioskSessionInput {
   readonly device: DeviceRow;
   readonly ip: string | null;
   readonly userAgent: string | null;
+  /** Контекст аудита подключения: отзыв ключей Windows Hello установки (`kiosk_connect`, ADR-116). */
+  readonly audit?: AuditContext;
 }
 
 /**
@@ -91,6 +100,8 @@ export function nextIdleExpiry(session: SessionRow, kind: UserRow['kind'], p: Se
  * Выпуск сессий и access-JWT (RM-D-003; 09 §8.1–§8.2; D-12): устройство (`devices.device_key` = `X-Device-Id`),
  * сессия с refresh 256 бит (в БД только SHA-256), абсолютный/idle-срок по виду пользователя, лимит устройств
  * (09 §8.2: при превышении отзывается самая старая — `session_limit`), access-JWT 15 мин с `sid`, `deviceId`.
+ * Ключи Windows Hello установки (W2; 15 ADR-116; 08 §4.1.2, §4.18.11 `[ВЫВОД]`; 09 BIO-037, BIO-040): вход другого
+ * пользователя при `personal` отзывает ключи прежних (`shared_device`), сессия планшета — ключи всех (`kiosk_connect`).
  */
 @Injectable()
 export class SessionIssuer {
@@ -101,6 +112,7 @@ export class SessionIssuer {
     private readonly devices: DevicesRepository,
     private readonly sessions: SessionsRepository,
     private readonly store: SessionStore,
+    private readonly helloKeys: HelloKeyService,
   ) {}
 
   async createLoginSession(input: LoginSessionInput, tx: DbExecutor): Promise<IssuedSession> {
@@ -138,6 +150,9 @@ export class SessionIssuer {
       },
       tx,
     );
+    // Правило `personal` (09 §9.2 W2 п. 5): любая выдача сессии другому пользователю на установке — SMS, регистрация,
+    // аварийный код (08 §4.1.2 `[ВЫВОД]`).
+    await this.helloKeys.onLoginSession(input.user, device, { ...(input.audit ?? {}), system: 'auth' }, tx);
     const access = await this.access(input.user, input.roles, session, input.deviceKey, [
       input.emergency ? 'admin_code' : 'sms',
     ]);
@@ -176,6 +191,8 @@ export class SessionIssuer {
       },
       tx,
     );
+    // Устройство становится планшетом: ключи Windows Hello всех пользователей установки отзываются (09 BIO-037).
+    await this.helloKeys.onKioskConnect(input.device.deviceKey, { ...(input.audit ?? {}), system: 'kiosk' }, tx);
     const access = await this.access(input.user, input.roles, session, input.device.deviceKey, ['pin']);
     return { session, device: input.device, refreshToken, access, revokedSessionIds: revoked };
   }

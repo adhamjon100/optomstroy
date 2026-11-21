@@ -1,0 +1,56 @@
+{
+  "_note": "тестовые данные",
+  "description": "Заказ клиента с карточкой 1С: comment — «POS <externalId> · <номер заказа POS>», createdByUserCode — UUID пользователя POS",
+  "operation": "POST /pos/v1/orders",
+  "kind": "request",
+  "body": {
+    "externalId": "0192f5a0-7c2e-7d3b-9a1f-3c4d5e6f7a8b",
+    "createdAt": "2026-10-21T13:39:12+06:00",
+    "createdByUserCode": "0192f5a0-0000-7000-8000-0000000000aa",
+    "customer": {
+      "ref": "c3d4e5f6-0000-4000-8000-000000000001",
+      "contractorRef": null,
+      "agreementRef": null
+    },
+    "warehouseRef": "d4e5f6a7-0000-4000-8000-000000000001",
+    "organizationRef": null,
+    "priceListRef": "e5f6a7b8-0000-4000-8000-000000000001",
+    "paymentMethod": "cash",
+    "paymentTerms": "prepayment",
+    "delivery": {
+      "method": "pickup",
+      "address": null,
+      "receiverName": null,
+      "receiverPhone": null,
+      "desiredFrom": null,
+      "desiredTo": null,
+      "courierComment": null
+    },
+    "discountPercent": "5.00",
+    "comment": "POS 0192f5a0-7c2e-7d3b-9a1f-3c4d5e6f7a8b · POS-2026-000123",
+    "lines": [
+      {
+        "lineNumber": 1,
+        "productRef": "a1b2c3d4-0000-4000-8000-000000000001",
+        "variantRef": "a1b2c3d4-0000-4000-8000-000000000101",
+        "packagingRef": null,
+        "quantity": "2.000",
+        "packQuantity": null,
+        "price": "2350.00",
+        "discountPercent": "5.00",
+        "amount": "4465.00",
+        "supplyOption": "КОбеспечению"
+      }
+    ],
+    "totals": {
+      "subtotal": "4700.00",
+      "discount": "235.00",
+      "total": "4465.00",
+      "currency": "KGS"
+    },
+    "clientChecks": {
+      "pricesSnapshotAt": null,
+      "stockSnapshotAt": null
+    }
+  }
+}

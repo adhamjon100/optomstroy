@@ -48,6 +48,7 @@ class PriceText extends StatelessWidget {
     this.wrapUnit = false,
     this.alignEnd = false,
     this.allowUnitLine = true,
+    this.stepDownToFit = false,
   });
 
   /// Сумма; `null` — цены нет.
@@ -84,6 +85,20 @@ class PriceText extends StatelessWidget {
   /// [wrapUnit]: единице можно уйти на вторую строку; `false` — места под вторую строку нет (карточка сетки высотой
   /// 340, ревью RC-11), и «цена / шт» уменьшается целиком в одну строку (`scaleDown`), а не сжимает название.
   final bool allowUnitLine;
+
+  /// Одна строка без [wrapUnit] не помещается в ширину — начертание суммы на ступень меньше (`card`: `h2` → `h3` →
+  /// `title`, все `700 tnum`), а не обрезка затуханием (итоги карточек SCR-48 в окне 600 при крупном тексте; T-UI-117,
+  /// пакет own-server:GAP-APP). Каталожные варианты прототипа (ADR-114) не меняются.
+  final bool stepDownToFit;
+
+  /// Начертания суммы на ступень меньше для [stepDownToFit] (пусто — некуда уменьшать).
+  List<TextStyle> _smaller(BuildContext context) {
+    final DsTypography t = context.text;
+    return switch (variant) {
+      PriceTextVariant.card => <TextStyle>[t.priceOf(t.h3), t.priceOf(t.title)],
+      PriceTextVariant.grid || PriceTextVariant.list || PriceTextVariant.compact => const <TextStyle>[],
+    };
+  }
 
   /// Обозначение валюты в UI (03 §16.4: «сом»; код `KGS` — только API). Часть формата
   /// `DsMoneyFormat` (03 §17.1), а не строка ARB — см. E_spec_questions EQ-CAT-03.
@@ -179,19 +194,39 @@ class PriceText extends StatelessWidget {
             alignEnd: alignEnd,
             allowUnitLine: allowUnitLine,
           )
-        : Text.rich(
-            TextSpan(
-              children: <InlineSpan>[
-                TextSpan(text: shown, style: amountStyle),
-                if (u != null) TextSpan(text: ' $u', style: _unitStyle(context)),
-              ],
-            ),
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.fade,
-          );
+        : stepDownToFit && _smaller(context).isNotEmpty
+        ? LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints box) {
+              final double unitWidth = u == null ? 0 : dsTextWidth(context, ' $u', _unitStyle(context));
+              TextStyle style = amountStyle;
+              if (box.hasBoundedWidth) {
+                for (final TextStyle s in <TextStyle>[
+                  amountStyle,
+                  for (final TextStyle x in _smaller(context)) x.copyWith(color: color),
+                ]) {
+                  style = s;
+                  if (dsTextWidth(context, shown, s) + unitWidth <= box.maxWidth + 0.01) break;
+                }
+              }
+              return _line(context, shown, u, style);
+            },
+          )
+        : _line(context, shown, u, amountStyle);
     return Semantics(label: semanticLabel ?? (u == null ? a11y : '$a11y $u'), excludeSemantics: true, child: body);
   }
+
+  /// Сумма и единица одной строкой с затуханием.
+  Widget _line(BuildContext context, String shown, String? u, TextStyle amountStyle) => Text.rich(
+    TextSpan(
+      children: <InlineSpan>[
+        TextSpan(text: shown, style: amountStyle),
+        if (u != null) TextSpan(text: ' $u', style: _unitStyle(context)),
+      ],
+    ),
+    maxLines: 1,
+    softWrap: false,
+    overflow: TextOverflow.fade,
+  );
 }
 
 /// Сумма и единица блоками через зазор `space.s1` (4) по базовой линии; не помещаются в строку — единица на второй

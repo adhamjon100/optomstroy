@@ -59,8 +59,10 @@ EXPECTED_CODES = 82
 NON_ASSIGNABLE = ("customer", "integration", "kiosk")
 
 # Публичные пути без access JWT (11 §4.3.1 «без access JWT», SEC-013, SEC-019); параметры нормализованы в {}.
+# /auth/unlock/challenge — challenge ключа Windows Hello (08 §4.1.10; 11 SEC-013, §4.3.1; ADR-116).
 PUBLIC_PATHS = {
     "/auth/otp/request", "/auth/otp/verify", "/auth/otp/challenges/{}", "/auth/refresh", "/auth/unlock",
+    "/auth/unlock/challenge",
     "/registration/complete", "/images/{}/{}", "/payments/qr/webhook", "/integrations/smspro/dlr",
     "/health", "/health/ready", "/openapi.json",
 }

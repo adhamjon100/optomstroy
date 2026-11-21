@@ -3,14 +3,20 @@ import 'package:flutter/material.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/components/product_image.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
+import 'package:optomstroy/design_system/components/word_safe_label.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/design_system/tokens/ds_typography.dart';
 
-/// Иконки категорий по `iconKey` (03 §14.4): глиф Material Symbols → ближайший глиф `Icons`;
-/// неизвестный ключ и `null` — `category`.
+/// Предок категории для подбора иконки ([CategoryIcons.resolve]): ключ иконки и название.
+typedef CategoryIconSource = ({String? key, String name});
+
+/// Иконки категорий (03 §14.4; указание владельца 2026-11-07 (15 §5.6): иконка у каждой категории и подкатегории,
+/// как у корневых): по `iconKey` — глиф Material Symbols → ближайший глиф `Icons`; без ключа — по смыслу названия;
+/// без совпадения — иконка ближайшего предка; иначе `category`. Дерева категорий дизайн-система не знает — предков даёт
+/// фича (`categoryIcon`).
 abstract final class CategoryIcons {
-  /// Глиф по ключу.
+  /// Глиф по ключу; неизвестный ключ, `category` и `null` — `category`.
   static IconData of(String? key) => switch (key) {
     'plumbing' || 'valve' => Icons.plumbing_rounded,
     'bathtub' => Icons.bathtub_rounded,
@@ -25,47 +31,147 @@ abstract final class CategoryIcons {
     _ => Icons.category_rounded,
   };
 
-  /// Глиф категории: известный [key] (03 §14.4), иначе — по смыслу названия категории из 1С ([name]:
-  /// корни слов карты 03 §14.4 и ближайшие глифы Material для разделов, которых в карте нет), иначе `category`.
-  /// Картинка не выдумывается: это только иконка-заглушка, изображение категории из данных — выше по приоритету.
-  static IconData resolve({String? key, String? name}) {
-    final IconData byKey = of(key);
-    if (byKey != Icons.category_rounded || name == null) {
-      return byKey;
+  /// Глиф категории без картинки — одно правило для всех мест, где рисуется категория (колонка, лента, «Все
+  /// категории», главная клиента, список SB, киоск; картинка категории из данных — выше по приоритету, её здесь нет):
+  /// 1) известный [key] (03 §14.4); 2) по смыслу названия [name] ([match]); 3) то же у предков [ancestors] — от
+  /// ближайшего (родитель) к корню; 4) запасной `category`. Пустого места и глифа «четыре квадрата» у категории нет
+  /// («четыре квадрата» — только у «Все товары», это не категория). Картинка не выдумывается: это только иконка.
+  static IconData resolve({
+    String? key,
+    String? name,
+    Iterable<CategoryIconSource> ancestors = const <CategoryIconSource>[],
+  }) {
+    final IconData? own = match(key: key, name: name);
+    if (own != null) {
+      return own;
     }
-    final String n = name.toLowerCase().replaceAll('ё', 'е');
-    for (final (List<String> stems, IconData icon) in _byName) {
-      if (stems.any(n.contains)) {
-        return icon;
+    for (final CategoryIconSource a in ancestors) {
+      final IconData? inherited = match(key: a.key, name: a.name);
+      if (inherited != null) {
+        return inherited;
       }
     }
     return Icons.category_rounded;
   }
 
-  /// Корни названий → глиф (порядок важен: первое совпадение).
+  /// Иконка самой категории — по известному [key], иначе по названию [name]; `null` — не подобрать (у
+  /// [resolve] — следующая ступень: предок). Название: нижний регистр, «ё» → «е», слова — буквы и цифры (в т. ч.
+  /// кыргызские «ү», «ө», «ң»); слова перебираются по порядку (главное слово названия идёт первым: «Трубы отопления» —
+  /// трубы), для каждого — правила [_byName] по порядку; совпадение — начало слова (корень), а не любая подстрока:
+  /// «Утеплитель» — не «тепл», «Экраны для ванн» — не «кран», «Воздушные» — не «душ».
+  static IconData? match({String? key, String? name}) {
+    final IconData byKey = of(key);
+    if (byKey != Icons.category_rounded) {
+      return byKey;
+    }
+    if (name == null || name.isEmpty) {
+      return null;
+    }
+    final String n = name.toLowerCase().replaceAll('ё', 'е');
+    for (final RegExpMatch m in _word.allMatches(n)) {
+      final String word = m[0]!;
+      for (final (List<String> stems, IconData icon) in _byName) {
+        if (stems.any(word.startsWith)) {
+          return icon;
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Слово названия: буквы и цифры Unicode.
+  static final RegExp _word = RegExp(r'[\p{L}\p{N}]+', unicode: true);
+
+  /// Корни слов названий → глиф (03 §14.4; порядок важен — первое совпадение; составные слова — отдельными корнями
+  /// раньше общих: «воздуховод» до «воздух», «вентилятор» до «вентил», «теплоизол»/«утепл» до «тепл»,
+  /// «электроинструмент» и «электроды» до «электр»; у электродов — формы «электроды», «электродов» и
+  /// «электрододерж», а не корень «электрод»: он поймал бы «электродвигатель», «электродрель», «электродный котёл»).
+  /// Русские корни и кыргызские [ТИПОВО] (проверить у переводчика `app_ky.arb`).
   static const List<(List<String>, IconData)> _byName = <(List<String>, IconData)>[
-    (<String>['вентиляц', 'кондицион', 'воздух', 'воздуш'], Icons.air_rounded),
-    (<String>['смесител', 'кран', 'вентил'], Icons.plumbing_rounded),
+    (<String>['воздуховод', 'вытяжк', 'рекуперат'], Icons.hvac_rounded),
+    (<String>['вентиляц', 'вентилятор', 'кондицион', 'воздух', 'воздуш', 'сплит', 'желдет'], Icons.air_rounded),
+    (<String>['смесител', 'кран', 'вентил', 'клапан', 'сифон', 'аралаштыргыч'], Icons.plumbing_rounded),
     (<String>['канализац'], Icons.water_damage_rounded),
-    (<String>['сантехник', 'санфаянс', 'унитаз', 'ванн', 'раковин', 'душ'], Icons.bathtub_rounded),
-    (<String>['отоплен', 'радиатор', 'котл', 'котел', 'тепл'], Icons.thermostat_rounded),
-    (<String>['водоснаб', 'насос', 'водонагрев', 'бойлер'], Icons.water_drop_rounded),
-    (<String>['труб', 'фитинг'], Icons.plumbing_rounded),
-    (<String>['электр', 'кабел', 'провод', 'розет', 'светил', 'освещ', 'ламп'], Icons.electrical_services_rounded),
-    (<String>['плитк', 'кафел', 'керамогранит'], Icons.grid_on_rounded),
-    (<String>['крепеж', 'метиз', 'саморез', 'болт'], Icons.hardware_rounded),
-    (<String>['инструмент'], Icons.handyman_rounded),
-    (<String>['краск', 'лакокрас', 'эмал'], Icons.format_paint_rounded),
-    (<String>['строител', 'стройматериал', 'смес', 'цемент', 'кирпич'], Icons.foundation_rounded),
+    (<String>['унитаз', 'инсталляц', 'биде', 'писсуар', 'даараткан'], Icons.wc_rounded),
+    (<String>['душ', 'поддон'], Icons.shower_rounded),
+    (<String>['раковин', 'умывальн', 'мойк'], Icons.wash_rounded),
+    (<String>['сантехник', 'санфаянс', 'ванн'], Icons.bathtub_rounded),
+    (<String>['котл', 'котел', 'газов', 'горелк', 'камин'], Icons.local_fire_department_rounded),
+    (
+      <String>['теплоизол', 'утепл', 'изоляц', 'гидроизол', 'пароизол', 'минват', 'пенопласт', 'пеноплекс', 'жылуулоо'],
+      Icons.texture_rounded,
+    ),
+    (<String>['отоплен', 'радиатор', 'тепл', 'термо', 'полотенцесуш', 'жылыт', 'жылуу'], Icons.thermostat_rounded),
+    (<String>['водоснаб', 'водопровод', 'водонагрев', 'бойлер', 'насос', 'суу'], Icons.water_drop_rounded),
+    (<String>['труб', 'фитинг', 'металлопласт', 'ппр', 'муфт', 'тройник', 'түтүк'], Icons.plumbing_rounded),
+    (<String>['кабел', 'провод', 'зым'], Icons.cable_rounded),
+    (<String>['розет', 'выключат'], Icons.outlet_rounded),
+    (<String>['светил', 'освещ', 'ламп', 'люстр', 'прожектор', 'фонар', 'чырак', 'жарык'], Icons.lightbulb_rounded),
+    (<String>['электроинструмент', 'дрел', 'перфорат', 'шуруповерт', 'болгарк', 'лобзик'], Icons.construction_rounded),
+    (<String>['сварк', 'сварочн', 'электроды', 'электродов', 'электрододерж'], Icons.bolt_rounded),
+    (<String>['электр'], Icons.electrical_services_rounded),
+    (<String>['плитк', 'плиточ', 'кафел', 'керамогран', 'мозаик', 'брусчат', 'тротуарн'], Icons.grid_on_rounded),
+    (
+      <String>[
+        'крепеж',
+        'метиз',
+        'саморез',
+        'шуруп',
+        'болт',
+        'гайк',
+        'шайб',
+        'дюбел',
+        'анкер',
+        'гвозд',
+        'заклеп',
+        'фурнитур',
+        'бекит',
+      ],
+      Icons.hardware_rounded,
+    ),
+    (<String>['инструмент', 'курал'], Icons.handyman_rounded),
+    (<String>['обои', 'обоев'], Icons.wallpaper_rounded),
+    (<String>['краск', 'лакокрас', 'эмал', 'грунтовк', 'лак', 'боек'], Icons.format_paint_rounded),
+    (<String>['гипсокартон', 'гкл', 'профил', 'фанер', 'осб', 'дсп', 'двп', 'лист'], Icons.layers_rounded),
+    (<String>['кровл', 'черепиц', 'профнастил', 'водосток', 'шифер'], Icons.roofing_rounded),
+    (<String>['двер', 'замк', 'скобян', 'эшик'], Icons.door_front_door_rounded),
+    (<String>['окн', 'окон', 'подоконник', 'терезе'], Icons.window_rounded),
+    (<String>['сад', 'огород', 'полив', 'шланг', 'бакча'], Icons.yard_rounded),
+    (<String>['пиломатериал', 'древесин', 'брус', 'доск', 'вагонк', 'жыгач'], Icons.carpenter_rounded),
+    (<String>['лестниц', 'стремян'], Icons.stairs_rounded),
+    (<String>['химия', 'чистящ', 'моющ', 'уборк', 'хозтовар', 'хозяйствен'], Icons.cleaning_services_rounded),
+    (<String>['спецодежд', 'перчатк', 'одежд'], Icons.checkroom_rounded),
+    (
+      <String>[
+        'строител',
+        'стройматериал',
+        'смес',
+        'цемент',
+        'кирпич',
+        'бетон',
+        'штукатур',
+        'шпакл',
+        'шпатл',
+        'наливн',
+        'клей',
+        'затирк',
+        'курулуш',
+      ],
+      Icons.foundation_rounded,
+    ),
+    (<String>['герметик', 'силикон', 'пена', 'пены'], Icons.format_color_fill_rounded),
+    (<String>['ламинат', 'линолеум', 'паркет', 'ковролин', 'плинтус'], Icons.table_rows_rounded),
+    (<String>['счетчик', 'водомер', 'манометр'], Icons.speed_rounded),
   ];
 }
 
-/// Изображение категории из 1С (Q-022) или иконка по `iconKey`, иначе `category` (CAT-009): поле [size]
-/// ([width] × [height]), картинка вписывается [fit] (по умолчанию `contain`) с качеством [filterQuality] (по умолчанию
-/// `high`), без фона и скругления (ADR-114: плитки колонки и ленты каталога); фон [background] и скругление [radius] —
-/// по запросу (пункт списка `CategorySidebarItem`, плитка листа «Все категории»). Нет картинки или ошибка загрузки —
-/// [fallback] (по умолчанию — иконка по `iconKey`/названию); фото товара не подставляется. Появление — fade 200 мс
-/// только у первого кадра, смена URL — без мигания (`gaplessPlayback`).
+/// Изображение категории из 1С (Q-022), иначе иконка категории ([CategoryIcons.resolve]: `iconKey`, название, предок,
+/// `category`; CAT-009): поле [size] ([width] × [height]), картинка вписывается [fit] (по умолчанию `contain`) с
+/// качеством [filterQuality] (по умолчанию `high`), без фона и скругления (ADR-114: плитки колонки и ленты каталога);
+/// фон [background] и скругление [radius] — по запросу (пункт списка `CategorySidebarItem`, плитка листа «Все
+/// категории»). Нет картинки или ошибка загрузки — [fallback] (по умолчанию — иконка [icon], иначе по
+/// `iconKey`/названию); фото товара не подставляется. Появление — fade 200 мс только у первого кадра, смена URL — без
+/// мигания (`gaplessPlayback`).
 class CategoryImage extends StatelessWidget {
   /// Создаёт изображение.
   const CategoryImage({
@@ -73,6 +179,7 @@ class CategoryImage extends StatelessWidget {
     this.imageUrl,
     this.iconKey,
     this.name,
+    this.icon,
     this.size = 32,
     this.width,
     this.height,
@@ -93,6 +200,10 @@ class CategoryImage extends StatelessWidget {
 
   /// Название категории — подбор иконки по смыслу, если [iconKey] нет ([CategoryIcons.resolve]).
   final String? name;
+
+  /// Иконка категории, подобранная вызывающим с учётом предков (`categoryIcon` фичи); `null` — по
+  /// [iconKey]/[name] самой категории.
+  final IconData? icon;
 
   /// Сторона поля.
   final double size;
@@ -120,18 +231,19 @@ class CategoryImage extends StatelessWidget {
   /// Качество масштабирования картинки (по умолчанию `high`: картинки категорий мелкие, 45–65 px по ширине).
   final FilterQuality filterQuality;
 
-  /// Что показать без картинки и при ошибке загрузки; `null` — иконка по `iconKey`/названию размера [iconSize].
+  /// Что показать без картинки и при ошибке загрузки; `null` — иконка [icon] (иначе по `iconKey`/названию) размера
+  /// [iconSize].
   final Widget? fallback;
 
   @override
   Widget build(BuildContext context) {
     final DsColors c = context.colors;
-    final Widget icon =
+    final Widget placeholder =
         fallback ??
         Center(
           key: const ValueKey<String>('category-image-icon'),
           child: Icon(
-            CategoryIcons.resolve(key: iconKey, name: name),
+            icon ?? CategoryIcons.resolve(key: iconKey, name: name),
             size: iconSize,
             color: color ?? c.textSecondary,
           ),
@@ -141,7 +253,7 @@ class CategoryImage extends StatelessWidget {
     final String? url = imageUrl;
     final Widget content;
     if (url == null || url.isEmpty) {
-      content = icon;
+      content = placeholder;
     } else {
       // Путь `/images/…` от сервера — от адреса API (ProductImageBase), как у фото товара.
       final ImageProvider<Object> provider = (ProductImageScope.maybeOf(context) ?? CachedNetworkImageProvider.new)(
@@ -165,7 +277,7 @@ class CategoryImage extends StatelessWidget {
             child: child,
           );
         },
-        errorBuilder: (BuildContext context, Object error, StackTrace? stack) => icon,
+        errorBuilder: (BuildContext context, Object error, StackTrace? stack) => placeholder,
       );
     }
     final Widget box = Container(width: w, height: h, color: background, child: content);
@@ -188,6 +300,8 @@ enum CategorySidebarItemVariant {
 
 /// Пункт меню категорий `CategorySidebarItem` (03 §9.8; 02 UI-10-009): строка-карточка 52
 /// (48 при compact-плотности) → изображение/иконка → название → счётчик-пилюля → [шеврон].
+/// Иконка без картинки — [icon] (подкатегория — с учётом предка, `categoryIcon` фичи), иначе по `iconKey`/названию
+/// ([CategoryIcons.resolve]), как у плиток колонки.
 /// Выбранный — `primaryContainer` + полоса 3 lp `primaryText` + текст `primaryText 600`.
 /// Повторный тап по выбранному — без действия (03 §9.8). Свёрнутый сайдбар (72) — [collapsed].
 class CategorySidebarItem extends StatelessWidget {
@@ -200,6 +314,7 @@ class CategorySidebarItem extends StatelessWidget {
     this.variant = CategorySidebarItemVariant.root,
     this.imageUrl,
     this.iconKey,
+    this.icon,
     this.selected = false,
     this.hasChildren = false,
     this.expanded = false,
@@ -227,6 +342,9 @@ class CategorySidebarItem extends StatelessWidget {
 
   /// Ключ иконки.
   final String? iconKey;
+
+  /// Иконка категории без картинки, подобранная вызывающим с учётом предков; `null` — по [iconKey]/[label].
+  final IconData? icon;
 
   /// Выбран.
   final bool selected;
@@ -274,6 +392,8 @@ class CategorySidebarItem extends StatelessWidget {
         : CategoryImage(
             imageUrl: imageUrl,
             iconKey: iconKey,
+            name: label,
+            icon: icon,
             size: isChild ? 24 : 32,
             iconSize: isChild ? 18 : 24,
             color: selected ? c.primaryText : null,
@@ -322,12 +442,12 @@ class CategorySidebarItem extends StatelessWidget {
                     children: <Widget>[
                       image,
                       SizedBox(width: context.space.s3),
-                      // Длинное название — в 2 строки, а не обрезка на первом слове (FIX-EF-13).
+                      // Длинное название — в 2 строки, а не обрезка на первом слове (FIX-EF-13); перенос только между
+                      // словами — «Смесит|ели» не бывает (03 §9.10; указание владельца 2026-11-18).
                       Expanded(
-                        child: Text(
-                          label,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                        child: DsWordSafeLabel(
+                          text: label,
+                          textAlign: TextAlign.start,
                           style: context.text.body.copyWith(
                             color: selected ? c.primaryText : c.textPrimary,
                             fontWeight: selected ? FontWeight.w600 : (isChild ? FontWeight.w400 : FontWeight.w500),

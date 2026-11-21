@@ -20,6 +20,7 @@ import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/order_status_chip.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/design_system/tokens/ds_typography.dart';
@@ -304,26 +305,45 @@ class _Summary extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context);
     final DsColors c = context.colors;
-    Widget tile(String text) => Expanded(
-      child: Container(
-        padding: EdgeInsets.all(context.space.s3),
-        decoration: BoxDecoration(color: c.surfaceVariant, borderRadius: BorderRadius.all(context.radii.md)),
-        child: Text(
-          text,
-          style: context.text.title.copyWith(
-            fontWeight: FontWeight.w700,
-            fontFeatures: DsTypography.numeric,
-            color: c.textPrimary,
-          ),
-        ),
-      ),
+    final TextStyle style = context.text.title.copyWith(
+      fontWeight: FontWeight.w700,
+      fontFeatures: DsTypography.numeric,
+      color: c.textPrimary,
     );
-    return Row(
-      children: <Widget>[
-        tile(l10n.customer_history_total(CustomersFormat.money(summary.total))),
-        SizedBox(width: context.space.s3),
-        tile(l10n.customer_history_count(summary.count)),
-      ],
+    final String total = l10n.customer_history_total(CustomersFormat.money(summary.total));
+    final String count = l10n.customer_history_count(summary.count);
+    Widget tile(String text) => Container(
+      padding: EdgeInsets.all(context.space.s3),
+      decoration: BoxDecoration(color: c.surfaceVariant, borderRadius: BorderRadius.all(context.radii.md)),
+      child: Text(text, style: style),
+    );
+    // Сумма «24 207,50 сом» не помещается в половину строки (телефон, крупный текст) — плитки друг под другом во всю
+    // ширину: сумма не разрывается внутри «сом» (T-UI-117, пакет own-server:GAP-APP).
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        final double half = // money-double: allow — геометрия UI (lp)
+            (box.maxWidth - context.space.s3) / 2 - 2 * context.space.s3;
+        final bool stacked =
+            box.hasBoundedWidth &&
+            (dsLongestWordWidth(context, total, style) > half || dsLongestWordWidth(context, count, style) > half);
+        if (stacked) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              tile(total),
+              SizedBox(height: context.space.s2),
+              tile(count),
+            ],
+          );
+        }
+        return Row(
+          children: <Widget>[
+            Expanded(child: tile(total)),
+            SizedBox(width: context.space.s3),
+            Expanded(child: tile(count)),
+          ],
+        );
+      },
     );
   }
 }

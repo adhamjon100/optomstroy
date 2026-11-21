@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/app_progress.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/layout/window_class.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/features/registration/domain/entities/registration_entities.dart';
@@ -51,21 +52,22 @@ class RegistrationStepper extends StatelessWidget {
     final index = list.indexOf(current).clamp(0, list.length - 1);
     final compact = forceCompact ?? context.windowClass == WindowClass.compact;
     final caption = l10n.reg_stepper_compact(index + 1, labelOf(l10n, list[index]), '${list.length}');
-    if (compact) {
-      return Semantics(
-        label: caption,
-        child: ExcludeSemantics(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(caption, style: context.text.label.copyWith(color: context.colors.textSecondary)),
-              SizedBox(height: context.space.s2),
-              AppProgress.linear(value: (index + 1) / list.length),
-            ],
-          ),
+    Widget compactView() => Semantics(
+      label: caption,
+      child: ExcludeSemantics(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(caption, style: context.text.label.copyWith(color: context.colors.textSecondary)),
+            SizedBox(height: context.space.s2),
+            AppProgress.linear(value: (index + 1) / list.length),
+          ],
         ),
-      );
+      ),
+    );
+    if (compact) {
+      return compactView();
     }
     final children = <Widget>[];
     for (var i = 0; i < list.length; i++) {
@@ -89,9 +91,21 @@ class RegistrationStepper extends StatelessWidget {
         ),
       );
     }
-    return Semantics(
-      label: caption,
-      child: Row(children: children),
+    // Подписи всех шагов не помещаются в строку (крупный текст 1,5 на medium: прежде переполнение на доли lp; прогон
+    // адаптивности 2026-11-18, 12 T-UI-117) — вид compact «Шаг N из M: …» с полосой прогресса.
+    double natural = 0; // money-double: allow — геометрия UI (lp)
+    final TextStyle labelStyle = context.text.label;
+    for (int i = 0; i < list.length; i++) {
+      natural += 28 + context.space.s2 + dsTextWidth(context, labelOf(l10n, list[i]), labelStyle);
+      if (i > 0) natural += 2 * context.space.s2 + 8;
+    }
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) => box.hasBoundedWidth && natural > box.maxWidth
+          ? compactView()
+          : Semantics(
+              label: caption,
+              child: Row(children: children),
+            ),
     );
   }
 }

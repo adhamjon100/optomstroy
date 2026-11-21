@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT EDIT BY HAND.
 // Generator: scripts/gen_tokens_dart.py (RM-B-006)
-// Source: contracts/design-tokens/tokens.json (canonical sha256 9cbac28624a1540f8761044b1d6bc2c865186b343d294504be661658cfe83dd5)
+// Source: contracts/design-tokens/tokens.json (canonical sha256 3ebfbea11ac1b07857647df0f051bfc81a9e8913262e3229e90dfa6e4dc40544)
 // DsBreakpoints - ds.breakpoint.* (03 §7.2, §7.3, §8.4, §17.4; kernel §17.5); DsCatalogMetrics - catalog.* (ADR-114)
 // ignore_for_file: public_member_api_docs
 
@@ -38,8 +38,18 @@ class DsBreakpoints {
   static const double cartDrawer = 420;
   static const double catalogColumn = 132;
   static const double catalogCardMinWidth = 176;
+  static const double gridCardMaxWidth = 280;
   static const int gridMinColumns = 2;
   static const int gridMaxColumns = 6;
+
+  /// Most product grid columns in a window class (03 §7.3; ADR-114, clarification 2026-11-18):
+  /// `ds.breakpoint.*.productColumnsMax` - compact 3, medium 4, expanded 5, large 6.
+  static int gridMaxColumnsFor(WindowClass windowClass) => switch (windowClass) {
+    WindowClass.compact => 3,
+    WindowClass.medium => 4,
+    WindowClass.expanded => 5,
+    WindowClass.large => 6,
+  };
 
   /// Window class by `MediaQuery.sizeOf(context).width`.
   static WindowClass of(BuildContext context) => forWidth(MediaQuery.sizeOf(context).width);
@@ -58,22 +68,32 @@ class DsBreakpoints {
     return WindowClass.compact;
   }
 
-  /// Card grid columns (03 §7.3): max(2, min(6, floor((W + gap) / (minCardWidth + gap)))).
-  /// [contentWidth] is the content zone WITHOUT side margins (on `large` - at most
-  /// [contentMaxLarge], applied by the caller). [minCardWidth] defaults to [cardMinWidth];
-  /// the catalog grid SCR-10/11/12 passes [catalogCardMinWidth] (ADR-111).
-  /// [maxColumns] defaults to [gridMaxColumns]; `null` - no upper limit, as the prototype's
-  /// `repeat(auto-fill, minmax(176px, 1fr))` of the staff catalog on medium+ (ADR-114,
-  /// [DsCatalogMetrics.gridGap]). The lower limit [gridMinColumns] always applies.
+  /// Product grid columns (03 §7.3; ADR-114, clarification 2026-11-18): auto-fill from [minCardWidth],
+  /// `floor((W + gap) / (minCardWidth + gap))` as the prototype's `repeat(auto-fill, minmax(176px, 1fr))`,
+  /// clamped to [gridMinColumns]...[gridColumnsCap]. [contentWidth] is the content zone WITHOUT side
+  /// margins, at most [gridMaxContentWidth] (applied by the caller). [minCardWidth] defaults to
+  /// [cardMinWidth] (SCR-50); the product grids of SCR-10/11/12 and SCR-51 pass [catalogCardMinWidth].
   static int gridColumns(
     double contentWidth,
     double gap, {
+    required WindowClass windowClass,
     double minCardWidth = cardMinWidth,
-    int? maxColumns = gridMaxColumns,
+    int? maxColumns,
   }) {
     final int n = ((contentWidth + gap) / (minCardWidth + gap)).floor();
-    return math.max(gridMinColumns, maxColumns == null ? n : math.min(maxColumns, n));
+    return math.max(gridMinColumns, math.min(gridColumnsCap(windowClass, maxColumns: maxColumns), n));
   }
+
+  /// Column limit of a product grid: [gridMaxColumnsFor] the window class and, when given, the screen's
+  /// own [maxColumns] (SCR-50 - [gridMaxColumns]).
+  static int gridColumnsCap(WindowClass windowClass, {int? maxColumns}) {
+    final int cap = gridMaxColumnsFor(windowClass);
+    return maxColumns == null ? cap : math.min(cap, maxColumns);
+  }
+
+  /// Widest product grid content: [columns] cards of [gridCardMaxWidth] with [gap] between them. A wider
+  /// area keeps this width centred in it, with equal empty bands at both sides (03 §7.3; tokens 1.4.0).
+  static double gridMaxContentWidth(int columns, double gap) => columns * gridCardMaxWidth + (columns - 1) * gap;
 }
 
 /// Catalog geometry of SCR-10/11/12 for staff on medium+: prototype values without rounding

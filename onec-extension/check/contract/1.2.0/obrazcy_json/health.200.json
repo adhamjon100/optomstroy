@@ -1,0 +1,22 @@
+{
+  "_note": "тестовые данные",
+  "operation": "GET /pos/v1/health",
+  "kind": "response",
+  "status": 200,
+  "headers": {
+    "X-POS-API-Version": "1",
+    "X-Request-Id": "0192f5c3-0000-7000-8000-000000000001"
+  },
+  "body": {
+    "apiVersion": "1",
+    "extensionVersion": "1.0.3",
+    "platform": "8.3.25.1000",
+    "configuration": "УправлениеТорговлей",
+    "configurationVersion": "11.5.20.50",
+    "serverTime": "2026-10-21T14:05:00+06:00",
+    "exchangeNode": "POS",
+    "registrationBacklog": 142,
+    "lastAckMessageNumber": 5120,
+    "status": "ok"
+  }
+}

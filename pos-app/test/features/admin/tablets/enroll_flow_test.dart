@@ -164,6 +164,8 @@ void main() {
       h.container.read(authSessionProvider.notifier).signedIn(SessionProfile.unknown);
       h.storage.values
         ..[SecureKey.biometricsEnabled] = 'true'
+        // Признак «Windows Hello перед PIN» администратора (вне ключей сессии; 09 BIO-034, BIO-037; 11 SEC-145).
+        ..[SecureKey.helloGateUsers] = '["$adminUserId"]'
         ..[SecureKey.profileCache] = '{"roles":["admin"]}'
         ..[SecureKey.profileDisplayName] = 'Администратор (тест)'
         ..[SecureKey.registrationFullName] = 'Черновик (тест)'
@@ -203,6 +205,7 @@ void main() {
       expect(kept[SecureKey.refreshToken], 'rk-enrolled');
       for (final SecureKey k in <SecureKey>[
         SecureKey.biometricsEnabled,
+        SecureKey.helloGateUsers,
         SecureKey.profileCache,
         SecureKey.profileDisplayName,
         SecureKey.registrationFullName,

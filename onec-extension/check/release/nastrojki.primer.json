@@ -1,0 +1,23 @@
+{
+  "_пояснение": "Настройки программы проверки API 1С. Пароль и ключ сюда НЕ пишутся: их спросят при запуске или прочитают из файлов, пути к которым ниже. Скопируйте этот файл в nastrojki.json и исправьте адрес.",
+  "settingsVersion": 1,
+  "baseUrl": "https://srv-1c.local/ut_test/hs",
+  "user": "pos_hs",
+  "auth": "basic",
+  "_пути": "Путь к файлу, а не сам пароль. Пишите через / или две обратные черты: \"C:/proverka/parol.txt\" или \"C:\\\\proverka\\\\parol.txt\"",
+  "passwordFile": "",
+  "tokenFile": "",
+  "clientKeyFile": "",
+  "caFile": "",
+  "outDir": "protokoly",
+  "refs": {
+    "_пояснение": "Необязательно. Ссылки (GUID) объектов тестовой копии; пусто — программа возьмёт из /changes.",
+    "productRef": "",
+    "warehouseRef": "",
+    "priceListRef": "",
+    "customerRef": "",
+    "imageRef": ""
+  },
+  "phone": "",
+  "limits": { "pageLimit": 1000, "maxPages": 500, "externalIdsMaxPages": 100 }
+}

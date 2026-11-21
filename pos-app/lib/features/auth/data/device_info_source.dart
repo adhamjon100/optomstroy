@@ -79,11 +79,14 @@ final class PlatformDeviceInfoSource implements DeviceInfoSource {
     }
   }
 
+  /// `AuthDeviceInfo.biometricClass` (08 §4.1.2): `class3` — Android Class 3; `class2` — Android только с уровнем W
+  /// (15 ADR-116, 09 BIO-030; `biometricRefreshOffered` сервер для него не выставляет); `windows_hello`; `none`.
   Future<String> _biometricClass() async {
     final BiometricUnlockKind kind = await _biometrics().capability();
     return switch (kind) {
       BiometricUnlockKind.cryptoBound => 'class3',
-      BiometricUnlockKind.windowsHelloGate => 'windows_hello',
+      BiometricUnlockKind.weakBound => 'class2',
+      BiometricUnlockKind.windowsHelloGate || BiometricUnlockKind.windowsHelloKey => 'windows_hello',
       BiometricUnlockKind.none => 'none',
     };
   }

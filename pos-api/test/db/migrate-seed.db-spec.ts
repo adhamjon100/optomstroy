@@ -5,12 +5,15 @@ import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import pg from 'pg';
+import { PgBoss } from 'pg-boss';
 import request from 'supertest';
 import { createApp } from '../../src/bootstrap/create-app.js';
+import { PG_BOSS_RUNTIME_OPTIONS } from '../../src/common/jobs/pg-boss-runtime.js';
 import { PgBossService } from '../../src/common/jobs/pg-boss.service.js';
 import { createDatabase } from '../../src/db/database.js';
 import { loadMigratorEnv, MigratorConfigError, migratorConnection } from '../../src/db/migrator-config.js';
 import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE, MigrationError } from '../../src/db/migrator.js';
+import { installPgBoss } from '../../src/db/pgboss-install.js';
 import * as schema from '../../src/db/schema/index.js';
 import { run } from '../../src/migrate.js';
 import { EmbeddedPg } from '../support/embedded-pg.js';
@@ -21,10 +24,12 @@ import { CHECK_TABLES_SQL, expectedTables, MIGRATIONS_DIR, POS_API_DIR, SCHEMA_D
 import { dumpSchema } from './support/schema-dump.js';
 
 /**
- * RM-C-006 на PostgreSQL 17 (embedded): migrate на пустой БД под ролью pos_migrate → 65 таблиц → seed →
+ * RM-C-006 на PostgreSQL 17 (embedded): migrate на пустой БД под ролью pos_migrate → 66 таблиц → seed →
  * ключи app_settings = R0 §17.7 (+ customer_stock_display) → повторный migrate/seed = 0 изменений →
  * Drizzle-схема = БД → forward-only → /health/ready → выгрузка DDL docs/erd/schema_v1.sql (и её проверка
- * повторным применением). Запуск: `npx vitest run --config test/db/vitest.config.ts`
+ * повторным применением) → схема pg-boss у мигратора, pos_app без DDL (AC-DATA-012, CI-KI-03) → перенос владельца
+ * схемы pg-boss в базе до 2026-11-19 (docs/ops/RUNBOOK.md §3.6 = infra/scripts/restore-db.sh).
+ * Запуск: `npx vitest run --config test/db/vitest.config.ts`
  * (перезапись schema_v1.sql: `UPDATE_SCHEMA_DUMP=1`).
  */
 /** Схемы приложения: `public`, журнал мигратора и журнал удалений офлайн-API `catalog_sync` (0006, EQ-CSYNC-01). */
@@ -119,6 +124,14 @@ describe('RM-C-006: migrate → seed → проверки на PostgreSQL 17', (
     expect(summary.user).toBe('pos_migrate');
     expect(summary.applied).toEqual(ALL_MIGRATIONS);
     expect(summary.devApplied).toEqual(['0001_dev_outbox.sql']); // APP_ENV=dev → db/migrations-dev/ (C-MJ-05)
+    // схема pg-boss — шаг мигратора под pos_migrate (07 DATA-012), не api/worker
+    expect(summary.pgBoss).toMatchObject({
+      schema: 'pgboss',
+      before: null,
+      owner: 'pos_migrate',
+      grantedTo: 'pos_app',
+      revokedDatabaseCreate: false,
+    });
     expect(log.lines.filter((l) => l.level === 'warn')).toEqual([]);
     await withDb('pos_c006', async (c) => {
       const j = await c.query(
@@ -138,10 +151,11 @@ describe('RM-C-006: migrate → seed → проверки на PostgreSQL 17', (
     });
   });
 
-  // 65 = 64 таблицы 07 §5 до v1.17 + store_tablets (07 §5.65, 0022_kiosk_schema.sql, ADR-115); dev-миграций по-прежнему одна.
-  it('2. в public ровно 65 таблиц по scripts/check_tables.sql (app.env=dev → dev_outbox есть)', async () => {
+  // 66 = 64 таблицы 07 §5 до v1.17 + store_tablets (07 §5.65, 0022_kiosk_schema.sql, ADR-115) + hello_keys (07 §5.66,
+  // 0024_face_login.sql, ADR-116); dev-миграций по-прежнему одна.
+  it('2. в public ровно 66 таблиц по scripts/check_tables.sql (app.env=dev → dev_outbox есть)', async () => {
     const expected = expectedTables();
-    expect(expected).toHaveLength(65);
+    expect(expected).toHaveLength(66);
     await withDb('pos_c006', async (c) => {
       await c.query(`SET app.env = 'dev'`);
       await c.query(readFileSync(CHECK_TABLES_SQL, 'utf8')); // RAISE EXCEPTION при расхождении
@@ -255,8 +269,13 @@ describe('RM-C-006: migrate → seed → проверки на PostgreSQL 17', (
     expect(summary.applied).toEqual([]);
     expect(summary.alreadyApplied).toEqual(ALL_MIGRATIONS);
     expect(summary.seeded).toEqual({ app_settings: 0, customers: 0, price_lists: 0, role_discount_limits: 0 });
+    expect(summary.pgBoss.before).toBe(summary.pgBoss.version);
     expect(log.lines.map((l) => l.msg)).toEqual(
-      expect.arrayContaining(['migrate: 0 изменений (все миграции уже применены)', 'seed: 0 изменений']),
+      expect.arrayContaining([
+        'migrate: 0 изменений (все миграции уже применены)',
+        'pg-boss: 0 изменений (схема актуальна)',
+        'seed: 0 изменений',
+      ]),
     );
     expect(await counts()).toEqual(before);
     expect(await withDb('pos_c006', (c) => schemaFingerprint(c, SCHEMAS))).toEqual(fingerprintAfterFirst);
@@ -270,7 +289,7 @@ describe('RM-C-006: migrate → seed → проверки на PostgreSQL 17', (
       compareDrizzleWithDb(schema as Record<string, unknown>, await readTables(c), await readEnums(c)),
     );
     expect(diff.problems).toEqual([]);
-    expect(diff.tablesCompared).toBe(65);
+    expect(diff.tablesCompared).toBe(66);
     expect(diff.enumsCompared).toBe(45);
     console.error(
       `[RM-C-006] сверка Drizzle ↔ БД: таблиц ${diff.tablesCompared}, столбцов ${diff.columnsCompared}, enum-ов ${diff.enumsCompared}, расхождений 0`,
@@ -426,7 +445,7 @@ describe('RM-C-006: migrate → seed → проверки на PostgreSQL 17', (
         `SELECT to_regclass('public.dev_outbox') AS t, to_regnamespace('pos_dev') AS dev_journal`,
       );
       expect(r.rows[0]).toEqual({ t: null, dev_journal: null });
-      await c.query(readFileSync(CHECK_TABLES_SQL, 'utf8')); // без app.env: 64 таблицы, dev_outbox обязан отсутствовать
+      await c.query(readFileSync(CHECK_TABLES_SQL, 'utf8')); // без app.env: 65 таблиц, dev_outbox обязан отсутствовать
     });
   });
 
@@ -442,4 +461,241 @@ describe('RM-C-006: migrate → seed → проверки на PostgreSQL 17', (
       await app?.close();
     }
   });
+
+  it('12. AC-DATA-012 (CI-KI-03): схему pg-boss ставит migrate под pos_migrate; pos_app без DDL, pg-boss под pos_app работает', async () => {
+    // 1. Владелец схемы pgboss и всех её объектов — pos_migrate; у pos_app — USAGE и DML, без CREATE и TRUNCATE.
+    await withDb('pos_c006', async (c) => {
+      const owners = await c.query(
+        `SELECT DISTINCT pg_get_userbyid(o) AS owner FROM (
+            SELECT nspowner AS o FROM pg_namespace WHERE nspname = 'pgboss'
+            UNION ALL SELECT relowner FROM pg_class WHERE relnamespace = 'pgboss'::regnamespace
+            UNION ALL SELECT proowner FROM pg_proc WHERE pronamespace = 'pgboss'::regnamespace) x`,
+      );
+      expect(owners.rows).toEqual([{ owner: 'pos_migrate' }]);
+      const priv = await c.query(
+        `SELECT has_database_privilege('pos_app', current_database(), 'CREATE') AS db_create,
+                has_schema_privilege('pos_app', 'public', 'CREATE') AS public_create,
+                has_schema_privilege('pos_app', 'pgboss', 'CREATE') AS boss_create,
+                has_schema_privilege('pos_app', 'pgboss', 'USAGE') AS boss_usage,
+                has_table_privilege('pos_app', 'pgboss.job', 'INSERT, UPDATE, DELETE') AS job_dml,
+                has_table_privilege('pos_app', 'pgboss.job', 'TRUNCATE') AS job_truncate`,
+      );
+      expect(priv.rows[0]).toEqual({
+        db_create: false,
+        public_create: false,
+        boss_create: false,
+        boss_usage: true,
+        job_dml: true,
+        job_truncate: false,
+      });
+    });
+
+    // 2. Грант прежнего initdb тестового контура (GRANT CREATE ON DATABASE … TO pos_app) migrate снимает сам.
+    await su.query('GRANT CREATE ON DATABASE pos_c006 TO pos_app');
+    const again = await run(env, { seed: false }, new CaptureLogger());
+    expect(again.pgBoss).toMatchObject({ owner: 'pos_migrate', grantedTo: 'pos_app', revokedDatabaseCreate: true });
+    const left = await su.query(`SELECT has_database_privilege('pos_app', 'pos_c006', 'CREATE') AS v`);
+    expect(left.rows[0].v).toBe(false);
+
+    // 3. Под pos_app любой DDL — permission denied (42501): новая схема, таблица в pgboss и в public.
+    const appPassword = randomBytes(18).toString('base64url');
+    await su.query(`ALTER ROLE pos_app PASSWORD '${appPassword}'`);
+    const appUrl = new URL(db.url('pos_c006'));
+    appUrl.username = 'pos_app';
+    appUrl.password = encodeURIComponent(appPassword);
+    const app = new pg.Client({ connectionString: appUrl.toString() });
+    await app.connect();
+    try {
+      for (const ddl of [
+        'CREATE SCHEMA ac_data_012',
+        'CREATE TABLE pgboss.ac_data_012 (x int)',
+        'CREATE TABLE public.ac_data_012 (x int)',
+      ]) {
+        await expect(app.query(ddl), ddl).rejects.toMatchObject({ code: '42501' });
+      }
+    } finally {
+      await app.end();
+    }
+
+    // 4. api (PgBossService) и worker (те же опции, что у WorkerRuntime: supervise, schedule) под pos_app: старт
+    // без DDL, очередь, задача, расписание, проход обслуживания — без ошибок.
+    const api = new PgBossService(appUrl.toString(), { autoStart: false, retryDelayMs: 500 });
+    const worker = new PgBoss({
+      connectionString: appUrl.toString(),
+      application_name: 'ac-data-012:worker',
+      supervise: true,
+      schedule: true,
+      max: 2,
+      ...PG_BOSS_RUNTIME_OPTIONS,
+    });
+    const errors: unknown[] = [];
+    worker.on('error', (e: unknown) => errors.push(e));
+    try {
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        api.start(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('PgBossService не стартовал под pos_app за 30 с')), 30_000);
+        }),
+      ]).finally(() => clearTimeout(timer));
+      expect(await api.isReady()).toBe(true);
+      const boss = api.instance!;
+      await boss.createQueue('ac_data_012');
+      const id = await boss.send('ac_data_012', { n: 1 });
+      const [job] = await boss.fetch('ac_data_012');
+      expect(job?.id).toBe(id);
+      await boss.complete('ac_data_012', id!);
+
+      await worker.start();
+      await worker.schedule('ac_data_012', '0 3 * * *');
+      await worker.supervise();
+      expect(errors).toEqual([]);
+    } finally {
+      await worker.stop({ graceful: false }).catch(() => undefined);
+      await api.onApplicationShutdown();
+    }
+
+    // 5. Без migrate схемы нет — pg-boss с опциями api/worker её не создаёт даже под суперпользователем.
+    await su.query(`CREATE DATABASE pos_c006_noboss OWNER pos_migrate ${DB_LOCALE}`);
+    const bare = new PgBoss({ connectionString: db.url('pos_c006_noboss'), ...PG_BOSS_RUNTIME_OPTIONS });
+    bare.on('error', () => undefined);
+    await expect(bare.start()).rejects.toThrow(/not installed/);
+    await bare.stop({ graceful: false }).catch(() => undefined);
+    await withDb('pos_c006_noboss', async (c) => {
+      expect((await c.query(`SELECT to_regnamespace('pgboss') AS n`)).rows[0].n).toBeNull();
+    });
+  });
+
+  it('13. база до 2026-11-19 (pgboss у pos_app): migrate отказывает, блок RUNBOOK §3.6 = restore-db.sh переносит владельца, дальше migrate и pg-boss под pos_app работают', async () => {
+    // Блок переноса — один и тот же текст в RUNBOOK §3.6 и в restore-db.sh (комментарии и отступы не сравниваются).
+    const transfer = heredocAfter(readFileSync(join(POS_API_DIR, '../docs/ops/RUNBOOK.md'), 'utf8'), '### 3.6.');
+    const inRestore = heredocAfter(
+      readFileSync(join(POS_API_DIR, '../infra/scripts/restore-db.sh'), 'utf8'),
+      '# Схема очередей pgboss',
+    );
+    expect(normalizeSql(transfer)).toBe(normalizeSql(inRestore));
+    expect(transfer).toContain('ALTER SCHEMA pgboss OWNER TO pos_migrate');
+
+    // 1. Прежний контур: initdb выдавал pos_app CREATE на базу, схему pgboss создал pg-boss api под pos_app.
+    const legacy = 'pos_c006_legacy';
+    await su.query(`CREATE DATABASE ${legacy} OWNER pos_migrate ${DB_LOCALE}`);
+    await su.query(`GRANT CREATE ON DATABASE ${legacy} TO pos_app`);
+    const appPassword = randomBytes(18).toString('base64url');
+    await su.query(`ALTER ROLE pos_app PASSWORD '${appPassword}'`);
+    const urlAs = (user: string, password: string): string => {
+      const u = new URL(db.url(legacy));
+      u.username = user;
+      u.password = encodeURIComponent(password);
+      return u.toString();
+    };
+    const appUrl = urlAs('pos_app', appPassword);
+    const migUrl = urlAs('pos_migrate', migratorPassword);
+    // Опции pg-boss api до 2026-11-19: migrate и createSchema по умолчанию (true).
+    const oldBoss = (): PgBoss => {
+      const b = new PgBoss({ connectionString: appUrl, schema: 'pgboss', supervise: false, schedule: false, max: 2 });
+      b.on('error', () => undefined);
+      return b;
+    };
+    /** Объекты схемы pgboss (сама схема, отношения, функции, типы) с владельцем не `owner`: «вид имя (владелец)». */
+    const ownedByOthers = (owner: string): Promise<string[]> =>
+      withDb(legacy, async (c) =>
+        (
+          await c.query<{ obj: string }>(
+            `SELECT kind || ' ' || name || ' (' || pg_get_userbyid(o) || ')' AS obj FROM (
+                SELECT 'schema' AS kind, nspname::text AS name, nspowner AS o FROM pg_namespace WHERE nspname = 'pgboss'
+                UNION ALL SELECT 'rel:' || relkind::text, oid::regclass::text, relowner FROM pg_class
+                 WHERE relnamespace = 'pgboss'::regnamespace
+                UNION ALL SELECT 'routine', oid::regprocedure::text, proowner FROM pg_proc
+                 WHERE pronamespace = 'pgboss'::regnamespace
+                UNION ALL SELECT 'type:' || typtype::text, oid::regtype::text, typowner FROM pg_type
+                 WHERE typnamespace = 'pgboss'::regnamespace) x
+              WHERE pg_get_userbyid(o) <> $1 ORDER BY 1`,
+            [owner],
+          )
+        ).rows.map((r) => r.obj),
+      );
+    const before = oldBoss();
+    await before.start();
+    await before.createQueue('legacy_q');
+    const legacyJob = await before.send('legacy_q', { n: 1 });
+    await before.stop({ graceful: false });
+    expect(await ownedByOthers('pos_app')).toEqual([]);
+
+    // 2. migrate нового релиза останавливается до каких-либо изменений (PGBOSS_FOREIGN_OWNER).
+    const installAsMigrator = async () => {
+      const mig = new pg.Client({ connectionString: migUrl });
+      await mig.connect();
+      try {
+        return await installPgBoss(mig, migUrl, { logger: new CaptureLogger() });
+      } finally {
+        await mig.end();
+      }
+    };
+    await expect(installAsMigrator()).rejects.toMatchObject({ code: 'PGBOSS_FOREIGN_OWNER' });
+    expect(await ownedByOthers('pos_app')).toEqual([]);
+
+    // 3. Блок §3.6 под суперпользователем, дважды (идемпотентен). Прежний pg-boss под pos_app работает и после
+    // переноса: схему он не меняет, права на объекты выданы в той же транзакции; задача из шага 1 цела.
+    await withDb(legacy, async (c) => {
+      await c.query(transfer);
+      await c.query(transfer);
+    });
+    expect(await ownedByOthers('pos_migrate')).toEqual([]);
+    const after = oldBoss();
+    try {
+      await after.start();
+      const [job] = await after.fetch('legacy_q');
+      expect(job?.id).toBe(legacyJob);
+      await after.complete('legacy_q', job.id);
+    } finally {
+      await after.stop({ graceful: false });
+    }
+
+    // 4. migrate: схема актуальна, права pos_app выданы, право CREATE на базу снято (07 DATA-012).
+    const installed = await installAsMigrator();
+    expect(installed).toMatchObject({ owner: 'pos_migrate', grantedTo: 'pos_app', revokedDatabaseCreate: true });
+    expect(installed.before).toBe(installed.version);
+    const priv = await su.query(`SELECT has_database_privilege('pos_app', '${legacy}', 'CREATE') AS db_create`);
+    expect(priv.rows[0]).toEqual({ db_create: false });
+
+    // 5. pg-boss api (без DDL, PG_BOSS_RUNTIME_OPTIONS) под pos_app: старт и очередь прежнего контура.
+    const api = new PgBossService(appUrl, { autoStart: false, retryDelayMs: 500 });
+    try {
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        api.start(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('PgBossService не стартовал под pos_app за 30 с')), 30_000);
+        }),
+      ]).finally(() => clearTimeout(timer));
+      expect(await api.isReady()).toBe(true);
+      const boss = api.instance!;
+      const id = await boss.send('legacy_q', { n: 2 });
+      const [job] = await boss.fetch('legacy_q');
+      expect(job?.id).toBe(id);
+    } finally {
+      await api.onApplicationShutdown();
+    }
+  });
 });
+
+/** Текст here-doc `<<'SQL' … SQL` после метки (блок переноса владельца pgboss: RUNBOOK §3.6, restore-db.sh). */
+function heredocAfter(text: string, marker: string): string {
+  const t = text.replace(/\r\n/g, '\n');
+  const at = t.indexOf(marker);
+  expect(at, marker).toBeGreaterThanOrEqual(0);
+  const open = t.indexOf("<<'SQL'\n", at);
+  expect(open, `${marker}: нет <<'SQL'`).toBeGreaterThan(at);
+  const start = open + "<<'SQL'\n".length;
+  const end = t.indexOf('\nSQL\n', start);
+  expect(end, `${marker}: нет строки SQL`).toBeGreaterThan(start);
+  return t.slice(start, end + 1);
+}
+
+/** SQL без комментариев `--` и с одним пробелом вместо любой последовательности пробельных символов. */
+function normalizeSql(sql: string): string {
+  return sql
+    .replace(/--[^\n]*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}

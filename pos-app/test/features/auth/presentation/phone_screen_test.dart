@@ -14,6 +14,7 @@ import 'package:optomstroy/features/auth/presentation/navigation/auth_paths.dart
 import 'package:optomstroy/features/auth/presentation/screens/otp_screen.dart';
 import 'package:optomstroy/features/auth/presentation/screens/phone_screen.dart';
 
+import '../../../support/fake_clipboard.dart';
 import '../support/fakes.dart';
 
 Finder get _input => find.descendant(of: find.byKey(PhoneScreen.fieldKey), matching: find.byType(EditableText));
@@ -199,6 +200,46 @@ void main() {
     expect(h.location, AuthPaths.otp);
     expect(h.repository.requestedPhones, hasLength(1));
   });
+
+  testWidgets('T-AUTH-023 (AC-UI-01-003): после «Изменить номер» Ctrl+V поверх выделенного номера заменяет его — «0…», '
+      '«996…», «+996…» без «Слишком много цифр»; 12 цифр — первые 9 и предупреждение', (WidgetTester tester) async {
+    final FakeClipboard clipboard = FakeClipboard(tester, '');
+    final AuthHarness h = AuthHarness();
+    await h.pump(tester, platform: TargetPlatform.windows);
+    await _type(tester, kPhoneDigits);
+    await tester.tap(find.byKey(PhoneScreen.submitKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(OtpScreen.backKey));
+    await tester.pumpAndSettle();
+    final TextEditingController c = tester.widget<EditableText>(_input).controller;
+    expect(c.text, '700 123 456');
+    await tester.tap(_input);
+    await tester.pump();
+
+    // Тестовые номера фикстур демо (+996 777 000 9xx), 02 SCR-01.4 п. 5.
+    for (final String pasted in <String>['0777000907', '996777000907', '+996 777 00 09 07', '00996777000907']) {
+      clipboard.text = pasted;
+      c.selection = TextSelection(baseOffset: 0, extentOffset: c.text.length);
+      await pressCtrlV(tester);
+      await tester.pump();
+      expect(c.text, '777 000 907', reason: pasted);
+      expect(find.text(l10n.auth_phone_error_long), findsNothing, reason: pasted);
+      expect(_submit(tester).onPressed, isNotNull, reason: pasted);
+    }
+    // Курсор в конце полного номера — вставленный номер заменяет поле, а не склеивается с ним (R4).
+    clipboard.text = '0555123456';
+    c.selection = TextSelection.collapsed(offset: c.text.length);
+    await pressCtrlV(tester);
+    await tester.pump();
+    expect(c.text, '555 123 456');
+
+    clipboard.text = '996555123456789';
+    c.selection = TextSelection(baseOffset: 0, extentOffset: c.text.length);
+    await pressCtrlV(tester);
+    await tester.pump();
+    expect(c.text, '555 123 456');
+    expect(find.text(l10n.auth_phone_error_long), findsOneWidget);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('T-AUTH-035: reduce-motion: персонаж — статичный кадр; тексты не раскрывают наличие аккаунта', (
     WidgetTester tester,

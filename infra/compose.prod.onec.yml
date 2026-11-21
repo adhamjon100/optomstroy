@@ -1,0 +1,28 @@
+# Дополнение к infra/compose.prod.yml: HTTP-сервис расширения 1С для api и worker (16 §4.3, §4.4 x-secret-env; 05 §6;
+# два технических пользователя — «Требования к API 1С» 1.2 §1.1 п. 2, §4.4; 16 §12.5 P-4).
+# Подключается обёрткой bin/dc автоматически, когда в secrets/ есть ВСЕ три файла ниже; часть файлов — ошибка
+# (install.sh/update.sh остановятся). До подключения 1С файл не используется: сервер стартует, синхронизация ждёт
+# 1С (RUNBOOK §8.1).
+#   onec_hs_user, onec_hs_password      — пользователь ИБ pos_hs (роль POS_ИнтеграцияPOS, только HTTP-сервис);
+#   onec_hs_token                       — значение заголовка X-POS-Client-Key (05 ONEC-032).
+# OData (pos_integration, только чтение) — отдельное дополнение compose.prod.onec-odata.yml; оно нужно и режиму
+# extension (полная загрузка, срезы цен и остатков, список фото), и запасному odata_only.
+# Порядок подключения 1С — docs/ops/RUNBOOK.md §8.4. Значений секретов в этом файле нет.
+
+x-onec-hs-env: &onec-hs-env   # check-secrets: allow (указатели *_FILE, значений нет)
+  ONEC_HS_USER_FILE: /run/secrets/onec_hs_user
+  ONEC_HS_PASSWORD_FILE: /run/secrets/onec_hs_password
+  ONEC_HS_TOKEN_FILE: /run/secrets/onec_hs_token
+
+services:
+  api:
+    environment: *onec-hs-env
+    secrets: [ onec_hs_user, onec_hs_password, onec_hs_token ]
+  worker:
+    environment: *onec-hs-env
+    secrets: [ onec_hs_user, onec_hs_password, onec_hs_token ]
+
+secrets:
+  onec_hs_user:     { file: ./secrets/onec_hs_user }
+  onec_hs_password: { file: ./secrets/onec_hs_password }
+  onec_hs_token:    { file: ./secrets/onec_hs_token }

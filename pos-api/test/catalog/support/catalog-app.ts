@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Global, Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
@@ -37,6 +36,7 @@ import { UsersRepository } from '../../../src/users/users.repository.js';
 import type { RoleCode, UserKind, UserStatusValue } from '../../../src/users/users.types.js';
 import { pemPair, publicSet, testSecret } from '../../foundation/support/keys.js';
 import { type CatalogFixture, startCatalogFixture } from '../../support/catalog-fixture.js';
+import { createSecretsDir, removeSecretsDir } from '../../support/secrets-dir.js';
 import { LogCapture } from '../../support/test-app.js';
 import {
   HTTP_RATE_LIMITS,
@@ -57,6 +57,13 @@ function nextPhone(): string {
   return `+99678${String(phoneSeq).padStart(7, '0')}`;
 }
 
+export interface CatalogTestAppOptions {
+  skuCount?: number;
+  env?: Record<string, string>;
+  /** Подключить лимиты RL-READ/RL-SEARCH/RL-CART (08 §2.9) с переопределёнными значениями. */
+  rateLimits?: Partial<Record<HttpRateLimitGroup, number>>;
+}
+
 /**
  * Nest-приложение для e2e каталога (RM-E-004, RM-E-014, RM-E-017): фундамент этапа D (Config, Logging, БД, Rbac,
  * Crypto, Audit, AuthCore, RateLimit, Users, Settings, AppVersion) + `CatalogModule`; guard'ы — ReadOnly → Auth →
@@ -65,28 +72,36 @@ function nextPhone(): string {
  */
 export class CatalogTestApp {
   readonly logs = new LogCapture();
-  readonly secretsDir = mkdtempSync(join(tmpdir(), 'pos-catalog-secrets-'));
   fx!: CatalogFixture;
   pool!: pg.Pool;
   db!: PosDatabase;
   app!: NestExpressApplication;
   jwt!: JwtService;
   config!: AppConfig;
+  /** Каталог файлов секретов (`secrets-dir.ts`): создаётся в start(), удаляется в stop(). */
+  private secretsDir: string | undefined;
+  private stopping: Promise<void> | undefined;
 
-  async start(
-    opts: {
-      skuCount?: number;
-      env?: Record<string, string>;
-      /** Подключить лимиты RL-READ/RL-SEARCH/RL-CART (08 §2.9) с переопределёнными значениями. */
-      rateLimits?: Partial<Record<HttpRateLimitGroup, number>>;
-    } = {},
-  ): Promise<this> {
+  /** Сбой запуска убирает уже поднятое (приложение, пул, кластер, каталог секретов) здесь же. */
+  async start(opts: CatalogTestAppOptions = {}): Promise<this> {
+    this.stopping = undefined;
+    const secretsDir = createSecretsDir('pos-catalog-secrets-');
+    this.secretsDir = secretsDir;
+    try {
+      return await this.boot(opts, secretsDir);
+    } catch (e) {
+      await this.stop().catch(() => undefined);
+      throw e;
+    }
+  }
+
+  private async boot(opts: CatalogTestAppOptions, secretsDir: string): Promise<this> {
     this.fx = await startCatalogFixture({ skuCount: opts.skuCount ?? 300, database: 'pos_catalog_api' });
     this.pool = new pg.Pool({ connectionString: this.fx.url, max: 20 });
     this.db = createDatabase(this.pool);
     const k = pemPair();
     const file = (name: string, content: string) => {
-      const p = join(this.secretsDir, name);
+      const p = join(secretsDir, name);
       writeFileSync(p, content, { mode: 0o600 });
       return p;
     };
@@ -160,11 +175,21 @@ export class CatalogTestApp {
     return this;
   }
 
-  async stop(): Promise<void> {
-    await this.app?.close();
-    await this.pool?.end().catch(() => undefined);
-    await this.fx?.stop();
-    rmSync(this.secretsDir, { recursive: true, force: true });
+  /** Повторный вызов (в том числе после сбоя start()) ждёт ту же остановку; каталог секретов удаляется всегда. */
+  stop(): Promise<void> {
+    this.stopping ??= this.release();
+    return this.stopping;
+  }
+
+  private async release(): Promise<void> {
+    try {
+      await this.app?.close();
+      await this.pool?.end().catch(() => undefined);
+      await this.fx?.stop();
+    } finally {
+      removeSecretsDir(this.secretsDir);
+      this.secretsDir = undefined;
+    }
   }
 
   invalidateSettings(): void {

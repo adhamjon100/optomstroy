@@ -21,6 +21,7 @@ import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/receivable_document_row.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
+import 'package:optomstroy/design_system/layout/large_content.dart';
 import 'package:optomstroy/design_system/layout/window_class.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -126,23 +127,28 @@ class ReceivablesView extends ConsumerWidget {
     final WindowClass wc = context.windowClass;
     final bool wide = !embedded && (wc == WindowClass.expanded || wc == WindowClass.large);
     if (wide) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Expanded(
-            child: ListView(padding: EdgeInsets.all(context.space.s6), children: <Widget>[detail]),
-          ),
-          SizedBox(
-            width: 340,
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(0, context.space.s6, context.space.s6, context.space.s6),
-              children: <Widget>[
-                summary,
-                if (cta != null) ...<Widget>[SizedBox(height: context.space.s4), cta],
-              ],
+      // Окно ≥ 1600: детализация со сводкой — не шире 1200 + 340 по центру (03 §8.8; указание владельца 2026-11-18,
+      // 15 §5.8 (3); прежде сводка стояла у правого края окна, далеко от детализации).
+      return DsLargeContent(
+        sidePanel: 340,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(
+              child: ListView(padding: EdgeInsets.all(context.space.s6), children: <Widget>[detail]),
             ),
-          ),
-        ],
+            SizedBox(
+              width: 340,
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(0, context.space.s6, context.space.s6, context.space.s6),
+                children: <Widget>[
+                  summary,
+                  if (cta != null) ...<Widget>[SizedBox(height: context.space.s4), cta],
+                ],
+              ),
+            ),
+          ],
+        ),
       );
     }
     final Widget list = RefreshIndicator(

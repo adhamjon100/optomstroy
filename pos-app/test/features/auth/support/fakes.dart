@@ -33,6 +33,9 @@ const String kPhoneE164 = '+996700123456';
 const String kChallengeId = '0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4f55';
 const String kChallengeId2 = '0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4f66';
 
+/// Challenge ключа Windows Hello по шаблону контракта (`optomstroy-hello-unlock/v1:` + 43 знака base64url; W2).
+const String kHelloChallenge = 'optomstroy-hello-unlock/v1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8';
+
 /// Сценарный репозиторий: результаты задаются заранее, вызовы записываются.
 final class FakeAuthRepository implements AuthRepository {
   final List<String> requestedPhones = <String>[];
@@ -40,6 +43,20 @@ final class FakeAuthRepository implements AuthRepository {
   final List<String> statusPolls = <String>[];
   final List<({String pin, bool invalidated})> pinUnlocks = <({String pin, bool invalidated})>[];
   final List<String> bioUnlocks = <String>[];
+
+  /// `helloKeyInvalidated` каждого `unlockWithPin` (W2; порядок — как у [pinUnlocks]).
+  final List<bool> pinHelloKeyInvalidated = <bool>[];
+
+  /// Вызовы `POST /auth/unlock/challenge` (W2).
+  int helloChallenges = 0;
+
+  /// Подписи `POST /auth/unlock {method: hello_key}` (W2).
+  final List<String> helloKeyUnlocks = <String>[];
+
+  /// Ответ challenge (по умолчанию — строка по шаблону контракта).
+  Result<String> challengeResult = const Success<String>(kHelloChallenge);
+  Result<UnlockSuccess> helloKeyResult = const Success<UnlockSuccess>(UnlockSuccess(profile: staffSeller));
+  Completer<Result<UnlockSuccess>>? helloKeyGate;
   int cleared = 0;
 
   /// Очередь ответов `requestOtp` (по умолчанию — 202 с [kChallengeId]).
@@ -90,8 +107,13 @@ final class FakeAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<Result<UnlockSuccess>> unlockWithPin({required String pin, bool biometricInvalidated = false}) async {
+  Future<Result<UnlockSuccess>> unlockWithPin({
+    required String pin,
+    bool biometricInvalidated = false,
+    bool helloKeyInvalidated = false,
+  }) async {
     pinUnlocks.add((pin: pin, invalidated: biometricInvalidated));
+    pinHelloKeyInvalidated.add(helloKeyInvalidated);
     if (unlockGate != null) {
       return unlockGate!.future;
     }
@@ -102,6 +124,21 @@ final class FakeAuthRepository implements AuthRepository {
   Future<Result<BiometricUnlockSuccess>> unlockWithBiometric({required String biometricRefresh}) async {
     bioUnlocks.add(biometricRefresh);
     return bioResult;
+  }
+
+  @override
+  Future<Result<String>> helloKeyChallenge() async {
+    helloChallenges++;
+    return challengeResult;
+  }
+
+  @override
+  Future<Result<UnlockSuccess>> unlockWithHelloKey({required String signature}) async {
+    helloKeyUnlocks.add(signature);
+    if (helloKeyGate != null) {
+      return helloKeyGate!.future;
+    }
+    return helloKeyResult;
   }
 
   @override
@@ -174,6 +211,7 @@ final class AuthHarness {
   AuthHarness({
     FakeAuthRepository? repository,
     FakeBiometricUnlock? biometrics,
+    this.biometricPort,
     FixedClock? clock,
     this.offline = false,
     this.extraOverrides = const <Override>[],
@@ -183,6 +221,9 @@ final class AuthHarness {
 
   final FakeAuthRepository repository;
   final FakeBiometricUnlock biometrics;
+
+  /// Настоящий порт SCR-08 вместо [biometrics] (например, BiometricUnlockAdapter поверх подменного порта core).
+  final BiometricUnlock? biometricPort;
   final FixedClock clock;
   final bool offline;
 
@@ -203,7 +244,7 @@ final class AuthHarness {
 
   List<Override> get overrides => <Override>[
     authRepositoryProvider.overrideWithValue(repository),
-    biometricUnlockProvider.overrideWithValue(biometrics),
+    biometricUnlockProvider.overrideWithValue(biometricPort ?? biometrics),
     clockProvider.overrideWithValue(clock),
     authOfflineSignalProvider.overrideWithValue(offline),
     backendHealthProbeProvider.overrideWithValue(FakeBackendHealthProbe()),

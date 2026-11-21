@@ -1,10 +1,13 @@
-# pos-proxy (Caddy 2) — тестовый контур infra/compose.test.yml (RM-C-012) и образец для prod (16 §4.5; RM-C-010).
+# pos-proxy (Caddy 2) — CI-контур infra/compose.test.yml (RM-C-012; 16 §4.5; RM-C-010).
 # Правила: Caddy НЕ аутентифицирует и НЕ авторизует (DEPLOY-049) — все решения о доступе принимает api;
 # наружу публикуется только этот сервис (80/443); upstream api:3000 доступен лишь в сети compose.
+# На сервере заказчика работает общий caddy проекта optomstroy-edge с caddy/Caddyfile.edge: его сниппет api_site —
+# тело сайта ниже (upstream и каталог фото — аргументы). Правка правил — в ОБОИХ файлах; совпадение проверяет
+# infra/docker/scripts/check_compose_prod.py.
 #
 # Параметры (подставляются из окружения контейнера caddy ДО разбора файла):
-#   CADDY_SITE_ADDRESS  имена сайта; тест — "localhost" (по умолчанию), сервер — api-test.<домен> / api.<домен> (Q-032)
-#   CADDY_TLS           "internal" — внутренний CA Caddy (тест, по умолчанию); на сервере — e-mail для ACME
+#   CADDY_SITE_ADDRESS  имя сайта; CI — "localhost" (по умолчанию)
+#   CADDY_TLS           "internal" — внутренний CA Caddy (CI, по умолчанию)
 #   API_UPSTREAM        адрес api внутри сети compose (по умолчанию api:3000)
 # Корневой сертификат внутреннего CA: /data/caddy/pki/authorities/local/root.crt (том caddy_data) —
 # smoke-тест получает его `docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt …` (Makefile, CI).

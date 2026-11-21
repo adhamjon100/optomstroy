@@ -9,6 +9,8 @@ import 'package:optomstroy/core/di/core_providers.dart';
 import 'package:optomstroy/core/session/profile_cache.dart';
 import 'package:optomstroy/core/session/session_controller.dart';
 import 'package:optomstroy/core/session/session_local_data.dart';
+import 'package:optomstroy/core/session/session_state.dart';
+import 'package:optomstroy/core/storage/secure_storage.dart';
 import 'package:optomstroy/features/auth/auth_providers.dart';
 import 'package:optomstroy/features/auth/data/biometric_unlock_adapter.dart';
 import 'package:optomstroy/features/auth/data/datasources/auth_remote_data_source.dart';
@@ -39,13 +41,22 @@ final List<Override> authBindings = <Override>[
   authPendingChangesNoticeProvider.overrideWith(pendingChangesNotice),
   // AU-16: FLAG_SECURE на экранах OTP/PIN (Android; канал kg.optomstroy/biometric_crypto).
   secureScreenProvider.overrideWith((Ref ref) => ChannelSecureScreen()),
-  biometricUnlockProvider.overrideWith(
-    (Ref ref) => BiometricUnlockAdapter(
+  biometricUnlockProvider.overrideWith((Ref ref) {
+    final SecureStorage storage = ref.watch(secureStorageProvider);
+    return BiometricUnlockAdapter(
       authenticator: ref.watch(biometricAuthenticatorProvider),
-      storage: ref.watch(secureStorageProvider),
+      storage: storage,
       languageCode: () => ref.read(clientMetaProvider).languageCode,
-    ),
-  ),
+      // Гейт Windows Hello по `userId` (09 BIO-034): `sub` сессии; на холодном старте — кэш профиля (02 §0.4).
+      currentUserId: () async =>
+          ref.read(sessionControllerProvider).userId ?? (await ProfileCacheStore(storage).read())?.userId,
+      // Планшет магазина: биометрия не предлагается и не вызывается ни в каком виде (09 BIO-037; 12 T-BIO-033).
+      kioskMode: () {
+        final SessionState s = ref.read(sessionControllerProvider);
+        return s.isKioskSession || s.isKioskDevice;
+      },
+    );
+  }),
 ];
 
 /// Источник предупреждения SCR-01: файл БД пользователя, ушедшего на SCR-01 с SCR-08 («Войти по номеру телефона»,

@@ -261,6 +261,17 @@ export async function walkOrders(w) {
   // дашборд кассира, журнал операций
   const db = await C.call('GET /pos/dashboard', 'GET', '/pos/dashboard');
   ctx.check('дашборд кассира', db.status === 200, { keys: Object.keys(db.json ?? {}).slice(0, 8) });
+  // Оба QR-заказа уходят в «1С» фоном: outbox → задачи pg-boss → имитатор «1С» → ordersOnecConfirmed. Успел ли заказ
+  // получить документ «1С» к GET /transactions — гонка, и на бандле тоже: строка заказа «POS-… / ОС00-…» и
+  // onec_document в related есть или нет (бандл run-all 2026-11-19 — есть, проба realpg — нет; realpg-повтор №1
+  // 2026-11-19 — `$.items[2].related.length` 2 ≠ 3 у PostgreSQL). ctx.settle() задачи, которые ждут опроса настоящего
+  // pg-boss (2 с), не видит. Поэтому ждём без записи, пока оба заказа выйдут из «submitting» (FIX-demo 2026-11-19).
+  for (const q of [q1, q2]) {
+    const id = q.order.json?.id;
+    if (!id) continue;
+    const s = await ctx.until(() => C.call('заказ QR вне submitting', 'GET', `/orders/${id}`, { record: false }), (r) => r.json?.status !== 'submitting', { timeoutMs: 30000, everyMs: 300 });
+    if (!s.ok) ctx.log(`  !! заказ ${q.order.json?.number ?? id} за 30 с не вышел из submitting — GET /transactions с гонкой`);
+  }
   await ctx.settle();
   const tx = await A.call('GET /transactions (админ)', 'GET', `/transactions?${period()}&limit=200`);
   const kinds = new Set((tx.json?.items ?? []).map((x) => x.kind));
@@ -339,6 +350,23 @@ export async function walkSync(w) {
   const { ctx, A, SS } = w;
   ctx.begin('Обход: синхронизация и outbox');
   await ctx.settle();
+  // Строки sync_state сущностей плана обмена (режим расширения 1С), созданные по ходу набора, получают умолчания
+  // реестра прогонов: порог 3600 с, значит intervalSec 1800. Это ручной прогон customers в негативных ветках
+  // (≈ 35 с от старта) и первые прогоны sales_history, discounts, return_docs. Расписание цикла onec.changes
+  // (*/5, intervalSec 300) им ставит пересчёт планировщика: SyncScheduler.startRefresh раз в 60 с от старта worker,
+  // planState. Шаг сценария расписание не меняет. GET /sync/status мог прийтись и до пересчёта, и после — гонка.
+  // Пример: realpg-повтор №1 2026-11-19, customers `$.entities[10].intervalSec` 1800 ≠ 300; в пробе шаг был на
+  // 57,5 и 59,9 с от старта. Поэтому ждём без записи (≤ 65 с), пока у всех сущностей плана intervalSec не станет как
+  // у categories. Сущности с отдельным расписанием опроса — EXTENSION_POLLED_ENTITIES
+  // (pos-api/src/sync/scheduler/sync-queues.ts) — в условие не входят (FIX-demo 2026-11-19).
+  const POLLED = ['stock', 'prices', 'receivables', 'order_status', 'images'];
+  const planSettled = (r) => {
+    const es = r.json?.entities ?? [];
+    const ref = es.find((e) => e.entity === 'categories')?.intervalSec;
+    return ref === undefined || es.every((e) => POLLED.includes(e.entity) || e.intervalSec === undefined || e.intervalSec === ref);
+  };
+  const ps = await ctx.until(() => A.call('GET /sync/status (пересчёт расписаний)', 'GET', '/sync/status', { record: false }), planSettled, { timeoutMs: 65000, everyMs: 500 });
+  if (!ps.ok) ctx.log('  !! расписания сущностей плана за 65 с не сошлись — GET /sync/status с гонкой');
   const st = await A.call('GET /sync/status', 'GET', '/sync/status');
   // список прогонов одной сущности: первый прогон receivables после старта зависит от гонки догоняния (WP-T1 C7)
   const runs = await A.call('GET /sync/runs', 'GET', '/sync/runs?entity=stock&limit=20');

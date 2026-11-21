@@ -3,6 +3,15 @@
 // + карточка 480 (`ds.radius.xl` 20, `elevation.2`, отступ 24); expanded ≥ 1024 — бренд-панель
 // 560 (`surfaceVariant`: логотип, «Рабочее место продавца», персонаж 200, 4 преимущества —
 // скрыты при высоте < 720, «Ваши данные защищены») + карточка 480. Вне AdaptiveScaffold.
+// Персонаж зависит от высоты окна (02 SCR-08.2 compact `cold` «скрыт при высоте < 640»): compact и medium — скрыт при
+// высоте < 640; medium при высоте < 820 — не больше 96.
+// Ландшафт малой высоты (телефон лёжа, окно браузера с масштабом 200 %; [AuthLayout.isShortLandscape]): экран, который
+// передал [AuthLayout.aside] и [AuthLayout.input], строится в две колонки — слева шапка, персонаж 96 (скрыт при высоте
+// < 480), личность и второстепенные кнопки, справа — блок ввода (PIN с нампадом, ячейки кода) со своей прокруткой; так
+// точки и нампад видны без прокрутки. Правило 02 SCR-01.12 (две колонки, персонаж 96 слева), распространённое на SCR-02
+// и SCR-08 по указанию владельца 2026-11-18 об адаптивности (15 §5.8) — [ВЫВОД исполнителя]; large (≥ 1600) — как было.
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/app_bottom_sheet.dart';
@@ -29,7 +38,19 @@ class AuthLayout extends StatelessWidget {
     this.mediumMascotSize = 200,
     required this.footerYear,
     this.backgroundOverride,
+    this.aside,
+    this.input,
   });
+
+  /// Окно-ландшафт малой высоты: шире своей высоты, высота < 760, ширина ≥ 600 (телефон лёжа; 1920×1080 при масштабе
+  /// браузера 200 % — 960×540).
+  static bool isShortLandscape(Size size) => size.width > size.height && size.height < 760 && size.width >= 600;
+
+  /// Ключ левой колонки ландшафта (личность, второстепенные кнопки).
+  static const Key landscapeAsideKey = Key('auth-landscape-aside');
+
+  /// Ключ правой колонки ландшафта (блок ввода).
+  static const Key landscapeInputKey = Key('auth-landscape-input');
 
   /// Ширина карточки формы SCR-01/02/08.
   static const double cardWidth = 480; // money-double: allow — геометрия UI (lp)
@@ -74,9 +95,20 @@ class AuthLayout extends StatelessWidget {
   /// Фон вместо `surface`/`background` (overlay SCR-08).
   final Color? backgroundOverride;
 
+  /// Ландшафт малой высоты: левая колонка — заголовок, личность, второстепенные кнопки. Задаётся вместе с [input];
+  /// вне ландшафта не используется — там [body] (одна колонка, порядок экрана прежний).
+  final Widget? aside;
+
+  /// Ландшафт малой высоты: правая колонка — блок ввода (поле PIN с нампадом, ячейки кода, кнопки шага).
+  final Widget? input;
+
   @override
   Widget build(BuildContext context) {
     final WindowClass wc = context.windowClass;
+    final Size size = MediaQuery.sizeOf(context);
+    if (aside != null && input != null && wc != WindowClass.large && isShortLandscape(size)) {
+      return _landscape(context, size);
+    }
     return switch (wc) {
       WindowClass.compact => _compact(context),
       WindowClass.medium => _medium(context),
@@ -87,10 +119,19 @@ class AuthLayout extends StatelessWidget {
   double /* money-double: allow — геометрия UI */ ? _compactMascotSize(BuildContext context) {
     final MediaQueryData mq = MediaQuery.of(context);
     final bool keyboard = mq.viewInsets.bottom > 0;
-    if (keyboard && mq.size.height < 640) {
+    if (mq.size.height < 640) {
       return null;
     }
     return keyboard ? keyboardMascotSize : compactMascotSize;
+  }
+
+  /// medium: скрыт при высоте < 640, при высоте < 820 — не больше 96.
+  double /* money-double: allow — геометрия UI */ ? _mediumMascotSize(BuildContext context) {
+    final double h = MediaQuery.sizeOf(context).height; // money-double: allow — геометрия UI (lp)
+    if (h < 640) {
+      return null;
+    }
+    return h < 820 ? math.min(mediumMascotSize, 96) : mediumMascotSize;
   }
 
   Widget _header(BuildContext context, {required bool compact}) {
@@ -205,7 +246,7 @@ class AuthLayout extends StatelessWidget {
                           children: <Widget>[
                             _header(context, compact: false),
                             SizedBox(height: context.space.s6),
-                            _mascot(context, mediumMascotSize),
+                            _mascot(context, _mediumMascotSize(context)),
                             body,
                           ],
                         ),
@@ -217,6 +258,71 @@ class AuthLayout extends StatelessWidget {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Ландшафт малой высоты: две колонки по половине ширины, поля 16; карточка — только при высоте ≥ 600.
+  Widget _landscape(BuildContext context, Size size) {
+    final DsColors c = context.colors;
+    final bool card = size.height >= 600;
+    final double pad = context.space.s4; // money-double: allow — геометрия UI (lp)
+    final Widget left = SingleChildScrollView(
+      key: landscapeAsideKey,
+      padding: EdgeInsets.all(pad),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          SizedBox(height: 56, child: _header(context, compact: true)),
+          SizedBox(height: context.space.s2),
+          if (size.height >= 480) _mascot(context, math.min(keyboardMascotSize, 96)),
+          aside!,
+          SizedBox(height: context.space.s4),
+          _Footer(year: footerYear, padded: false),
+        ],
+      ),
+    );
+    final Widget right = Center(
+      child: SingleChildScrollView(
+        key: landscapeInputKey,
+        padding: EdgeInsets.symmetric(horizontal: pad, vertical: context.space.s2),
+        child: input,
+      ),
+    );
+    Widget split = Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Expanded(child: left),
+        Expanded(child: right),
+      ],
+    );
+    if (card) {
+      split = Center(
+        child: Padding(
+          padding: EdgeInsets.all(context.space.s6),
+          child: Container(
+            key: cardKey,
+            constraints: const BoxConstraints(maxWidth: 2 * cardWidth),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: BorderRadius.all(context.radii.xl),
+              boxShadow: context.elevation.e2,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: split,
+          ),
+        ),
+      );
+    }
+    return Scaffold(
+      backgroundColor: backgroundOverride ?? (card ? c.background : c.surface),
+      body: SafeArea(
+        child: Column(
+          children: <Widget>[
+            ...banners,
+            Expanded(child: split),
           ],
         ),
       ),

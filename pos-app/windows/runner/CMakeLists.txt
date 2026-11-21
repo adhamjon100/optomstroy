@@ -20,6 +20,25 @@ add_executable(${BINARY_NAME} WIN32
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
 
+# Windows Hello key channel kg.optomstroy/windows_hello (C++/WinRT; 15 ADR-116, 06 section 16.1). A separate
+# static library: C++20 coroutines for C++/WinRT and WindowsApp.lib stay out of the runner's own settings. The
+# C++/WinRT headers come from the Windows SDK (Include/<version>/cppwinrt), nothing is downloaded.
+add_library(hello_channel STATIC
+  "hello_channel.cpp"
+  "hello_channel.h"
+)
+apply_standard_settings(hello_channel)
+target_compile_features(hello_channel PRIVATE cxx_std_20)
+target_compile_definitions(hello_channel PRIVATE "NOMINMAX")
+target_link_libraries(hello_channel PRIVATE flutter flutter_wrapper_app)
+target_link_libraries(hello_channel PUBLIC "windowsapp.lib")
+# hello_channel.lib is only a link input of the exe. With the Visual Studio generator its default folder is
+# runner/<Config>, which is also the install prefix, i.e. the release bundle (12 T-BUILD-005, 13 RM-H-007): keep it
+# in a folder of its own. The generator expression stops CMake from appending a second per-config folder. The
+# compiler PDB of Debug builds already goes to the intermediate folder hello_channel.dir/<Config>.
+set_target_properties(hello_channel PROPERTIES
+  ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/hello_channel/$<CONFIG>")
+
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_MAJOR=${FLUTTER_VERSION_MAJOR}")
@@ -33,6 +52,7 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
+target_link_libraries(${BINARY_NAME} PRIVATE hello_channel)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 

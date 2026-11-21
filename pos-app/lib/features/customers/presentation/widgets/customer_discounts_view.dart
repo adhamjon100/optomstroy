@@ -17,6 +17,7 @@ import 'package:optomstroy/design_system/components/empty_state.dart';
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
+import 'package:optomstroy/design_system/layout/large_content.dart';
 import 'package:optomstroy/design_system/layout/window_class.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -84,26 +85,29 @@ class CustomerDiscountsView extends ConsumerWidget {
       ),
     );
     if (wc == WindowClass.expanded || wc == WindowClass.large) {
+      // Окно ≥ 1600 — не шире 1200 по центру (03 §8.8; указание владельца 2026-11-18, 15 §5.8 (3)).
       return RefreshIndicator(
         onRefresh: ctl.load,
-        child: ListView(
-          padding: EdgeInsets.all(context.space.s4),
-          children: <Widget>[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                SizedBox(
-                  width: 380,
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: left),
-                ),
-                SizedBox(width: context.space.s6),
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: right),
-                ),
-              ],
-            ),
-            note,
-          ],
+        child: DsLargeContent(
+          child: ListView(
+            padding: EdgeInsets.all(context.space.s4),
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  SizedBox(
+                    width: 380,
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: left),
+                  ),
+                  SizedBox(width: context.space.s6),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: right),
+                  ),
+                ],
+              ),
+              note,
+            ],
+          ),
         ),
       );
     }

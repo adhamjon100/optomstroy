@@ -29,7 +29,20 @@
 //      текстов — рамка «чернил» (пиксели, отличные от фона). Допуск ±1 px;
 //   2) цвета ровных заливок (точка внутри якоря, у верхней рамки) — ΔE2000 ≤ 1; «чернила» текста (самый далёкий от фона
 //      пиксель) — для сведения;
-//   3) средняя абсолютная разность областей (колонка, лента, строка управления, первый ряд карточек) вне масок — ≤ 4/255.
+//   3) средняя абсолютная разность областей (колонка, лента, строка управления, первый ряд карточек) вне масок — ≤ 4/255;
+//      «первый ряд карточек» — только там, где колонок сетки столько же, сколько у прототипа (1024 — 4, 1280 — 5);
+//   4) сетка «Сетка» при другом числе колонок (`tokens.json` 1.4.0, 03 §7.3 ред. 1.27; 12 T-UI-116 ред. 1.22;
+//      сознательное отличие 15 ADR-114, уточнение 2026-11-18 (2)): 1366 / 1440 / 1536 / 1920 → 5 / 5 / 5 / 6 вместо
+//      6 / 6 / 7 / 9 прототипа. Ожидание — `expectedGrid` (пределы `breakpoint.*.productColumnsMax`, карточка от 176 и не
+//      шире 280, зазор 14, поля 8 / 24, колонка категорий 144, область шире предела — по центру; ячейка 340 или 360 —
+//      «цена / шт» хотя бы одной карточки ряда не помещается при ширине своей карточки, 03 §9.11). Карточки первого ряда
+//      приложения (по месту, слева направо) — к расчёту (левый край, верх ряда, ширина, высота ячейки); их блоки (фото,
+//      название, «Арт.», наличие, цена, «/ шт», звезда, кнопка) — смещением от своей карточки против той же карточки
+//      прототипа, перестроенного на число колонок приложения (снимок `<состояние>-proto-grid.png`; та же вёрстка карточки
+//      при ширине карточки приложения). Допуск — ±1 px на каждый край (карточки стоят на дробных координатах: ширина как
+//      разность краёв дала бы до 2 px сглаживания); карточки прототипа с номером ≥ колонок приложения — «сознательное отличие ADR-114 /
+//      12 ред. 1.22» (не провал); средняя разница области «первый ряд карточек» на этих окнах не оценивается (запись в
+//      `notes`; справочно — `regionsInfo` против перестроенного прототипа). «Список» и «Компакт» — как прежде.
 // Маски (сознательные отличия ADR-114 п. 7 / паритет): «☰», индикатор синхронизации, часы и дата, имя и роль, знак
 // логотипа (решение 3: оранжевый официальный), бейдж колокола, вкладка «ДЕМО», «‹‹», подборка «Недавние».
 // Полосы «DEV · TEST DATA» в веб-демо нет (ADR-114 п. 9 (5)) — инструмент это проверяет и смещение не вычитает.
@@ -52,6 +65,45 @@ const PROTO_ORIGIN = 'http://design.proto';
 const FONT_TTF = `${ROOT}/pos-app/assets/fonts/Inter/Inter-Variable.ttf`;
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ================================================================ сетка товаров приложения (03 §7.3 ред. 1.27)
+const TOKENS = JSON.parse(readFileSync(`${ROOT}/contracts/design-tokens/tokens.json`, 'utf8'));
+/** Ширина колонки категорий сотрудника на данных демо, lp (03 §7.3, таблица «Окно, lp … колонка 144»; у прототипа —
+ * 143,3 по ширине плиток). */
+export const CATALOG_COLUMN = 144;
+/** Поля карточки сетки внутри обводки по горизонтали (прототип `padding: 10px 12px 12px`; 03 §9.11) и обводка 1 + 1. */
+const CARD_INNER_X = 24 + 2;
+/** Класс окна по ширине (`breakpoint.*.min` / `maxExclusive` из `tokens.json`). */
+export function windowClassOf(vpW, tokens = TOKENS) {
+  for (const [name, b] of Object.entries(tokens.breakpoint)) if (vpW >= b.min && (b.maxExclusive == null || vpW < b.maxExclusive)) return name;
+  return null;
+}
+/** Сетка «Сетка» SCR-10/12 сотрудника в окне шириной vpW (03 §7.3 ред. 1.27, `CatalogProductView`):
+ * W = окно − колонка − поля 8 / 24; колонок = max(2, min(предел класса окна, floor((W + 14) / (176 + 14)))); карточка =
+ * min(280, (W − зазоры) / колонок); область шире предела × 280 + зазоры — по центру зоны справа от колонки (полосы
+ * поровну с учётом несимметричных полей, как `_bands`). Ячейка — 340, или 360, если «цена · 4 · / шт» хотя бы одной
+ * карточки ряда шире карточки без полей и обводок (`kProductCardGridPriceWraps`); `prices` — ширины цены и единицы
+ * карточек ряда по порядку (DOM прототипа: те же товары в том же порядке). `top` — верх ряда (блоки над сеткой — как
+ * у прототипа), без него `boxes` пуст. */
+export function expectedGrid(vpW, { top = null, prices = [], column = CATALOG_COLUMN, tokens = TOKENS } = {}) {
+  const cat = tokens.catalog;
+  const pad = cat.mainPadding;
+  const gap = cat.gridGap;
+  const cls = windowClassOf(vpW, tokens);
+  const cap = tokens.breakpoint[cls].productColumnsMax;
+  const cardMax = tokens.layout.gridCardMaxWidth;
+  const W = vpW - column - pad.left - pad.right;
+  const cols = Math.max(tokens.layout.gridMinColumns, Math.min(cap, Math.floor((W + gap) / (cat.gridMinCard + gap))));
+  const areaMax = cap * cardMax + (cap - 1) * gap;
+  const extra = Math.max(0, vpW - column - (areaMax + pad.left + pad.right));
+  const start = Math.min(extra, Math.max(0, extra / 2 + (pad.right - pad.left) / 2));
+  const cardW = Math.min(cardMax, (Math.min(W, areaMax) - (cols - 1) * gap) / cols);
+  const left = column + start + pad.left;
+  const wraps = prices.slice(0, cols).map((p) => !!p && p.unit > 0 && p.price + 4 + p.unit > cardW - CARD_INNER_X);
+  const cellH = wraps.some(Boolean) ? cat.gridCardHeightWrapped : cat.gridCardHeight;
+  const boxes = top == null ? [] : Array.from({ length: cols }, (_, i) => [left + i * (cardW + gap), top, cardW, cellH]);
+  return { vpW, cls, cap, W, cols, gap, cardW, left, centred: extra > 0, areaWidth: cols * cardW + (cols - 1) * gap, wraps, cellH, boxes };
+}
 
 // ================================================================ PNG (без зависимостей: 8 бит, без чересстрочности)
 export function pngDecode(buf) {
@@ -214,14 +266,17 @@ const clampRect = (img, [x, y, w, h]) => {
 };
 /** Видимая коробка элемента с рамкой или заливкой: от затравки [x,y,w,h] — расширение pad, фон берётся в углу окна,
  * края — первый пиксель, отличный от фона больше чем на tol (5: ловит и рамку 1 px с дробной координатой), при сканировании снаружи внутрь по средней строке/столбцу
- * (и по строкам/столбцам на ¼ и ¾ — берётся крайний). */
-export function visibleBox(img, seed, { pad = 6, tol = 5, bg = null } = {}) {
+ * (и по строкам/столбцам на ¼ и ¾ — берётся крайний). `masks` — строки и столбцы сканирования, пересекающие маску в окне
+ * (вкладка «ДЕМО» у правого края окна над крайней карточкой сетки), пропускаются, пока остаётся хотя бы одна. */
+export function visibleBox(img, seed, { pad = 6, tol = 5, bg = null, masks = null } = {}) {
   if (!seed) return null;
   const [x0, y0, w, h] = clampRect(img, [seed[0] - pad, seed[1] - pad, seed[2] + 2 * pad, seed[3] + 2 * pad]);
   if (w < 3 || h < 3) return null;
   const back = bg ?? px(img, x0, y0);
-  const rows = [0.25, 0.5, 0.75].map((f) => y0 + Math.round(h * f));
-  const cols = [0.25, 0.5, 0.75].map((f) => x0 + Math.round(w * f));
+  const hits = (x, y, ww, hh) => !!masks?.some((m) => m[0] < x + ww && m[0] + m[2] > x && m[1] < y + hh && m[1] + m[3] > y);
+  const free = (list, pred) => (list.filter(pred).length ? list.filter(pred) : list);
+  const rows = free([0.25, 0.5, 0.75].map((f) => y0 + Math.round(h * f)), (y) => !hits(x0, y, w, 1));
+  const cols = free([0.25, 0.5, 0.75].map((f) => x0 + Math.round(w * f)), (x) => !hits(x, y0, 1, h));
   let L = Infinity;
   let R = -Infinity;
   let T = Infinity;
@@ -508,6 +563,24 @@ export async function protoState(tab, state, w, h) {
   }
   await sleep(450);
 }
+/** Ожидание сетки приложения для состояния прототипа (protoA — якоря прототипа как есть) в окне шириной vpW: null, если
+ * в состоянии нет карточек сетки или колонок столько же, сколько у прототипа (1024, 1280 — прежняя сверка). Иначе —
+ * `expectedGrid` (верх ряда и цены — по прототипу) и прототип, перестроенный на те же колонки (`protoA2`, `protoPng2`). */
+export async function protoGrid(tab, protoA, vpW) {
+  if (!protoA['card0:box'] || !protoA.__gridCols) return null;
+  if (expectedGrid(vpW).cols === protoA.__gridCols) return null;
+  const prices = [];
+  for (let i = 0; protoA[`card${i}:box`]; i++) prices.push({ price: protoA[`card${i}:price`]?.[2] ?? 0, unit: protoA[`card${i}:unit`]?.[2] ?? 0 });
+  const g = expectedGrid(vpW, { top: protoA['card0:box'][1], prices });
+  const box = g.centred ? { width: g.areaWidth, shift: g.left - protoA['card0:box'][0] } : null;
+  const got = await ev(tab, `window.__relayGrid(${g.cols}, ${JSON.stringify(box)})`);
+  await sleep(250);
+  const protoA2 = await ev(tab, 'window.__anchors()');
+  const protoPng2 = await capture(tab);
+  await ev(tab, 'window.__restoreGrid()');
+  await sleep(100);
+  return { ...g, protoCols: protoA.__gridCols, relayCols: got, protoA2, protoPng2 };
+}
 /** Прямоугольники прототипа (DOM, CSS px) по именам якорей — те же имена, что у приложения. */
 const PROTO_MEASURE = `window.__anchors = function () {
   const R = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map((v) => Math.round(v * 10) / 10); };
@@ -553,6 +626,7 @@ const PROTO_MEASURE = `window.__anchors = function () {
   const fp = $('main input[type=checkbox]');
   if (fp) { A.filterPanel = R(fp.closest('label').parentElement); A['filter.check'] = R(fp); A['filter.reset'] = R(fp.closest('label').nextElementSibling); }
   const grid = $$('div', main).find((d) => getComputedStyle(d).display === 'grid' && d.querySelector('article'));
+  if (grid) A.__gridCols = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length;
   const cards = grid ? $$('article.card', grid) : [];
   const top = cards.length ? cards[0].getBoundingClientRect().top : 0;
   cards.forEach((a, i) => {
@@ -577,6 +651,23 @@ const PROTO_MEASURE = `window.__anchors = function () {
   A.__css = { page: css(document.body, 'backgroundColor'), header: css(header, 'backgroundColor'), h1: css($('h1', main), 'color') };
   A.__h1 = $('h1', main).textContent;
   return A;
+};
+// Сетка прототипа на N колонок приложения (12 T-UI-116 ред. 1.22): только для ожиданий блоков карточки при ширине
+// карточки приложения; снимок прототипа как есть делается до перестройки, __restoreGrid возвращает разметку.
+window.__relayGrid = async function (cols, box) {
+  const main = document.querySelector('main');
+  const grid = [...main.querySelectorAll('div')].find((d) => getComputedStyle(d).display === 'grid' && d.querySelector('article'));
+  if (!grid) return false;
+  window.__gridSaved = { el: grid, style: grid.getAttribute('style') };
+  grid.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
+  if (box) { grid.style.width = box.width + 'px'; grid.style.marginLeft = box.shift + 'px'; }
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  return getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length;
+};
+window.__restoreGrid = function () {
+  const s = window.__gridSaved; if (!s) return false;
+  if (s.style == null) s.el.removeAttribute('style'); else s.el.setAttribute('style', s.style);
+  window.__gridSaved = null; return true;
 }; true;`;
 
 // ================================================================ приложение (сайт веб-демо)
@@ -731,30 +822,97 @@ export function appAnchors(nodes, protoA) {
   }
   return A;
 }
-/** Сравнение одного состояния: снимки → якоря, цвета, области, изображения. */
-export function compareState({ name, protoPng, appPng, protoA, appA, masks, outDir, vp }) {
+/** Сравнение одного состояния: снимки → якоря, цвета, области, изображения. `grid` — сетка приложения при другом числе
+ * колонок, чем у прототипа (`protoGrid` + `appRow` — первый ряд приложения по месту); null — прежняя сверка. */
+export function compareState({ name, protoPng, appPng, protoA, appA, masks, outDir, vp, grid = null }) {
   const P = pngDecode(protoPng);
   const Q = pngDecode(appPng);
   writeFileSync(`${outDir}/${name}-proto.png`, protoPng);
   writeFileSync(`${outDir}/${name}-app.png`, appPng);
+  const G = grid;
+  const P2 = G ? pngDecode(G.protoPng2) : null;
+  const A2 = G ? G.protoA2 : null;
+  if (G) writeFileSync(`${outDir}/${name}-proto-grid.png`, G.protoPng2);
+  const notes = [];
   const rows = [];
+  const r1 = (v) => Math.round(v * 10) / 10;
   // ---- якоря: видимые коробки (у элементов с рамкой/заливкой) и «чернила» (у текста)
   const TEXT = new Set(['column.title', 'title', 'found', 'logo', 'drawer.title']);
   const isText = (k) => TEXT.has(k) || /:(name|sku|stock|price|unit|sum)$/.test(k);
+  const isFill = (k) => /:button$|^drawer\.btn1$/.test(k);
   // центр (стрелки ленты, крестик drawer, степпер — у приложения цель 44/48 больше видимого круга), прямоугольник как есть
   // (тост, drawer, строка «Клиент» — узел семантики = контейнер), без пары у приложения (структура прототипа — справочно)
   const CENTER = /^(ribbon\.(left|right)|bell|drawer\.close|line\d+:stepper)$/;
   const RECT = /^(toast|drawer|drawer\.client)$/;
   const SKIP = /^(header|column|ribbon|toolbar|segment|user\.(avatar|block)|logo\.(mark|word)|compactTable|compactHead|drawer\.(head|foot)|filterPanel|filter\.(check|reset))$/;
+  /** Видимая коробка / «чернила» пары: прототип — на снимке PI по DOM-прямоугольнику pr, приложение — по затравке ar. */
+  const measure = (k, PI, pr, ar) => {
+    if (isText(k)) {
+      const grow = (r) => (r ? [r[0] - 3, r[1] - 3, r[2] + 6, r[3] + 6] : null);
+      const p = inkBox(PI, grow(pr));
+      // у приложения узел семантики выше текста (цель 48) — окно по высоте текста прототипа вокруг центра узла
+      const a = inkBox(Q, ar ? [ar[0] - 3, ar[1] + ar[3] / 2 - pr[3] / 2 - 4, ar[2] + 6, pr[3] + 8] : null);
+      return { kind: 'ink', p: p && { box: p.box, ink: p.ink }, a: a && { box: a.box, ink: a.ink } };
+    }
+    // залитые кнопки: цель касания приложения 44/48 больше видимой части, рядом разделители строк
+    if (isFill(k)) return { kind: 'fill', p: { box: fillBox(PI, pr) }, a: { box: fillBox(Q, ar) } };
+    return { kind: 'box', p: { box: visibleBox(PI, pr) }, a: { box: visibleBox(Q, ar) } };
+  };
+  const inkDEof = (p, a) => (p?.ink && a?.ink ? Math.round(deltaE2000(rgbOf(p.ink), rgbOf(a.ink)) * 100) / 100 : null);
+  // строки сетки: края (левый, верхний, правый, нижний), каждый ±1 — карточки 241,6 / 260,8 … стоят на дробных
+  // координатах, и у ширины, разности двух краёв, погрешность сглаживания до 2 px
+  const edges = (a, e) => [a[0] - e[0], a[1] - e[1], a[0] + a[2] - (e[0] + e[2]), a[1] + a[3] - (e[1] + e[3])].map(r1);
+  const GRID_NOTE = G ? `сознательное отличие ADR-114 / 12 ред. 1.22: колонок ${G.cols} вместо ${G.protoCols} прототипа` : '';
   for (const k of Object.keys(protoA)) {
     if (k.startsWith('__') || /:title$/.test(k) || !Array.isArray(protoA[k]) || SKIP.test(k)) continue;
+    const gm = G ? /^card(\d+):(\w+)$/.exec(k) : null;
+    if (gm) {
+      // ---- сетка приложения (03 §7.3 ред. 1.27; 12 T-UI-116 ред. 1.22)
+      const i = Number(gm[1]);
+      if (i >= G.cols) {
+        if (gm[2] === 'box') rows.push({ anchor: k, kind: 'grid', proto: protoA[k].map(r1), app: null, d: null, ok: null, grid: true, note: `${GRID_NOTE} (карточка ${i + 1} — во втором ряду приложения)`, protoDom: protoA[k], appSem: null });
+        continue;
+      }
+      if (gm[2] === 'box') {
+        // левый край, верх ряда, ширина карточки, высота ячейки — против расчёта; карточка приложения — i-я по месту
+        const exp = G.boxes[i];
+        const seed = G.appRow[i] ?? null;
+        const a = seed ? visibleBox(Q, seed, { masks }) : null;
+        const d = a ? edges(a, exp) : null;
+        rows.push({ anchor: k, kind: 'grid', proto: exp.map(r1), app: a, d, ok: d ? d.every((v) => Math.abs(v) <= 1) : null, grid: true, protoDom: A2?.[k] ?? null, appSem: seed });
+        continue;
+      }
+      // блоки карточки: смещение от своей карточки; прототип — перестроенный на колонки приложения (P2)
+      const pr = A2?.[k] ?? null;
+      const pbSeed = A2?.[`card${i}:box`] ?? null;
+      const abSeed = appA[`card${i}:box`] ?? G.appRow[i] ?? null;
+      if (!pr || !pbSeed || !abSeed) {
+        rows.push({ anchor: k, kind: isText(k) ? 'ink' : isFill(k) ? 'fill' : 'box', proto: null, app: null, d: null, ok: null, grid: true, note: !pr ? 'нет у прототипа с колонками приложения' : 'нет карточки приложения', protoDom: pr, appSem: appA[k] ?? null });
+        continue;
+      }
+      const pb = visibleBox(P2, pbSeed, { pad: 3 }) ?? pbSeed;
+      const ab = visibleBox(Q, abSeed, { pad: 3, masks }) ?? abSeed;
+      let ar = appA[k] ?? [ab[0] + (pr[0] - pb[0]), ab[1] + (pr[1] - pb[1]), pr[2], pr[3]];
+      if (gm[2] === 'unit' && !appA[k]) {
+        // «/ шт» после цены: окно — на разницу правых краёв цены от своих карточек
+        const price = rows.find((x) => x.anchor === `card${i}:price`);
+        if (price?.rel) ar = [ar[0] + price.rel.a[0] + price.rel.a[2] - (price.rel.p[0] + price.rel.p[2]), ar[1], ar[2], ar[3]];
+      }
+      // звезда — окно внутри белого круга 34 (у карточки шире прототипа фото доходит до угла звезды, и окно с полем 6
+      // ловило светлый фон фото)
+      const { kind, p, a } = gm[2] === 'star' ? { kind: 'box', p: { box: visibleBox(P2, pr, { pad: -6 }) }, a: { box: visibleBox(Q, ar, { pad: -6 }) } } : measure(k, P2, pr, ar);
+      const rel = p?.box && a?.box ? { p: [p.box[0] - pb[0], p.box[1] - pb[1], p.box[2], p.box[3]], a: [a.box[0] - ab[0], a.box[1] - ab[1], a.box[2], a.box[3]] } : null;
+      const d = rel ? edges(rel.a, rel.p) : null;
+      rows.push({ anchor: k, kind, proto: p?.box ?? null, app: a?.box ?? null, d, ok: d ? d.every((v) => Math.abs(v) <= 1) : null, rel, grid: true, protoInk: p?.ink ?? null, appInk: a?.ink ?? null, inkDE: inkDEof(p, a), protoDom: pr, appSem: appA[k] ?? null });
+      continue;
+    }
     if (CENTER.test(k) || RECT.test(k)) {
       const pr = protoA[k];
       const ar = appA[k] ?? null;
-      const c = (r) => (r ? [Math.round((r[0] + r[2] / 2) * 10) / 10, Math.round((r[1] + r[3] / 2) * 10) / 10] : null);
-      const pv = CENTER.test(k) ? c(pr) : pr.map((v) => Math.round(v * 10) / 10);
-      const av = ar ? (CENTER.test(k) ? c(ar) : ar.map((v) => Math.round(v * 10) / 10)) : null;
-      const d = pv && av ? pv.map((v, i) => Math.round((av[i] - v) * 10) / 10) : null;
+      const c = (r) => (r ? [r1(r[0] + r[2] / 2), r1(r[1] + r[3] / 2)] : null);
+      const pv = CENTER.test(k) ? c(pr) : pr.map(r1);
+      const av = ar ? (CENTER.test(k) ? c(ar) : ar.map(r1)) : null;
+      const d = pv && av ? pv.map((v, i) => r1(av[i] - v)) : null;
       rows.push({ anchor: k, kind: CENTER.test(k) ? 'center' : 'rect', proto: pv, app: av, d, ok: d ? d.every((v) => Math.abs(v) <= 1) : null, protoDom: pr, appSem: ar });
       continue;
     }
@@ -770,45 +928,38 @@ export function compareState({ name, protoPng, appPng, protoA, appA, masks, outD
       const price = m[2] === 'unit' ? rows.find((x) => x.anchor === `${m[1]}:price`) : null;
       if (price?.proto && price?.app) ar[0] += price.app[0] + price.app[2] - (price.proto[0] + price.proto[2]);
     }
-    let p;
-    let a;
-    if (isText(k)) {
-      const grow = (r) => (r ? [r[0] - 3, r[1] - 3, r[2] + 6, r[3] + 6] : null);
-      p = inkBox(P, grow(pr));
-      // у приложения узел семантики выше текста (цель 48) — окно по высоте текста прототипа вокруг центра узла
-      a = inkBox(Q, ar ? [ar[0] - 3, ar[1] + ar[3] / 2 - pr[3] / 2 - 4, ar[2] + 6, pr[3] + 8] : null);
-      p = p && { box: p.box, ink: p.ink };
-      a = a && { box: a.box, ink: a.ink };
-    } else if (/:button$|^drawer\.btn1$/.test(k)) {
-      // залитые кнопки: цель касания приложения 44/48 больше видимой части, рядом разделители строк
-      p = { box: fillBox(P, pr) };
-      a = { box: fillBox(Q, ar) };
-    } else {
-      p = { box: visibleBox(P, pr) };
-      a = { box: visibleBox(Q, ar) };
-    }
-    const d = p?.box && a?.box ? p.box.map((v, i) => Math.round((a.box[i] - v) * 10) / 10) : null;
-    const inkDE = p?.ink && a?.ink ? Math.round(deltaE2000(rgbOf(p.ink), rgbOf(a.ink)) * 100) / 100 : null;
-    rows.push({ anchor: k, kind: isText(k) ? 'ink' : /:button$|^drawer\.btn1$/.test(k) ? 'fill' : 'box', proto: p?.box ?? null, app: a?.box ?? null, d, ok: d ? d.every((v) => Math.abs(v) <= 1) : null, protoInk: p?.ink ?? null, appInk: a?.ink ?? null, inkDE, protoDom: pr, appSem: appA[k] ?? null });
+    const { kind, p, a } = measure(k, P, pr, ar);
+    const d = p?.box && a?.box ? p.box.map((v, i) => r1(a.box[i] - v)) : null;
+    rows.push({ anchor: k, kind, proto: p?.box ?? null, app: a?.box ?? null, d, ok: d ? d.every((v) => Math.abs(v) <= 1) : null, protoInk: p?.ink ?? null, appInk: a?.ink ?? null, inkDE: inkDEof(p, a), protoDom: pr, appSem: appA[k] ?? null });
+  }
+  if (G) {
+    notes.push(`сетка приложения ${G.cols} колонок по ${r1(G.cardW)} (класс ${G.cls}, предел ${G.cap}; прототип — ${G.protoCols}), левый край ${r1(G.left)}, ячейка ${G.cellH}${G.centred ? ', область по центру' : ''}; карточки прототипа с номером ≥ ${G.cols} — ${GRID_NOTE.split(':')[0]}`);
+    const rowH = A2?.['card0:box']?.[3];
+    if (rowH != null && Math.abs(rowH - G.cellH) > 0.5) notes.push(`высота ряда прототипа на ${G.cols} колонок — ${r1(rowH)}, расчёт ячейки — ${G.cellH}`);
+    if (G.relayCols !== G.cols) notes.push(`прототип перестроен на ${G.relayCols} колонок вместо ${G.cols}`);
+    const rowN = Object.keys(protoA).filter((k) => /^card\d+:box$/.test(k)).length;
+    if (G.appRow.length !== Math.min(G.cols, rowN)) notes.push(`в первом ряду приложения карточек ${G.appRow.length}, ожидалось ${Math.min(G.cols, rowN)}`);
   }
   // ---- цвета ровных заливок: точка (центр по x, 3 px ниже верхней видимой границы) и фон страницы/шапки
   const colors = [];
-  const sample = (label, pPt, aPt) => {
+  const sample = (label, pPt, aPt, PI = P) => {
     if (!pPt || !aPt) return;
-    const c1 = px(P, pPt[0], pPt[1]);
+    const c1 = px(PI, pPt[0], pPt[1]);
     const c2 = px(Q, aPt[0], aPt[1]);
     colors.push({ sample: label, proto: hex(c1), app: hex(c2), dE: Math.round(deltaE2000(c1, c2) * 100) / 100, at: [Math.round(pPt[0]), Math.round(pPt[1])] });
   };
   sample('фон страницы', [P.width - 6, P.height - 6], [Q.width - 6, Q.height - 6]);
   if (protoA.header) sample('фон шапки', [protoA.header[0] + protoA.header[2] * 0.45, 6], [protoA.header[0] + protoA.header[2] * 0.45, 6]);
   for (const r of rows) {
-    if ((r.kind !== 'box' && r.kind !== 'fill') || !r.proto || !r.app) continue;
+    if ((r.kind !== 'box' && r.kind !== 'fill' && r.kind !== 'grid') || !r.proto || !r.app) continue;
     if (!/^(tile:|sub:|chip:|seg:|card\d+:(box|button)|row\d+:(box|button)|crow\d+:button|sort|filtersBtn|search\.field|cart\.chip|toast|filterPanel|drawer\.(btn\d|head|foot))/.test(r.anchor)) continue;
     const yOff = /:button$|^seg:|^chip:|^sort|^filtersBtn|^toast|^cart\.chip|^search\.field|^drawer\.btn/.test(r.anchor) ? 4 : 3;
-    sample(r.anchor, [r.proto[0] + r.proto[2] / 2, r.proto[1] + yOff], [r.app[0] + r.app[2] / 2, r.app[1] + yOff]);
+    // карточки при другом числе колонок — заливки прототипа на снимке с колонками приложения
+    sample(r.anchor, [r.proto[0] + r.proto[2] / 2, r.proto[1] + yOff], [r.app[0] + r.app[2] / 2, r.app[1] + yOff], r.grid ? P2 : P);
   }
   // ---- области (прямоугольники прототипа), вне масок
   const regions = {};
+  const regionsInfo = {};
   const reg = (label, rect) => {
     if (rect) regions[label] = regionMad(P, Q, rect, masks);
   };
@@ -816,21 +967,33 @@ export function compareState({ name, protoPng, appPng, protoA, appA, masks, outD
   reg('колонка', protoA.column);
   reg('лента', protoA.ribbon && [protoA.ribbon[0] - 2, protoA.ribbon[1] - 2, protoA.ribbon[2] + 4, protoA.ribbon[3] + 4]);
   reg('строка управления', protoA.toolbar);
+  const bounds = (rects) => {
+    const x0 = Math.min(...rects.map((r) => r[0]));
+    const y0 = Math.min(...rects.map((r) => r[1]));
+    const x1 = Math.max(...rects.map((r) => r[0] + r[2]));
+    const y1 = Math.max(...rects.map((r) => r[1] + r[3]));
+    return [x0, y0, x1 - x0, Math.min(y1, P.height) - y0];
+  };
   const firstRow = Object.keys(protoA).filter((k) => /^(card|row|crow)\d+:box$/.test(k)).map((k) => protoA[k]);
-  if (firstRow.length) {
-    const x0 = Math.min(...firstRow.map((r) => r[0]));
-    const y0 = Math.min(...firstRow.map((r) => r[1]));
-    const x1 = Math.max(...firstRow.map((r) => r[0] + r[2]));
-    const y1 = Math.max(...firstRow.map((r) => r[1] + r[3]));
-    reg('первый ряд карточек', [x0, y0, x1 - x0, Math.min(y1, P.height) - y0]);
-  }
+  if (G) {
+    // 12 T-UI-116 ред. 1.22: при другом числе колонок средняя разница области сетки не оценивается
+    notes.push('«первый ряд карточек» не оценивается (12 T-UI-116 ред. 1.22: колонки сетки — сознательное отличие); справочно — против прототипа с колонками приложения');
+    const rowN = Math.min(G.cols, firstRow.length);
+    if (rowN) regionsInfo['первый ряд карточек (прототип на колонках приложения, справочно)'] = regionMad(P2, Q, bounds(G.boxes.slice(0, rowN)), masks);
+  } else if (firstRow.length) reg('первый ряд карточек', bounds(firstRow));
   if (protoA.drawer) reg('drawer корзины', protoA.drawer);
   if (protoA.toast) reg('тост', [protoA.toast[0] - 4, protoA.toast[1] - 4, protoA.toast[2] + 8, protoA.toast[3] + 8]);
   reg('весь кадр', [0, 0, P.width, P.height]);
   const { side, diff } = sideBySide(P, Q, masks);
   writeFileSync(`${outDir}/${name}-side.png`, pngEncode(side));
   writeFileSync(`${outDir}/${name}-diff.png`, pngEncode(diff));
-  return { vp, state: name, anchors: rows, colors, regions, masks, size: { proto: [P.width, P.height], app: [Q.width, Q.height] } };
+  if (G) writeFileSync(`${outDir}/${name}-grid-side.png`, pngEncode(sideBySide(P2, Q, masks).side));
+  const res = { vp, state: name, anchors: rows, colors, regions, masks, notes, size: { proto: [P.width, P.height], app: [Q.width, Q.height] } };
+  if (G) {
+    res.regionsInfo = regionsInfo;
+    res.grid = { cls: G.cls, cap: G.cap, W: G.W, cols: G.cols, protoCols: G.protoCols, cardW: r1(G.cardW), left: r1(G.left), cellH: G.cellH, wraps: G.wraps, centred: G.centred, boxes: G.boxes.map((b) => b.map(r1)), appRow: G.appRow };
+  }
+  return res;
 }
 
 // ================================================================ основной прогон
@@ -883,9 +1046,19 @@ async function main() {
       const protoPng = await capture(P);
       const dir = `${OUT}/${img.width}x${img.height}`;
       mkdirSync(dir, { recursive: true });
-      // якоря приложения неизвестны (нет семантики) — затравка = прямоугольник прототипа
-      const appA = Object.fromEntries(Object.entries(protoA).filter(([k, v]) => Array.isArray(v) && !k.startsWith('__')));
-      R.results.push(compareState({ name: `${state}-golden`, protoPng, appPng: readFileSync(APP_PNG), protoA, appA, masks: [], outDir: dir, vp: `${img.width}x${img.height}` }));
+      // сетка при другом числе колонок (12 T-UI-116 ред. 1.22): коробки карточек — из expectedGrid, не из прототипа
+      const grid = await protoGrid(P, protoA, img.width);
+      // якоря приложения неизвестны (нет семантики) — затравка = прямоугольник прототипа (карточки сетки — расчёт)
+      const appA = Object.fromEntries(Object.entries(protoA).filter(([k, v]) => Array.isArray(v) && !k.startsWith('__') && !(grid && /^card\d+:/.test(k))));
+      if (grid) {
+        const rowN = Object.keys(protoA).filter((k) => /^card\d+:box$/.test(k)).length;
+        grid.appRow = grid.boxes.slice(0, Math.min(grid.cols, rowN));
+        grid.appRow.forEach((b, i) => (appA[`card${i}:box`] = b));
+      }
+      const res = compareState({ name: `${state}-golden`, protoPng, appPng: readFileSync(APP_PNG), protoA, appA, masks: [], outDir: dir, vp: `${img.width}x${img.height}`, grid });
+      R.results.push(res);
+      R.notes.push(...res.notes.map((n) => `${res.vp} ${res.state}: ${n}`));
+      log(`${res.vp} ${res.state}: якорей ${res.anchors.length}, вне ±1 — ${res.anchors.filter((x) => x.ok === false).length}; области ${JSON.stringify(res.regions)}`);
     } else {
       const A = await openTab(B, { w: 1440, h: 900 });
       await uiLogin(A, ORIGIN, { storage: STORAGE, log });
@@ -912,6 +1085,8 @@ async function main() {
             // drawer корзины открыт: страница под затемнением у приложения вне семантики (модальный барьер) — только drawer
             if (protoA.drawer) for (const k of Object.keys(protoA)) if (!k.startsWith('__') && !/^(drawer|line\d+:)/.test(k)) delete protoA[k];
             const protoPng = await capture(P);
+            // другое число колонок сетки (1366 / 1440 / 1536 / 1920): прототип на колонках приложения — после снимка как есть
+            const grid = await protoGrid(P, protoA, w);
             if (Date.now() - tp > 5000) log(`прототип: ${st} — ${((Date.now() - tp) / 1000).toFixed(1)} с`);
             await B.send('Page.bringToFront', {}, A.sid);
             A.note = null;
@@ -922,11 +1097,13 @@ async function main() {
             const masks = await appMasks(A, nodes, protoA);
             // «Найдено» сдвинуто подборкой «Недавние» (паритет): обе позиции — в маску областей
             if (protoA.found && appA.found && Math.abs(protoA.found[0] - appA.found[0]) > 2) masks.push(protoA.found.map(Math.round), appA.found.map(Math.round));
-            const res = compareState({ name: st, protoPng, appPng, protoA, appA, masks, outDir: dir, vp });
+            if (grid) grid.appRow = appFirstRow(nodes);
+            const res = compareState({ name: st, protoPng, appPng, protoA, appA, masks, outDir: dir, vp, grid });
             res.appHash = await hashOf(A);
             if (A.note) res.note = A.note;
             res.semantics = nodes.filter((n) => n.label).map((n) => `${n.label} @${n.rect.join(',')}`).slice(0, 400);
             R.results.push(res);
+            R.notes.push(...res.notes.map((n) => `${vp} ${st}: ${n}`));
             const bad = res.anchors.filter((x) => x.ok === false).length;
             log(`${vp} ${st}: якорей ${res.anchors.length}, вне ±1 — ${bad}; области ${JSON.stringify(res.regions)}`);
             await appReset(A, st, { log });
@@ -1011,6 +1188,16 @@ export async function appState(A, st, { santeh, log = () => {} }) {
 }
 /** Узел карточки товара (сетка, список, компакт): flt-semantics-img с подписью catalog_card_a11y «{название}, …». */
 export const cardNode = (nodes, title) => nodes.find((n) => n.role === 'img' && n.label.startsWith(title)) ?? null;
+/** Первый ряд сетки приложения по месту (слева направо): узлы карточек (роль img, ячейка 150…300 × 300…420 правее
+ * колонки категорий) с наименьшим верхом. Сверка сетки при другом числе колонок идёт по месту, а не по названию. */
+export function appFirstRow(nodes) {
+  const cards = nodes.filter((n) => n.role === 'img' && n.rect[0] > 120 && n.rect[2] >= 150 && n.rect[2] <= 300 && n.rect[3] >= 300 && n.rect[3] <= 420);
+  if (!cards.length) return [];
+  const top = Math.min(...cards.map((n) => n.rect[1]));
+  const row = [];
+  for (const n of cards.filter((c) => Math.abs(c.rect[1] - top) <= 2).sort((a, b) => a.rect[0] - b.rect[0])) if (!row.some((r) => Math.abs(r[0] - n.rect[0]) < 2)) row.push(n.rect);
+  return row;
+}
 export async function addTo(A, title) {
   const nodes = await semNodes(A);
   const card = cardNode(nodes, title);
@@ -1072,21 +1259,24 @@ export async function appMasks(A, nodes, protoA = {}) {
 export function report(R) {
   const L = [];
   L.push(`# design-compare — ${R.startedAt}`, '', `Браузер: ${R.browser}; сайт: ${R.origin ?? '—'}; посадка: ${R.landing ?? '—'} ${JSON.stringify(R.landingTitle ?? [])}; полоса DEV: ${JSON.stringify(R.devStrip ?? null)}; opsz прототипа: ${R.opsz ?? '—'}`, '');
+  if (R.notes?.length) L.push('Заметки:', '', ...R.notes.map((n) => `- ${n}`), '');
   for (const r of R.results) {
     L.push(`## ${r.vp} · ${r.state}`, '');
     if (r.error) {
       L.push('```', r.error, '```', '');
       continue;
     }
-    L.push(`Снимки: \`${r.vp}/${r.state}-side.png\`, \`${r.vp}/${r.state}-diff.png\`; адрес приложения: \`${r.appHash ?? ''}\``, '');
+    L.push(`Снимки: \`${r.vp}/${r.state}-side.png\`, \`${r.vp}/${r.state}-diff.png\`${r.grid ? `, \`${r.vp}/${r.state}-grid-side.png\` (прототип на колонках приложения)` : ''}; адрес приложения: \`${r.appHash ?? ''}\``, '');
     if (r.note) L.push(`Примечание: ${r.note}`, '');
-    L.push('| якорь | вид | прототип x,y,w,h | приложение x,y,w,h | Δ | ±1 | чернила прот. / прил. (ΔE) |', '|---|---|---|---|---|---|---|');
-    for (const a of r.anchors) L.push(`| ${a.anchor} | ${a.kind} | ${a.proto?.join(', ') ?? '—'} | ${a.app?.join(', ') ?? '—'} | ${a.d?.join(', ') ?? '—'} | ${a.ok === null ? '—' : a.ok ? 'да' : '**нет**'} | ${a.protoInk ? `${a.protoInk} / ${a.appInk ?? '—'} (${a.inkDE ?? '—'})` : ''} |`);
+    if (r.grid) L.push(`Сетка (03 §7.3 ред. 1.27; 12 T-UI-116 ред. 1.22): ${r.grid.cols} колонок по ${r.grid.cardW} (прототип — ${r.grid.protoCols}), левый край ${r.grid.left}, ячейка ${r.grid.cellH}. Строки \`card*:box\` (вид grid) — против расчёта; блоки карточек — смещение от своей карточки (прототип на колонках приложения); Δ строк \`card*\` — по краям (левый, верхний, правый, нижний), каждый ±1.`, '');
+    L.push('| якорь | вид | прототип x,y,w,h | приложение x,y,w,h | Δ | ±1 | чернила прот. / прил. (ΔE) | примечание |', '|---|---|---|---|---|---|---|---|');
+    for (const a of r.anchors) L.push(`| ${a.anchor} | ${a.kind} | ${a.proto?.join(', ') ?? '—'} | ${a.app?.join(', ') ?? '—'} | ${a.d?.join(', ') ?? '—'} | ${a.ok === null ? '—' : a.ok ? 'да' : '**нет**'} | ${a.protoInk ? `${a.protoInk} / ${a.appInk ?? '—'} (${a.inkDE ?? '—'})` : ''} | ${a.note ?? ''} |`);
     L.push('', '| цвет | прототип | приложение | ΔE2000 |', '|---|---|---|---|');
     for (const c of r.colors) L.push(`| ${c.sample} | ${c.proto} | ${c.app} | ${c.dE <= 1 ? c.dE : `**${c.dE}**`} |`);
     L.push('', `Области (средняя |Δ|, 0…255, вне масок): ${Object.entries(r.regions).map(([k, v]) => `${k} ${v}`).join('; ')}`, '');
+    if (r.regionsInfo && Object.keys(r.regionsInfo).length) L.push(`Справочно (не оценивается): ${Object.entries(r.regionsInfo).map(([k, v]) => `${k} ${v}`).join('; ')}`, '');
   }
   return L.join('\n');
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

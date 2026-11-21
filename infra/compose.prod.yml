@@ -1,0 +1,261 @@
+# Рабочий контур «Оптомстрой POS» на сервере заказчика (сценарий A; 16 §4.1–§4.5, §7, §8, §11; D-33, D-44, D-45).
+# Сервисы: api, worker, migrate, postgres, backup. Сети: optomstroy_prod_edge (внешняя: её создают скрипты комплекта,
+# к ней подключён общий caddy) и optomstroy_prod_backend (internal: true). Порты хоста этот проект НЕ публикует:
+# 80/443 держит только caddy проекта optomstroy-edge (compose.edge.yml; 16 §4.4 прим. 4, §11) — он обслуживает и
+# рабочий контур (api.<домен>), и тестовую копию (api-test.<домен>); postgres — без ports: и без expose наружу.
+#
+# Файл НЕ запускается из репозитория: infra/scripts/install.sh копирует комплект в каталог проекта на сервере
+# (по умолчанию /opt/optomstroy/prod) вместе с .env (из infra/env/prod.env.example) и секретами secrets/*.
+# Все команды — через обёртку /opt/optomstroy/prod/bin/dc (подключает нужные файлы-дополнения), docs/ops/RUNBOOK.md.
+#
+# Файлы-дополнения (подключаются обёрткой dc, только если на сервере есть их секреты; 16 §4.4 «пусто — не монтировать»):
+#   compose.prod.onec.yml          — HTTP-сервис расширения 1С (pos_hs, ключ X-POS-Client-Key), когда 1С подключена;
+#   compose.prod.onec-odata.yml    — OData 1С только чтение (pos_integration; режимы extension и odata_only);
+#   compose.prod.onec-ca.yml       — сертификат CA веб-сервера 1С (самоподписанный или внутренний CA);
+#   compose.prod.healthchecks.yml  — ping-URL Healthchecks для worker и backup;
+#   compose.staging.yml            — тестовая копия на том же сервере (проект optomstroy-test; подключается последним).
+# Без 1С (первые месяцы работы, ответ владельца 2026-11-18) сервер стартует без них: ONEC_MODE=extension без
+# ONEC_BASE_URL не роняет worker, а синхронизация получает ошибку конфигурации (docs/ops/RUNBOOK.md §8).
+#
+# Отличия от примера 16 §4.4 (обоснование — infra/NOTES.md «Рабочий контур»):
+#   1) секреты — права 640, владелец optomstroy, группа optomstroy-secrets (GID 10100, без людей), сервисы получают
+#      её через group_add (16 §4.2 версии 1.16; 15 ADR-033, уточнение 2026-11-19): без Swarm файл секрета
+#      монтируется bind-mount с правами хоста, а процессы работают под uid 10001/10002/999;
+#   2) postgres работает сразу под uid 999 (user:), иначе entrypoint образа сбрасывает дополнительные группы;
+#   3) migrate запускается с --seed: идемпотентные строки по умолчанию (07 §15, AC-DATA-278), как в compose.test.yml;
+#   4) образы optomstroy/* собирает install.sh/update.sh на сервере (или загружает docker load), pull_policy: never —
+#      Compose не пойдёт за ними в Docker Hub;
+#   5) APP_ENV=prod закреплён в environment: прод-файл не поднимет сервер в режиме staging/dev (OPS-027);
+#   6) caddy — в отдельном проекте optomstroy-edge (16 §11 вариант «один общий Caddy»), сеть edge — внешняя;
+#   7) копию делает роль pos_backup (pg_read_all_data, пароль — secrets/db_backup_password), а не суперпользователь;
+#   8) память postgres/api/worker — параметры .env (PG_SHARED_BUFFERS, PG_MEM_LIMIT, API_MEM_LIMIT, WORKER_MEM_LIMIT;
+#      по умолчанию — значения для 8 GB, install.sh ставит профиль 4 GB; 16 §4.4 прим. 2);
+#   9) непрерывная копия WAL (PITR, BACKUP_PITR=on|off в .env; 15 ADR-035, 16 §8.1 «RPO при PITR ≤ 15 мин»):
+#      archive_command встроенными средствами PostgreSQL 17 кладёт сегменты в спул walspool (диск базы), сервис backup
+#      сжимает и шифрует их age в backups/pitr и выгружает вне сервера; базовая копия — pg_basebackup ночью после дампа
+#      (RUNBOOK §4.8). Роль pos_backup для этого — REPLICATION (pg_hba: host replication pos_backup).
+# Значений секретов в этом файле нет (16 §4.3). Проверка без Docker:
+#   python -I -X utf8 infra/docker/scripts/check_compose_prod.py infra/compose.prod.yml
+name: optomstroy-prod
+
+x-common: &common
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+  security_opt: [ "no-new-privileges:true" ]
+
+# Группа, которой доступны файлы secrets/* (640). Людей в группе нет — только процессы контейнеров (infra/NOTES.md).
+x-secrets-group: &secrets-group [ "10100" ]   # check-secrets: allow (GID группы, не секрет)
+
+# Закреплённые значения для процессов api/worker/migrate (поверх .env; 16 §4.3, OPS-027).
+x-prod-env: &prod-env
+  APP_ENV: prod
+
+# Указатели на секреты, общие для api и worker (16 §4.4 x-secret-env; слияние якорей поверхностное — 16 §4.4 прим. 6).
+# Указатели 1С и Healthchecks — в файлах-дополнениях (подключаются, только когда секреты есть на сервере).
+x-secret-env: &secret-env   # check-secrets: allow (якорь указателей *_FILE, значений секретов нет)
+  DATABASE_URL_FILE: /run/secrets/database_url
+  JWT_PUBLIC_KEY_FILE: /run/secrets/jwt_public.json   # набор {kid: pem} (R0 §17.7)
+  SMSPRO_LOGIN_FILE: /run/secrets/smspro_login
+  SMSPRO_PASSWORD_FILE: /run/secrets/smspro_password
+  MEDIA_DIR: /data/media
+
+x-app: &app
+  <<: *common
+  image: optomstroy/api:${API_TAG:?задайте API_TAG в .env (неизменяемый тег, не latest)}
+  pull_policy: never               # образ собирает install.sh/update.sh (или docker load); из Docker Hub не тянется
+  user: "10001:10001"              # non-root пользователь образа (infra/docker/api/Dockerfile)
+  group_add: *secrets-group
+  read_only: true
+  tmpfs: [ "/tmp" ]
+  cap_drop: [ "ALL" ]
+  env_file: .env                   # несекретная конфигурация (16 §4.3); секреты — только *_FILE ниже
+  stop_grace_period: 30s
+
+services:
+  migrate:
+    <<: *app
+    command: [ "node", "dist/migrate.js", "--seed" ]
+    restart: "no"
+    environment:
+      <<: *prod-env
+      DATABASE_URL_FILE: /run/secrets/database_url              # хост/порт/БД (пользователь заменяется на pos_migrate)
+      DB_MIGRATOR_PASSWORD_FILE: /run/secrets/db_migrator_password
+      WORKERS_ENABLED: "false"
+    secrets: [ database_url, db_migrator_password ]
+    networks: [ backend ]
+    depends_on:
+      postgres: { condition: service_healthy }
+    deploy: { resources: { limits: { memory: 512M, cpus: "1.0" } } }
+
+  api:
+    <<: *app
+    command: [ "node", "dist/main.js" ]
+    environment:
+      <<: [ *prod-env, *secret-env ]
+      JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private.pem         # подпись токенов (kid = JWT_KEY_ID) — только api
+      OTP_HMAC_SECRET_FILE: /run/secrets/otp_pepper              # HMAC OTP — api и worker (одно значение; EQ-AUTH-08)
+      PIN_PEPPER_FILE: /run/secrets/pin_pepper                   # Argon2id PIN (D-48) — только api
+      WORKERS_ENABLED: "false"                                   # D-45: только HTTP; задачи pg-boss исполняет worker
+    secrets: [ database_url, jwt_private.pem, jwt_public.json, otp_pepper, pin_pepper, smspro_login, smspro_password ]
+    volumes: [ "media:/data/media" ]
+    expose: [ "3000" ]                                           # без ports: — доступен только из сетей compose
+    # Общий caddy обращается к api по имени контейнера <проект>-api-1 (optomstroy-prod-api-1) в сети edge.
+    networks: [ edge, backend ]
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://127.0.0.1:3000/health" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    deploy: { resources: { limits: { memory: "${API_MEM_LIMIT:-1G}", cpus: "1.5" } } }
+
+  worker:
+    <<: *app
+    command: [ "node", "dist/worker.js" ]
+    environment:
+      <<: [ *prod-env, *secret-env ]
+      WORKERS_ENABLED: "true"                                    # D-45: тот же код в роли воркера (pg-boss, без Redis)
+      OTP_HMAC_SECRET_FILE: /run/secrets/otp_pepper              # текст задания sms.send и возврат квоты номера
+      # Ключ подписи JWT и pepper PIN worker'у не передаются (минимум прав, 16 §4.4 прим. 6).
+    secrets: [ database_url, jwt_public.json, otp_pepper, smspro_login, smspro_password ]
+    volumes: [ "media:/data/media" ]
+    networks: [ edge, backend ]
+    healthcheck:
+      # HTTP у worker нет (16 §4.1): проверяется, что процесс node dist/worker.js жив ([.] — чтобы pgrep не нашёл
+      # саму команду проверки). Работу очередей показывает /health/ready api (pg-boss) и внешний Healthchecks.
+      test: [ "CMD-SHELL", "pgrep -f '^node dist/worker[.]js' >/dev/null || exit 1" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    deploy: { resources: { limits: { memory: "${WORKER_MEM_LIMIT:-1G}", cpus: "1.0" } } }
+
+  postgres:
+    <<: *common
+    image: postgres:17.10          # тот же точный тег, что в тестовом контуре; 18 — после решения Q-104
+    user: "999:999"                # пользователь postgres образа; каталог данных на хосте — 999:999, 700 (install.sh)
+    group_add: *secrets-group
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?задайте POSTGRES_USER в .env}
+      POSTGRES_DB: ${POSTGRES_DB:?задайте POSTGRES_DB в .env}
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+      # UTF-8 LC_CTYPE обязателен (16 §4.4, 07 §10.1, EQ-SRCH-01): pg_trgm и FTS по-русски.
+      POSTGRES_INITDB_ARGS: "--data-checksums --encoding=UTF8 --locale=C.UTF-8"
+    # Память: по умолчанию — для 8 GB RAM (16 §5); на сервере 4 GB install.sh пишет в .env PG_SHARED_BUFFERS=512MB и
+    # PG_MEM_LIMIT=1536M (16 §4.4 прим. 2). Значения .env переживают update.sh (комплект их не перезаписывает).
+    # Непрерывная копия WAL (RUNBOOK §4.8): archive_mode — из BACKUP_PITR (on|off; смена — пересоздание postgres:
+    # `dc up -d postgres backup`); сегмент закрывается не реже раза в 60 с (archive_timeout), так что в архив попадает
+    # всё, кроме последней минуты; wal_keep_size — запас WAL на время ночной базовой копии (pg_basebackup -X fetch).
+    command: >
+      postgres -c shared_buffers=${PG_SHARED_BUFFERS:-1GB} -c work_mem=16MB
+               -c log_min_duration_statement=500ms
+               -c shared_preload_libraries=pg_stat_statements
+               -c wal_level=replica
+               -c archive_mode=${BACKUP_PITR:-on}
+               -c "archive_command=sh /opt/optomstroy/pg/wal-archive.sh %p %f"
+               -c archive_timeout=60
+               -c wal_keep_size=256MB
+               -c timezone=UTC
+    # pg_password — суперпользователь образа; db_migrator_password, db_backup_password и database_url читает только
+    # initdb-скрипт (пароли ролей pos_migrate, pos_backup и pos_app, docker/postgres/initdb/10-roles.sh — один раз,
+    # на пустом каталоге данных).
+    secrets: [ pg_password, db_migrator_password, db_backup_password, database_url ]
+    volumes:
+      - pgdata:/var/lib/postgresql/data                          # для postgres:18+ — /var/lib/postgresql
+      - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
+      - ./docker/postgres/scripts:/opt/optomstroy/pg:ro          # archive_command (wal-archive.sh)
+      - walspool:/walspool                                       # спул WAL на диске базы (999:10002, 2770)
+    networks: [ backend ]                                        # только internal-сеть, порты НЕ публикуются
+    healthcheck:
+      # -h 127.0.0.1: TCP, а не unix-сокет — временный сервер initdb (listen_addresses='') не считается готовым.
+      test: [ "CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    stop_grace_period: 60s                                       # чистая остановка (checkpoint) при down/restart
+    shm_size: 256m
+    deploy: { resources: { limits: { memory: "${PG_MEM_LIMIT:-2G}", cpus: "2.0" } } }
+
+  backup:
+    <<: *common
+    image: optomstroy/backup:${BACKUP_TAG:?задайте BACKUP_TAG в .env (неизменяемый тег)}
+    pull_policy: never
+    env_file: .env                                               # BACKUP_SCHEDULE, BACKUP_KEEP_DAYS, BACKUP_REMOTE, …
+    environment:
+      PGHOST: postgres
+      PGUSER: pos_backup                                         # чтение всех данных (pg_read_all_data), не суперпользователь
+      PGDATABASE: ${POSTGRES_DB:?задайте POSTGRES_DB в .env}
+      PGPASSWORD_FILE: /run/secrets/db_backup_password
+      RCLONE_CONFIG: /run/secrets/rclone.conf                    # пустой файл — выгрузки нет (BACKUP_REMOTE пуст)
+      HOME: /tmp                                                 # rclone пишет кэш в $HOME/.cache; корень — read_only
+    secrets: [ db_backup_password, rclone.conf ]
+    user: "10002:10002"
+    group_add: *secrets-group
+    read_only: true
+    tmpfs: [ "/tmp" ]
+    cap_drop: [ "ALL" ]
+    volumes:
+      - backups:/backups
+      - media:/data/media:ro                                     # копия фото (backups/media и вне сервера)
+      - walspool:/walspool                                       # спул WAL: чтение, шифрование, удаление (группа 10002)
+    networks: [ edge, backend ]                                  # edge — выгрузка rclone и Healthchecks
+    healthcheck:
+      # backup.sh health (RUNBOOK §4.1, §4.8): жив цикл расписания; последняя копия моложе 26 ч (или копий ещё нет —
+      # первый запуск); при BACKUP_REMOTE — ночная выгрузка вне сервера (.offsite_ok) моложе 26 ч; при BACKUP_PITR=on —
+      # archive_mode=on, архивация WAL не сбоит (pg_stat_archiver), спул не стоит дольше 10 мин, базовая копия моложе
+      # 26 ч, выгрузка WAL вне сервера (.wal_offsite_ok) моложе 30 мин. Причина отказа — в выводе проверки.
+      test: [ "CMD", "/usr/local/bin/backup.sh", "health" ]
+      interval: 5m
+      timeout: 10s
+      retries: 2
+      start_period: 1m
+    depends_on:
+      postgres: { condition: service_healthy }
+    deploy: { resources: { limits: { memory: 512M, cpus: "0.5" } } }
+
+networks:
+  edge:
+    name: optomstroy_prod_edge       # явное имя по R0 §16.6; общая с caddy проекта optomstroy-edge
+    external: true                   # создают install.sh/update.sh/dc (docker network create): не удаляется `down` проекта
+  backend:
+    name: optomstroy_prod_backend
+    internal: true                   # без выхода наружу: postgres недоступен ни из интернета, ни с хоста
+
+# Данные — на хосте в /srv/optomstroy/prod (16 §4.2); каталоги и владельцев создаёт install.sh. backups — отдельный
+# диск (RUNBOOK §2.2): install.sh не продолжит, если копии и база на одном устройстве (кроме --allow-same-disk).
+volumes:
+  pgdata:
+    driver_opts: { type: none, o: bind, device: /srv/optomstroy/prod/pgdata }
+  media:
+    driver_opts: { type: none, o: bind, device: /srv/optomstroy/prod/media }
+  backups:
+    driver_opts: { type: none, o: bind, device: /srv/optomstroy/prod/backups }
+  # Спул WAL — на диске базы, не копий: недоступный диск копий не останавливает базу (archive_command пишет сюда),
+  # незашифрованный WAL на диск копий не попадает; файл лежит здесь секунды (backup.sh wal_ship).
+  walspool:
+    driver_opts: { type: none, o: bind, device: /srv/optomstroy/prod/walspool }
+
+# Файлы — в secrets/ рядом с этим файлом (на сервере: /opt/optomstroy/prod/secrets, права 640, группа 10100).
+# Обязательные создаёт install.sh (пароли, ключи) или вводит человек заказчика (SMSPro); rclone.conf может быть пустым.
+secrets:
+  pg_password:          { file: ./secrets/pg_password }
+  database_url:         { file: ./secrets/database_url }
+  db_migrator_password: { file: ./secrets/db_migrator_password }   # только migrate и initdb
+  db_backup_password:   { file: ./secrets/db_backup_password }     # только initdb и backup (роль pos_backup)
+  jwt_private.pem:      { file: ./secrets/jwt_private.pem }
+  jwt_public.json:      { file: ./secrets/jwt_public.json }        # {kid: pem}, не секрет
+  otp_pepper:           { file: ./secrets/otp_pepper }
+  pin_pepper:           { file: ./secrets/pin_pepper }
+  smspro_login:         { file: ./secrets/smspro_login }
+  smspro_password:      { file: ./secrets/smspro_password }
+  rclone.conf:          { file: ./secrets/rclone.conf }
+  # BACKUP_AGE_IDENTITY_FILE (приватный ключ age) на сервере НЕ хранится (R0 §17.7, OPS-004).

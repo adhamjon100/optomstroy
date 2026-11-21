@@ -8,13 +8,14 @@ import { AuthHttpRateLimiter } from '../common/http-rate-limits.js';
 import { type AuthHttpRequest, clientIp, headerValue, requireDeviceKey } from '../common/request.js';
 import { RequireStepUp, type RequestWithStepUp } from '../step-up/step-up.guard.js';
 import { StepUpService } from '../step-up/step-up.service.js';
-import { RefreshService, type TokenPairBody } from './refresh.service.js';
-import { LogoutDto, RefreshDto, SessionPatchDto, UnlockDto } from './sessions.dto.js';
+import { type HelloChallengeBody, HelloKeyChallengeService } from './hello-key-challenge.service.js';
+import { RefreshService, type RotationMode, type TokenPairBody } from './refresh.service.js';
+import { LogoutDto, RefreshDto, SessionPatchDto, UnlockChallengeDto, UnlockDto } from './sessions.dto.js';
 import { type SessionDto, SessionsService } from './sessions.service.js';
 
 /**
- * Сессии (RM-D-003; 08 §4.1.3–§4.1.6, §4.1.8; 09 §8): `refresh` и `unlock` — публичные (субъект — refresh +
- * `X-Device-Id`); остальное — Bearer, право `session.manage.own`.
+ * Сессии (RM-D-003; 08 §4.1.3–§4.1.6, §4.1.8, §4.1.10; 09 §8): `refresh`, `unlock` и `unlock/challenge` — публичные
+ * (субъект — refresh + `X-Device-Id`); остальное — Bearer, право `session.manage.own`.
  */
 @Controller('auth')
 export class SessionsController {
@@ -23,6 +24,7 @@ export class SessionsController {
     private readonly sessions: SessionsService,
     private readonly stepUp: StepUpService,
     private readonly limiter: AuthHttpRateLimiter,
+    private readonly helloChallenge: HelloKeyChallengeService,
   ) {}
 
   @Public()
@@ -49,20 +51,51 @@ export class SessionsController {
     this.limiter.publicIp(clientIp(req));
     this.limiter.authDevice(deviceKey);
     const method = body.method ?? 'pin';
-    if (method === 'biometric' && (body.pin !== undefined || body.biometricInvalidated !== undefined)) {
-      throw new ProblemException('VALIDATION_FAILED', {
-        status: 400,
-        detail: 'Запрос не прошёл проверку.',
-        errors: [{ field: 'pin', message: 'Для method=biometric PIN не передаётся', rule: 'forbidden_field' }],
-      });
+    if (method !== 'pin' && (body.pin !== undefined || body.biometricInvalidated !== undefined)) {
+      throw invalid('pin', `Для method=${method} PIN не передаётся`, 'forbidden_field');
     }
+    // Сочетания полей входа по лицу (08 §4.1.8; решение A11 контракта): `signature` — только с `hello_key` и обязательна
+    // для него, `helloKeyInvalidated` — только с `pin`.
+    if (body.signature !== undefined && method !== 'hello_key') {
+      throw invalid('signature', 'signature передаётся только с method=hello_key', 'method');
+    }
+    if (body.helloKeyInvalidated !== undefined && method !== 'pin') {
+      throw invalid('helloKeyInvalidated', 'helloKeyInvalidated передаётся только с method=pin', 'method');
+    }
+    if (method === 'hello_key' && body.signature === undefined) {
+      throw invalid('signature', 'Для method=hello_key нужна подпись challenge', 'required');
+    }
+    const modes: Record<typeof method, RotationMode> = {
+      pin: 'unlock_pin',
+      biometric: 'unlock_biometric',
+      hello_key: 'unlock_hello_key',
+    };
     return this.refreshService.rotate({
       refreshToken: body.refreshToken,
       deviceKey,
-      mode: method === 'pin' ? 'unlock_pin' : 'unlock_biometric',
+      mode: modes[method],
       ...(body.pin !== undefined ? { pin: body.pin } : {}),
       ...(body.biometricInvalidated !== undefined ? { biometricInvalidated: body.biometricInvalidated } : {}),
+      ...(body.signature !== undefined ? { signature: body.signature } : {}),
+      ...(body.helloKeyInvalidated !== undefined ? { helloKeyInvalidated: body.helloKeyInvalidated } : {}),
       ip: clientIp(req),
+      audit: auditContextFromRequest(req),
+    });
+  }
+
+  /**
+   * `POST /auth/unlock/challenge` (08 §4.1.10; ADR-116): одноразовый challenge для подписи ключом Windows Hello. Лимиты —
+   * RL-PUBLIC-IP и RL-PIN (`userId + deviceKey` сессии, общий с `/auth/unlock` — в сервисе).
+   */
+  @Public()
+  @Post('unlock/challenge')
+  @HttpCode(200)
+  async unlockChallenge(@Req() req: AuthHttpRequest, @Body() body: UnlockChallengeDto): Promise<HelloChallengeBody> {
+    const deviceKey = requireDeviceKey(req);
+    this.limiter.publicIp(clientIp(req));
+    return this.helloChallenge.issue({
+      refreshToken: body.refreshToken,
+      deviceKey,
       audit: auditContextFromRequest(req),
     });
   }
@@ -127,4 +160,12 @@ export class SessionsController {
     this.limiter.authDevice(p.deviceId);
     return this.sessions.rename(p, sessionId, body.deviceName);
   }
+}
+
+function invalid(field: string, message: string, rule: string): ProblemException {
+  return new ProblemException('VALIDATION_FAILED', {
+    status: 400,
+    detail: 'Запрос не прошёл проверку.',
+    errors: [{ field, message, rule }],
+  });
 }

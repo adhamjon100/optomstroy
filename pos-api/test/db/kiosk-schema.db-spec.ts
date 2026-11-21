@@ -202,7 +202,9 @@ describe('TAB-1-01: схема «Планшета магазина» — 0021/00
       const tables = await c.query<{ n: number }>(
         `SELECT count(*)::int AS n FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind IN ('r','p')`,
       );
-      expect(tables.rows[0]?.n).toBe(65); // 64 + store_tablets (dev/test-схема: dev_outbox есть)
+      // 64 + store_tablets (0022) + hello_keys (0024_face_login.sql, ADR-116 — обновление идёт до текущего каталога);
+      // dev/test-схема: dev_outbox есть
+      expect(tables.rows[0]?.n).toBe(66);
 
       // Новые CHECK проверены на существующих строках (convalidated), прежние строки на месте и без признаков kiosk
       const constraints = [

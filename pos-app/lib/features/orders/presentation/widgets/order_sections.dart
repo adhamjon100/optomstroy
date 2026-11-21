@@ -706,12 +706,17 @@ class OrderItemsBlock extends StatelessWidget {
             ],
           );
     final String? productId = line.productId;
+    // Строка-цель не ниже 44 (03 §7.4; прогон адаптивности 2026-11-18, 12 T-UI-117: строка товара в одну строку
+    // на expanded была 36).
     return InkWell(
       key: ValueKey<String>('order-line-${line.lineNo}'),
       onTap: productId == null || onOpenProduct == null ? null : () => onOpenProduct!(productId),
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: context.space.s2),
-        child: row,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: context.space.s2),
+          child: row,
+        ),
       ),
     );
   }

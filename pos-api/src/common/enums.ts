@@ -1,9 +1,9 @@
 // GENERATED FILE — DO NOT EDIT.
-// Source: contracts/enums.json (optomstroy-pos-enums 1.3.0, sha256 f0c79cf87a4e3ad0a4d4f5d2641fdb14b0d21fafc0cd1693312641c9dd1bb00b)
+// Source: contracts/enums.json (optomstroy-pos-enums 1.4.0, sha256 a049b3d218888ec9afcd8980dca0b9635ff71e76445dbb522be7596b5ef211a6)
 // Generator: scripts/gen_enums.py (RM-B-009). Owners: 07 §6.1/§6.1.1, 08 §2.4/§3.8 (R0 §18.1).
 /* eslint-disable */
 
-export const ENUMS_CONTRACT_VERSION = '1.3.0' as const;
+export const ENUMS_CONTRACT_VERSION = '1.4.0' as const;
 
 // ===== 07 §6.1 — типы PostgreSQL (CREATE TYPE … AS ENUM) =====
 
@@ -754,7 +754,7 @@ export function isInvitationRole(value: unknown): value is InvitationRole {
 
 /**
  * session_revoke_reason — 07 §6.1.1 (CHECK). Поля: sessions.revoke_reason.
- * Источник: D-12, ядро §18.2 п.8; 09 §8.3, миграция 0003 (EQ-AUTH-03, ADR-088); ADR-115 (миграция 0022).
+ * Источник: D-12, ядро §18.2 п.8; 09 §8.3, миграция 0003 (EQ-AUTH-03, ADR-088); ADR-115 (миграция 0022); ADR-116 (миграция 0024).
  */
 export const SESSION_REVOKE_REASON_VALUES = [
   'logout',
@@ -771,6 +771,7 @@ export const SESSION_REVOKE_REASON_VALUES = [
   'biometric_invalidated',
   'refresh_replay',
   'kiosk_revoked',
+  'biometric_weak_disabled',
 ] as const;
 export type SessionRevokeReason = (typeof SESSION_REVOKE_REASON_VALUES)[number];
 export function isSessionRevokeReason(value: unknown): value is SessionRevokeReason {
@@ -885,6 +886,52 @@ export const STORE_TABLET_STATUS_VALUES = [
 export type StoreTabletStatus = (typeof STORE_TABLET_STATUS_VALUES)[number];
 export function isStoreTabletStatus(value: unknown): value is StoreTabletStatus {
   return typeof value === 'string' && (STORE_TABLET_STATUS_VALUES as readonly string[]).includes(value);
+}
+
+/**
+ * hello_key_algorithm — 07 §6.1.1 (CHECK). Поля: hello_keys.algorithm.
+ * Источник: ADR-116 (07 §5.66, миграция 0024).
+ */
+export const HELLO_KEY_ALGORITHM_VALUES = [
+  'RS256',
+] as const;
+export type HelloKeyAlgorithm = (typeof HELLO_KEY_ALGORITHM_VALUES)[number];
+export function isHelloKeyAlgorithm(value: unknown): value is HelloKeyAlgorithm {
+  return typeof value === 'string' && (HELLO_KEY_ALGORITHM_VALUES as readonly string[]).includes(value);
+}
+
+/**
+ * hello_key_source — 07 §6.1.1 (CHECK). Поля: hello_keys.source.
+ * Источник: ADR-116 (07 §5.66, миграция 0024).
+ */
+export const HELLO_KEY_SOURCE_VALUES = [
+  'windows_hello',
+  'webauthn_prf',
+] as const;
+export type HelloKeySource = (typeof HELLO_KEY_SOURCE_VALUES)[number];
+export function isHelloKeySource(value: unknown): value is HelloKeySource {
+  return typeof value === 'string' && (HELLO_KEY_SOURCE_VALUES as readonly string[]).includes(value);
+}
+
+/**
+ * hello_key_revoke_reason — 07 §6.1.1 (CHECK). Поля: hello_keys.revoke_reason.
+ * Источник: ADR-116; 09 BIO-040 (07 §5.66, миграция 0024).
+ */
+export const HELLO_KEY_REVOKE_REASON_VALUES = [
+  'disabled',
+  'replaced',
+  'invalidated',
+  'policy_off',
+  'shared_device',
+  'logout_all',
+  'phone_changed',
+  'kiosk_connect',
+  'blocked',
+  'pin_reset',
+] as const;
+export type HelloKeyRevokeReason = (typeof HELLO_KEY_REVOKE_REASON_VALUES)[number];
+export function isHelloKeyRevokeReason(value: unknown): value is HelloKeyRevokeReason {
+  return typeof value === 'string' && (HELLO_KEY_REVOKE_REASON_VALUES as readonly string[]).includes(value);
 }
 
 /**
@@ -1432,6 +1479,9 @@ export const CHECK_LISTS = {
   'integration_tokens.source': INTEGRATION_TOKEN_SOURCE_VALUES,
   'integration_tokens.revoke_reason': INTEGRATION_TOKEN_REVOKE_REASON_VALUES,
   'store_tablets.status': STORE_TABLET_STATUS_VALUES,
+  'hello_keys.algorithm': HELLO_KEY_ALGORITHM_VALUES,
+  'hello_keys.source': HELLO_KEY_SOURCE_VALUES,
+  'hello_keys.revoke_reason': HELLO_KEY_REVOKE_REASON_VALUES,
   'receivable_documents.kind': RECEIVABLE_DOCUMENT_KIND_VALUES,
   'receivable_documents.status': RECEIVABLE_DOCUMENT_STATUS_VALUES,
   'payments.review_reason': REVIEW_REASON_VALUES,

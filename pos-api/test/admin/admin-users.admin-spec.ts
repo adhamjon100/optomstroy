@@ -6,6 +6,7 @@ import { parse } from 'yaml';
 import { PinHasher } from '../../src/common/crypto/pin-hasher.service.js';
 import { UsersRepository } from '../../src/users/users.repository.js';
 import { testPhone } from '../foundation/support/foundation-db.js';
+import { tamperChar } from '../support/tamper.js';
 import { type Actor, AdminTestApp } from './support/admin-app.js';
 
 const ROLES = ['seller', 'cashier', 'senior_seller', 'admin', 'owner', 'customer'] as const;
@@ -515,7 +516,9 @@ describe('admin/users + admin/invitations: RBAC, step-up, политика це�
       expect(page2.status).toBe(200);
       const ids1 = (page1.body.items as { id: string }[]).map((i) => i.id);
       for (const i of page2.body.items as { id: string }[]) expect(ids1).not.toContain(i.id);
-      const tampered = `${(page1.body.nextCursor as string).slice(0, -2)}00`;
+      // Первый hex-знак MAC — другой hex-знак (запись «00» в конец совпадала с MAC, кончавшимся на «00», — 1 из 256).
+      const [cursorBody, cursorMac] = (page1.body.nextCursor as string).split('.');
+      const tampered = `${cursorBody}.${tamperChar(cursorMac)}`;
       const bad = await t.req('get', `/admin/users?cursor=${encodeURIComponent(tampered)}`, admin());
       expect(bad.status).toBe(400);
       expect(bad.body.errors[0]).toMatchObject({ rule: 'cursor' });

@@ -10,10 +10,22 @@ import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/design_system/tokens/ds_typography.dart';
 
 /// Ввод PIN приложения `PinField` (03 §9.6; D-13, D-48): ряд точек (диаметр 16, зазор 16;
-/// заполненная — `primaryText`, пустая — обводка `borderStrong` 2 px), скрытое поле для
+/// заполненная — нейтральная `textPrimary`, пустая — обводка `borderStrong` 2 px), скрытое поле для
 /// физической клавиатуры, экранный нампад 3×4 (клавиши 72×56, цифры `h2 24/500 tnum`).
 /// Цифры не отображаются; попытки не считаются клиентом (только `attemptsLeft` сервера).
 /// Режим `setup` (два прохода) реализует экран, вызывая поле дважды.
+///
+/// Ошибка ([CodeFieldStatus.error]; 03 §9.6 ред. 1.24 «после ошибки»; 02 SCR-08.4 п. 4 «очистка через 300 мс»; указание
+/// владельца 2026-11-18, 15 §5.8): введённое стирается, точки красные и вздрагивают ровно [errorHold] (ANIM-012) — затем,
+/// или сразу с первой новой цифрой, точки снова обычные (заполненные — `textPrimary`, пустые — обводка), а текст ошибки
+/// под точками остаётся до следующего решения экрана (нампад под пальцем не сдвигается). Так при повторном вводе видно,
+/// сколько цифр уже набрано; новая цифра красной не бывает. Цвет заполненной точки — тёмный нейтральный `textPrimary`
+/// (#0E1456, контраст к `surface` 16,8 : 1, к `background` 15,4 : 1 — больше 3 : 1 для не-текста), а не фирменный
+/// `primaryText` (#C9330C): оранжево-красная точка почти не отличалась от ошибки `error` (#D21B1F), и владелец видел
+/// «красные» точки при обычном вводе (указание 2026-11-18, пакет own-server:GAP-APP). Красный — только у ошибки. То же — у поля, созданного сразу с ошибкой (экран
+/// пересоздаёт его на новый шаг: SCR-04 и SCR-42 «PIN-коды не совпадают», step-up SCR-04 по числу попыток): shake —
+/// после первого кадра. Текст ошибки — одна `liveRegion`: диктор объявляет его один раз, возврат точек и ввод цифр его
+/// не повторяют.
 class PinField extends StatefulWidget {
   /// Создаёт поле PIN.
   const PinField({
@@ -24,11 +36,13 @@ class PinField extends StatefulWidget {
     this.status = CodeFieldStatus.idle,
     this.errorText,
     this.biometricLabel,
+    this.biometricIcon = Icons.fingerprint_rounded,
     this.onBiometric,
     this.footer,
     this.onCompleted,
     this.showNumpad = true,
     this.autofocus = true,
+    this.focusNode,
   }) : assert(length >= 4 && length <= 6, 'PIN — 4…6 цифр (09 §9.6)');
 
   /// Длина PIN по политике роли (`staff` — 6, `customer` — 4).
@@ -49,6 +63,10 @@ class PinField extends StatefulWidget {
   /// Подпись клавиши «Биометрия» (только SCR-08; в `StepUpDialog` R1 — скрыта).
   final String? biometricLabel;
 
+  /// Глиф клавиши «Биометрия» — тот же, что у кнопки входа экрана (03 §7.7: `fingerprint` — уровень S,
+  /// `face_unlock` — «лицо или отпечаток»; 02 SCR-08.4 п. 9).
+  final IconData biometricIcon;
+
   /// Действие клавиши «Биометрия»; `null` — клавиша скрыта.
   final VoidCallback? onBiometric;
 
@@ -64,17 +82,44 @@ class PinField extends StatefulWidget {
   /// Автофокус скрытого поля (ввод с физической клавиатуры).
   final bool autofocus;
 
+  /// Внешний узел фокуса скрытого поля: экран возвращает фокус в PIN (SCR-08 — после Windows Hello). Узлом владеет
+  /// экран; без него поле создаёт свой.
+  final FocusNode? focusNode;
+
+  /// Сколько точки остаются красными после ошибки, если пользователь не начал ввод заново: длительность shake ANIM-012
+  /// (`DsAnimations.shake`, 300 мс; 02 SCR-08.4 п. 4 «очистка через 300 мс»).
+  static const Duration errorHold = Duration(milliseconds: 300);
+
   @override
   State<PinField> createState() => _PinFieldState();
 }
 
 class _PinFieldState extends State<PinField> with SingleTickerProviderStateMixin {
-  final FocusNode _focus = FocusNode(debugLabel: 'PinField');
+  FocusNode? _ownFocus;
+  FocusNode get _focus => widget.focusNode ?? (_ownFocus ??= FocusNode(debugLabel: 'PinField'));
   String _value = '';
   int _errors = 0;
   late final AnimationController _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
 
+  /// Точки показывают ошибку (красные): от прихода [CodeFieldStatus.error] до [PinField.errorHold] или первой новой
+  /// цифры / стирания. Статус поля при этом остаётся `error` — ввод доступен, текст ошибки виден.
+  bool _errorShown = false;
+  Timer? _errorTimer;
+
   bool get _inputEnabled => widget.status == CodeFieldStatus.idle || widget.status == CodeFieldStatus.error;
+
+  @override
+  void initState() {
+    super.initState();
+    // Поле создано сразу с ошибкой (экран пересоздаёт его на новый шаг: SCR-04 и SCR-42 «PIN-коды не совпадают»,
+    // step-up SCR-04 по числу попыток): точки красные [PinField.errorHold], shake — после первого кадра (03 §9.6).
+    if (widget.status == CodeFieldStatus.error) {
+      _showError();
+      WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+        if (mounted && _errorShown) setState(() => _errors++);
+      });
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -85,13 +130,37 @@ class _PinFieldState extends State<PinField> with SingleTickerProviderStateMixin
   @override
   void didUpdateWidget(PinField oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.status == CodeFieldStatus.error && oldWidget.status != CodeFieldStatus.error) {
+    if (_isNewError(oldWidget)) {
       _errors++;
       _value = '';
+      _showError();
+    } else if (widget.status != CodeFieldStatus.error) {
+      _clearError();
     }
     if (widget.status != oldWidget.status) {
       _syncPulse();
     }
+  }
+
+  /// Новая ошибка: переход в `error` — или, пока статус остаётся `error`, ответ на отправленный PIN (все цифры набраны)
+  /// с другим текстом ошибки: экран прошёл «проверку» быстрее одного кадра (мгновенная локальная проверка, подменный
+  /// сервер) — введённое всё равно стирается, точки снова красные [PinField.errorHold].
+  bool _isNewError(PinField old) =>
+      widget.status == CodeFieldStatus.error &&
+      (old.status != CodeFieldStatus.error || (_value.length == widget.length && widget.errorText != old.errorText));
+
+  void _showError() {
+    _errorShown = true;
+    _errorTimer?.cancel();
+    _errorTimer = Timer(PinField.errorHold, () {
+      if (mounted && _errorShown) setState(_clearError);
+    });
+  }
+
+  void _clearError() {
+    _errorTimer?.cancel();
+    _errorTimer = null;
+    _errorShown = false;
   }
 
   void _syncPulse() {
@@ -108,7 +177,8 @@ class _PinFieldState extends State<PinField> with SingleTickerProviderStateMixin
 
   @override
   void dispose() {
-    _focus.dispose();
+    _errorTimer?.cancel();
+    _ownFocus?.dispose();
     _pulse.dispose();
     super.dispose();
   }
@@ -117,7 +187,11 @@ class _PinFieldState extends State<PinField> with SingleTickerProviderStateMixin
     if (!_inputEnabled || _value.length >= widget.length) {
       return;
     }
-    setState(() => _value += digit);
+    setState(() {
+      // Новый ввод после ошибки — точки снова обычные: видно, сколько цифр набрано.
+      _clearError();
+      _value += digit;
+    });
     if (_value.length == widget.length) {
       widget.onCompleted?.call(_value);
     }
@@ -127,7 +201,10 @@ class _PinFieldState extends State<PinField> with SingleTickerProviderStateMixin
     if (!_inputEnabled || _value.isEmpty) {
       return;
     }
-    setState(() => _value = _value.substring(0, _value.length - 1));
+    setState(() {
+      _clearError();
+      _value = _value.substring(0, _value.length - 1);
+    });
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
@@ -167,7 +244,10 @@ class _PinFieldState extends State<PinField> with SingleTickerProviderStateMixin
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          // Точки и текст ошибки — отдельные узлы (`container`): иначе подпись точек сливается с текстом ошибки в один
+          // узел `liveRegion`, и диктор повторяет ошибку на каждой цифре (03 §9.6 ред. 1.24 «Доступность»).
           Semantics(
+            container: true,
             label: widget.semanticLabel(_value.length, widget.length),
             obscured: true,
             liveRegion: false,
@@ -184,6 +264,7 @@ class _PinFieldState extends State<PinField> with SingleTickerProviderStateMixin
           if (widget.errorText != null) ...<Widget>[
             const SizedBox(height: 12),
             Semantics(
+              container: true,
               liveRegion: true,
               child: Text(
                 widget.errorText!,
@@ -200,13 +281,16 @@ class _PinFieldState extends State<PinField> with SingleTickerProviderStateMixin
   }
 
   Widget _dot(DsColors c, bool filled) {
+    // Ошибка красит точки только пока [_errorShown]; дальше — как при обычном вводе (статус `error` держит текст).
+    final bool error = widget.status == CodeFieldStatus.error && _errorShown;
     final Color color = switch (widget.status) {
-      CodeFieldStatus.error => c.error,
+      CodeFieldStatus.error when error => c.error,
       CodeFieldStatus.success => c.success,
       CodeFieldStatus.disabled => c.disabledText,
-      _ => filled ? c.primaryText : c.borderStrong,
+      // Обычная заполненная точка — нейтральная `textPrimary`, не фирменный оранжево-красный (см. шапку класса).
+      _ => filled ? c.textPrimary : c.borderStrong,
     };
-    final bool solid = filled || widget.status == CodeFieldStatus.error || widget.status == CodeFieldStatus.success;
+    final bool solid = filled || error || widget.status == CodeFieldStatus.success;
     return Container(
       width: 16,
       height: 16,
@@ -244,7 +328,7 @@ class _PinFieldState extends State<PinField> with SingleTickerProviderStateMixin
             label: widget.biometricLabel ?? '',
             enabled: widget.status != CodeFieldStatus.loading,
             onTap: widget.onBiometric!,
-            child: Icon(Icons.fingerprint_rounded, size: 28, color: c.primaryText),
+            child: Icon(widget.biometricIcon, size: 28, color: c.primaryText),
           );
     final Widget back = _PadKey(
       label: widget.backspaceLabel,

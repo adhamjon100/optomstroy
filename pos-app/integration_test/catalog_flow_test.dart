@@ -243,7 +243,9 @@ Finder _input(Key key) => find.descendant(of: find.byKey(key), matching: find.by
 /// нажатия станет целью hit-test, и только тогда нажимаем.
 Future<void> _tap(WidgetTester tester, Finder finder) async {
   await pumpUntilFound(tester, finder);
-  await tester.ensureVisible(finder.first);
+  // По центру окна, а не по верхнему краю: `tester.ensureVisible` прижимает цель к верху списка, под закреплённую
+  // панель инструментов витрины, и касание уходит в панель (сетка с пределом колонок 03 §7.3 прокручивается).
+  await Scrollable.ensureVisible(tester.element(finder.first), alignment: 0.5);
   await tester.pump();
   // `first`-поисковик бросает StateError на пустом наборе (список перестраивается) — считаем «ещё не готово».
   bool hittable() {

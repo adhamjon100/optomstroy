@@ -272,7 +272,8 @@ describe('kiosk: маскирование номера покупателя в �
     // ReturnsModule (06 MOD-024) — задача заявок с планшета в составе runDaily; экземпляр — тот же, что у OrdersModule.
     const due3 = await kioskOrder({ created: 94 }, '+996555008106');
     const wired = t.app.get(ReturnsJobsBridge, { strict: false });
-    expect(await wired.runDaily()).toEqual({ deleted: 0, masked: 1 });
+    // + задача ключей Windows Hello (07 §13.3, ADR-116): HelloKeysRepository глобального UsersModule.
+    expect(await wired.runDaily()).toEqual({ deleted: 0, masked: 1, helloChallenges: 0, helloKeys: 0 });
     expect((await receiverOf(due3)).receiver_phone_masked).toBe('+996 5** *** *06');
     expect((wired as unknown as { ordersRetention?: unknown }).ordersRetention).toBe(
       t.app.get(OrdersRetentionService, { strict: false }),

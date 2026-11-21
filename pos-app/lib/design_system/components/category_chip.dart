@@ -48,7 +48,8 @@ class CategoryChip extends StatelessWidget {
   /// Вариант.
   final CategoryChipVariant variant;
 
-  /// Иконка 18 слева (подборки `history` / `star`, «Все категории» — `category`).
+  /// Иконка 18 слева (подборки `history` / `star`, «Все категории» — `category`; чип категории или подкатегории полосы
+  /// compact — иконка категории по 03 §14.4, ред. 1.22).
   final IconData? icon;
 
   /// Счётчик `caption tnum` справа.

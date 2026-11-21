@@ -1,10 +1,10 @@
 import { createPrivateKey, randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { decodeJwt, SignJWT, UnsecuredJWT } from 'jose';
 import { JWT_AUDIENCE, JWT_ISSUER } from '../../../src/common/auth/jwt.service.js';
 import { pemPair, publicSet } from '../../foundation/support/keys.js';
+import { createSecretsDir, removeSecretsDir } from '../../support/secrets-dir.js';
 import { ANDROID, AuthE2e, freshDevice, freshIp, type JsonBody, type LoginResult } from './support/auth-e2e.js';
 
 /**
@@ -19,11 +19,14 @@ describe('auth e2e: токены, перезапуск, аудит auth.* (T-SES
   const KID = 'e2e-2026-10';
   const key = pemPair();
   const foreign = pemPair();
-  const dir = mkdtempSync(join(tmpdir(), 'pos-auth-jwt-'));
+  // Каталог ключей JWT — в beforeAll (`secrets-dir.ts`), не при сборе файла: при `-t` без совпадений хуки не идут.
+  let dir: string | undefined;
 
   beforeAll(async () => {
+    const keys = createSecretsDir('pos-authjwt-secrets-');
+    dir = keys;
     const file = (name: string, content: string) => {
-      const p = join(dir, name);
+      const p = join(keys, name);
       writeFileSync(p, content, { mode: 0o600 });
       return p;
     };
@@ -34,8 +37,12 @@ describe('auth e2e: токены, перезапуск, аудит auth.* (T-SES
     });
   });
   afterAll(async () => {
-    await t.stop();
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      await t.stop();
+    } finally {
+      removeSecretsDir(dir);
+      dir = undefined;
+    }
   });
   beforeEach(() => {
     t.tick();

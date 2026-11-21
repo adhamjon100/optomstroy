@@ -2172,7 +2172,14 @@ as bool?,
 /// @nodoc
 mixin _$MeSecurity {
 
- bool? get pinSet; bool? get biometricsEnabled; String? get biometricsPlatform;
+ bool? get pinSet; bool? get biometricsEnabled;/// Строкой контракта: `android_class3 | ios | windows_hello_gate | none | android_class2 | windows_hello_key`
+/// (`android_class2` — живая семья уровня W этого устройства, `windows_hello_key` — живой ключ Windows Hello W2;
+/// 08 §4.3.1). Неизвестное значение не ломает разбор (08 §2.11).
+ String? get biometricsPlatform;/// Уровень W Android («лицо или отпечаток», Class 2) разрешён этому пользователю на этом устройстве:
+/// `AUTH_BIO_ALLOW_WEAK` × вид пользователя × `platform=android` (09 BIO-030; 08 §4.3.1). Нет поля — `false`.
+ bool? get biometricWeakAllowed;/// Вход по ключу Windows Hello без PIN приложения (W2) разрешён на этом устройстве: `AUTH_WINDOWS_HELLO_KEY`
+/// и правило `personal` (09 BIO-038; 08 §4.3.1). `false` — SCR-42 предлагает только гейт W1. Нет поля — `false`.
+ bool? get windowsHelloKeyAllowed;
 /// Create a copy of MeSecurity
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -2185,16 +2192,16 @@ $MeSecurityCopyWith<MeSecurity> get copyWith => _$MeSecurityCopyWithImpl<MeSecur
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is MeSecurity&&(identical(other.pinSet, pinSet) || other.pinSet == pinSet)&&(identical(other.biometricsEnabled, biometricsEnabled) || other.biometricsEnabled == biometricsEnabled)&&(identical(other.biometricsPlatform, biometricsPlatform) || other.biometricsPlatform == biometricsPlatform));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MeSecurity&&(identical(other.pinSet, pinSet) || other.pinSet == pinSet)&&(identical(other.biometricsEnabled, biometricsEnabled) || other.biometricsEnabled == biometricsEnabled)&&(identical(other.biometricsPlatform, biometricsPlatform) || other.biometricsPlatform == biometricsPlatform)&&(identical(other.biometricWeakAllowed, biometricWeakAllowed) || other.biometricWeakAllowed == biometricWeakAllowed)&&(identical(other.windowsHelloKeyAllowed, windowsHelloKeyAllowed) || other.windowsHelloKeyAllowed == windowsHelloKeyAllowed));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,pinSet,biometricsEnabled,biometricsPlatform);
+int get hashCode => Object.hash(runtimeType,pinSet,biometricsEnabled,biometricsPlatform,biometricWeakAllowed,windowsHelloKeyAllowed);
 
 @override
 String toString() {
-  return 'MeSecurity(pinSet: $pinSet, biometricsEnabled: $biometricsEnabled, biometricsPlatform: $biometricsPlatform)';
+  return 'MeSecurity(pinSet: $pinSet, biometricsEnabled: $biometricsEnabled, biometricsPlatform: $biometricsPlatform, biometricWeakAllowed: $biometricWeakAllowed, windowsHelloKeyAllowed: $windowsHelloKeyAllowed)';
 }
 
 
@@ -2205,7 +2212,7 @@ abstract mixin class $MeSecurityCopyWith<$Res>  {
   factory $MeSecurityCopyWith(MeSecurity value, $Res Function(MeSecurity) _then) = _$MeSecurityCopyWithImpl;
 @useResult
 $Res call({
- bool? pinSet, bool? biometricsEnabled, String? biometricsPlatform
+ bool? pinSet, bool? biometricsEnabled, String? biometricsPlatform, bool? biometricWeakAllowed, bool? windowsHelloKeyAllowed
 });
 
 
@@ -2222,12 +2229,14 @@ class _$MeSecurityCopyWithImpl<$Res>
 
 /// Create a copy of MeSecurity
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? pinSet = freezed,Object? biometricsEnabled = freezed,Object? biometricsPlatform = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? pinSet = freezed,Object? biometricsEnabled = freezed,Object? biometricsPlatform = freezed,Object? biometricWeakAllowed = freezed,Object? windowsHelloKeyAllowed = freezed,}) {
   return _then(_self.copyWith(
 pinSet: freezed == pinSet ? _self.pinSet : pinSet // ignore: cast_nullable_to_non_nullable
 as bool?,biometricsEnabled: freezed == biometricsEnabled ? _self.biometricsEnabled : biometricsEnabled // ignore: cast_nullable_to_non_nullable
 as bool?,biometricsPlatform: freezed == biometricsPlatform ? _self.biometricsPlatform : biometricsPlatform // ignore: cast_nullable_to_non_nullable
-as String?,
+as String?,biometricWeakAllowed: freezed == biometricWeakAllowed ? _self.biometricWeakAllowed : biometricWeakAllowed // ignore: cast_nullable_to_non_nullable
+as bool?,windowsHelloKeyAllowed: freezed == windowsHelloKeyAllowed ? _self.windowsHelloKeyAllowed : windowsHelloKeyAllowed // ignore: cast_nullable_to_non_nullable
+as bool?,
   ));
 }
 
@@ -2312,10 +2321,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( bool? pinSet,  bool? biometricsEnabled,  String? biometricsPlatform)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( bool? pinSet,  bool? biometricsEnabled,  String? biometricsPlatform,  bool? biometricWeakAllowed,  bool? windowsHelloKeyAllowed)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _MeSecurity() when $default != null:
-return $default(_that.pinSet,_that.biometricsEnabled,_that.biometricsPlatform);case _:
+return $default(_that.pinSet,_that.biometricsEnabled,_that.biometricsPlatform,_that.biometricWeakAllowed,_that.windowsHelloKeyAllowed);case _:
   return orElse();
 
 }
@@ -2333,10 +2342,10 @@ return $default(_that.pinSet,_that.biometricsEnabled,_that.biometricsPlatform);c
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( bool? pinSet,  bool? biometricsEnabled,  String? biometricsPlatform)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( bool? pinSet,  bool? biometricsEnabled,  String? biometricsPlatform,  bool? biometricWeakAllowed,  bool? windowsHelloKeyAllowed)  $default,) {final _that = this;
 switch (_that) {
 case _MeSecurity():
-return $default(_that.pinSet,_that.biometricsEnabled,_that.biometricsPlatform);case _:
+return $default(_that.pinSet,_that.biometricsEnabled,_that.biometricsPlatform,_that.biometricWeakAllowed,_that.windowsHelloKeyAllowed);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -2353,10 +2362,10 @@ return $default(_that.pinSet,_that.biometricsEnabled,_that.biometricsPlatform);c
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( bool? pinSet,  bool? biometricsEnabled,  String? biometricsPlatform)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( bool? pinSet,  bool? biometricsEnabled,  String? biometricsPlatform,  bool? biometricWeakAllowed,  bool? windowsHelloKeyAllowed)?  $default,) {final _that = this;
 switch (_that) {
 case _MeSecurity() when $default != null:
-return $default(_that.pinSet,_that.biometricsEnabled,_that.biometricsPlatform);case _:
+return $default(_that.pinSet,_that.biometricsEnabled,_that.biometricsPlatform,_that.biometricWeakAllowed,_that.windowsHelloKeyAllowed);case _:
   return null;
 
 }
@@ -2368,12 +2377,21 @@ return $default(_that.pinSet,_that.biometricsEnabled,_that.biometricsPlatform);c
 @JsonSerializable()
 
 class _MeSecurity implements MeSecurity {
-  const _MeSecurity({this.pinSet, this.biometricsEnabled, this.biometricsPlatform});
+  const _MeSecurity({this.pinSet, this.biometricsEnabled, this.biometricsPlatform, this.biometricWeakAllowed, this.windowsHelloKeyAllowed});
   factory _MeSecurity.fromJson(Map<String, dynamic> json) => _$MeSecurityFromJson(json);
 
 @override final  bool? pinSet;
 @override final  bool? biometricsEnabled;
+/// Строкой контракта: `android_class3 | ios | windows_hello_gate | none | android_class2 | windows_hello_key`
+/// (`android_class2` — живая семья уровня W этого устройства, `windows_hello_key` — живой ключ Windows Hello W2;
+/// 08 §4.3.1). Неизвестное значение не ломает разбор (08 §2.11).
 @override final  String? biometricsPlatform;
+/// Уровень W Android («лицо или отпечаток», Class 2) разрешён этому пользователю на этом устройстве:
+/// `AUTH_BIO_ALLOW_WEAK` × вид пользователя × `platform=android` (09 BIO-030; 08 §4.3.1). Нет поля — `false`.
+@override final  bool? biometricWeakAllowed;
+/// Вход по ключу Windows Hello без PIN приложения (W2) разрешён на этом устройстве: `AUTH_WINDOWS_HELLO_KEY`
+/// и правило `personal` (09 BIO-038; 08 §4.3.1). `false` — SCR-42 предлагает только гейт W1. Нет поля — `false`.
+@override final  bool? windowsHelloKeyAllowed;
 
 /// Create a copy of MeSecurity
 /// with the given fields replaced by the non-null parameter values.
@@ -2388,16 +2406,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _MeSecurity&&(identical(other.pinSet, pinSet) || other.pinSet == pinSet)&&(identical(other.biometricsEnabled, biometricsEnabled) || other.biometricsEnabled == biometricsEnabled)&&(identical(other.biometricsPlatform, biometricsPlatform) || other.biometricsPlatform == biometricsPlatform));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _MeSecurity&&(identical(other.pinSet, pinSet) || other.pinSet == pinSet)&&(identical(other.biometricsEnabled, biometricsEnabled) || other.biometricsEnabled == biometricsEnabled)&&(identical(other.biometricsPlatform, biometricsPlatform) || other.biometricsPlatform == biometricsPlatform)&&(identical(other.biometricWeakAllowed, biometricWeakAllowed) || other.biometricWeakAllowed == biometricWeakAllowed)&&(identical(other.windowsHelloKeyAllowed, windowsHelloKeyAllowed) || other.windowsHelloKeyAllowed == windowsHelloKeyAllowed));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,pinSet,biometricsEnabled,biometricsPlatform);
+int get hashCode => Object.hash(runtimeType,pinSet,biometricsEnabled,biometricsPlatform,biometricWeakAllowed,windowsHelloKeyAllowed);
 
 @override
 String toString() {
-  return 'MeSecurity(pinSet: $pinSet, biometricsEnabled: $biometricsEnabled, biometricsPlatform: $biometricsPlatform)';
+  return 'MeSecurity(pinSet: $pinSet, biometricsEnabled: $biometricsEnabled, biometricsPlatform: $biometricsPlatform, biometricWeakAllowed: $biometricWeakAllowed, windowsHelloKeyAllowed: $windowsHelloKeyAllowed)';
 }
 
 
@@ -2408,7 +2426,7 @@ abstract mixin class _$MeSecurityCopyWith<$Res> implements $MeSecurityCopyWith<$
   factory _$MeSecurityCopyWith(_MeSecurity value, $Res Function(_MeSecurity) _then) = __$MeSecurityCopyWithImpl;
 @override @useResult
 $Res call({
- bool? pinSet, bool? biometricsEnabled, String? biometricsPlatform
+ bool? pinSet, bool? biometricsEnabled, String? biometricsPlatform, bool? biometricWeakAllowed, bool? windowsHelloKeyAllowed
 });
 
 
@@ -2425,12 +2443,14 @@ class __$MeSecurityCopyWithImpl<$Res>
 
 /// Create a copy of MeSecurity
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? pinSet = freezed,Object? biometricsEnabled = freezed,Object? biometricsPlatform = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? pinSet = freezed,Object? biometricsEnabled = freezed,Object? biometricsPlatform = freezed,Object? biometricWeakAllowed = freezed,Object? windowsHelloKeyAllowed = freezed,}) {
   return _then(_MeSecurity(
 pinSet: freezed == pinSet ? _self.pinSet : pinSet // ignore: cast_nullable_to_non_nullable
 as bool?,biometricsEnabled: freezed == biometricsEnabled ? _self.biometricsEnabled : biometricsEnabled // ignore: cast_nullable_to_non_nullable
 as bool?,biometricsPlatform: freezed == biometricsPlatform ? _self.biometricsPlatform : biometricsPlatform // ignore: cast_nullable_to_non_nullable
-as String?,
+as String?,biometricWeakAllowed: freezed == biometricWeakAllowed ? _self.biometricWeakAllowed : biometricWeakAllowed // ignore: cast_nullable_to_non_nullable
+as bool?,windowsHelloKeyAllowed: freezed == windowsHelloKeyAllowed ? _self.windowsHelloKeyAllowed : windowsHelloKeyAllowed // ignore: cast_nullable_to_non_nullable
+as bool?,
   ));
 }
 

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Обёртка `docker compose` общего caddy — проект optomstroy-edge (на сервере — /opt/optomstroy/prod/bin/dc-edge;
+# docs/ops/RUNBOOK.md §0). Подключает compose.edge.yml и, если в .env рабочего контура задан CADDY_TEST_SITE_ADDRESS,
+# compose.edge.test.yml (сайт тестовой копии). Перед up/run/create/start/restart создаёт нужные сети edge.
+# Примеры:  sudo /opt/optomstroy/prod/bin/dc-edge ps
+#           sudo /opt/optomstroy/prod/bin/dc-edge logs --since 1h caddy
+#           sudo /opt/optomstroy/prod/bin/dc-edge up -d --force-recreate caddy   # после правки Caddyfile.edge / sites
+# Каталог — каталог рабочего контура над bin/ (из bin/ тестовой копии — /opt/optomstroy/prod или переменная EDGE_DIR).
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+. "$HERE/lib.sh"
+resolve_dirs "$HERE"
+edge_init
+case "${1:-}" in
+  up|run|create|start|restart) ensure_edge_networks ;;
+esac
+exec docker compose "${EDGE_ARGS[@]}" "$@"

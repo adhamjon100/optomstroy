@@ -168,7 +168,10 @@ final class UnboundSettingsRepository implements DeviceSessionsRepository, Login
   Future<bool> stepUpForPin({required bool otpOnly}) async => false;
 
   @override
-  Future<BiometricToggleOutcome> enableBiometrics(BiometricPromptCopy prompt) async => BiometricToggleOutcome.failed;
+  Future<BiometricToggleOutcome> enableBiometrics(
+    BiometricPromptCopy prompt, {
+    BiometricLoginTier tier = BiometricLoginTier.strong,
+  }) async => BiometricToggleOutcome.failed;
 
   @override
   Future<BiometricToggleOutcome> disableBiometrics() async => BiometricToggleOutcome.failed;

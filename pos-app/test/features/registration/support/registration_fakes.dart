@@ -213,6 +213,7 @@ final class RegistrationHarness {
     FakeRegistrationRepository? repo,
     FakeDraftRepository? drafts,
     FakeDeviceBiometrics? biometrics,
+    this.device,
     this.selfService = true,
     this.online = true,
     this.withTicket = true,
@@ -225,6 +226,9 @@ final class RegistrationHarness {
   final FakeRegistrationRepository repo;
   final FakeDraftRepository drafts;
   final FakeDeviceBiometrics biometrics;
+
+  /// Порт SCR-04 вместо [biometrics]: настоящий `DeviceBiometricsImpl` поверх своего порта core (12 T-DEMO-016).
+  final DeviceBiometrics? device;
   final RecordingNavigator navigator = RecordingNavigator();
   final FixedClock clock = FixedClock(testNow);
   final bool selfService;
@@ -240,7 +244,7 @@ final class RegistrationHarness {
   List<Override> get overrides => <Override>[
     registrationRepositoryProvider.overrideWithValue(repo),
     registrationDraftRepositoryProvider.overrideWithValue(drafts),
-    deviceBiometricsProvider.overrideWithValue(biometrics),
+    deviceBiometricsProvider.overrideWithValue(device ?? biometrics),
     registrationNavigatorProvider.overrideWithValue(navigator),
     registrationKeyGeneratorProvider.overrideWithValue(() => 'key-${++_key}'),
     clockProvider.overrideWithValue(clock),

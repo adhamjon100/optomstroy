@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
-# Образ optomstroy/backup (16 §4.1, §4.4, §8): Alpine + postgresql17-client (pg_dump 17) + rclone + age. Расписание — BACKUP_SCHEDULE
+# Образ optomstroy/backup (16 §4.1, §4.4, §8): Alpine + postgresql17-client (pg_dump, pg_dumpall, pg_basebackup, psql 17 —
+# /usr/libexec/postgresql17) + rclone + age. Непрерывная копия WAL и базовая копия PITR — RUNBOOK §4.8. Расписание — BACKUP_SCHEDULE
 # (cron, 5 полей) внутри контейнера, без crond и без root: цикл раз в минуту сверяет текущее время с выражением.
 # Контекст сборки — каталог infra/docker/backup:
 #   docker build -t optomstroy/backup:<версия> infra/docker/backup

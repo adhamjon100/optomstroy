@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { AUTH_STATE_READER } from '../common/auth/auth-state.js';
 import { PgAuthStateReader } from './auth-state.reader.js';
 import { DevicesRepository } from './devices.repository.js';
+import { HelloKeysRepository } from './hello-keys.repository.js';
 import { SessionsRepository } from './sessions.repository.js';
 import { TokenDenylistRepository } from './token-denylist.repository.js';
 import { UserProfilesRepository } from './user-profiles.repository.js';
@@ -15,11 +16,12 @@ const REPOSITORIES = [
   DevicesRepository,
   SessionsRepository,
   TokenDenylistRepository,
+  HelloKeysRepository,
 ];
 
 /**
  * Данные пользователей и сессий (этап D, общий фундамент): репозитории `users`, `user_roles`, `user_profiles`,
- * `devices`, `sessions`, `token_denylist` на Drizzle (`DRIZZLE`, common/db) — без HTTP и бизнес-правил; порт
+ * `devices`, `sessions`, `token_denylist`, `hello_keys` (ключи Windows Hello, ADR-116) на Drizzle (`DRIZZLE`, common/db) — без HTTP и бизнес-правил; порт
  * `AUTH_STATE_READER` для AuthGuard. Глобальный: используется модулями auth, registration, profile, admin.
  */
 @Global()

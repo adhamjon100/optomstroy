@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { type OtpCheck, OtpService } from '../auth/otp/otp.service.js';
+import { HelloKeyService } from '../auth/sessions/hello-key.service.js';
 import { applyAuditGucs, type AuditContext } from '../common/audit/audit-context.js';
 import { AuditService } from '../common/audit/audit.service.js';
 import { AuthStateCache } from '../common/auth/auth-state.js';
@@ -58,6 +59,7 @@ export class PhoneChangeService {
     private readonly sessions: SessionsRepository,
     private readonly cache: AuthStateCache,
     private readonly audit: AuditService,
+    private readonly helloKeys: HelloKeyService,
   ) {}
 
   private phoneTaken(): ProblemException {
@@ -158,6 +160,8 @@ export class PhoneChangeService {
           .set({ biometricEnrolledAt: null, updatedAt: sql`now()` })
           .where(and(eq(devices.userId, p.userId), isNull(devices.revokedAt)));
         await this.profiles.setBiometricsEnabled(p.userId, false, tx);
+        // Ключи Windows Hello на всех устройствах, включая текущее (08 §4.3.3; 09 §4.7 п. 3; ADR-116).
+        const keys = await this.helloKeys.revoke({ userId: p.userId }, 'phone_changed', ctx, tx);
         const relinked = await tx
           .update(customerLinks)
           .set({ status: 'proposed', confirmedAt: null, confirmedByUserId: null, updatedAt: sql`now()` })
@@ -170,7 +174,13 @@ export class PhoneChangeService {
             entityType: 'users',
             entityId: p.userId,
             before: { phone: oldPhone },
-            after: { phone: phoneE164, challengeId, sessionsRevoked: revoked.length, linksReproposed: relinked.length },
+            after: {
+              phone: phoneE164,
+              challengeId,
+              sessionsRevoked: revoked.length,
+              helloKeysRevoked: keys.length,
+              linksReproposed: relinked.length,
+            },
           },
           tx,
         );

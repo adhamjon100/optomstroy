@@ -1,0 +1,162 @@
+{
+  "_note": "тестовые данные",
+  "description": "Сообщение 5121, страница 1: справочники каталога, штрихкод, файл картинки, удаление",
+  "operation": "GET /pos/v1/changes",
+  "kind": "response",
+  "status": 200,
+  "body": {
+    "messageNumber": 5121,
+    "hasMore": true,
+    "cursor": "c2VxOjAwMDAwMTAwMA==",
+    "generatedAt": "2026-10-21T14:05:01+06:00",
+    "items": [
+      {
+        "type": "Catalog_Номенклатура",
+        "ref": "a1b2c3d4-0000-4000-8000-0000000000aa",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "isFolder": true,
+        "code": "00000010",
+        "description": "Смесители",
+        "fullName": null,
+        "sku": null,
+        "parentRef": null,
+        "baseUnitRef": null,
+        "kindRef": null,
+        "descriptionText": null,
+        "imageFileRef": null,
+        "isWeighted": null,
+        "attributes": []
+      },
+      {
+        "type": "Catalog_Номенклатура",
+        "ref": "a1b2c3d4-0000-4000-8000-000000000001",
+        "dataVersion": "AAAAAgAAAAA=",
+        "deletionMark": false,
+        "isFolder": false,
+        "code": "00001234",
+        "description": "Смеситель для кухни однорычажный",
+        "fullName": "Смеситель для кухни однорычажный, хром",
+        "sku": "KX-1245",
+        "parentRef": "a1b2c3d4-0000-4000-8000-0000000000aa",
+        "baseUnitRef": "a1b2c3d4-0000-4000-8000-0000000000e1",
+        "kindRef": "a1b2c3d4-0000-4000-8000-0000000000c3",
+        "descriptionText": "Корпус латунь, картридж 35 мм",
+        "imageFileRef": "a1b2c3d4-0000-4000-8000-0000000000f1",
+        "isWeighted": false,
+        "attributes": [
+          {
+            "propertyRef": "a1b2c3d4-0000-4000-8000-000000000301",
+            "name": "Цвет",
+            "valueType": "Catalog_ЗначенияСвойствОбъектов",
+            "valueRef": "a1b2c3d4-0000-4000-8000-000000000302",
+            "valueText": "Хром"
+          }
+        ]
+      },
+      {
+        "type": "Catalog_ХарактеристикиНоменклатуры",
+        "ref": "a1b2c3d4-0000-4000-8000-000000000101",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "code": "000000001",
+        "description": "Хром",
+        "ownerRef": "a1b2c3d4-0000-4000-8000-000000000001",
+        "ownerType": "Catalog_Номенклатура",
+        "sku": null,
+        "attributes": [
+          {
+            "propertyRef": "a1b2c3d4-0000-4000-8000-000000000301",
+            "name": "Цвет",
+            "valueType": "Catalog_ЗначенияСвойствОбъектов",
+            "valueRef": "a1b2c3d4-0000-4000-8000-000000000302",
+            "valueText": "Хром"
+          }
+        ]
+      },
+      {
+        "type": "Catalog_КлассификаторЕдиницИзмерения",
+        "ref": "a1b2c3d4-0000-4000-8000-0000000000e1",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "code": "796",
+        "description": "шт"
+      },
+      {
+        "type": "Catalog_УпаковкиЕдиницыИзмерения",
+        "ref": "a1b2c3d4-0000-4000-8000-000000000201",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "description": "Коробка (6 шт)",
+        "ownerRef": "a1b2c3d4-0000-4000-8000-000000000001",
+        "ownerType": "Catalog_Номенклатура",
+        "unitRef": "a1b2c3d4-0000-4000-8000-0000000000e1",
+        "factor": "6.000"
+      },
+      {
+        "type": "Catalog_Склады",
+        "ref": "d4e5f6a7-0000-4000-8000-000000000001",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "isFolder": false,
+        "code": "000000001",
+        "description": "Основной склад"
+      },
+      {
+        "type": "Catalog_Склады",
+        "ref": "d4e5f6a7-0000-4000-8000-000000000002",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "isFolder": false,
+        "code": "000000002",
+        "description": "Склад 2"
+      },
+      {
+        "type": "Catalog_ВидыЦен",
+        "ref": "e5f6a7b8-0000-4000-8000-000000000001",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "code": "000000001",
+        "description": "Розничная",
+        "currency": "KGS",
+        "usedForSales": true,
+        "priceIncludesVat": true
+      },
+      {
+        "type": "Catalog_ВидыЦен",
+        "ref": "e5f6a7b8-0000-4000-8000-000000000002",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "code": "000000002",
+        "description": "Оптовая",
+        "currency": "KGS",
+        "usedForSales": true,
+        "priceIncludesVat": true
+      },
+      {
+        "type": "InformationRegister_ШтрихкодыНоменклатуры",
+        "ref": "4600000000015",
+        "barcode": "4600000000015",
+        "productRef": "a1b2c3d4-0000-4000-8000-000000000001",
+        "variantRef": "a1b2c3d4-0000-4000-8000-000000000101",
+        "packagingRef": null,
+        "barcodeType": null
+      },
+      {
+        "type": "Catalog_НоменклатураПрисоединенныеФайлы",
+        "ref": "a1b2c3d4-0000-4000-8000-0000000000f1",
+        "dataVersion": "AAAAAQAAAAA=",
+        "deletionMark": false,
+        "ownerRef": "a1b2c3d4-0000-4000-8000-000000000001",
+        "size": 184320,
+        "extension": "jpg",
+        "modifiedAt": "2026-10-20T09:12:00+06:00"
+      },
+      {
+        "type": "ObjectDeletion",
+        "objectType": "Catalog_ХарактеристикиНоменклатуры",
+        "ref": "a1b2c3d4-0000-4000-8000-000000000777"
+      }
+    ]
+  }
+}

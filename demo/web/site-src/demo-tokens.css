@@ -1,6 +1,6 @@
 /*
  * СГЕНЕРИРОВАНО demo/web/site-src/build-site.mjs — не править вручную.
- * Источник: contracts/design-tokens/tokens.json v1.2.0 (палитра B), sha256 83d918d7ec4f438054a498d28e8992cc86148bf7e90a0ce13ecedada781821f3.
+ * Источник: contracts/design-tokens/tokens.json v1.4.0 (палитра B), sha256 06769fa7d8c78d067e7a1609b0154a3c7e25ee154d6cbaa774375120aa126b3b.
  */
 :root {
   --pd-color-background: #F1F6FC;
@@ -132,4 +132,5 @@
   --pd-layout-cart-drawer: 420px;
   --pd-layout-catalog-column: 132px;
   --pd-layout-catalog-card-min-width: 176px;
+  --pd-layout-grid-card-max-width: 280px;
 }

@@ -1,6 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type DynamicModule, Global, Module, type Provider } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
@@ -8,6 +7,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { and, eq, inArray } from 'drizzle-orm';
 import request from 'supertest';
+import { AdminUsersModule } from '../../../src/admin/users/admin-users.module.js';
 import { configureHttpApp } from '../../../src/bootstrap/create-app.js';
 import { AuthModule } from '../../../src/auth/auth.module.js';
 import { AuditModule } from '../../../src/common/audit/audit.module.js';
@@ -44,6 +44,7 @@ import {
 } from '../../../src/registration/ports/customer-matching.port.js';
 import { RegistrationModule } from '../../../src/registration/registration.module.js';
 import { UsersModule } from '../../../src/users/users.module.js';
+import { createSecretsDir, removeSecretsDir } from '../../support/secrets-dir.js';
 import { LogCapture } from '../../support/test-app.js';
 import { FoundationDb } from '../../foundation/support/foundation-db.js';
 
@@ -59,12 +60,18 @@ export const CONSENT_VERSION = '2026-10-01';
 export const OTP_TEST_CODE = '246810';
 export const OTP_TEST_PHONES = ['+996777000101', '+996777000102', '+996777000103', '+996777000104'] as const;
 
-const secretsDir = mkdtempSync(join(tmpdir(), 'pos-reg-secrets-'));
+/**
+ * Каталог файлов секретов (`secrets-dir.ts`) — создаётся первым harnessConfig(), а не при импорте модуля: файл тестов,
+ * все тесты которого отфильтрованы `-t`, каталога не создаёт.
+ */
+let secretsDir: string | undefined;
 let secretFiles: { pin: string; otp: string } | undefined;
 
-/** Удалить временные файлы секретов (afterAll). */
+/** Удалить временные файлы секретов (afterAll); следующий harnessConfig() создаст новые. */
 export function cleanupSecrets(): void {
-  rmSync(secretsDir, { recursive: true, force: true });
+  removeSecretsDir(secretsDir);
+  secretsDir = undefined;
+  secretFiles = undefined;
 }
 
 /**
@@ -75,8 +82,9 @@ export function cleanupSecrets(): void {
  */
 export function harnessConfig(overrides: Record<string, string> = {}): AppConfig {
   if (!secretFiles) {
+    const dir = (secretsDir ??= createSecretsDir('pos-reg-secrets-'));
     const file = (name: string) => {
-      const p = join(secretsDir, name);
+      const p = join(dir, name);
       writeFileSync(p, randomBytes(32).toString('base64url'), { mode: 0o600 });
       return p;
     };
@@ -119,6 +127,11 @@ export interface HarnessOptions {
   readonly matching?: 'customers' | CustomerMatchingPort;
   readonly logs?: LogCapture;
   readonly clock?: FixedClock;
+  /**
+   * Админ-раздел пользователей (`AdminUsersModule`: `POST /admin/users/{id}/logout-all` и др.) — для сценариев отзыва
+   * ключей Windows Hello администратором (12 T-BIO-037, ADR-116).
+   */
+  readonly admin?: boolean;
 }
 
 export interface Harness {
@@ -177,6 +190,7 @@ export async function createHarness(fdb: FoundationDb, options: HarnessOptions =
     AuthModule,
     ProfileModule,
     RegistrationModule,
+    ...(options.admin ? [AdminUsersModule] : []),
   ];
 
   @Module({

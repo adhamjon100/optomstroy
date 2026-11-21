@@ -3,7 +3,13 @@
 // (стрелка `arrow_upward`/`arrow_downward`, 03 §7.7), подсветка строк `warningContainer` (QR в `manual_confirm`).
 // На узкой ширине таблица прокручивается по горизонтали внутри себя — страница по горизонтали не прокручивается
 // (02 SCR-48.12). Значения ячеек — уже отформатированные строки: компонент не знает денег и домена.
+// Числовая колонка не уже своего самого широкого значения (сумма «16 007,50 сом» — одна строка при любом масштабе
+// текста): ширины колонок — по долям `flex`, но не меньше этого минимума; не помещаются — таблица прокручивается
+// (T-UI-117: прежде при масштабе 1,3–1,5 сумма переносилась внутри «сом»; пакет own-server:GAP-APP).
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/design_system/tokens/ds_typography.dart';
@@ -73,24 +79,90 @@ class ReportTable extends StatelessWidget {
   /// Высота строки.
   static const double rowHeight = 44;
 
+  /// Наименьшие ширины колонок: [ReportColumn.minWidth], у числовой — не меньше самого широкого значения с полями ячейки
+  /// (строки и итог — `body`, итог — 600, `tnum`).
+  List<double> _minWidths(BuildContext context, TextStyle cell) {
+    final double pad = 2 * context.space.s1; // money-double: allow — геометрия UI (lp)
+    final TextStyle numeric = cell.copyWith(fontFeatures: DsTypography.numeric);
+    final TextStyle total = numeric.copyWith(fontWeight: FontWeight.w600);
+    return <double>[
+      for (int i = 0; i < columns.length; i++)
+        if (!columns[i].numeric)
+          columns[i].minWidth
+        else
+          math.max(
+            columns[i].minWidth,
+            <double>[
+              for (final List<String> r in rows)
+                if (i < r.length) dsTextWidth(context, r[i], numeric) + pad + 1,
+              if (totals != null && i < totals!.length) dsTextWidth(context, totals![i], total) + pad + 1,
+            ].fold<double>(0, math.max),
+          ),
+    ];
+  }
+
+  /// Ширины колонок в строке шириной [inner] (без полей строки): по долям `flex`; колонка уже своего минимума [mins]
+  /// получает минимум, остаток делится между остальными.
+  List<double> _widths(double inner, List<double> mins) {
+    final List<double> out = List<double>.filled(columns.length, 0);
+    final Set<int> fixed = <int>{};
+    while (true) {
+      final double free = inner - fixed.fold<double>(0, (double a, int i) => a + mins[i]);
+      final int flex = <int>[
+        for (int i = 0; i < columns.length; i++)
+          if (!fixed.contains(i)) columns[i].flex,
+      ].fold<int>(0, (int a, int b) => a + b);
+      bool changed = false;
+      for (int i = 0; i < columns.length; i++) {
+        if (fixed.contains(i)) continue;
+        // Как `Expanded` строки: место на единицу доли × доля.
+        out[i] = flex == 0 ? 0 : free / flex * columns[i].flex;
+        if (out[i] < mins[i]) {
+          fixed.add(i);
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    for (final int i in fixed) {
+      out[i] = mins[i];
+    }
+    return out;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final double minWidth = columns.fold<double>(0, (double acc, ReportColumn c) => acc + c.minWidth);
+    final TextStyle cell = context.text.body.copyWith(color: context.colors.textPrimary);
+    final List<double> mins = _minWidths(context, cell);
+    final bool grown = <int>[for (int i = 0; i < columns.length; i++) i].any((int i) => mins[i] > columns[i].minWidth);
+    final double rowPad = 2 * context.space.s3; // money-double: allow — геометрия UI (lp)
+    // Значения помещаются в свои колонки — прежняя раскладка (доли `flex`, прокрутка уже суммы `minWidth`); иначе —
+    // ширины не меньше значений, прокрутка уже их суммы с полями строки.
+    final double minWidth = // money-double: allow — геометрия UI (lp)
+        mins.fold<double>(0, (double acc, double w) => acc + w) + (grown ? rowPad : 0);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool scroll = constraints.hasBoundedWidth && constraints.maxWidth < minWidth;
-        final Widget table = SizedBox(width: scroll ? minWidth : null, child: _table(context));
+        final List<double>? widths = grown && constraints.hasBoundedWidth
+            ? _widths((scroll ? minWidth : constraints.maxWidth) - rowPad, mins)
+            : null;
+        final Widget table = SizedBox(width: scroll ? minWidth : null, child: _table(context, widths));
         if (!scroll) return table;
         return SingleChildScrollView(scrollDirection: Axis.horizontal, child: table);
       },
     );
   }
 
-  Widget _table(BuildContext context) {
+  Widget _table(BuildContext context, List<double>? widths) {
     final DsColors c = context.colors;
     final DsTypography t = context.text;
     final TextStyle cell = t.body.copyWith(color: c.textPrimary);
     final TextStyle head = t.caption.copyWith(color: c.textSecondary, fontWeight: FontWeight.w500);
+
+    Widget cellBox(List<Widget> cells, int i) => Padding(
+      padding: EdgeInsets.symmetric(horizontal: context.space.s1, vertical: context.space.s2),
+      child: i < cells.length ? cells[i] : const SizedBox.shrink(),
+    );
 
     Widget line(List<Widget> cells, {Color? color, VoidCallback? onTap, Key? key, bool header = false}) {
       final Widget row = Container(
@@ -104,13 +176,10 @@ class ReportTable extends StatelessWidget {
         child: Row(
           children: <Widget>[
             for (int i = 0; i < columns.length; i++)
-              Expanded(
-                flex: columns[i].flex,
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: context.space.s1, vertical: context.space.s2),
-                  child: i < cells.length ? cells[i] : const SizedBox.shrink(),
-                ),
-              ),
+              if (widths == null)
+                Expanded(flex: columns[i].flex, child: cellBox(cells, i))
+              else
+                SizedBox(width: widths[i], child: cellBox(cells, i)),
           ],
         ),
       );

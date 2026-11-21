@@ -367,10 +367,12 @@ void main() {
     'через 300 мс, чип активного фильтра снимает фильтр',
     (tester) async {
       final CatalogHarness h = await _pump(tester, CatalogHarness());
+      // Сливеры — в обёртке предела ширины области товаров (03 §7.3 ред. 1.25; с токенов 1.4.0 — `SliverPadding` с
+      // пустыми полосами по краям, область по центру); ключ — у сливера внутри обёртки.
       List<Key?> sliverKeys() => tester
           .widget<CustomScrollView>(find.byKey(const ValueKey<String>('catalog-products')))
           .slivers
-          .map((Widget w) => w.key)
+          .map((Widget w) => w is SliverPadding ? w.child!.key : w.key)
           .toList();
       Element image() => tester.element(
         find.descendant(of: find.byKey(const ValueKey<String>('product-p0')), matching: find.byType(ProductImage)),

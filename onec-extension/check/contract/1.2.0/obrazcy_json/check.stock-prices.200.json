@@ -1,0 +1,71 @@
+{
+  "_note": "тестовые данные",
+  "description": "Остатки по складам, цены, замечания по строке, блок долга. PRICE_CHANGED в примере допустим, но для 1С необязателен: цену POS сравнивает сам (ТЗ для 1С §6.5)",
+  "operation": "POST /pos/v1/check",
+  "kind": "response",
+  "status": 200,
+  "body": {
+    "checkedAt": "2026-10-21T13:39:05+06:00",
+    "lines": [
+      {
+        "productRef": "a1b2c3d4-0000-4000-8000-000000000001",
+        "variantRef": "a1b2c3d4-0000-4000-8000-000000000101",
+        "price": "2350.00",
+        "available": "14.000",
+        "onHand": "16.000",
+        "reserved": "2.000",
+        "isAvailable": true,
+        "warehouses": [
+          {
+            "warehouseRef": "d4e5f6a7-0000-4000-8000-000000000001",
+            "available": "14.000"
+          },
+          {
+            "warehouseRef": "d4e5f6a7-0000-4000-8000-000000000002",
+            "available": "3.000"
+          }
+        ],
+        "issues": []
+      },
+      {
+        "productRef": "a1b2c3d4-0000-4000-8000-000000000002",
+        "variantRef": null,
+        "price": "415.00",
+        "available": "4.000",
+        "onHand": "4.000",
+        "reserved": "0.000",
+        "isAvailable": false,
+        "warehouses": [
+          {
+            "warehouseRef": "d4e5f6a7-0000-4000-8000-000000000001",
+            "available": "4.000"
+          },
+          {
+            "warehouseRef": "d4e5f6a7-0000-4000-8000-000000000002",
+            "available": "20.000"
+          }
+        ],
+        "issues": [
+          {
+            "code": "STOCK_INSUFFICIENT"
+          },
+          {
+            "code": "PRICE_CHANGED"
+          }
+        ]
+      }
+    ],
+    "receivables": {
+      "snapshotAt": "2026-10-21T13:39:05+06:00",
+      "balance": "12300.00",
+      "overdueAmount": "0.00",
+      "overdueDays": 0,
+      "creditAllowed": true,
+      "creditLimit": "100000.00",
+      "creditDays": 14,
+      "creditAvailable": "87700.00"
+    },
+    "totals": null,
+    "issues": []
+  }
+}

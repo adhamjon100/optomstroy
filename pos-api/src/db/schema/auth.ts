@@ -258,6 +258,7 @@ export const sessions = pgTable('sessions', {
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
     .default(sql`now()`),
+  weakReauthDueAt: timestamp('weak_reauth_due_at', { withTimezone: true }),
 });
 
 /** token_denylist — 07 §5.10 (ядро §17.3) */
@@ -437,6 +438,30 @@ export const storeTablets = pgTable('store_tablets', {
   reconnectedByUserId: uuid('reconnected_by_user_id'),
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
   revokedByUserId: uuid('revoked_by_user_id'),
+  revokeReason: text('revoke_reason'),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+});
+
+/** hello_keys — 07 §5.66 (ADR-116) */
+export const helloKeys = pgTable('hello_keys', {
+  id: uuid('id')
+    .primaryKey()
+    .default(sql`uuid_generate_v7()`),
+  userId: uuid('user_id').notNull(),
+  deviceId: uuid('device_id').notNull(),
+  publicKey: bytea('public_key').notNull(),
+  algorithm: text('algorithm').notNull(),
+  source: text('source').notNull(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  challenge: bytea('challenge'),
+  challengeSessionId: uuid('challenge_session_id'),
+  challengeExpiresAt: timestamp('challenge_expires_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
   revokeReason: text('revoke_reason'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()

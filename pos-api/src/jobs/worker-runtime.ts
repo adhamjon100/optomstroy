@@ -4,7 +4,7 @@ import type pg from 'pg';
 import type { Logger } from 'pino';
 import { SYNC_ENTITY_VALUES, type SyncEntity } from '../common/enums.js';
 import { QUEUES } from '../common/jobs/contracts/queues.js';
-import { PG_BOSS_SCHEMA } from '../common/jobs/pg-boss.service.js';
+import { PG_BOSS_RUNTIME_OPTIONS } from '../common/jobs/pg-boss-runtime.js';
 import type { SchedulerConfig } from '../sync/scheduler/scheduler.config.js';
 import { ScheduleResolver, type SettingsSource } from '../sync/scheduler/schedule-resolver.js';
 import { IMAGES_GC_QUEUE, SYNC_ENTITY_QUEUES, type SyncJobPayload } from '../sync/scheduler/sync-queues.js';
@@ -32,8 +32,11 @@ export interface WorkerRuntimeOptions {
   /** Хуки владельцев агрегатов после перехода строки outbox (этап F: `dead` → уведомления). */
   readonly outboxHooks?: OutboxDispatcherHooks;
   readonly workerId?: string;
-  /** Дополнительные опции pg-boss (тесты: интервалы обслуживания). */
-  readonly bossOptions?: Partial<ConstructorOptions>;
+  /**
+   * Дополнительные опции pg-boss (тесты: интервалы обслуживания). Схему, `migrate` и `createSchema` переопределить
+   * нельзя: worker работает под `pos_app` без DDL (07 DATA-012, `PG_BOSS_RUNTIME_OPTIONS`).
+   */
+  readonly bossOptions?: Partial<Omit<ConstructorOptions, keyof typeof PG_BOSS_RUNTIME_OPTIONS>>;
   /**
    * Регистрация обработчиков других модулей после `boss.start()` (этап D: SMS-контур `SmsRuntime.register` —
    * `sms.send`, `sms.dlr_poll`, `sms.balance_poll`, RM-D-002).
@@ -115,14 +118,15 @@ export class WorkerRuntime {
       return false;
     }
     if (this.started) return true;
+    // Схему pg-boss ставит migrate (pos_migrate); здесь — только проверка установки и версии (07 DATA-012).
     const boss = new PgBoss({
       connectionString: this.o.connectionString,
-      schema: PG_BOSS_SCHEMA,
       application_name: 'pos-worker:pg-boss',
       supervise: true,
       schedule: true,
       max: 5,
       ...this.o.bossOptions,
+      ...PG_BOSS_RUNTIME_OPTIONS,
     });
     boss.on('error', (err: unknown) => log.error({ err }, 'pg-boss.error'));
     boss.on('warning', (w: unknown) => log.warn({ warning: w }, 'pg-boss.warning'));

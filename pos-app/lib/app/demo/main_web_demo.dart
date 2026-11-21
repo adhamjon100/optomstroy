@@ -2,8 +2,9 @@
 //   flutter build web -t lib/app/demo/main_web_demo.dart --dart-define-from-file=env/web_demo.json
 // Страница сайта (demo/web/site-src) до загрузки Flutter создаёт мост `globalThis.__posDemo` и запускает сервер —
 // скомпилированный pos-api — в module Web Worker. Приложение то же, что `lib/main.dart`: тот же `bootstrap`, а
-// `demoOverrides` меняют только транспорт Dio, `/health` и `API_BASE_URL`; полосы «DEV · TEST DATA» в веб-демо нет
-// (`ENV_BANNER=false` в `demoAppConfig`, 15 ADR-114 п. 9 (5)).
+// `demoOverrides` меняют только транспорт Dio, `/health`, `API_BASE_URL` и порт биометрии (passkey страницы
+// `globalThis.__posPasskey`, 15 ADR-116 п. 1); полосы «DEV · TEST DATA» в веб-демо нет (`ENV_BANNER=false` в
+// `demoAppConfig`, 15 ADR-114 п. 9 (5)).
 //
 // `lib/main.dart` этот файл не импортирует (DM-01, scripts/check_layers.py), поэтому в сборки Windows и Android демо-код
 // не попадает.
@@ -19,6 +20,7 @@ import 'package:flutter/widgets.dart' show WidgetsFlutterBinding;
 import 'package:logging/logging.dart';
 import 'package:optomstroy/app/bootstrap.dart';
 import 'package:optomstroy/app/demo/demo_bridge.dart';
+import 'package:optomstroy/app/demo/demo_context_menu.dart';
 import 'package:optomstroy/app/demo/demo_overrides.dart';
 import 'package:optomstroy/core/config/environment.dart';
 
@@ -45,7 +47,8 @@ void ensureDemoBuildLaunchAllowed(DemoBridge bridge) {
   );
 }
 
-/// Запуск веб-демо после проверок: меню браузера отключено → `bootstrap(overrides: demoOverrides)`.
+/// Запуск веб-демо после проверок: меню браузера отключено (кроме поля ввода дизайн-системы в фокусе,
+/// [DemoBrowserContextMenu]) → `bootstrap(overrides: demoOverrides)`.
 ///
 /// Ошибка до `runApp` (например, `ClientMeta.load` или `bootstrap`) записывается в журнал и передаётся странице
 /// [onStartError] (по умолчанию — экран загрузки, `reportDemoStartError`), иначе страница крутила бы «загружаем
@@ -66,6 +69,9 @@ Future<void> runWebDemo(
 Future<void> _startDemoApp(DemoBridge bridge) async {
   WidgetsFlutterBinding.ensureInitialized();
   await _disableBrowserContextMenu();
+  // Над полем ввода в фокусе — меню браузера с «Вставить» без разрешения `clipboard-read` (ADR-113 п. 1, уточнение
+  // 2026-11-08); глобальный маршрут указателя живёт всё время работы страницы.
+  if (kIsWeb) DemoBrowserContextMenu().attach();
   await bootstrap(overrides: demoOverrides(bridge));
 }
 
@@ -102,7 +108,8 @@ void ensureDemoLaunchAllowed({required String demoBackend, required String envir
   }
 }
 
-/// Меню браузера по правой кнопке перекрыло бы контекстные меню приложения (15 ADR-113 п. 1).
+/// Меню браузера по правой кнопке перекрыло бы контекстные меню приложения (15 ADR-113 п. 1); над полем ввода
+/// дизайн-системы в фокусе его снова включает [DemoBrowserContextMenu].
 Future<void> _disableBrowserContextMenu() async {
   if (!kIsWeb) return;
   try {

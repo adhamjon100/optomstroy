@@ -1,7 +1,11 @@
 'use strict';
 // Шим `crypto`: синхронные хэши/HMAC/HKDF/AES-256-GCM на @noble/hashes и @noble/ciphers (уже в pos-api/node_modules),
 // случайные числа — WebCrypto getRandomValues. Асимметричные ключи (generateKeyPairSync и т. п.) не поддержаны:
-// jwt-keys.js подменяется отдельно (ключ из WebCrypto).
+// jwt-keys.js подменяется отдельно (ключ из WebCrypto). Исключение — только проверка подписи RSA: createPublicKey
+// (SPKI DER ключа rsaEncryption) и verify (RSASSA-PKCS1-v1_5) синхронно на BigInt — ими pos-api проверяет ключ входа
+// без PIN браузера на Windows (common/auth/hello-key.ts: parseHelloPublicKey, verifyHelloSignature; 09 BIO-041,
+// 15 ADR-116 п. 4). WebCrypto здесь не годится: он асинхронный, а код pos-api — синхронный. Подпись, закрытые ключи,
+// RSA-PSS, EC и прочие форматы — по-прежнему ERR_DEMO_UNSUPPORTED.
 const { Buffer } = require('./node-buffer.cjs');
 const { sha256, sha512, sha384, sha224 } = require('@noble/hashes/sha2');
 const { sha1, md5 } = require('@noble/hashes/legacy');
@@ -235,6 +239,127 @@ class KeyObject {
 function createSecretKey(key, enc) {
   return new KeyObject('secret', toBytes(key, enc));
 }
+
+// ---- открытый ключ RSA и проверка RSASSA-PKCS1-v1_5 (только то, что нужно common/auth/hello-key.ts pos-api)
+const RSA_ENCRYPTION_OID = '2a864886f70d010101'; // 1.2.840.113549.1.1.1
+const RSA_PKCS1_PADDING = 1;
+// DigestInfo (RFC 8017 §9.2, прим. 1) перед хэшем.
+const DIGEST_INFO = {
+  sha1: '3021300906052b0e03021a05000414',
+  sha256: '3031300d060960864801650304020105000420',
+  sha384: '3041300d060960864801650304020205000430',
+  sha512: '3051300d060960864801650304020305000440',
+};
+function decoderError() {
+  const e = new Error('error:1E08010C:DECODER routines::unsupported');
+  e.code = 'ERR_OSSL_UNSUPPORTED';
+  return e;
+}
+// Элемент DER с тегом want от позиции pos: { start, end } содержимого (длина — короткая или 1…4 байта).
+function der(bytes, pos, want) {
+  if (pos + 2 > bytes.length || bytes[pos] !== want) throw decoderError();
+  let len = bytes[pos + 1];
+  let p = pos + 2;
+  if (len & 0x80) {
+    const n = len & 0x7f;
+    if (n < 1 || n > 4 || p + n > bytes.length) throw decoderError();
+    len = 0;
+    for (let i = 0; i < n; i++) len = len * 256 + bytes[p++];
+  }
+  if (p + len > bytes.length) throw decoderError();
+  return { start: p, end: p + len };
+}
+function bigOf(bytes) {
+  let x = 0n;
+  for (const b of bytes) x = (x << 8n) | BigInt(b);
+  return x;
+}
+function bitLength(x) {
+  return x === 0n ? 0 : x.toString(2).length;
+}
+function modPow(base, exp, mod) {
+  let result = 1n;
+  let b = base % mod;
+  let e = exp;
+  while (e > 0n) {
+    if (e & 1n) result = (result * b) % mod;
+    b = (b * b) % mod;
+    e >>= 1n;
+  }
+  return result;
+}
+// SPKI: SEQUENCE { SEQUENCE { OID rsaEncryption, NULL? }, BIT STRING { SEQUENCE { INTEGER n, INTEGER e } } }. Байты
+// после внешнего SEQUENCE, как и OpenSSL в Node, не мешают (ключ — без них).
+function parseRsaSpki(bytes) {
+  const outer = der(bytes, 0, 0x30);
+  const alg = der(bytes, outer.start, 0x30);
+  const oid = der(bytes, alg.start, 0x06);
+  if (Buffer.from(bytes.subarray(oid.start, oid.end)).toString('hex') !== RSA_ENCRYPTION_OID) {
+    const e = new Error('crypto.createPublicKey: в браузерном бэкенде — только ключи RSA (rsaEncryption)');
+    e.code = 'ERR_DEMO_UNSUPPORTED';
+    throw e;
+  }
+  const bits = der(bytes, alg.end, 0x03);
+  if (bits.end !== outer.end || bytes[bits.start] !== 0) throw decoderError();
+  const seq = der(bytes, bits.start + 1, 0x30);
+  const nEl = der(bytes, seq.start, 0x02);
+  const eEl = der(bytes, nEl.end, 0x02);
+  if (eEl.end !== seq.end || bytes[nEl.start] & 0x80 || bytes[eEl.start] & 0x80) throw decoderError();
+  const n = bigOf(bytes.subarray(nEl.start, nEl.end));
+  const e = bigOf(bytes.subarray(eEl.start, eEl.end));
+  if (n === 0n || e === 0n) throw decoderError();
+  return { n, e, end: outer.end };
+}
+class RsaPublicKeyObject {
+  constructor(spki, n, e) {
+    this.type = 'public';
+    this.asymmetricKeyType = 'rsa';
+    this.asymmetricKeyDetails = { modulusLength: bitLength(n), publicExponent: e };
+    this.__spki = spki;
+    this.__n = n;
+    this.__e = e;
+  }
+  export(options) {
+    const o = options || {};
+    if (o.format === 'der' && o.type === 'spki') return Buffer.from(this.__spki);
+    return unsupported('KeyObject.export (кроме der/spki)')();
+  }
+}
+function createPublicKey(input) {
+  if (input instanceof RsaPublicKeyObject) return input;
+  const o = input && typeof input === 'object' && !ArrayBuffer.isView(input) ? input : { key: input };
+  if (o.key instanceof RsaPublicKeyObject) return o.key;
+  if (o.format !== 'der' || o.type !== 'spki') return unsupported('createPublicKey (кроме der/spki)')();
+  const bytes = Buffer.from(toBytes(o.key));
+  const { n, e, end } = parseRsaSpki(bytes);
+  return new RsaPublicKeyObject(bytes.subarray(0, end), n, e);
+}
+// crypto.verify(algorithm, data, key, signature[, callback]) — RSASSA-PKCS1-v1_5; неверная подпись — false.
+function verify(algorithm, data, key, signature, callback) {
+  const o = key instanceof RsaPublicKeyObject ? { key } : key || {};
+  const k = o.key instanceof RsaPublicKeyObject ? o.key : createPublicKey(o);
+  if (o.padding !== undefined && o.padding !== RSA_PKCS1_PADDING) return unsupported('verify (кроме RSA_PKCS1_PADDING)')();
+  const name = String(algorithm).toLowerCase().replace('-', '');
+  const prefix = DIGEST_INFO[name];
+  if (!prefix) return unsupported(`verify (${algorithm})`)();
+  const len = Math.ceil(k.asymmetricKeyDetails.modulusLength / 8);
+  const sig = toBytes(signature);
+  let ok = false;
+  if (sig.length === len) {
+    const s = bigOf(sig);
+    if (s < k.__n) {
+      const em = modPow(s, k.__e, k.__n).toString(16).padStart(len * 2, '0');
+      const t = prefix + Buffer.from(hashFn(name)(toBytes(data))).toString('hex');
+      const want = '0001' + 'ff'.repeat(len - 3 - t.length / 2) + '00' + t;
+      ok = len - 3 - t.length / 2 >= 8 && em === want;
+    }
+  }
+  if (typeof callback === 'function') {
+    queueMicrotask(() => callback(null, ok));
+    return undefined;
+  }
+  return ok;
+}
 module.exports = {
   createHash,
   createHmac,
@@ -257,14 +382,14 @@ module.exports = {
   createDecipheriv,
   createSecretKey,
   KeyObject,
-  createPublicKey: unsupported('createPublicKey'),
+  createPublicKey,
   createPrivateKey: unsupported('createPrivateKey'),
   generateKeyPairSync: unsupported('generateKeyPairSync'),
   generateKeyPair: unsupported('generateKeyPair'),
   createSign: unsupported('createSign'),
   createVerify: unsupported('createVerify'),
   sign: unsupported('sign'),
-  verify: unsupported('verify'),
+  verify,
   pbkdf2Sync: unsupported('pbkdf2Sync'),
   pbkdf2: unsupported('pbkdf2'),
   scryptSync: unsupported('scryptSync'),
@@ -273,7 +398,7 @@ module.exports = {
   getHashes: () => ['md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512'],
   getCiphers: () => ['aes-256-gcm'],
   getCurves: () => [],
-  constants: {},
+  constants: { RSA_PKCS1_PADDING },
   webcrypto,
   subtle: webcrypto.subtle,
 };

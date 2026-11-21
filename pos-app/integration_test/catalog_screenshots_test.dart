@@ -14,7 +14,7 @@
 //                         (1280x900 ↔ proto_1280, 1024x800 ↔ proto_1024);
 //      (b) list         — «Список» ↔ proto_list;           (c) compact — «Компакт» ↔ proto_compact;
 //      (d) filters      — встроенная панель + «Только в наличии» ↔ proto_filters;
-//      (e) heating      — корень, у подкатегорий которого нет картинок (плитки-заглушки) ↔ proto_heating;
+//      (e) heating      — корень, у подкатегорий которого нет картинок (иконки категорий в круге) ↔ proto_heating;
 //      (g) nav_drawer   — «бургер» → drawer навигации (в прототипе нет);
 //      (h) toast        — сразу после «+ Добавить»: «Добавлено: <название>» (в прототипе нет);
 //      (f) cart         — 3 товара (один дважды: «В корзине · 2 — ещё +1»), ответ сервера, drawer по кнопке шапки
@@ -1007,12 +1007,12 @@ int _withImage(Category c) => _ribbonChildren(c).where((Category ch) => (ch.imag
   return (roots.first, 'непустых подкатегорий нет ни у одного корня — первый корень');
 }
 
-/// (e): корень (не из (a)), у непустых подкатегорий которого нет `imageUrl` — плитки-заглушки ленты.
+/// (e): корень (не из (a)), у непустых подкатегорий которого нет `imageUrl` — карточки ленты без картинки (иконка).
 (Category, String) _qaHeatingRoot(List<Category> roots, Category def) {
   final List<Category> others = roots.where((Category r) => r.id != def.id).toList();
   final Category? exact = others.where((Category r) => _ribbonChildren(r).isNotEmpty && _withImage(r) == 0).firstOrNull;
   if (exact != null) {
-    return (exact, 'подкатегорий ${_ribbonChildren(exact).length}, у всех нет imageUrl — плитки-заглушки');
+    return (exact, 'подкатегорий ${_ribbonChildren(exact).length}, у всех нет imageUrl — карточки без картинки');
   }
   final Category? noImages = others.where((Category r) => _withImage(r) == 0).firstOrNull;
   if (noImages != null) {
@@ -1259,7 +1259,7 @@ Future<void> _designQa(WidgetTester tester, List<Size> sizes) async {
     final int cards = find.byType(ProductCardGrid).evaluate().length;
     _note(
       'QA default ${_sizeTag(s)}: колонок сетки $cols (по прототипу ${want ?? '—'}), карточек $cards; '
-      'лента: плиток-заглушек ${find.descendant(of: find.byKey(_ribbon), matching: find.byKey(_ribbonPlaceholder)).evaluate().length}',
+      'лента: карточек без картинки ${find.descendant(of: find.byKey(_ribbon), matching: find.byKey(_ribbonPlaceholder)).evaluate().length}',
     );
     if (want != null && cards >= want && cols != want) _problem('QA default ${_sizeTag(s)}: колонок $cols ≠ $want');
     _checkAddButtonColors(tester, f, 'app_default_${_sizeTag(s)}');
@@ -1295,13 +1295,13 @@ Future<void> _designQa(WidgetTester tester, List<Size> sizes) async {
     }
   }
 
-  // (e) корень без картинок подкатегорий — плитки-заглушки ленты.
+  // (e) корень без картинок подкатегорий — карточки ленты без картинки (иконка категории).
   await _qaOpenRoot(tester, heat);
   final int placeholders = find
       .descendant(of: find.byKey(_ribbon), matching: find.byKey(_ribbonPlaceholder))
       .evaluate()
       .length;
-  _note('QA (e) «${heat.name}»: плиток-заглушек в ленте $placeholders (включая «Все товары»)');
+  _note('QA (e) «${heat.name}»: карточек без картинки в ленте $placeholders (включая «Все товары»)');
   await _qaShot(tester, 'heating', main);
 
   // (j) колонка категорий свёрнута (на всех размерах) и снова развёрнута.

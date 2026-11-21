@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/app_tabs.dart';
+import 'package:optomstroy/design_system/layout/large_content.dart';
 import 'package:optomstroy/features/catalog/catalog_providers.dart' show catalogViewerRoleProvider;
 import 'package:optomstroy/features/favorites/presentation/widgets/favorite_customers_tab.dart';
 import 'package:optomstroy/features/favorites/presentation/widgets/favorite_products_tab.dart';
@@ -50,7 +51,12 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
     final AppLocalizations l10n = AppLocalizations.of(context);
     final bool customers = FavoritesScreen.customersAllowed(ref.watch(catalogViewerRoleProvider));
     final FavoritesTab tab = customers ? _tab : FavoritesTab.products;
-    final Widget products = FavoriteProductsTab(onCount: (int n) => _setCount(products: n));
+    // Окно ≥ 1600: обе вкладки не шире 1200 по центру (03 §8.8; указание владельца 2026-11-18, 15 §5.8 (3)); вкладка
+    // «Товары» — минимальный список (02 SCR-40 «Уточнения», GQ-FECUST-06), сетка `ProductCard*` из бэклога — по пределам
+    // 03 §7.3. Вкладки `AppTabs` — во всю ширину, как на других экранах.
+    final Widget products = DsLargeContent(
+      child: FavoriteProductsTab(onCount: (int n) => _setCount(products: n)),
+    );
     final Widget body = !customers
         ? products
         : Column(
@@ -81,7 +87,9 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                   index: tab.index,
                   children: <Widget>[
                     products,
-                    FavoriteCustomersTab(onCount: (int n) => _setCount(customers: n)),
+                    DsLargeContent(
+                      child: FavoriteCustomersTab(onCount: (int n) => _setCount(customers: n)),
+                    ),
                   ],
                 ),
               ),

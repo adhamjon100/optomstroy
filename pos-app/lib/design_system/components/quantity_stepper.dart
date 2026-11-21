@@ -204,21 +204,30 @@ class _QuantityStepperState extends State<QuantityStepper> {
                     borderRadius: BorderRadius.all(context.radii.sm),
                     border: Border.all(color: widget.error ? c.error : c.borderStrong, width: widget.error ? 2 : 1),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(widget.value, maxLines: 1, style: valueStyle),
-                      ),
-                      if (widget.unit != null && s == QuantityStepperSize.md)
-                        Text(
-                          widget.unit!,
-                          maxLines: 1,
-                          overflow: TextOverflow.clip,
-                          style: context.text.micro.copyWith(color: c.textSecondary, height: 1.1),
+                  // Число и единица — в высоте поля и при крупном тексте (1,5 на compact/medium: прежде переполнение
+                  // на 2 lp снизу; прогон адаптивности 2026-11-18, 12 T-UI-117): блок уменьшается целиком, только
+                  // если не помещается.
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: s.field),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(widget.value, maxLines: 1, style: valueStyle),
+                          ),
                         ),
-                    ],
+                        if (widget.unit != null && s == QuantityStepperSize.md)
+                          Text(
+                            widget.unit!,
+                            maxLines: 1,
+                            overflow: TextOverflow.clip,
+                            style: context.text.micro.copyWith(color: c.textSecondary, height: 1.1),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),

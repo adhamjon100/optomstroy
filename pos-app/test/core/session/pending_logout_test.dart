@@ -30,6 +30,10 @@ final class _AuthServer {
   ResponseBody Function(RequestOptions o)? onLogout;
   ResponseBody Function(RequestOptions o)? onDelete;
 
+  /// Access-токен, который сервер выдаёт на `POST /auth/refresh` доставки. Создаётся один раз: `exp` у `fakeJwt`
+  /// считается от системных часов, и токен, собранный заново в проверке, на границе секунды отличался бы от выданного.
+  final String deliveryAccess = fakeJwt(tag: 'delivery');
+
   /// `Authorization` каждого `POST /auth/logout`, дошедшего до сервера.
   final List<Object?> logoutBearers = <Object?>[];
 
@@ -41,7 +45,7 @@ final class _AuthServer {
     final path = o.uri.path.replaceFirst('/api/v1', '');
     if (path == '/auth/refresh') {
       refreshBodies.add(o.data);
-      return onRefresh?.call(o) ?? json(200, tokenPair(fakeJwt(tag: 'delivery'), _rotated));
+      return onRefresh?.call(o) ?? json(200, tokenPair(deliveryAccess, _rotated));
     }
     if (path == '/auth/logout') {
       logoutBearers.add(o.headers[ApiHeaders.authorization]);
@@ -111,7 +115,7 @@ void main() {
       final report = await h.pendingLogout.deliver();
       expect(report.delivered, 1);
       expect(server.refreshBodies.last, <String, Object?>{'refreshToken': 'r1'});
-      expect(server.logoutBearers.last, 'Bearer ${fakeJwt(tag: 'delivery')}');
+      expect(server.logoutBearers.last, 'Bearer ${server.deliveryAccess}');
       expect(h.adapter.requests.lastWhere((r) => r.path == '/auth/refresh').headers[ApiHeaders.authorization], isNull);
       expect(h.storage.values.keys, <SecureKey>[SecureKey.deviceId], reason: 'секрет и полученные токены удалены');
       expect(h.tokens.accessToken, isNull, reason: 'токены доставки не становятся сессией');
@@ -348,17 +352,16 @@ void main() {
       final c = await _offlineLogout(h, server);
       server.online = true;
 
-      await c.establish(
-        accessToken: fakeJwt(sub: otherUserId, tag: 'b'),
-        refreshToken: 'rb',
-      );
+      // Один и тот же токен во входе и в проверке (`exp` `fakeJwt` — от системных часов).
+      final String accessB = fakeJwt(sub: otherUserId, tag: 'b');
+      await c.establish(accessToken: accessB, refreshToken: 'rb');
 
       expect(server.refreshBodies.last, <String, Object?>{'refreshToken': 'r1'});
       expect(server.logoutBearers, hasLength(1));
       expect(h.storage.values.containsKey(SecureKey.pendingLogout), isFalse);
       expect(h.state.userId, otherUserId);
       expect(await h.tokens.readRefreshToken(), 'rb');
-      expect(h.tokens.accessToken, fakeJwt(sub: otherUserId, tag: 'b'));
+      expect(h.tokens.accessToken, accessB);
     });
 
     test('доставка не удалась при входе — вход выполняется, запись сохраняется и доставляется позже', () async {

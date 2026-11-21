@@ -1,23 +1,25 @@
 -- scripts/check_tables.sql — RM-B-005, проверка п. 2 (13_IMPLEMENTATION_ROADMAP §3.2):
--- в схеме public ровно 65 таблиц по списку 07_DATA_MODEL §5 = 56 таблиц ядра R0 §6 (включая опциональную
+-- в схеме public ровно 66 таблиц по списку 07_DATA_MODEL §5 = 56 таблиц ядра R0 §6 (включая опциональную
 -- print_jobs) + 7 таблиц ядра §17.3 + sync_node_state (ядро §22.8) + store_tablets (07 §5.65, ADR-115, миграция
--- 0022_kiosk_schema.sql; до 07 v1.17 — 64). Дополнительно — 45 enum-типов 07 §6.1 (значения kiosk/kiosk_order
--- 0021_kiosk_enum_values.sql добавляет в существующие типы, новых типов нет).
+-- 0022_kiosk_schema.sql; до 07 v1.17 — 64) + hello_keys (07 §5.66, ADR-116, миграция 0024_face_login.sql; до 07
+-- v1.18 — 65). Дополнительно — 45 enum-типов 07 §6.1 (значения kiosk/kiosk_order 0021_kiosk_enum_values.sql добавляет
+-- в существующие типы; 0024 новых типов и значений не добавляет).
 --
 -- dev_outbox (07 §5.63) создаётся только в сеансе миграции с app.env IN ('dev','test') (B-AR-09, отказ закрыт).
--- Поэтому проверка зависит от того же параметра сеанса: dev/test — 65 таблиц, включая dev_outbox; иначе
--- (prod/staging, параметр не задан) — 64 таблицы и dev_outbox ОБЯЗАН отсутствовать (AC-DATA-169).
+-- Поэтому проверка зависит от того же параметра сеанса: dev/test — 66 таблиц, включая dev_outbox; иначе
+-- (prod/staging, параметр не задан) — 65 таблиц и dev_outbox ОБЯЗАН отсутствовать (AC-DATA-169).
 --
--- Запуск — после ВСЕХ pos-api/migrations/*.sql по порядку (store_tablets создаёт 0022), как CI и Makefile check-contracts:
---         node tools/pg/run-sql.mjs --set app.env=test <pos-api/migrations/*.sql по порядку> --              pos-api/db/migrations-dev/0001_dev_outbox.sql --check scripts/check_tables.sql      (dev/test: 65)
---         node tools/pg/run-sql.mjs <pos-api/migrations/*.sql по порядку> --check scripts/check_tables.sql  (prod: 64)
+-- Запуск — после ВСЕХ pos-api/migrations/*.sql по порядку (store_tablets создаёт 0022, hello_keys — 0024), как CI и
+-- Makefile check-contracts:
+--         node tools/pg/run-sql.mjs --set app.env=test <pos-api/migrations/*.sql по порядку> --              pos-api/db/migrations-dev/0001_dev_outbox.sql --check scripts/check_tables.sql      (dev/test: 66)
+--         node tools/pg/run-sql.mjs <pos-api/migrations/*.sql по порядку> --check scripts/check_tables.sql  (prod: 65)
 --     или PGOPTIONS='-c app.env=test' psql -v ON_ERROR_STOP=1 -f scripts/check_tables.sql (после применения миграций)
 -- Результат: таблица расхождений (status = missing | extra) и итоговая сводка; при любом расхождении —
 -- RAISE EXCEPTION (код выхода ≠ 0).
 
 CREATE TEMP TABLE expected_tables (table_name text PRIMARY KEY, domain text NOT NULL, card text NOT NULL) ON COMMIT PRESERVE ROWS;
 INSERT INTO expected_tables (table_name, domain, card) VALUES
-  -- auth (07 §5.A) — 16
+  -- auth (07 §5.A) — 17
   ('users',                     'auth',     '5.1'),
   ('user_profiles',             'auth',     '5.2'),
   ('user_invitations',          'auth',     '5.3'),
@@ -34,6 +36,7 @@ INSERT INTO expected_tables (table_name, domain, card) VALUES
   ('consents',                  'auth',     '5.14'),
   ('integration_tokens',        'auth',     '5.62 (ядро §17.3)'),
   ('store_tablets',             'auth',     '5.65 (ADR-115)'),
+  ('hello_keys',                'auth',     '5.66 (ADR-116)'),
   -- catalog (07 §5.B) — 13
   ('categories',                'catalog',  '5.15'),
   ('products',                  'catalog',  '5.16'),
@@ -93,7 +96,7 @@ CREATE TEMP TABLE check_mode ON COMMIT PRESERVE ROWS AS
   SELECT coalesce(current_setting('app.env', true), '') IN ('dev', 'test') AS dev_schema,
          coalesce(NULLIF(current_setting('app.env', true), ''), '<не задан>') AS app_env;
 DELETE FROM expected_tables WHERE table_name = 'dev_outbox' AND NOT (SELECT dev_schema FROM check_mode);
-SELECT app_env, dev_schema, CASE WHEN dev_schema THEN 65 ELSE 64 END AS expected_total FROM check_mode;
+SELECT app_env, dev_schema, CASE WHEN dev_schema THEN 66 ELSE 65 END AS expected_total FROM check_mode;
 
 CREATE TEMP VIEW actual_tables AS
   SELECT c.relname::text AS table_name
@@ -120,7 +123,7 @@ DO $$
 DECLARE v_expected int; v_actual int; v_missing text; v_extra text; v_dev boolean; v_total int;
 BEGIN
   SELECT dev_schema INTO v_dev FROM check_mode;
-  v_total := CASE WHEN v_dev THEN 65 ELSE 64 END;
+  v_total := CASE WHEN v_dev THEN 66 ELSE 65 END;
   SELECT count(*) INTO v_expected FROM expected_tables;
   SELECT count(*) INTO v_actual FROM actual_tables;
   SELECT string_agg(table_name, ', ' ORDER BY table_name) INTO v_missing

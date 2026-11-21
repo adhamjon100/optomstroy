@@ -170,6 +170,7 @@ class CatalogToolbarControls extends StatelessWidget {
     this.showViewText = false,
     this.filtersOpen = false,
     this.toolbarStyle = false,
+    this.runAlignEnd = false,
   });
 
   final ProductViewMode view;
@@ -187,6 +188,10 @@ class CatalogToolbarControls extends StatelessWidget {
 
   /// Стиль строки управления medium+.
   final bool toolbarStyle;
+
+  /// Кнопки, перенесённые на вторую строку, — тоже у правого края (SCR-50 «Все товары», 02 SCR-50.2); SCR-10/11/12 —
+  /// как прежде, от начала строки.
+  final bool runAlignEnd;
 
   /// Зазор между видом, сортировкой и «Фильтрами» в стиле строки управления (прототип: `gap: 10px`).
   static double gap(BuildContext context) => CatalogToolbarRow.itemGap(context); // money-double: allow — UI lp
@@ -243,6 +248,7 @@ class CatalogToolbarControls extends StatelessWidget {
     // Wrap, а не Row: в узкой колонке (открыта FilterPanel) кнопки переносятся, а не выходят за край. Кнопки с
     // целью 48 центрируют себя (`Center`) — `IntrinsicWidth` держит их по содержимому, а не по ширине строки.
     return Wrap(
+      alignment: runAlignEnd ? WrapAlignment.end : WrapAlignment.start,
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: context.space.s3,
       runSpacing: context.space.s1,

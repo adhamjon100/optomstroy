@@ -13,6 +13,9 @@ final class AuthRemoteDataSource {
   static const String otpVerifyPath = '/auth/otp/verify';
   static const String unlockPath = '/auth/unlock';
 
+  /// Challenge для подписи ключом Windows Hello (W2; 08 §4.1.10) — публичный путь, как [unlockPath].
+  static const String unlockChallengePath = '/auth/unlock/challenge';
+
   /// `/auth/otp/challenges/{challengeId}`.
   static String challengePath(String challengeId) => '/auth/otp/challenges/${Uri.encodeComponent(challengeId)}';
 
@@ -54,6 +57,17 @@ final class AuthRemoteDataSource {
       options: _public,
     );
     return AuthUnlockResponseDto.fromJson(_body(r));
+  }
+
+  /// `POST /auth/unlock/challenge` (W2): без автоповтора; ответ разбирается строго — подписывается только challenge
+  /// входа ([AuthUnlockChallengeResponseDto.challengePattern]).
+  Future<AuthUnlockChallengeResponseDto> unlockChallenge(AuthUnlockChallengeRequestDto body) async {
+    final Response<Map<String, dynamic>> r = await _dio.post<Map<String, dynamic>>(
+      unlockChallengePath,
+      data: body.toJson(),
+      options: _public,
+    );
+    return AuthUnlockChallengeResponseDto.fromJson(_body(r));
   }
 
   static Map<String, dynamic> _body(Response<Map<String, dynamic>> r) {

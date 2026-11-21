@@ -13,6 +13,7 @@ import 'package:optomstroy/core/network/auth/token_store.dart';
 import 'package:optomstroy/core/network/client_meta.dart';
 import 'package:optomstroy/core/network/dio_client.dart';
 import 'package:optomstroy/core/network/etag_cache.dart';
+import 'package:optomstroy/core/session/profile_cache.dart';
 import 'package:optomstroy/core/storage/secure_storage.dart';
 import 'package:optomstroy/core/utils/clock.dart';
 import 'package:optomstroy/features/auth/data/datasources/auth_remote_data_source.dart';
@@ -42,7 +43,7 @@ final class _Device implements DeviceInfoSource {
 }
 
 final class _Env {
-  _Env(FakeHandler handler, {String? refresh, SessionTokensSink? onSession}) {
+  _Env(FakeHandler handler, {String? refresh, SessionTokensSink? onSession, bool profileCache = false}) {
     adapter = FakeAdapter(handler);
     storage = InMemorySecureStorage(<SecureKey, String>{
       SecureKey.refreshToken: ?refresh, // check-secrets: allow (имя поля / тестовое значение)
@@ -65,6 +66,7 @@ final class _Env {
       device: _Device(),
       clock: FixedClock(DateTime.utc(2026, 10, 22, 9)),
       onSession: onSession,
+      profileCache: profileCache ? ProfileCacheStore(storage) : null,
     );
   }
 
@@ -148,6 +150,43 @@ void main() {
     expect(body['challengeId'], 'c1');
     expect(body['code'], '004512');
     expect((body['device']! as Map<dynamic, dynamic>)['platform'], 'android');
+  });
+
+  test('T-BIO-028: verifyOtp → userId (Me.id) в кэше профиля; ответ без user не стирает userId сессии', () async {
+    int call = 0;
+    final _Env env = _Env((RequestOptions o) async {
+      call++;
+      return json(200, <String, Object?>{
+        'status': 'authenticated',
+        'accessToken': call == 1 ? 'acc-1' : 'acc-2',
+        'refreshToken': call == 1 ? 'ref-1' : 'ref-2',
+        if (call == 1)
+          'user': <String, Object?>{
+            'id': '0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4f01',
+            'kind': 'staff',
+            'status': 'active',
+            'roles': <String>['seller'],
+            'permissions': <String>[],
+            'permissionsVersion': 1,
+            'profile': <String, Object?>{'fullName': 'Абдулла Каримов', 'phone': '+996700123456'},
+          },
+      });
+    }, profileCache: true);
+    final VerifyAuthenticated first =
+        (await env.repo.verifyOtp(challengeId: 'c', code: '111111')).valueOrNull! as VerifyAuthenticated;
+    expect(first.profile.userId, '0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4f01');
+    final CachedProfile? cached = await ProfileCacheStore(env.storage).read();
+    expect((cached!.userId, cached.kind, cached.displayName), (
+      '0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4f01',
+      UserKind.staff,
+      'Абдулла Каримов',
+    ));
+    expect(env.storage.values[SecureKey.profileCache], isNot(contains('700123456')));
+    expect((await env.repo.cachedProfile()).userId, '0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4f01');
+
+    // Ответ без `user` (SessionController уже записал `sub` этой сессии) — userId остаётся.
+    await env.repo.verifyOtp(challengeId: 'c', code: '222222');
+    expect((await ProfileCacheStore(env.storage).read())!.userId, '0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4f01');
   });
 
   test('verifyOtp invitation → nextStep setPin; registration_required → билет без записи на диск', () async {

@@ -389,3 +389,49 @@ Seed `0002_rbac_seed.sql` с 2026-10-21 генерируется `scripts/gen_rb
 | `node tools/pg/run-sql.mjs --set app.env=test <все migrations/*.sql> db/migrations-dev/0001_dev_outbox.sql --check pos-api/test/sql/check_ddl_behavior.sql` | негативных сценариев 97 (было 62), позитивных инвариантов 13 (было 6); код 0 |
 | `cd pos-api && npx vitest run --config test/db/vitest.config.ts test/db/kiosk-schema.db-spec.ts` | 5 из 5 |
 | `cd pos-api && UPDATE_SCHEMA_DUMP=1 npx vitest run --config test/db/vitest.config.ts`, затем `npm run test:db` | 18 из 19; красный — только шаг 5 `migrate-seed` (Drizzle-схема `src/db/schema` ещё без `store_tablets` и новых столбцов/значений — её перегенерирует следующий пакет TS-части); `docs/erd/schema_v1.sql` перегенерирован |
+
+## 13. Вход по лицу на всех платформах: `0024_face_login.sql` (15 ADR-116; 2026-11-08)
+
+Пакет LF-2-01 дорожки LF (13 §3.14). Источник истины — 07 v1.18: §5.8 (`devices_device_key_idx`), §5.9
+(`weak_reauth_due_at`, `sessions_weak_reauth_chk`, причина `biometric_weak_disabled`), §5.66 `hello_keys` (DATA-172),
+§5.G (DATA-306…DATA-308), §6.1.1, §12.2 «Вход по лицу — миграция `0024_face_login.sql`», DDL §14.3. Основание —
+ответы владельца 2026-11-07 и 2026-11-08 (Q-353 «Всем (Рекоменд.)», Q-355 «Лицо без PIN (Рекоменд.)»; запись —
+`.tmp/face/owner-answers-2026-11-08.md`).
+
+1. **Один файл expand без `ALTER TYPE`.** Новых значений enum-типов нет (`session_kind` для уровня W не меняется — это
+   та же `biometric` с `weak_reauth_due_at`), поэтому правило разделения 07 §12.2 (DATA-305) не задействовано: файл
+   обёрнут в `BEGIN … COMMIT`, как 0022. Состав: столбец `sessions.weak_reauth_due_at` и CHECK
+   `sessions_weak_reauth_chk` (`weak_reauth_due_at IS NULL OR kind = 'biometric'`); CHECK `sessions_revoke_reason_chk`
+   пересоздаётся под условием `position('biometric_weak_disabled' IN pg_get_constraintdef(…)) = 0` с сохранением
+   прежних 14 значений; таблица `hello_keys` (CHECK `_public_key_len_chk`, `_algorithm_chk`, `_source_chk`,
+   `_revoke_reason_chk`, `_revoked_chk`, `_challenge_chk`; FK `_user_id_fk`, `_device_id_fk`,
+   `_challenge_session_id_fk` — `ON DELETE RESTRICT ON UPDATE RESTRICT`; `hello_keys_device_live_uq`,
+   `hello_keys_user_live_idx`; триггер `trg_hello_keys_set_updated_at`; `GRANT` `pos_app`, `pos_readonly`,
+   `pos_backup`, как `store_tablets` в 0022); индекс `devices_device_key_idx` без `CONCURRENTLY` (07 §12.2: таблица
+   мала, в перечень §12.1 не входит). RBAC-сида нет. Применённые 0001…0023, `seeds/`, `db/migrations-dev/` не менялись.
+2. **Пишет `hello_keys` сервер W2 (пакет LF-2-06).** В LF-2-01 таблица только создаётся: ни один маршрут её не пишет и
+   не читает. Очистка отозванных строк и истёкших challenge (`retention.daily`, 07 §13.3) — вместе с LF-2-06: до него
+   строк нет, а FK `challenge_session_id → sessions` (`RESTRICT`) появится в данных только с первым challenge.
+3. **Причины в коде.** `src/users/users.types.ts` `SESSION_REVOKE_REASONS` + `biometric_weak_disabled`; перечни CHECK
+   = `contracts/enums.json` (`session_revoke_reason`, `hello_key_algorithm`, `hello_key_source`,
+   `hello_key_revoke_reason`) — `scripts/check_enum_triangle.py` [3] теперь сверяет и столбцы `hello_keys` (раньше —
+   «не обычный столбец DDL»).
+4. **Счёт таблиц:** `scripts/check_tables.sql` — 66 (dev/test, с `dev_outbox`) / 65 (prod); в тех же числах —
+   `test/db/migrate-seed.db-spec.ts`, `ddl-behavior.db-spec.ts`, `kiosk-schema.db-spec.ts`, `docs/ci.md`,
+   12 T-DATA-019, 13 RM-B-005. Drizzle-схема `src/db/schema/auth.ts` перегенерирована
+   (`npx tsx test/db/codegen/gen-drizzle-schema.ts`; `sessions.weakReauthDueAt`, `helloKeys`), `docs/erd/schema_v1.sql`
+   — `UPDATE_SCHEMA_DUMP=1`.
+5. **Веб-демо.** Ключ эпохи не меняется: в него входят миграции до `EPOCH_MIGRATION_BASE` = `0020`
+   (`demo/web/backend/lib/epoch.mjs`), 0024 — в `laterMigrations`, её применяет мигратор на тёплом старте; ключ до и
+   после файла — `ed3bd646a9840642` (`computeEpoch()`, 2026-11-08). Снимок БД: `public.hello_keys` — в
+   `EXCLUDED_TABLES` с `mustBeEmpty` (`demo/web/backend/snapshot/export-copy.mjs`): ключи создаёт только браузер зрителя.
+   15 ADR-116 п. 8 («миграция меняет эпоху») этим уточняется по коду, как записано в 07 §12.2 и 13 §3.14.
+6. **Проверки (2026-11-08, PostgreSQL 17, раннер `tools/pg`, embedded-postgres).**
+
+| Команда | Результат |
+|---|---|
+| `node tools/pg/run-sql.mjs --set app.env=test --repeat-strict <все migrations/*.sql> db/migrations-dev/0001_dev_outbox.sql --check scripts/check_tables.sql` | `[repeat] ИТОГ: 0 изменений`; 66 из 66 таблиц, 45 enum-типов; код 0 |
+| `node tools/pg/run-sql.mjs <все migrations/*.sql> --check scripts/check_tables.sql` | 65 из 65 таблиц (prod, `dev_outbox` нет); код 0 |
+| `node tools/pg/run-sql.mjs --set app.env=test <все migrations/*.sql> db/migrations-dev/0001_dev_outbox.sql --check pos-api/test/sql/check_ddl_behavior.sql` | раздел 7 (0024): негативных сценариев 111 (было 97), позитивных инвариантов 15 (было 13); код 0 |
+| `cd pos-api && npm run test:db` | 4 файла, 23 теста (новый `face-login-schema.db-spec.ts`: обновление 0001…0023 с сессиями всех прежних причин → 0024, CHECK `convalidated`, перечни = enums.json, повтор — 0 изменений) |
+| `python -I -X utf8 scripts/check_enum_triangle.py` | ошибок 0 (до 0024 — 1: `sessions.revoke_reason`) |

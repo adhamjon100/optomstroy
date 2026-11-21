@@ -170,6 +170,8 @@ _MeSecurity _$MeSecurityFromJson(Map<String, dynamic> json) => _MeSecurity(
   pinSet: json['pinSet'] as bool?,
   biometricsEnabled: json['biometricsEnabled'] as bool?,
   biometricsPlatform: json['biometricsPlatform'] as String?,
+  biometricWeakAllowed: json['biometricWeakAllowed'] as bool?,
+  windowsHelloKeyAllowed: json['windowsHelloKeyAllowed'] as bool?,
 );
 
 Map<String, dynamic> _$MeSecurityToJson(_MeSecurity instance) =>
@@ -177,6 +179,8 @@ Map<String, dynamic> _$MeSecurityToJson(_MeSecurity instance) =>
       'pinSet': instance.pinSet,
       'biometricsEnabled': instance.biometricsEnabled,
       'biometricsPlatform': instance.biometricsPlatform,
+      'biometricWeakAllowed': instance.biometricWeakAllowed,
+      'windowsHelloKeyAllowed': instance.windowsHelloKeyAllowed,
     };
 
 _Consent _$ConsentFromJson(Map<String, dynamic> json) => _Consent(

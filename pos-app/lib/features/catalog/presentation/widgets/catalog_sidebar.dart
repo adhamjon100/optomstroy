@@ -1,7 +1,7 @@
 // Сайдбар SCR-10/12 (зона B, 02 SCR-10.3 B2–B6). Два вида:
 // - [CatalogSidebarLayout.list] (SCR-50; `customer` на SCR-11/12 expanded/large — D6): «Категории товаров» → меню
-//   категорий-карточек `CategorySidebarItem` со счётчиками (раскрытие 1 уровня), «★ Избранное N», «Недавние товары ·
-//   Очистить» (до 5);
+//   категорий-карточек `CategorySidebarItem` со счётчиками (раскрытие 1 уровня; иконка без картинки — по
+//   `iconKey`/названию, у подкатегории без совпадения — корня), «★ Избранное N», «Недавние товары · Очистить» (до 5);
 // - [CatalogSidebarLayout.tiles] (SCR-10/11/12 на medium и шире, прототип, ADR-114): колонка 144 на фоне страницы —
 //   только заголовок «Каталог» 19/700 (нажатие — «Все товары») и вертикальные плитки `CategoryTile.sidebar` (≥ 88)
 //   корневых категорий настоящего дерева (картинка категории или иконка по смыслу названия; число товаров — в подсказке
@@ -37,6 +37,7 @@ import 'package:optomstroy/features/catalog/domain/entities/product.dart';
 import 'package:optomstroy/features/catalog/presentation/providers/catalog_ports.dart';
 import 'package:optomstroy/features/catalog/presentation/providers/category_tree_provider.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_formats.dart';
+import 'package:optomstroy/features/catalog/presentation/widgets/category_icon.dart';
 
 /// Геометрия UI в lp (не деньги).
 typedef _Lp = double; // money-double: allow — геометрия UI (lp)
@@ -179,15 +180,17 @@ class _CatalogSidebarState extends ConsumerState<CatalogSidebar> {
         : tree.tree!.pathTo(widget.selectedCategoryId!);
     final bool collapsed = widget.collapsed;
 
-    Widget item(Category cat, {required bool child}) {
+    // Иконка без картинки — как у плиток колонки: своя по `iconKey`/названию, у подкатегории без совпадения — корня.
+    Widget item(Category cat, {Category? root}) {
       final bool expanded = _isExpanded(cat, path);
       return CategorySidebarItem(
         key: ValueKey<String>('sidebar-category-${cat.id}'),
         label: cat.name,
         count: cat.productCount,
-        variant: child ? CategorySidebarItemVariant.child : CategorySidebarItemVariant.root,
+        variant: root != null ? CategorySidebarItemVariant.child : CategorySidebarItemVariant.root,
         imageUrl: cat.imageUrl,
         iconKey: cat.iconKey,
+        icon: categoryIcon(cat, path: root == null ? const <Category>[] : <Category>[root]),
         selected: cat.id == widget.selectedCategoryId,
         hasChildren: !collapsed && cat.hasChildren && cat.children.isNotEmpty,
         expanded: expanded,
@@ -210,10 +213,10 @@ class _CatalogSidebarState extends ConsumerState<CatalogSidebar> {
       );
     } else {
       for (final Category root in tree.tree?.roots ?? const <Category>[]) {
-        categories.add(item(root, child: false));
+        categories.add(item(root));
         if (!collapsed && _isExpanded(root, path)) {
           for (final Category ch in root.children) {
-            categories.add(item(ch, child: true));
+            categories.add(item(ch, root: root));
           }
         }
       }

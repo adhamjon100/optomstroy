@@ -1,0 +1,20 @@
+{
+  "_note": "тестовые данные",
+  "operation": "POST /pos/v1/customers",
+  "kind": "response",
+  "status": 409,
+  "body": {
+    "code": "POS_E_DUPLICATE",
+    "message": "Найден другой клиент с тем же телефоном",
+    "details": {
+      "candidates": [
+        {
+          "ref": "c3d4e5f6-0000-4000-8000-000000000002",
+          "name": "ООО Пример",
+          "phone": "+996700000001"
+        }
+      ]
+    },
+    "requestId": "0192f5c3-0000-7000-8000-000000000001"
+  }
+}

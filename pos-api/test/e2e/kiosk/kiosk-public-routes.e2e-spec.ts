@@ -89,7 +89,8 @@ describe('kiosk e2e: публичные маршруты SEC-013 с токено
     return { withToken, without };
   }
 
-  it('T-KIOSK-005 публичные операции контракта (security: []) не входят в закрытый список; их 10', () => {
+  // 11-я — POST /auth/unlock/challenge (вход по лицу, ключ Windows Hello; контракт 1.4.0, 08 §4.1.10, ADR-116).
+  it('T-KIOSK-005 публичные операции контракта (security: []) не входят в закрытый список; их 11', () => {
     const closed = new Set<string>(KIOSK_CLOSED_LIST);
     expect(publicOps.map(key).sort()).toEqual(
       [
@@ -101,6 +102,7 @@ describe('kiosk e2e: публичные маршруты SEC-013 с токено
         'POST /auth/otp/verify',
         'POST /auth/refresh',
         'POST /auth/unlock',
+        'POST /auth/unlock/challenge',
         'POST /integrations/smspro/dlr',
         'POST /registration/complete',
       ].sort(),

@@ -45,6 +45,21 @@ export const IsBirthYearShape = (): PropertyDecorator =>
     (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1920,
   );
 
+/**
+ * Форма открытого ключа Windows Hello (`MeBiometricsHelloKey.publicKey`, 08 §4.3.6; ADR-116): base64url без `=`,
+ * 342…1366 знаков (SPKI DER 256…1024 байта, 07 §5.66) — rule `hello_key_format`; RSA и экспоненту проверяет сервис.
+ */
+export const IsHelloPublicKeyShape = (): PropertyDecorator =>
+  rule(
+    'hello_key_format',
+    'Ожидается открытый ключ RSA (SPKI DER, base64url)',
+    (v) => typeof v === 'string' && v.length >= 342 && v.length <= 1366 && /^[A-Za-z0-9_-]+$/.test(v),
+  );
+
+/** Алгоритм ключа Windows Hello — только `RS256` (07 §6.1.1 `hello_key_algorithm`; rule `hello_key_format`). */
+export const IsHelloKeyAlgorithm = (): PropertyDecorator =>
+  rule('hello_key_format', 'Поддерживается только RS256', (v) => v === 'RS256');
+
 /** UUID или `null` (обязательное nullable-поле, например `defaultWarehouseId`). */
 export const IsUuidOrNull = (): PropertyDecorator =>
   rule(

@@ -3,7 +3,8 @@
 // состояние — только в памяти, стартовая категория — корень с наибольшим числом товаров, слой карточки товара без
 // маршрута, без «Недавних» и избранного, наличие по `customer_stock_display`, без связи — баннер и недоступное
 // «+ Добавить». Тесты 12: T-KIOSK-009 (UI), T-KIOSK-029 (поиск), T-KIOSK-032, T-KIOSK-050 (баннер `426` под шапкой,
-// UI-51-014). Данные синтетические (фейки каталога).
+// UI-51-014), T-CAT-038 (сетка SCR-51 — пределы колонок 03 §7.3, уточнение ADR-114 2026-11-18). Данные синтетические
+// (фейки каталога).
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide SearchBar;
@@ -28,6 +29,8 @@ import 'package:optomstroy/core/sync/sync_providers.dart';
 import 'package:optomstroy/core/utils/clock.dart';
 import 'package:optomstroy/core/utils/qty.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
+import 'package:optomstroy/design_system/components/category_sidebar_item.dart';
+import 'package:optomstroy/design_system/components/ds_glyph.dart';
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/notification_bell.dart';
 import 'package:optomstroy/design_system/components/private_input_scope.dart';
@@ -38,11 +41,14 @@ import 'package:optomstroy/design_system/components/stock_badge.dart';
 import 'package:optomstroy/design_system/components/top_app_bar_pos.dart';
 import 'package:optomstroy/design_system/components/view_mode_segmented.dart';
 import 'package:optomstroy/design_system/theme/app_theme.dart';
+import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
+import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/features/cart/cart_providers.dart';
 import 'package:optomstroy/features/cart/domain/draft/cart_draft.dart';
 import 'package:optomstroy/features/catalog/catalog_providers.dart';
 import 'package:optomstroy/features/catalog/data/local/catalog_offline_bindings.dart';
 import 'package:optomstroy/features/catalog/domain/entities/catalog_query.dart';
+import 'package:optomstroy/features/catalog/domain/entities/category.dart';
 import 'package:optomstroy/features/catalog/domain/entities/product.dart';
 import 'package:optomstroy/features/catalog/domain/entities/search.dart';
 import 'package:optomstroy/features/catalog/domain/repositories/catalog_user_settings_store.dart';
@@ -58,8 +64,10 @@ import 'package:optomstroy/features/kiosk/presentation/emergency_exit_screen.dar
 import 'package:optomstroy/features/product_details/presentation/widgets/product_favorite_toggle.dart';
 import 'package:optomstroy/features/product_details/product_details_providers.dart' as product_details;
 
+import '../../design_system/ds_test_support.dart' show loadInterFont;
 import '../product_details/product_fixtures.dart' as pd;
 import 'presentation/support/catalog_fakes.dart';
+import 'presentation/support/grid_sweep.dart';
 
 /// Корзина витрины: считает «+ Добавить».
 final class _CountingCart implements CatalogCartPort {
@@ -324,6 +332,75 @@ void main() {
       expect(find.text('Для ванной'), findsOneWidget);
       expect(find.byKey(const ValueKey<String>('sidebar-category-c-mix')), findsOneWidget);
       expect(find.byKey(const ValueKey<String>('product-p0')), findsOneWidget);
+    });
+
+    Icon kioskRibbonIcon(WidgetTester tester, String id) => tester.widget<Icon>(
+      find.descendant(
+        of: find.byKey(ValueKey<String>('chip-sub-$id')),
+        matching: find.byKey(const ValueKey<String>('category-tile-ribbon-icon')),
+      ),
+    );
+    final Finder kioskRibbon = find.byKey(const ValueKey<String>('kiosk-subcategory-ribbon'));
+    final Finder gridGlyph = find.byWidgetPredicate((Widget w) => w is DsGlyph && w.kind == DsGlyphKind.gridOutline);
+
+    testWidgets('T-CAT-042 (SCR-51): лента без картинок — иконка подкатегории своя, иначе родителя, цвета плитки '
+        'колонки; «четыре квадрата» — только у «Все товары»', (tester) async {
+      // Старт — «Смесители» (ключ `plumbing`): «Для кухни» — иконка родителя, «Для ванной» — по названию.
+      await _pump(tester, _kioskOverrides(CatalogHarness(role: RoleCode.kiosk)));
+      expect(kioskRibbonIcon(tester, 'c-mix-kitchen').icon, Icons.plumbing_rounded, reason: 'иконка «Смесителей»');
+      expect(kioskRibbonIcon(tester, 'c-mix-bath').icon, Icons.bathtub_rounded);
+      expect(kioskRibbonIcon(tester, 'c-mix-bath').color, DsColors.lightB.textPrimary, reason: 'цвет плитки колонки');
+      expect(
+        find.descendant(of: kioskRibbon, matching: gridGlyph),
+        findsOneWidget,
+        reason: 'только «Все товары»',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('T-CAT-042 (SCR-51): дерево прототипа без картинок (как эталоны SCR-51) — 9 подкатегорий «Сантехники» '
+        'и корни колонки с иконкой по названию, без запасного `category`', (tester) async {
+      final CatalogHarness design = CatalogHarness(
+        role: RoleCode.kiosk,
+        catalog: FakeCatalogRepository(items: products(2), tree: designCategoryTree()),
+      );
+      await _pump(tester, _kioskOverrides(design), size: const Size(1600, 800));
+      const List<IconData> expected = <IconData>[
+        Icons.wc_rounded,
+        Icons.wash_rounded,
+        Icons.bathtub_rounded,
+        Icons.shower_rounded,
+        Icons.wc_rounded,
+        Icons.wc_rounded,
+        Icons.wc_rounded,
+        Icons.plumbing_rounded,
+        Icons.water_damage_rounded,
+      ];
+      for (int i = 0; i < kDesignPlumbingSubs.length; i++) {
+        expect(kioskRibbonIcon(tester, 'p-sub-$i').icon, expected[i], reason: kDesignPlumbingSubs[i]);
+      }
+      expect(find.descendant(of: kioskRibbon, matching: gridGlyph), findsOneWidget);
+      expect(find.descendant(of: kioskRibbon, matching: find.byIcon(Icons.category_rounded)), findsNothing);
+      // Колонка витрины (построенные плитки; список ленивый): корни — иконка по названию.
+      int roots = 0;
+      for (final Category root in designCategoryTree().roots) {
+        final Finder tile = find.byKey(ValueKey<String>('sidebar-category-${root.id}'));
+        if (tile.evaluate().isEmpty) {
+          continue;
+        }
+        roots++;
+        expect(
+          find.descendant(
+            of: tile,
+            matching: find.byIcon(CategoryIcons.resolve(name: root.name)),
+          ),
+          findsOneWidget,
+          reason: root.name,
+        );
+      }
+      expect(roots, greaterThanOrEqualTo(5));
+      expect(find.byIcon(Icons.category_rounded), findsNothing);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('T-KIOSK-009 no numbers at status: при customer_stock_display=status — «В наличии» без чисел, при '
@@ -700,6 +777,53 @@ void main() {
       expect(find.byTooltip('Обычные цены магазина'), findsOneWidget);
       expect(find.byKey(KioskCatalogKeys.sidebar), findsOneWidget);
     });
+
+    // T-CAT-038 (ред. 1.20; 03 §7.3, 15 ADR-114, уточнение 2026-11-18 «…но поставь ограничения»): сетка SCR-51 — то же
+    // правило, что SCR-10.2: от 176, зазор 14, колонок от 2 до предела класса окна, карточка ≤ 280; поворот планшета
+    // (800 ↔ 1280) и ширины 600…2560 и 3840 — без переполнения, в том числе при масштабе текста 1,3. Уже 600 витрина —
+    // раскладка medium 600 с горизонтальной прокруткой (02 SCR-51.2; режим на compact не включается).
+    for (final double scale in <double>[1, 1.3]) {
+      testWidgets('UI-51-010: сетка по ширине окна в пределах класса окна, текст ×$scale — без переполнения', (
+        tester,
+      ) async {
+        await tester.runAsync(loadInterFont);
+        if (scale != 1) {
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        }
+        final List<Override> overrides = _kioskOverrides(
+          CatalogHarness(
+            role: RoleCode.kiosk,
+            catalog: FakeCatalogRepository(items: products(12)),
+          ),
+        );
+        final GridSweep sweep = GridSweep(label: 'SCR-51', minCardWidth: DsBreakpoints.catalogCardMinWidth);
+        for (final double w in <double>[...kGridSweepWidths.where((double w) => w >= 600), 800, 1280, 3840]) {
+          final Size size = Size(w, w == 800 ? 1280 : 800);
+          setWindow(tester, size);
+          await tester.pumpWidget(
+            _app(
+              overrides,
+              size: size,
+              home: const Scaffold(body: KioskCatalogView()),
+            ),
+          );
+          await settle(tester);
+          sweep.check(tester, w, note: scale == 1 ? null : 'текст ×$scale');
+        }
+        sweep.expectMonotonic(
+          expectGridIn: const <WindowClass>{WindowClass.medium, WindowClass.expanded, WindowClass.large},
+        );
+        // Планшет 1280 × 800 — 5 колонок (02 SCR-51.12), портрет 800 × 1280 — 3 (при ×1).
+        if (scale == 1) {
+          final int at1280 = sweep.rows.lastWhere((GridSweepRow r) => r.width == 1280).columns;
+          final int at800 = sweep.rows.lastWhere((GridSweepRow r) => r.width == 800).columns;
+          expect((at1280, at800), (5, 3), reason: sweep.describe());
+        }
+        // Предел large — 6 (токены 1.4.0, пакет own-server:GAP-APP; было 9).
+        expect(sweep.rows.lastWhere((GridSweepRow r) => r.width == 3840).columns, 6);
+      });
+    }
   });
 
   group('корень: порты витрины планшета (TAB-2-03)', () {

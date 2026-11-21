@@ -1229,8 +1229,9 @@ class _CartPanelViewState extends ConsumerState<CartPanelView> implements CartSu
             InkWell(
               key: CartKeys.customer,
               onTap: offline || s.isBusy(CartOp.customer) ? null : () => unawaited(_pickCustomer(server)),
+              // Тач-цель 48 (03 §7.4; прогон адаптивности 2026-11-18, 12 T-UI-117: прежде 40).
               child: SizedBox(
-                height: 40,
+                height: 48,
                 child: Row(
                   children: <Widget>[
                     Icon(Icons.person_outline_rounded, size: 20, color: c.textSecondary),

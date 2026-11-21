@@ -1,6 +1,7 @@
 -- =====================================================================================================
 -- pos-api/test/sql/check_ddl_behavior.sql (до RM-C-006 — scripts/) — поведенческие (негативные и позитивные) проверки DDL
--- всех pos-api/migrations/*.sql (0001_init.sql + 0002 и следующие; режим «Планшет магазина» — 0021/0022, раздел 6).
+-- всех pos-api/migrations/*.sql (0001_init.sql + 0002 и следующие; режим «Планшет магазина» — 0021/0022, раздел 6;
+-- вход по лицу — 0024, раздел 7).
 --
 -- B-AR-10 (б) (docs/reviews/B_architecture_review.md): перенос в репозиторий scratch-проверок RM-B-005
 -- (pos-api/migrations/NOTES.md §9) и проверки исправлений B-AR-01, B-AR-03, B-AR-05, B-AR-09, B-AR-19, B-AR-20.
@@ -623,7 +624,92 @@ SELECT pg_temp.expect_true(
   'kiosk order phone masked after submit (DATA-303)');
 
 -- =====================================================================================================
--- 7. Сводка
+-- 7. Вход по лицу на всех платформах (15 ADR-116): 0024_face_login.sql — уровень W Android (sessions.weak_reauth_due_at,
+--    biometric_weak_disabled) и ключ Windows Hello (hello_keys); 07 §5.9, §5.66, DATA-306, DATA-308; 12 T-DATA-003
+-- =====================================================================================================
+
+-- 7.1 Срок уровня W — только у биометрической семьи (sessions_weak_reauth_chk, AC-DATA-306)
+INSERT INTO devices (id, user_id, device_key, platform) VALUES
+  ('00000000-0000-7000-8000-0000000002d1', '00000000-0000-7000-8000-000000000002', '3f2b8c1e-1a2b-4c3d-8e4f-5a6b7c8d9e31', 'android');
+SELECT pg_temp.expect_constraint($q$INSERT INTO sessions (user_id, device_id, family_id, refresh_hash, kind, expires_at, idle_expires_at, weak_reauth_due_at)
+  VALUES ('00000000-0000-7000-8000-000000000002','00000000-0000-7000-8000-0000000002d1',gen_random_uuid(),'\x0b01','standard',now() + interval '30 days',now() + interval '14 days',now())$q$,
+  'sessions_weak_reauth_chk', 'standard session with weak_reauth_due_at (AC-DATA-306)');
+INSERT INTO sessions (id, user_id, device_id, family_id, refresh_hash, kind, expires_at, idle_expires_at, amr, weak_reauth_due_at) VALUES
+  ('00000000-0000-7000-8000-0000000002f1', '00000000-0000-7000-8000-000000000002', '00000000-0000-7000-8000-0000000002d1',
+   gen_random_uuid(), '\x0b02', 'biometric', now() + interval '30 days', now() + interval '14 days', '{sms,bio}', now() + interval '24 hours');
+SELECT pg_temp.expect_constraint($q$UPDATE sessions SET kind = 'standard' WHERE id = '00000000-0000-7000-8000-0000000002f1'$q$,
+  'sessions_weak_reauth_chk', 'weak family turned into a standard session');
+-- 7.2 Причина отзыва: + biometric_weak_disabled (прежние 14 значений сохранены, 'weak_off' — вне перечня)
+UPDATE sessions SET revoked_at = now(), revoke_reason = 'biometric_weak_disabled' WHERE id = '00000000-0000-7000-8000-0000000002f1';
+SELECT pg_temp.expect_constraint($q$INSERT INTO sessions (user_id, device_id, family_id, refresh_hash, expires_at, idle_expires_at, revoked_at, revoke_reason)
+  VALUES ('00000000-0000-7000-8000-000000000002','00000000-0000-7000-8000-0000000002d1',gen_random_uuid(),'\x0b03',now(),now(),now(),'weak_off')$q$,
+  'sessions_revoke_reason_chk', 'session revoke_reason outside list (biometric_weak_disabled only)');
+SELECT pg_temp.expect_true(
+  EXISTS (SELECT 1 FROM sessions WHERE revoke_reason = 'kiosk_revoked')
+  AND EXISTS (SELECT 1 FROM sessions WHERE revoke_reason = 'refresh_replay')
+  AND (SELECT kind = 'biometric' AND weak_reauth_due_at IS NOT NULL FROM sessions WHERE id = '00000000-0000-7000-8000-0000000002f1'),
+  'weak family revoked with biometric_weak_disabled; earlier reasons still valid (DATA-306)');
+
+-- 7.3 hello_keys (DATA-172): RS256 и SPKI 256…1024 байт, источник, один живой ключ на устройство, challenge вместе с
+--     сессией и сроком и не у отозванного, revoked_at ↔ revoke_reason, FK, триггер updated_at, права
+INSERT INTO sessions (id, user_id, device_id, family_id, refresh_hash, expires_at, idle_expires_at) VALUES
+  ('00000000-0000-7000-8000-0000000002f2', '00000000-0000-7000-8000-000000000001', '00000000-0000-7000-8000-0000000000d1',
+   gen_random_uuid(), '\x0b04', now() + interval '7 days', now() + interval '24 hours');
+INSERT INTO hello_keys (id, user_id, device_id, public_key, algorithm, source) VALUES
+  ('00000000-0000-7000-8000-0000000002b1', '00000000-0000-7000-8000-000000000001', '00000000-0000-7000-8000-0000000000d1',
+   decode(repeat('ab', 294), 'hex'), 'RS256', 'windows_hello');
+SELECT pg_temp.expect_constraint($q$INSERT INTO hello_keys (user_id, device_id, public_key, algorithm, source)
+  VALUES ('00000000-0000-7000-8000-000000000001','00000000-0000-7000-8000-0000000000d1',decode(repeat('cd', 294),'hex'),'RS256','windows_hello')$q$,
+  'hello_keys_device_live_uq', 'second live hello key on one device');
+SELECT pg_temp.expect_constraint($q$INSERT INTO hello_keys (user_id, device_id, public_key, algorithm, source)
+  VALUES ('00000000-0000-7000-8000-000000000002','00000000-0000-7000-8000-0000000002d1',decode(repeat('ab', 294),'hex'),'ES256','windows_hello')$q$,
+  'hello_keys_algorithm_chk', 'hello key algorithm outside RS256');
+SELECT pg_temp.expect_constraint($q$INSERT INTO hello_keys (user_id, device_id, public_key, algorithm, source)
+  VALUES ('00000000-0000-7000-8000-000000000002','00000000-0000-7000-8000-0000000002d1',decode(repeat('ab', 294),'hex'),'RS256','browser')$q$,
+  'hello_keys_source_chk', 'hello key source outside windows_hello|webauthn_prf');
+SELECT pg_temp.expect_constraint($q$INSERT INTO hello_keys (user_id, device_id, public_key, algorithm, source)
+  VALUES ('00000000-0000-7000-8000-000000000002','00000000-0000-7000-8000-0000000002d1',decode(repeat('ab', 91),'hex'),'RS256','webauthn_prf')$q$,
+  'hello_keys_public_key_len_chk', 'hello key public_key shorter than 256 bytes (RSA-1024 / EC)');
+SELECT pg_temp.expect_constraint($q$INSERT INTO hello_keys (user_id, device_id, public_key, algorithm, source)
+  VALUES (gen_random_uuid(),'00000000-0000-7000-8000-0000000002d1',decode(repeat('ab', 294),'hex'),'RS256','webauthn_prf')$q$,
+  'hello_keys_user_id_fk', 'hello key user FK');
+SELECT pg_temp.expect_constraint($q$UPDATE hello_keys SET challenge = decode(repeat('01', 32),'hex') WHERE id = '00000000-0000-7000-8000-0000000002b1'$q$,
+  'hello_keys_challenge_chk', 'challenge without session and expiry');
+SELECT pg_temp.expect_constraint($q$UPDATE hello_keys SET challenge = decode(repeat('01', 31),'hex'), challenge_session_id = '00000000-0000-7000-8000-0000000002f2',
+  challenge_expires_at = now() + interval '120 seconds' WHERE id = '00000000-0000-7000-8000-0000000002b1'$q$,
+  'hello_keys_challenge_chk', 'challenge of 31 bytes (32 required)');
+SELECT pg_temp.expect_constraint($q$UPDATE hello_keys SET challenge = decode(repeat('01', 32),'hex'), challenge_session_id = gen_random_uuid(),
+  challenge_expires_at = now() + interval '120 seconds' WHERE id = '00000000-0000-7000-8000-0000000002b1'$q$,
+  'hello_keys_challenge_session_id_fk', 'challenge session FK');
+UPDATE hello_keys SET challenge = decode(repeat('01', 32), 'hex'), challenge_session_id = '00000000-0000-7000-8000-0000000002f2',
+       challenge_expires_at = now() + interval '120 seconds'
+ WHERE id = '00000000-0000-7000-8000-0000000002b1';
+SELECT pg_temp.expect_constraint($q$UPDATE hello_keys SET revoked_at = now(), revoke_reason = 'disabled' WHERE id = '00000000-0000-7000-8000-0000000002b1'$q$,
+  'hello_keys_challenge_chk', 'revoked hello key keeps a challenge');
+SELECT pg_temp.expect_constraint($q$UPDATE hello_keys SET challenge = NULL, challenge_session_id = NULL, challenge_expires_at = NULL, revoked_at = now()
+  WHERE id = '00000000-0000-7000-8000-0000000002b1'$q$,
+  'hello_keys_revoked_chk', 'hello key revoked_at without revoke_reason');
+SELECT pg_temp.expect_constraint($q$UPDATE hello_keys SET challenge = NULL, challenge_session_id = NULL, challenge_expires_at = NULL, revoked_at = now(),
+  revoke_reason = 'expired' WHERE id = '00000000-0000-7000-8000-0000000002b1'$q$,
+  'hello_keys_revoke_reason_chk', 'hello key revoke_reason outside list');
+-- Отзыв (challenge гасится тем же UPDATE) → новый живой ключ на том же устройстве допустим (повторного «включения» строки нет)
+UPDATE hello_keys SET challenge = NULL, challenge_session_id = NULL, challenge_expires_at = NULL, revoked_at = now(), revoke_reason = 'replaced'
+ WHERE id = '00000000-0000-7000-8000-0000000002b1';
+INSERT INTO hello_keys (user_id, device_id, public_key, algorithm, source) VALUES
+  ('00000000-0000-7000-8000-000000000001', '00000000-0000-7000-8000-0000000000d1', decode(repeat('cd', 294), 'hex'), 'RS256', 'webauthn_prf');
+SELECT pg_temp.expect_true(
+  (SELECT count(*) FROM hello_keys WHERE device_id = '00000000-0000-7000-8000-0000000000d1') = 2
+  AND (SELECT count(*) FROM hello_keys WHERE device_id = '00000000-0000-7000-8000-0000000000d1' AND revoked_at IS NULL) = 1
+  AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_hello_keys_set_updated_at' AND NOT tgisinternal)
+  AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'hello_keys_user_live_idx')
+  AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'devices_device_key_idx')
+  AND has_table_privilege('pos_app', 'hello_keys', 'SELECT') AND has_table_privilege('pos_app', 'hello_keys', 'INSERT')
+  AND has_table_privilege('pos_app', 'hello_keys', 'UPDATE') AND has_table_privilege('pos_app', 'hello_keys', 'DELETE')
+  AND has_table_privilege('pos_readonly', 'hello_keys', 'SELECT') AND NOT has_table_privilege('pos_readonly', 'hello_keys', 'UPDATE'),
+  'hello_keys: revoke then new live key on the same device; updated_at trigger; indexes; pos_app/pos_readonly rights (DATA-172)');
+
+-- =====================================================================================================
+-- 8. Сводка
 -- =====================================================================================================
 SELECT outcome LIKE 'rejected%' AS negative, count(*) AS scenarios FROM ddl_check_log GROUP BY 1 ORDER BY 1;
 DO $$

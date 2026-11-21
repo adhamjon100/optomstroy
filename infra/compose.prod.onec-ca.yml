@@ -1,0 +1,18 @@
+# Дополнение к infra/compose.prod.yml: сертификат CA веб-сервера 1С (16 §4.3 ONEC_CA_CERT_FILE; 12.5).
+# Нужен, только если публикация 1С работает на самоподписанном сертификате или сертификате внутреннего CA.
+# Подключается обёрткой bin/dc автоматически, когда файл secrets/onec_ca.pem есть и не пуст; иначе api/worker
+# проверяют сертификат 1С по системному хранилищу CA образа. Сертификат CA — публичный, хранится в secrets/ для
+# единообразия.
+
+services:
+  api:
+    environment:
+      ONEC_CA_CERT_FILE: /run/secrets/onec_ca.pem
+    secrets: [ onec_ca.pem ]
+  worker:
+    environment:
+      ONEC_CA_CERT_FILE: /run/secrets/onec_ca.pem
+    secrets: [ onec_ca.pem ]
+
+secrets:
+  onec_ca.pem: { file: ./secrets/onec_ca.pem }

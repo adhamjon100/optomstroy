@@ -5,6 +5,7 @@ import { type OnecConfirmedPayload, type OnecFailedPayload, QUEUES } from '../..
 import { PgBossService } from '../../common/jobs/pg-boss.service.js';
 import type { SyncEntityHandler, SyncHandlerResult, SyncRunContext } from '../../jobs/sync/sync-handler.js';
 import { OrdersRetentionService } from '../../orders/orders-retention.service.js';
+import { HelloKeysRepository } from '../../users/hello-keys.repository.js';
 import { ReturnsRetentionService } from '../returns-retention.service.js';
 import { ReturnsOnecService } from './returns-onec.service.js';
 
@@ -49,7 +50,8 @@ async function ensureQueue(
  * черновики заявок на возврат (`returns`) и маскирование номера покупателя в заявках с планшета (`orders`,
  * `OrdersRetentionService`, задача TAB-1-10; ADR-115) — экспорт `OrdersModule`, внедряется конструктором (06 MOD-024:
  * взаимодействие только через экспортируемые сервисы). Импорт `returns → orders` — только этот обработчик ретенции
- * (`orders` модуль `returns` не импортирует, цикла нет — `npm run madge`).
+ * (`orders` модуль `returns` не импортирует, цикла нет — `npm run madge`). Ключи Windows Hello (`hello_keys`, 07 §13.3;
+ * ADR-116): истёкший challenge и отозванные старше 90 дней — `HelloKeysRepository` глобального `UsersModule`.
  */
 @Injectable()
 export class ReturnsJobsBridge implements OnApplicationBootstrap {
@@ -65,18 +67,32 @@ export class ReturnsJobsBridge implements OnApplicationBootstrap {
     private readonly retention: ReturnsRetentionService,
     @Optional() private readonly boss?: PgBossService,
     @Optional() private readonly ordersRetention?: OrdersRetentionService,
+    @Optional() private readonly helloKeys?: HelloKeysRepository,
   ) {}
 
   /**
    * Один запуск `retention.daily`: задачи выполняются по очереди, сбой одной не отменяет другие (каждая идемпотентна);
    * после всех — первая ошибка пробрасывается, и pg-boss повторяет задание (`retryLimit` 3). Итог — счётчики задач
-   * (`deleted` — черновики возвратов, `masked` — номера в заявках с планшета), без ПДн.
+   * (`deleted` — черновики возвратов, `masked` — номера в заявках с планшета, `helloChallenges` и `helloKeys` — очищенные
+   * challenge и удалённые отозванные ключи Windows Hello), без ПДн.
    */
   async runDaily(): Promise<Record<string, number>> {
     const orders = this.ordersRetention;
+    const keys = this.helloKeys;
     const tasks: { readonly name: string; readonly run: () => Promise<Record<string, number>> }[] = [
       { name: 'returns.drafts', run: () => this.retention.purgeExpiredDrafts() },
       ...(orders ? [{ name: 'orders.kiosk_receiver_phone', run: () => orders.maskKioskReceiverPhones() }] : []),
+      ...(keys
+        ? [
+            {
+              name: 'auth.hello_keys',
+              run: async () => {
+                const r = await keys.purge();
+                return { helloChallenges: r.challenges, helloKeys: r.keys };
+              },
+            },
+          ]
+        : []),
     ];
     const out: Record<string, number> = {};
     let failure: Error | null = null;

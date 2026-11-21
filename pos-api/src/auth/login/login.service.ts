@@ -5,12 +5,14 @@ import type { DbExecutor } from '../../common/audit/db-executor.js';
 import { AuthStateCache } from '../../common/auth/auth-state.js';
 import { CLOCK, type Clock } from '../../common/auth/clock.js';
 import type { AmrValue } from '../../common/auth/jwt.service.js';
+import { weakReauthDueAt } from '../../common/auth/weak-biometrics.js';
 import { generateOpaqueToken, sha256 } from '../../common/crypto/random.js';
 import { DRIZZLE, type Database } from '../../common/db/database.module.js';
 import { maskPhone } from '../../common/logging/redaction.js';
 import { ProblemException } from '../../common/problem-details/problem.exception.js';
 import { toRbacRole } from '../../common/audit/audit-context.js';
 import { DevicesRepository } from '../../users/devices.repository.js';
+import { SessionsRepository } from '../../users/sessions.repository.js';
 import { TokenDenylistRepository } from '../../users/token-denylist.repository.js';
 import { UserProfilesRepository } from '../../users/user-profiles.repository.js';
 import { UserRolesRepository } from '../../users/user-roles.repository.js';
@@ -112,6 +114,7 @@ export class LoginService {
     private readonly audit: AuditService,
     private readonly emergency: EmergencyLoginService,
     private readonly appPins: AppPinsRepository,
+    private readonly sessions: SessionsRepository,
   ) {}
 
   async verify(input: VerifyInput): Promise<VerifyBody> {
@@ -265,10 +268,21 @@ export class LoginService {
         userAgent: input.userAgent,
         challengeId: ch.id,
         ...(origin.emergency ? { emergency: { requireUnlock } } : {}),
+        audit: input.audit,
       },
       tx,
     );
     for (const sid of issued.revokedSessionIds) this.cache.invalidateSession(sid);
+    if (!origin.emergency) {
+      // Уровень W Android (ADR-116; 08 §4.1.2 «Вход по лицу» п. 1; 09 BIO-031): вход по SMS на этом устройстве
+      // продлевает срок разблокировки лицом без PIN живых семей W пользователя. Аварийный код — не вход по SMS.
+      await this.sessions.extendWeakReauth(
+        user.id,
+        issued.session.deviceId,
+        weakReauthDueAt(now, this.policy.config.AUTH_BIO_WEAK_REAUTH_HOURS),
+        tx,
+      );
+    }
     const body = await this.authenticatedBody(
       user,
       roles,

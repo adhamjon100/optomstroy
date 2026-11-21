@@ -470,7 +470,8 @@ class _RegistrationSecurityScreenState extends ConsumerState<RegistrationSecurit
       children: <Widget>[
         _tile(
           context,
-          icon: hello ? Icons.key_rounded : Icons.fingerprint_rounded,
+          // UI-04-006: Windows Hello — `face_unlock`, уровень S — `fingerprint` (02 ред. 1.30; 09 BIO-036; 03 §7.7).
+          icon: hello ? Icons.face_unlock_outlined : Icons.fingerprint_rounded,
           title: hello ? l10n.unlock_hello_button : l10n.reg_bio_tile_title,
           subtitle: hello ? l10n.reg_bio_windows_hello : null,
           trailing: s.bioSelectable

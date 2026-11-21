@@ -44,6 +44,7 @@ import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/app_progress.dart';
 import 'package:optomstroy/design_system/components/app_snackbar.dart';
 import 'package:optomstroy/design_system/components/category_tile.dart';
+import 'package:optomstroy/design_system/components/ds_glyph.dart';
 import 'package:optomstroy/design_system/components/empty_state.dart';
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/scroll_ribbon.dart';
@@ -70,6 +71,7 @@ import 'package:optomstroy/features/catalog/presentation/widgets/catalog_header.
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_product_view.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_sidebar.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_toolbar.dart';
+import 'package:optomstroy/features/catalog/presentation/widgets/category_icon.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/kiosk_catalog_header.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/kiosk_product_sheet.dart';
 
@@ -554,6 +556,8 @@ class _KioskCatalogViewState extends ConsumerState<KioskCatalogView> {
             padding: hPad,
             setId: ribbonParent.id,
             items: ribbonParent.children,
+            // Предки карточек ленты (иконка подкатегории без своей — по родителю, затем выше).
+            ancestors: tree.tree?.pathTo(ribbonParent.id) ?? const <Category>[],
             selectedId: selectedSub,
             allCount: ribbonParent.productCount,
             allName: ribbonParent.name,
@@ -651,9 +655,10 @@ class _KioskCatalogViewState extends ConsumerState<KioskCatalogView> {
       padding: listPadding,
       headerSlivers: headerSlivers,
       inert: switching,
+      // Сетка — как SCR-10.2 (ADR-114): от 176, зазор 14; колонок не больше предела класса окна (03 §7.3,
+      // уточнение 2026-11-18).
       minCardWidth: DsBreakpoints.catalogCardMinWidth,
       gridGap: DsCatalogMetrics.gridGap,
-      uncappedColumns: true,
       callbacks: CatalogProductCallbacks(
         onOpen: _openProduct,
         // Избранного на общем устройстве нет (звёзды скрыты, `favoritesEnabled: false`).
@@ -752,13 +757,15 @@ class _KioskCatalogViewState extends ConsumerState<KioskCatalogView> {
     return parent != null && visible(parent) ? parent : null;
   }
 
-  /// Лента подкатегорий ADR-114 (как SCR-10/12): «Все товары» + непустые [items]; карточки 118×148; число товаров — в
-  /// подсказке и `Semantics`. [selectedId] `null` — выбрана «Все товары».
+  /// Лента подкатегорий ADR-114 (как SCR-10/12): «Все товары» + непустые [items]; карточки 118×148; без картинки —
+  /// иконка категории (своя, иначе предка из [ancestors] — путь от корня до родителя ленты; «Все товары» — глиф
+  /// «четыре квадрата»); число товаров — в подсказке и `Semantics`. [selectedId] `null` — выбрана «Все товары».
   Widget _ribbon(
     AppLocalizations l10n, {
     required EdgeInsets padding,
     required String setId,
     required List<Category> items,
+    List<Category> ancestors = const <Category>[],
     required String? selectedId,
     required int allCount,
     required String? allName,
@@ -789,6 +796,7 @@ class _KioskCatalogViewState extends ConsumerState<KioskCatalogView> {
             semanticLabel: allName == null
                 ? l10n.category_tile_a11y(allCount, l10n.catalog_title_all)
                 : l10n.category_ribbon_all_a11y(allCount, allName),
+            placeholderGlyph: DsGlyphKind.gridOutline,
             onTap: onAll,
           );
         }
@@ -799,6 +807,7 @@ class _KioskCatalogViewState extends ConsumerState<KioskCatalogView> {
           label: ch.name,
           imageUrl: ch.imageUrl,
           iconKey: ch.iconKey,
+          icon: categoryIcon(ch, path: ancestors),
           selected: index == i,
           countLabel: '${ch.productCount}',
           semanticLabel: l10n.category_tile_a11y(ch.productCount, ch.name),

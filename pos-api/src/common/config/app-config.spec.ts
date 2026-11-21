@@ -55,6 +55,32 @@ describe('загрузчик env (*_FILE, zod) — RM-C-009', () => {
     expect(c.SMS_OTP_TEMPLATE).toBe('Kod: {code}. Optomstroy');
   });
 
+  it('T-BIO-023 (6), DEPLOY-055: вход по лицу — по умолчанию off/24/off; AUTH_BIO_WEAK_REAUTH_HOURS вне 1…24 → отказ в старте', () => {
+    const c = loadAppConfig(BASE);
+    expect([c.AUTH_BIO_ALLOW_WEAK, c.AUTH_BIO_WEAK_REAUTH_HOURS, c.AUTH_WINDOWS_HELLO_KEY]).toEqual(['off', 24, 'off']);
+    for (const hours of ['48', '25', '0', '-1']) {
+      const err = expectConfigError(() => loadAppConfig({ ...BASE, AUTH_BIO_WEAK_REAUTH_HOURS: hours }));
+      expect(err.problems.join('\n')).toContain('AUTH_BIO_WEAK_REAUTH_HOURS');
+    }
+    const ok = loadAppConfig({
+      ...BASE,
+      AUTH_BIO_ALLOW_WEAK: 'customer',
+      AUTH_BIO_WEAK_REAUTH_HOURS: '1',
+      AUTH_WINDOWS_HELLO_KEY: 'personal',
+    });
+    expect([ok.AUTH_BIO_ALLOW_WEAK, ok.AUTH_BIO_WEAK_REAUTH_HOURS, ok.AUTH_WINDOWS_HELLO_KEY]).toEqual([
+      'customer',
+      1,
+      'personal',
+    ]);
+    expect(loadAppConfig({ ...BASE, AUTH_BIO_ALLOW_WEAK: 'all' }).AUTH_BIO_ALLOW_WEAK).toBe('all');
+    const bad = expectConfigError(() =>
+      loadAppConfig({ ...BASE, AUTH_BIO_ALLOW_WEAK: 'staff', AUTH_WINDOWS_HELLO_KEY: 'on' }),
+    ).problems.join('\n');
+    expect(bad).toContain('AUTH_BIO_ALLOW_WEAK');
+    expect(bad).toContain('AUTH_WINDOWS_HELLO_KEY');
+  });
+
   it('T-SMS-017 (09 SMS-025): SMS_OTP_TEMPLATE без {code} → ошибка конфигурации; свой шаблон с {code} принимается', () => {
     const err = expectConfigError(() => loadAppConfig({ ...BASE, SMS_OTP_TEMPLATE: 'Ваш код готов' }));
     expect(err.message).toContain('SMS_OTP_TEMPLATE');

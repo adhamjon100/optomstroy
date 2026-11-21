@@ -12,6 +12,7 @@ import { CatalogApplier } from '../../src/sync/apply/catalog-applier.js';
 import { OnecChangesService } from '../../src/sync/apply/onec-changes.service.js';
 import { createRunTracker } from '../../src/sync/apply/run-tracker.js';
 import { contract, validateAgainst } from '../settings/support/openapi-check.js';
+import { tamperChar } from '../support/tamper.js';
 import { type Actor, CatalogApiTestApp } from './support/catalog-api-app.js';
 
 /**
@@ -449,7 +450,9 @@ describe('RM-E-015 GET /catalog/sync/{entity} (embedded PG17, синтетиче
     ).toString('base64url');
     for (const since of [
       `${tampered}.${sig}`,
-      `${body}.x${sig.slice(1)}`,
+      // Первый символ подписи — другой символ base64url: подпись отличается всегда (запись «x» вместо первого
+      // символа совпадала с настоящей подписью, если та начиналась на «x», — 1 прогон из 64).
+      `${body}.${tamperChar(sig)}`,
       'garbage',
       ok.nextCursor.replace('.', '..'),
     ]) {
