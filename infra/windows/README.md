@@ -307,8 +307,9 @@ D:\Optomstroy\current\scripts\rollback.ps1 -RestoreSnapshot   # вместе с 
 |---|---|---|
 | Загрузить пакет в `incoming\` | да | да |
 | Читать журналы `logs\`, `logs\deploy-state.json` | да | да |
-| Состояние: `D:\Optomstroy\current\scripts\status.ps1` (службы, версии, готовность, копии по журналу, диск) | да (чтение `releases\`) | да (плюс итог `pos-backup status`) |
+| Состояние: `<InstallRoot>\current\scripts\status.ps1` (службы, версии, готовность, копии по журналу, диск; без WMI — работает и по SSH; папку установки находит сам) | да (чтение `releases\`) | да (плюс итог `pos-backup status`) |
 | Запуск, остановка, опрос `OptomstroyApi` и `OptomstroyWorker` (`Start-Service`, `Stop-Service`, `sc.exe query`) | да (права `sc sdset` из шага 10) | да |
+| Опрос `OptomstroyPostgres`, `OptomstroyBackup` (`CC LC RC` в `sc sdset`, для `status.ps1`) | да, только опрос | да |
 | Запуск, остановка `OptomstroyPostgres`, `OptomstroyBackup` | нет | да |
 | install / update / rollback / uninstall, секреты, `config\`, `data\`, `state\`, изменение `releases\`, Apache, брандмауэр, PostgreSQL | нет | да |
 
