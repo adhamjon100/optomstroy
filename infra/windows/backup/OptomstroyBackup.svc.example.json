@@ -1,0 +1,12 @@
+{
+  "name": "OptomstroyBackup",
+  "executable": "D:\\Optomstroy\\current\\node\\node.exe",
+  "arguments": ["D:\\Optomstroy\\current\\backup\\pos-backup.mjs", "daemon", "--config", "D:\\Optomstroy\\config\\backup.json"],
+  "workingDirectory": "D:\\Optomstroy\\current\\backup",
+  "environment": { "POS_SHUTDOWN_ON_STDIN_EOF": "1" },
+  "logDirectory": "D:\\Optomstroy\\logs\\backup",
+  "logMaxBytes": 10485760,
+  "logKeepFiles": 10,
+  "stopTimeoutSeconds": 60,
+  "shutdownViaStdin": true
+}
