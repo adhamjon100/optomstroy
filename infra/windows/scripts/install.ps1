@@ -705,36 +705,31 @@ try {
             Write-OpsLog "Apache ($ApacheServiceAccount): чтение data\media (фото)" 'OK'
         } else { Write-OpsLog 'учётная запись службы Apache не указана (-ApacheServiceAccount) — право чтения фото выдайте по README (раздел Apache)' 'WARN' }
         # posdeploy: опрос, запуск, остановка только OptomstroyApi и OptomstroyWorker (sc sdset; прежние права — в state).
-        # OptomstroyPostgres и OptomstroyBackup — нет: остановка базы или копий не нужна роли выкладки (README §12);
-        # право, выданное прежней версией комплекта, снимается.
+        # OptomstroyPostgres и OptomstroyBackup — только опрос состояния (CC, LC, RC; без запуска и остановки): остановка
+        # базы или копий не нужна роли выкладки (README §12), а без опроса status.ps1 под posdeploy по SSH (сетевой
+        # вход, нет группы INTERACTIVE из стандартных прав службы) видит «нет доступа». Право запуска и остановки,
+        # выданное прежней версией комплекта, снимается.
         $deploySid = $null
         if ($DeployUser) { try { $deploySid = Resolve-Sid $DeployUser } catch { $deploySid = $null } }
         if ($deploySid) {
             $ace = "(A;;CCLCRPWPLORC;;;$deploySid)"
+            $queryAce = "(A;;CCLCRC;;;$deploySid)"
             $deployServices = @('OptomstroyApi', 'OptomstroyWorker')
             foreach ($n in @($script:OpsServiceNames + $script:OpsPgServiceName)) {
                 if ((Get-OpsServiceState $n) -eq 'Missing') { continue }
                 $old = ((& sc.exe sdshow $n) | Where-Object { $_ -match 'D:' } | Select-Object -First 1)
                 if (-not $old) { throw "sc.exe sdshow ${n}: нет DACL" }
                 $old = $old.Trim()
-                if ($deployServices -notcontains $n) {
-                    if (-not $old.Contains($ace)) { continue }
-                    $new = $old.Replace($ace, '')
-                    $o = & sc.exe sdset $n $new 2>&1
-                    if ($LASTEXITCODE -ne 0) { & sc.exe sdset $n $old | Out-Null; throw "sc.exe sdset ${n}: код $LASTEXITCODE $o (прежние права восстановлены)" }
-                    Write-OpsLog "${n}: право $DeployUser на запуск и остановку снято" 'OK'
-                    continue
-                }
-                if ($old.Contains($ace)) { continue }
+                if ($deployServices -contains $n) { $want = $ace; $drop = $queryAce } else { $want = $queryAce; $drop = $ace }
+                $new = Update-OpsSddlAce $old $want $drop
+                if ($new -eq $old) { continue }
                 $bak = Join-Path $L.State "$n.sddl.backup"
                 if (-not (Test-Path -LiteralPath $bak)) { Write-OpsUtf8 $bak $old }
-                $i = $old.IndexOf('S:')
-                $new = $old + $ace
-                if ($i -ge 0) { $new = $old.Substring(0, $i) + $ace + $old.Substring($i) }
                 $o = & sc.exe sdset $n $new 2>&1
                 if ($LASTEXITCODE -ne 0) { & sc.exe sdset $n $old | Out-Null; throw "sc.exe sdset ${n}: код $LASTEXITCODE $o (прежние права восстановлены)" }
+                if ($old.Contains($ace) -and $want -eq $queryAce) { Write-OpsLog "${n}: право $DeployUser на запуск и остановку снято (оставлен только опрос)" 'OK' }
             }
-            Write-OpsLog "$DeployUser`: опрос, запуск и остановка OptomstroyApi и OptomstroyWorker (sc sdset; прежние права — state\*.sddl.backup); PostgreSQL и копии — нет" 'OK'
+            Write-OpsLog "$DeployUser`: опрос, запуск и остановка OptomstroyApi и OptomstroyWorker; PostgreSQL и копии — только опрос состояния (sc sdset; прежние права — state\*.sddl.backup)" 'OK'
         }
     }
 

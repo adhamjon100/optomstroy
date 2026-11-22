@@ -6,6 +6,11 @@
   Запускается без прав администратора, в том числе под posdeploy: читает только то, что posdeploy доступно
   (logs\deploy-state.json, журналы logs\*, состояние служб, http://127.0.0.1:<порт>/health). Секреты не читает.
   Сам скрипт posdeploy запускает из current\scripts (install.ps1 выдаёт posdeploy чтение releases\).
+  Без WMI: порты — таблица TCP через .NET, место на томах — System.IO.DriveInfo, службы — Get-Service по имени,
+  при отказе — sc.exe query (под posdeploy по SSH Get-CimInstance, Get-NetTCPConnection и Get-Service без имени
+  получают «Access denied»).
+  -InstallRoot не указан — папка установки определяется по расположению скрипта (<папка>\current\scripts или
+  <папка>\releases\<версия>\scripts, где есть logs\deploy-state.json), иначе D:\Optomstroy.
   Под администратором дополнительно показывает итог pos-backup.mjs status (без подключения к базе).
   Код выхода: 0 — всё в порядке; 1 — есть проблемы (список в конце); 2 — установка не найдена.
   -Json — вывод одной строкой JSON (для мониторинга).
@@ -15,7 +20,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$InstallRoot = 'D:\Optomstroy',
+    [string]$InstallRoot = '',
     [switch]$Json
 )
 
@@ -25,6 +30,13 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 # -Json: stdout — только одна строка JSON (служебные строки «запуск: …» не печатаются).
 if ($Json) { $script:OpsLogQuiet = $true }
 
+if (-not $InstallRoot) {
+    $InstallRoot = 'D:\Optomstroy'
+    $rel = Split-Path $PSScriptRoot -Parent   # current или releases\<версия>
+    foreach ($cand in @((Split-Path $rel -Parent), (Split-Path (Split-Path $rel -Parent) -Parent))) {
+        if ($cand -and (Test-Path -LiteralPath (Join-Path $cand 'logs\deploy-state.json'))) { $InstallRoot = $cand; break }
+    }
+}
 $L = Get-OpsLayout $InstallRoot
 $problems = New-Object System.Collections.ArrayList
 $report = [ordered]@{ checkedUtc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'); installRoot = $L.Root }
@@ -49,8 +61,7 @@ foreach ($n in @($script:OpsPgServiceName) + $script:OpsServiceNames) {
         $st = 'n/a (DevTest)'
         if ($n -ne $script:OpsPgServiceName) { try { $st = Get-OpsAppServiceState $L $n -DevTest } catch { $st = 'нет доступа' } }
     } else {
-        $s = Get-Service -Name $n -ErrorAction SilentlyContinue
-        if ($null -eq $s) { $st = 'Missing' } else { $st = "$($s.Status)" }
+        $st = Get-OpsServiceState $n
     }
     $svc[$n] = $st
     if ($st -ne 'Running' -and $st -ne 'n/a (DevTest)') { [void]$problems.Add("служба $n`: $st") }
@@ -122,10 +133,10 @@ $disks = @()
 $roots = @([System.IO.Path]::GetPathRoot($L.Root))
 if ($ds.PSObject.Properties['backupRoot'] -and $ds.backupRoot) { $roots += [System.IO.Path]::GetPathRoot([string]$ds.backupRoot) }
 foreach ($q in ($roots | Sort-Object -Unique)) {
-    $d = Get-CimInstance Win32_LogicalDisk -Filter ("DeviceID='{0}'" -f $q.TrimEnd('\'))
-    if ($null -eq $d) { continue }
-    $used = [math]::Round(100 * (1 - $d.FreeSpace / $d.Size))
-    $disks += [ordered]@{ volume = $q; freeGB = [math]::Round($d.FreeSpace / 1GB, 1); sizeGB = [math]::Round($d.Size / 1GB, 1); usedPercent = $used }
+    $d = Get-OpsVolumeSpace $q
+    if ($null -eq $d -or $d.SizeBytes -le 0) { continue }
+    $used = [math]::Round(100 * (1 - $d.FreeBytes / $d.SizeBytes))
+    $disks += [ordered]@{ volume = $q; freeGB = [math]::Round($d.FreeBytes / 1GB, 1); sizeGB = [math]::Round($d.SizeBytes / 1GB, 1); usedPercent = $used }
     if ($used -gt 70) { [void]$problems.Add("том $q занят на $used % (порог 70 %)") }
 }
 $report.disks = $disks

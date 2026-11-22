@@ -517,10 +517,53 @@ function Get-OpsCpuRatePercent([double]$Cpus) {
 }
 
 # ---------- службы ----------
+# Без прав администратора по SSH (сетевой вход) Get-Service может не открыть диспетчер служб, хотя опрос одной
+# службы по имени разрешён (проверено на сервере заказчика 22.11.2026: Get-Service без имени — отказ).
+# Поэтому при ошибке Get-Service — sc.exe query <имя>: код 1060 — службы нет, 5 — нет доступа,
+# состояние — по номеру и имени (STATE : 4 RUNNING; в русской консоли «Состояние : 4 RUNNING»).
 function Get-OpsServiceState([string]$Name) {
-    $s = Get-Service -Name $Name -ErrorAction SilentlyContinue
-    if ($null -eq $s) { return 'Missing' }
-    return [string]$s.Status
+    try {
+        $s = Get-Service -Name $Name -ErrorAction Stop
+        return [string]$s.Status
+    } catch { }
+    return (Get-OpsServiceStateSc $Name)
+}
+
+# SDDL службы (sc sdshow): убрать запись $Drop, добавить $Want в DACL (перед SACL «S:», если она есть).
+function Update-OpsSddlAce([string]$Sddl, [string]$Want, [string]$Drop) {
+    $new = $Sddl
+    if ($Drop) { $new = $new.Replace($Drop, '') }
+    if ($Want -and -not $new.Contains($Want)) {
+        $i = $new.IndexOf('S:')
+        if ($i -ge 0) { $new = $new.Substring(0, $i) + $Want + $new.Substring($i) } else { $new = $new + $Want }
+    }
+    return $new
+}
+
+function Get-OpsServiceStateSc([string]$Name) {
+    $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try { $out = @(& sc.exe query $Name 2>&1 | ForEach-Object { "$_" }); $code = $LASTEXITCODE }
+    finally { $ErrorActionPreference = $old }
+    if ($code -eq 1060) { return 'Missing' }
+    if ($code -eq 5) { return 'нет доступа' }
+    if ($code -ne 0) { return "нет данных (sc.exe query: код $code)" }
+    $states = @{ 1 = 'Stopped'; 2 = 'StartPending'; 3 = 'StopPending'; 4 = 'Running'; 5 = 'ContinuePending'; 6 = 'PausePending'; 7 = 'Paused' }
+    # Имя поля переводится («STATE» / «Состояние» — зависит от языка консоли), номер и имя состояния — нет.
+    foreach ($line in $out) {
+        if ($line -match ':\s*([1-7])\s+(STOPPED|START_PENDING|STOP_PENDING|RUNNING|CONTINUE_PENDING|PAUSE_PENDING|PAUSED)\b') { return $states[[int]$Matches[1]] }
+    }
+    return 'нет данных (sc.exe query)'
+}
+
+# Свободное место тома без WMI: System.IO.DriveInfo доступен и без прав администратора (Get-CimInstance
+# Win32_LogicalDisk под posdeploy по SSH — «Access denied»). $null — тома нет или он не готов.
+function Get-OpsVolumeSpace([string]$Path) {
+    $root = [System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($Path))
+    try {
+        $d = New-Object System.IO.DriveInfo($root)
+        if (-not $d.IsReady) { return $null }
+        return [pscustomobject]@{ Volume = $root; FreeBytes = [double]$d.AvailableFreeSpace; SizeBytes = [double]$d.TotalSize }
+    } catch { return $null }
 }
 
 # Исходник SendCtrlC.exe (только -DevTest): Ctrl+C в консоль OptomstroySvc.exe --console = штатная остановка.
@@ -727,12 +770,16 @@ function Stop-OpsAppServices($L, [string[]]$Names, [switch]$DevTest) {
 }
 
 # ---------- PostgreSQL ----------
-function Test-OpsPortListening([int]$Port) {
-    return ($null -ne (Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue))
+# Слушающие порты — через .NET (таблица TCP iphlpapi), без WMI: Get-NetTCPConnection под posdeploy по SSH
+# получает «Access denied», а с -ErrorAction SilentlyContinue молча возвращал пусто («порт не слушает»).
+# Адреса — как у Get-NetTCPConnection: 127.0.0.1, 0.0.0.0, ::, ::1.
+function Get-OpsListenAddresses([int]$Port) {
+    $eps = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners()
+    return @($eps | Where-Object { $_.Port -eq $Port } | ForEach-Object { $_.Address.ToString() } | Sort-Object -Unique)
 }
 
-function Get-OpsListenAddresses([int]$Port) {
-    return @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.LocalAddress } | Sort-Object -Unique)
+function Test-OpsPortListening([int]$Port) {
+    return (@(Get-OpsListenAddresses $Port).Count -gt 0)
 }
 
 # Только -DevTest: pg_ctl start через WMI (Win32_Process.Create), а не дочерним процессом. Дочерний postgres.exe

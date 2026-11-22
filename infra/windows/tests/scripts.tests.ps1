@@ -106,7 +106,8 @@ try {
 
     Write-Host '== 4. SID служб'
     foreach ($n in $script:OpsServiceNames) {
-        $sc = (& sc.exe showsid $n | Select-String 'SERVICE SID' | ForEach-Object { ($_ -split ':\s*', 2)[1].Trim() })
+        # Имена полей sc.exe переводятся (в русской консоли не «SERVICE SID») — берём сам SID службы.
+        $sc = (& sc.exe showsid $n | Select-String 'S-1-5-80-[\d-]+' | ForEach-Object { $_.Matches[0].Value } | Select-Object -First 1)
         Report ((Get-OpsServiceSid $n) -eq $sc) "Get-OpsServiceSid $n = sc showsid"
     }
 
@@ -204,6 +205,69 @@ try {
     $un = [IO.File]::ReadAllText((Join-Path $win 'scripts\uninstall.ps1'))
     $i5 = $un.IndexOf("Write-OpsLog '5.")
     Report ($i5 -gt 0 -and $un.IndexOf('if ($errors -gt 0)', $i5) -gt $i5 -and $un.IndexOf('if ($errors -gt 0)', $i5) -lt $un.IndexOf('[System.IO.Directory]::Delete($L.Current', $i5)) 'uninstall.ps1: шаг 5 не удаляет программу после ошибок'
+
+    $full = '(A;;CCLCRPWPLORC;;;S-1-5-21-1-2-3-1001)'; $q = '(A;;CCLCRC;;;S-1-5-21-1-2-3-1001)'
+    $def = 'D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCLCSWLOCRRC;;;IU)S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)'
+    Report ((Update-OpsSddlAce $def $q $full) -eq 'D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCLCSWLOCRRC;;;IU)' + $q + 'S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)') 'Postgres/Backup: posdeploy получает только опрос, запись — до SACL'
+    $prev = $def.Replace('S:', $full + 'S:')
+    $r1 = Update-OpsSddlAce $prev $q $full
+    Report ((-not $r1.Contains($full)) -and $r1.Contains($q)) 'Postgres/Backup: право запуска и остановки прежней версии снимается, опрос остаётся'
+    Report ((Update-OpsSddlAce $r1 $q $full) -eq $r1) 'повторный запуск ничего не меняет'
+    $r2 = Update-OpsSddlAce ($def.Replace('S:', $q + 'S:')) $full $q
+    Report ($r2.Contains($full) -and -not $r2.Contains($q)) 'Api/Worker: полный набор (опрос, запуск, остановка), запись «только опрос» убирается'
+    Report ((Update-OpsSddlAce 'D:(A;;CC;;;SY)' $q $full) -eq ('D:(A;;CC;;;SY)' + $q)) 'SDDL без SACL — запись в конец'
+    $inst2 = [IO.File]::ReadAllText((Join-Path $win 'scripts\install.ps1'))
+    Report ($inst2.Contains('$queryAce = "(A;;CCLCRC;;;$deploySid)"') -and $inst2.Contains('Update-OpsSddlAce $old $want $drop')) 'install.ps1: опрос Postgres/Backup для posdeploy — без RP/WP (запуска и остановки)'
+
+    Write-Host '== 9. Состояние без WMI (как posdeploy по SSH)'
+    $lis = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
+    $lis.Start()
+    $lp = ([System.Net.IPEndPoint]$lis.LocalEndpoint).Port
+    try {
+        $a = @(Get-OpsListenAddresses $lp)
+        $ref = @(Get-NetTCPConnection -State Listen -LocalPort $lp -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.LocalAddress } | Sort-Object -Unique)
+        Report ($a.Count -eq 1 -and $a[0] -eq '127.0.0.1' -and ($ref -join ',') -eq ($a -join ',')) "Get-OpsListenAddresses без WMI: порт $lp — 127.0.0.1, как у Get-NetTCPConnection"
+        Report (Test-OpsPortListening $lp) 'Test-OpsPortListening: порт занят'
+        $any = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::IPv6Any, 0)
+        $any.Start(); $ap = ([System.Net.IPEndPoint]$any.LocalEndpoint).Port
+        try { Report (@(Get-OpsListenAddresses $ap) -contains '::') "адрес :: (все адреса IPv6) виден как '::' — status.ps1 считает его проблемой" } finally { $any.Stop() }
+    } finally { $lis.Stop() }
+    Report (-not (Test-OpsPortListening $lp)) 'Test-OpsPortListening: после остановки порт свободен'
+    Report ((Get-OpsServiceStateSc 'EventLog') -eq 'Running' -and (Get-OpsServiceState 'EventLog') -eq 'Running') 'служба EventLog: Running (Get-Service и sc.exe query)'
+    Report ((Get-OpsServiceStateSc 'OptomstroyNoSuchSvc') -eq 'Missing' -and (Get-OpsServiceState 'OptomstroyNoSuchSvc') -eq 'Missing') 'нет службы: Missing (Get-Service и sc.exe query)'
+    function global:sc.exe { $global:LASTEXITCODE = 5; '[SC] OpenService FAILED 5: Access is denied.' }
+    try { $den = Get-OpsServiceStateSc 'OptomstroyApi' } finally { Remove-Item function:\sc.exe -ErrorAction SilentlyContinue }
+    Report ($den -eq 'нет доступа') "sc.exe query код 5 — «нет доступа», не Missing (получено: $den)"
+    $vs = Get-OpsVolumeSpace $repo
+    $di = New-Object System.IO.DriveInfo([System.IO.Path]::GetPathRoot($repo))
+    Report ($null -ne $vs -and $vs.SizeBytes -eq [double]$di.TotalSize -and $vs.FreeBytes -gt 0) "Get-OpsVolumeSpace: том $($vs.Volume) без WMI"
+    $stText = [IO.File]::ReadAllText((Join-Path $win 'scripts\status.ps1'))
+    $stCode = (($stText -replace '(?s)<#.*?#>', '') -split "`n" | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+    Report (-not ($stCode -match 'Get-CimInstance|Get-WmiObject|Get-NetTCPConnection|Get-Volume'))'status.ps1: нет вызовов WMI (Get-CimInstance, Get-NetTCPConnection, Get-Volume)'
+
+    # Отказ WMI и Get-Service, как под posdeploy по SSH: подменяем команды функциями, которые бросают «Access denied».
+    $fr = Join-Path $tmp 'fake-root'
+    New-Item -ItemType Directory -Force -Path (Join-Path $fr 'current\scripts'), (Join-Path $fr 'logs') | Out-Null
+    Copy-Item (Join-Path $win 'scripts\status.ps1'), (Join-Path $win 'scripts\OptomstroyCommon.ps1') (Join-Path $fr 'current\scripts')
+    $pg = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
+    $pg.Start()
+    try {
+        $pgp = ([System.Net.IPEndPoint]$pg.LocalEndpoint).Port
+        $dsj = [ordered]@{ currentVersion = 't'; previousVersion = ''; installedUtc = '2026-11-22T00:00:00Z'; updatedUtc = $null; lastOperation = 'install'; lastOperationStatus = 'ok'; apiPort = 1; pgPort = $pgp; devTest = $false; backupRoot = $tmp }
+        [IO.File]::WriteAllText((Join-Path $fr 'logs\deploy-state.json'), ($dsj | ConvertTo-Json))
+        $deny = "function global:Get-CimInstance { throw 'Access denied' }; function global:Get-WmiObject { throw 'Access denied' }; function global:Get-NetTCPConnection { throw 'Cannot connect to CIM server. Access denied' }; function global:Get-Service { throw 'Cannot open Service Control Manager' }; & '$(Join-Path $fr 'current\scripts\status.ps1')' -Json; exit `$LASTEXITCODE"
+        $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        try { $o = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $deny 2>&1 | ForEach-Object { "$_" }); $code = $LASTEXITCODE } finally { $ErrorActionPreference = $old }
+        $j = Get-LastJson $o
+        Report ($null -ne $j) "status.ps1 -Json выдал отчёт при отказе WMI и Get-Service$(if ($null -eq $j) { ': ' + ($o -join ' | ') })"
+        if ($null -ne $j) {
+            Report ($code -eq 1) "код выхода 1 (есть проблемы: службы и API тестового стенда), получено $code"
+            Report ($j.installRoot -eq (Resolve-Path $fr).Path) "папка установки найдена по расположению скрипта без -InstallRoot: $($j.installRoot)"
+            Report (@($j.listen.postgres) -contains '127.0.0.1' -and -not (@($j.problems) -match 'PostgreSQL не слушает')) 'порт PostgreSQL виден без Get-NetTCPConnection'
+            Report (@($j.disks).Count -ge 1 -and $j.disks[0].sizeGB -gt 0) 'место на томе — без Get-CimInstance'
+            Report ($j.services.OptomstroyApi -eq 'Missing') "служба без Get-Service (sc.exe query): $($j.services.OptomstroyApi)"
+        }
+    } finally { $pg.Stop() }
 } finally {
     Remove-Item -LiteralPath (Join-Path $repo '.tmp\wn-scripts') -Recurse -Force -ErrorAction SilentlyContinue
 }

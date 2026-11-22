@@ -208,7 +208,9 @@ try {
     if ($schemaChange -and -not $NoDbSnapshot) {
         Write-OpsLog 'Копия базы для автоматического отката' 'STEP'
         $pgDrive = [System.IO.Path]::GetPathRoot($L.PgData).TrimEnd('\')
-        $free = (Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$pgDrive'").FreeSpace
+        $vol = Get-OpsVolumeSpace $L.PgData
+        if ($null -eq $vol) { throw "нет данных о свободном месте на $pgDrive" }
+        $free = $vol.FreeBytes
         $needBytes = [double]$dbBefore.sizeBytes * 1.2 + 1GB
         if ($free -lt $needBytes) { throw ("для копии базы нужно {0:N1} ГБ на {1}, свободно {2:N1} ГБ (без копии: -NoDbSnapshot — тогда откат только через restore.ps1)" -f ($needBytes / 1GB), $pgDrive, ($free / 1GB)) }
         $snapName = '{0}_preupd_{1}' -f $DbName, (Get-Date -Format 'yyyyMMddHHmmss')
