@@ -26,16 +26,31 @@ const ROOT = fileURLToPath(new URL('../..', import.meta.url));
  */
 let compiledDir: string | null = null;
 
+/** Компиляция src в уникальный каталог (один раз на набор): dist/worker.js и dist/main.js как в образе. */
+function compileOnce(): string {
+  if (compiledDir) return compiledDir;
+  const dir = makeWorkerCompileDir(ROOT);
+  compiledDir = dir;
+  const tsc = spawnSync(
+    process.execPath,
+    [join(ROOT, 'node_modules/typescript/bin/tsc'), '-p', 'tsconfig.build.json', '--outDir', dir],
+    { cwd: ROOT, encoding: 'utf8' },
+  );
+  expect(tsc.status, tsc.stdout + tsc.stderr).toBe(0);
+  return dir;
+}
+
 function startWorker(
   env: Record<string, string>,
   compiled: string | null = null,
+  { script = 'worker', stdin = 'ignore' }: { script?: 'worker' | 'main'; stdin?: 'ignore' | 'pipe' } = {},
 ): {
   child: ChildProcess;
   out: string[];
   exit: Promise<number | null>;
 } {
   const out: string[] = [];
-  const entry = compiled ? [join(compiled, 'worker.js')] : ['--import', 'tsx', 'src/worker.ts'];
+  const entry = compiled ? [join(compiled, `${script}.js`)] : ['--import', 'tsx', `src/${script}.ts`];
   const child = spawn(process.execPath, entry, {
     cwd: ROOT,
     env: {
@@ -45,7 +60,7 @@ function startWorker(
       ...TEST_ENV,
       ...env,
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: [stdin, 'pipe', 'pipe'],
   });
   const collect = (b: Buffer) =>
     out.push(
@@ -56,7 +71,8 @@ function startWorker(
     );
   child.stdout?.on('data', collect);
   child.stderr?.on('data', collect);
-  const exit = new Promise<number | null>((resolve) => child.on('exit', (code) => resolve(code)));
+  // 'close' — после закрытия stdout/stderr: последние строки журнала уже в out.
+  const exit = new Promise<number | null>((resolve) => child.on('close', (code) => resolve(code)));
   return { child, out, exit };
 }
 
@@ -107,16 +123,9 @@ describe('RM-C-007: точка входа worker.ts', () => {
   });
 
   it('WORKERS_ENABLED=true → worker.started, очереди и расписания в PostgreSQL', async () => {
-    compiledDir = makeWorkerCompileDir(ROOT);
-    const tsc = spawnSync(
-      process.execPath,
-      [join(ROOT, 'node_modules/typescript/bin/tsc'), '-p', 'tsconfig.build.json', '--outDir', compiledDir],
-      { cwd: ROOT, encoding: 'utf8' },
-    );
-    expect(tsc.status, tsc.stdout + tsc.stderr).toBe(0);
     const w = startWorker(
       { WORKERS_ENABLED: 'true', DATABASE_URL: db.url('pos_worker_entry'), LOG_LEVEL: 'info' },
-      compiledDir,
+      compileOnce(),
     );
     try {
       await waitFor(
@@ -167,6 +176,81 @@ describe('RM-C-007: точка входа worker.ts', () => {
       console.error(`--- worker.ts WORKERS_ENABLED=true (первые строки) ---\n${w.out.slice(0, 6).join('\n')}`);
     } finally {
       w.child.kill();
+      await w.exit;
+    }
+  }, 240_000);
+
+  it('POS_SHUTDOWN_ON_STDIN_EOF=1: worker по концу stdin — штатная остановка (worker.shutdown), код 0', async () => {
+    const w = startWorker(
+      {
+        WORKERS_ENABLED: 'true',
+        DATABASE_URL: db.url('pos_worker_entry'),
+        LOG_LEVEL: 'info',
+        POS_SHUTDOWN_ON_STDIN_EOF: '1',
+      },
+      compileOnce(),
+      { stdin: 'pipe' },
+    );
+    try {
+      await waitFor(() => Promise.resolve(w.out.some((l) => l.includes('"worker.started"'))), {
+        timeoutMs: 90_000,
+        what: 'worker.started',
+      });
+      // Канал открыт: процесс работает и stdin его не останавливает.
+      w.child.stdin?.write('ping\n');
+      await new Promise((r) => setTimeout(r, 1000));
+      expect(w.child.exitCode).toBeNull();
+      const t0 = Date.now();
+      w.child.stdin?.end();
+      expect(await w.exit).toBe(0);
+      const stops = w.out.filter((l) => l.includes('"worker.shutdown"'));
+      expect(stops).toHaveLength(1);
+      expect(JSON.parse(stops[0])).toMatchObject({ level: 'info', signal: 'stdin-eof', service: 'pos-worker' });
+      console.error(`--- worker.ts stdin EOF → exit 0 за ${Date.now() - t0} мс: ${stops[0]}`);
+    } finally {
+      if (w.child.exitCode === null) w.child.kill();
+      await w.exit;
+    }
+  }, 240_000);
+
+  it('API_HOST/API_PORT + POS_SHUTDOWN_ON_STDIN_EOF=1: main.js слушает 127.0.0.1:3301, по концу stdin — код 0', async () => {
+    const port = 3301;
+    const w = startWorker(
+      {
+        DATABASE_URL: db.url('pos_worker_entry'),
+        LOG_LEVEL: 'info',
+        API_HOST: '127.0.0.1',
+        API_PORT: String(port),
+        POS_SHUTDOWN_ON_STDIN_EOF: 'true',
+      },
+      compileOnce(),
+      { script: 'main', stdin: 'pipe' },
+    );
+    try {
+      const health = await waitFor(
+        async () => {
+          if (w.child.exitCode !== null) throw new Error(`main.js завершился: ${w.out.slice(-20).join(NL)}`);
+          try {
+            const r = await fetch(`http://127.0.0.1:${port}/health`);
+            return r.status;
+          } catch {
+            return undefined;
+          }
+        },
+        { timeoutMs: 90_000, what: `pos-api на 127.0.0.1:${port}` },
+      );
+      expect(health).toBe(200);
+      // Только петля: на ::1 (другой адрес той же машины) порт не слушается.
+      await expect(fetch(`http://[::1]:${port}/health`)).rejects.toThrow();
+      const t0 = Date.now();
+      w.child.stdin?.end();
+      expect(await w.exit).toBe(0);
+      const stops = w.out.filter((l) => l.includes('api.shutdown: stdin-eof'));
+      expect(stops).toHaveLength(1);
+      await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow();
+      console.error(`--- main.js stdin EOF → exit 0 за ${Date.now() - t0} мс: ${stops[0]}`);
+    } finally {
+      if (w.child.exitCode === null) w.child.kill();
       await w.exit;
     }
   }, 240_000);

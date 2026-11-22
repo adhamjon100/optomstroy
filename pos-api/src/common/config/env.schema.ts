@@ -63,6 +63,15 @@ export const envShape = {
   KIOSK_ALLOWED_CIDRS: optStr(),
   RECEIVABLES_MAX_AGE_MIN: int(60, 1),
 
+  // --- Процесс (установка на Windows Server без Docker; 16 §4.3) ---
+  // Адрес и порт HTTP pos-api: по умолчанию как в Docker-комплекте (0.0.0.0:3000 внутри контейнера); на Windows —
+  // 127.0.0.1, наружу только через Apache. Только IP-литерал: имя `localhost` в Windows может дать ::1.
+  API_HOST: z.union([z.ipv4(), z.ipv6()]).default('0.0.0.0'),
+  API_PORT: int(3000, 1, 65535),
+  // Служба Windows (OptomstroySvc.exe) просит остановиться закрытием stdin: при true api и worker по концу stdin
+  // выполняют ту же штатную остановку, что по SIGTERM. По умолчанию выключено — stdin не читается.
+  POS_SHUTDOWN_ON_STDIN_EOF: bool(false),
+
   // --- База данных ---
   DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, 'ожидается строка подключения postgres://…'),
   DB_MIGRATOR_PASSWORD: secret(),

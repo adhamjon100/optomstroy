@@ -308,9 +308,16 @@ class Stack {
   env(extra = {}) {
     const env = { ...process.env };
     for (const k of Object.keys(env))
-      if (/^(DATABASE_URL|DB_MIGRATOR_PASSWORD|APP_READ_ONLY|PIN_PEPPER|OTP_HMAC_SECRET)/.test(k)) delete env[k];
+      if (
+        /^(DATABASE_URL|DB_MIGRATOR_PASSWORD|APP_READ_ONLY|PIN_PEPPER|OTP_HMAC_SECRET|API_HOST|API_PORT|POS_SHUTDOWN_ON_STDIN_EOF)/.test(
+          k,
+        )
+      )
+        delete env[k];
+    // API_HOST/API_PORT/POS_SHUTDOWN_ON_STDIN_EOF оболочки не наследуются: стенд ждёт api на API_PORT (stdin — 'ignore').
     return {
       ...env,
+      API_PORT: String(API_PORT),
       APP_ENV: 'dev',
       LOG_LEVEL: 'info',
       DATABASE_URL_FILE: join(this.dir, 'database_url'),
