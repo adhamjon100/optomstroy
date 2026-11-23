@@ -160,7 +160,9 @@ try {
         if ($ck.Code -ne 0) { throw "OptomstroySvc.exe версии $($new.Version) не принимает config\$sf (код $($ck.Code)) — нужен install.ps1 по примечаниям к выпуску; службы не останавливались" }
     }
     # Новые имена несекретных настроек из шаблонов новой версии (дописываются при переключении, ниже).
-    $tplNew = Get-OpsEnvTemplatePairs $new.Dir ([string]$ij.contour)
+    # Тестовый стенд (install.ps1 -Stand, ADR-125): новые имена — и из stand.env.example.
+    $isStand = ($null -ne $ij.PSObject.Properties['stand']) -and [bool]$ij.stand
+    $tplNew = Get-OpsEnvTemplatePairs $new.Dir ([string]$ij.contour) -Stand:$isStand
     $envAdd = [ordered]@{}
     foreach ($f in @('api.env', 'worker.env')) {
         $fp = Join-Path $L.Config $f

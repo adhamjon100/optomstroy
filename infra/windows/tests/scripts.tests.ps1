@@ -11,6 +11,7 @@
      расшифровка pos-backup.mjs decrypt тестовым ключом, secrets-import (совпадение, конфликт — код 1).
   6. New-ReleaseZip.ps1: имена записей через «/», пустая папка, распаковка .NET даёт те же файлы.
   7. Новые имена настроек: Get-OpsEnvTemplatePairs + Write-OpsEnvFile дописывают только отсутствующие имена.
+     7a. Профиль тестового стенда (stand.env.example, -Stand; ADR-125); OTP_HMAC_SECRET_FILE у api и worker (ADR-124).
   8. Статические проверки прав: data\audit-anchors пишет только OptomstroyWorker; sc sdset posdeploy — только Api и
      Worker; update.ps1 возвращает базу из копии, если migrate запускался; uninstall.ps1 не удаляет программу после ошибок.
   Временные данные — .tmp\wn-scripts (удаляются).
@@ -192,6 +193,24 @@ try {
     $after = Read-OpsEnvTemplate $envFile
     Report ($after['LOG_LEVEL'] -eq 'warn' -and @($added) -notcontains 'LOG_LEVEL' -and @($added) -contains 'TZ') 'существующее значение не переписано, новое имя (TZ) дописано'
     Report (-not $after.Contains('PUBLIC_BASE_URL')) 'пустые значения шаблона не дописываются'
+
+    Write-Host '== 7a. Профиль тестового стенда (install.ps1 -Stand, ADR-125) и секрет OTP у api и worker (ADR-124)'
+    Copy-Item (Join-Path $repo 'infra\env\stand.env.example') (Join-Path $fakeRel 'scripts\templates\stand.env.example')
+    $st = Get-OpsEnvTemplatePairs $fakeRel 'test' -Stand
+    Report ($st['APP_ENV'] -eq 'staging' -and $st['ONEC_MODE'] -eq 'fixtures' -and $st['QR_PROVIDER'] -eq 'bank' -and $st['BANK_QR_ADAPTER'] -eq 'sandbox') "стенд: APP_ENV=staging, ONEC_MODE=fixtures, QR_PROVIDER=bank, BANK_QR_ADAPTER=sandbox"
+    Report ($st['SMS_PROVIDER'] -eq 'fake' -and $st['AUTH_OTP_TEST_MODE'] -eq 'true' -and -not [string]$st['AUTH_OTP_TEST_CODE'] -and -not [string]$st['ONEC_BASE_URL'] -and $st['SMSPRO_TEST_FLAG'] -eq 'true')'стенд: SMS_PROVIDER=fake, тестовый режим; код не в шаблоне (создаёт install.ps1), адреса 1С нет'
+    $stPhones = @(([string]$st['AUTH_OTP_TEST_PHONES']).Split(',') | ForEach-Object { $_.Trim() })
+    Report ($stPhones.Count -gt 0 -and @($stPhones | Where-Object { $_ -notmatch '^\+99670000000\d$' }).Count -eq 0) "стенд: только вымышленные номера +99670000000x ($($stPhones -join ','))"
+    Report ($st['PUBLIC_BASE_URL'] -eq 'https://api-test.37.114.51.144.sslip.io') 'стенд: адрес https://api-test.37.114.51.144.sslip.io'
+    Report (@($st.Keys | Where-Object { $_ -like '*_FILE' -or $_ -like 'SMSPRO_LOGIN*' -or $_ -like 'SMSPRO_PASSWORD*' }).Count -eq 0) 'стенд: в шаблоне нет секретов и указателей *_FILE'
+    $threw = $false; try { $null = Get-OpsEnvTemplatePairs $fakeRel 'prod' -Stand } catch { $threw = $true }
+    Report $threw 'стенд в контуре prod — отказ'
+    $inst3 = [IO.File]::ReadAllText((Join-Path $win 'scripts\install.ps1'))
+    Report ($inst3.Contains("`$common = [ordered]@{ DATABASE_URL_FILE = (& `$sec 'database_url'); JWT_PUBLIC_KEY_FILE = (& `$sec 'jwt_public.json'); OTP_HMAC_SECRET_FILE = (& `$sec 'otp_pepper') }")) 'install.ps1: OTP_HMAC_SECRET_FILE — общий для api.env и worker.env, один файл secrets\otp_pepper (EQ-AUTH-08)'
+    Report ($inst3 -match "\`$apiSecrets = @\([^)]*'otp_pepper'" -and $inst3 -match "\`$workerSecrets = @\([^)]*'otp_pepper'") 'install.ps1: чтение otp_pepper — у OptomstroyApi и OptomstroyWorker'
+    Report ($inst3.Contains("-eq '246810'")) 'install.ps1: случайный тестовый код стенда не равен коду демо 246810'
+    $br = [IO.File]::ReadAllText((Join-Path $win 'release\build-release.ps1'))
+    Report ($br.Contains("infra\env\stand.env.example") -and $br.Contains("'contracts\onec\fixtures'")) 'build-release.ps1: в пакете профиль стенда и фикстуры 1С (ONEC_MODE=fixtures)'
 
     Write-Host '== 8. Статические проверки прав и отката'
     $inst = [IO.File]::ReadAllText((Join-Path $win 'scripts\install.ps1'))

@@ -177,6 +177,11 @@ Measure-Phase 'assemble' {
     New-Item -ItemType Directory -Force -Path (Join-Path $rel 'scripts\templates') | Out-Null
     Copy-Item -LiteralPath (Join-Path $repo 'infra\env\prod.env.example') -Destination (Join-Path $rel 'scripts\templates\prod.env.example')
     Copy-Item -LiteralPath (Join-Path $repo 'infra\env\test.env.example') -Destination (Join-Path $rel 'scripts\templates\test.env.example')
+    # Профиль тестового стенда (install.ps1 -Stand, ADR-125) и фикстуры 1С для ONEC_MODE=fixtures: FakeOnecGateway
+    # читает <релиз>\contracts\onec\fixtures (путь от api\dist\integrations\onec — fake-onec.gateway.ts
+    # DEFAULT_ONEC_FIXTURES_DIR); без папки API с ONEC_MODE=fixtures не стартует. Данные фикстур — вымышленные.
+    Copy-Item -LiteralPath (Join-Path $repo 'infra\env\stand.env.example') -Destination (Join-Path $rel 'scripts\templates\stand.env.example')
+    Copy-Tree (Join-Path $repo 'contracts\onec\fixtures') (Join-Path $rel 'contracts\onec\fixtures')
     Copy-Item -LiteralPath (Join-Path $win 'README.md') -Destination (Join-Path $rel 'README.md')
 }
 

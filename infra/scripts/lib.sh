@@ -1224,6 +1224,7 @@ validate_env() {
       [ -n "$(env_get "$f" AUTH_OTP_TEST_PHONES)" ] \
         || warn "AUTH_OTP_TEST_PHONES пуст — войти в тестовую копию нельзя (SMS не отправляются); номера — install.sh --test-phones"
       case "$(env_get "$f" AUTH_OTP_TEST_CODE)" in
+        246810) die "AUTH_OTP_TEST_CODE: код демо 246810 — только dev и демо; при APP_ENV=staging pos-api не стартует (ADR-124)" ;;
         [0-9][0-9][0-9][0-9][0-9][0-9]) ;;
         *) die "AUTH_OTP_TEST_CODE: шесть цифр (создаёт install.sh тестового контура)" ;;
       esac

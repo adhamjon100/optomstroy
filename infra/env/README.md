@@ -8,6 +8,7 @@
 | Перечень несекретных переменных (без значений секретов) | `/.env.example` (в git) |
 | Шаблон `.env` рабочего контура (те же имена + параметры уровня compose: Caddyfile общего caddy `CADDY_SITE_ADDRESS`, `CADDY_TLS`, `CADDY_TEST_SITE_ADDRESS` и память `PG_SHARED_BUFFERS`, `PG_MEM_LIMIT`, `API_MEM_LIMIT`, `WORKER_MEM_LIMIT`, непрерывная копия WAL `BACKUP_PITR` (on — рабочий контур, off — тестовая копия; RUNBOOK §4.8); безопасные значения первого запуска) | `infra/env/prod.env.example`; сверка — `python -I -X utf8 infra/docker/scripts/check_compose_prod.py infra/compose.prod.yml` |
 | Замены для тестовой копии на сервере (`APP_ENV=staging`, 16 §11) | `infra/env/test.env.example` |
+| Профиль тестового стенда на Windows-комплекте (ADR-125; поверх test.env.example; `install.ps1 -Stand`) | `infra/env/stand.env.example` |
 | Формат: у пустой переменной комментарий — строкой выше. Docker Compose (compose-go) читает `ИМЯ=   # текст` как значение «# текст», а не пусто | проверяют `check_compose_prod.py` и install.sh/update.sh |
 | Сверка `.env.example` с 16 §4.3 и ключей схемы pos-api с 16 §4.3 | `python -I -X utf8 scripts/check_env_example.py` (код 0 — 0 лишних, 0 недостающих) |
 | Схема и значения по умолчанию в коде | `pos-api/src/common/config/env.schema.ts` (zod), загрузчик `*_FILE` — `env-file.loader.ts` |
@@ -20,7 +21,7 @@
 | Профиль | Где | Особенности |
 |---|---|---|
 | `dev` | машина разработчика, CI (`APP_ENV=dev` + тестовые флаги) | допустимы `ONEC_MODE=fixtures`, `SMS_PROVIDER=fake`, `AUTH_OTP_TEST_MODE=true`; `PUBLIC_BASE_URL` можно не задавать |
-| `staging` | тестовый контур (OPS-027) | как prod, но допустимы тестовые режимы и `SMS_STAGING_ALLOWED_PHONES`; `OPENAPI_PUBLIC=true` |
+| `staging` | тестовый контур (OPS-027) | как prod, но допустимы тестовые режимы и `SMS_STAGING_ALLOWED_PHONES`; `OPENAPI_PUBLIC=true`; тестовый код — только с `SMS_PROVIDER=fake` (при `smspro` — отказ в старте, ADR-124), код демо `246810` — отказ в старте |
 | `prod` | сервер заказчика | API **не стартует** (код 1, понятное сообщение без значений) при: `ONEC_MODE=fixtures`, `SMS_PROVIDER=fake`, `AUTH_OTP_TEST_MODE=true`, непустых `AUTH_OTP_TEST_PHONES`/`AUTH_OTP_TEST_CODE`, `SMSPRO_TEST_FLAG=true`, `LOG_LEVEL=debug|trace`, `CORS_ALLOWED_ORIGINS=*`, отсутствии `PUBLIC_BASE_URL` |
 
 Межпеременные правила отказа в старте (все профили): `QR_WEBHOOK_ENABLED=true` только при `QR_PROVIDER=bakai` и с `QR_WEBHOOK_ALLOWED_IPS`; `QR_PROVIDER=onec` несовместим с `ONEC_MODE=odata_only` и `ONEC_INBOUND_ENABLED=true`; `ONEC_INBOUND_ENABLED=true` требует `ONEC_MODE=extension` и `ONEC_INBOUND_ALLOWED_IPS`; `SMSPRO_DLR_MODE=push` требует `SMSPRO_DLR_ALLOWED_IPS`.

@@ -122,7 +122,7 @@ D:\OptomstroyBackups\             (-BackupRoot): dumps\ (и dumps\secrets\ — �
 
 | Файл | Что | Когда |
 |---|---|---|
-| `smspro_login`, `smspro_password` | SMSPro | рабочий контур |
+| `smspro_login`, `smspro_password` | SMSPro | рабочий контур; на тестовом стенде (`-Stand`) — только когда заказчик сам решит включить настоящие SMS (Q-385), раздел 7.1 |
 | `onec_hs_user`, `onec_hs_token` | пользователь `pos_hs` HTTP-сервиса 1С и ключ `X-POS-Client-Key` | всегда (без них API не запускается) |
 | `onec_hs_password` | пароль `pos_hs` | если задан в 1С |
 | `onec_user`, `onec_password` | OData 1С только чтение (`pos_integration`) — полная загрузка, срезы цен и остатков | кладутся файлом, если используются |
@@ -225,6 +225,45 @@ cd C:\Users\admin\setup\pkg\scripts
 5. **[Администратор, согласованное окно]** Подключить хост в Apache (раздел 4), перезапустить Apache, проверить 1С.
 6. **[Администратор]** Один раз проверить службы под SCM: `svchost\rehearse-service.ps1` и проверки
    `svchost\README.md` и `postgres\README.md` (перезапуск после сбоя, остановка при выключении Windows).
+
+### 7.1. Тестовый стенд `optomstroy-test` (`-Stand`; ADR-125)
+
+Стенд — тот же комплект на сервере заказчика, только с вымышленными данными. `-Stand` включает контур `test`
+(`APP_ENV=staging`) и профиль `scripts\templates\stand.env.example` (в репозитории — `infra/env/stand.env.example`;
+настройки собираются слоями `prod.env.example` → `test.env.example` → `stand.env.example`, затем параметры
+install.ps1). Секретов в профиле нет.
+
+| Что | Значение на стенде | Почему |
+|---|---|---|
+| Адрес | `https://api-test.37.114.51.144.sslip.io` (по умолчанию из профиля; другое — `-PublicBaseUrl`) | временное имя до домена заказчика; постоянное — `api-test.optomstroy.kg` `[ПРЕДЛОЖЕНИЕ]`; сертификат для имени — у Apache заказчика (Q-384), без него приложения видят ошибку имени |
+| 1С | `ONEC_MODE=fixtures` — ответы 1С из фикстур (`<релиз>\contracts\onec\fixtures`, кладёт build-release.ps1); `-OnecBaseUrl`, `-OnecHsPath` и секреты `onec_hs_*` не задаются и не спрашиваются | API 1С ещё нет; рабочая 1С к стенду не подключается никогда |
+| QR | `QR_PROVIDER=bank`, `BANK_QR_ADAPTER=sandbox`, `QR_WEBHOOK_ENABLED=false` — песочница банка внутри `OptomstroyApi`, статус — опросом | ADR-123; банк — `[НЕ ПОДТВЕРЖДЕНО: Q-381]` |
+| SMS | `SMS_PROVIDER=fake`, `SMSPRO_TEST_FLAG=true`, учётных данных SMSPro нет — **SMS не отправляются, денег не тратят** | ADR-124 |
+| Вход | `AUTH_OTP_TEST_MODE=true`, номера `+996700000001…+996700000005` (вымышленные; `-TestPhones` заменяет список), код — `AUTH_OTP_TEST_CODE` в `config\api.env` (шесть случайных цифр, создаёт install.ps1; код демо `246810` API при `staging` не принимает) | 09 §5.8; первый администратор — номер из списка (`-AdminPhone +996700000001`) |
+| Секрет OTP | `OTP_HMAC_SECRET_FILE=<InstallRoot>\secrets\otp_pepper` — и в `api.env`, и в `worker.env` (один файл) | EQ-AUTH-08: worker расшифровывает задание `sms.send` |
+
+```powershell
+cd C:\Users\admin\setup\pkg\scripts
+.\install.ps1 -Stand -Zip C:\Users\admin\setup\Optomstroy-Server-<версия>-win-x64.zip -Sha256 <SHA256 из письма> `
+    -PgBin 'C:\Program Files\PostgreSQL\17\bin' -BackupPublicKey C:\Users\admin\setup\backup-public.pem `
+    -ApacheDir C:\Apache24 -ApacheServiceName <имя службы Apache> -ApacheServiceAccount <учётная запись службы Apache> `
+    -AdminPhone +996700000001 -AdminName "Тестовый Администратор"
+```
+
+Профиль стенда после установки не меняется параметрами (`-Stand` записан в `config\install.json`; смена — только
+вручную). update.ps1 дописывает новые имена и из `stand.env.example`. Рабочий контур этим не разрешается (ADR-125
+п. 8: нужны Q-379 и Q-371). Любая команда, меняющая сервер, — только после явного «да» пользователя (16 §6.3);
+мы проверяем стенд под `posdeploy` (`status.ps1`, журналы, `/health`).
+
+**Настоящая SMS на стенде** (ADR-124 п. 5) — только (1) после того, как заказчик **сам** положит
+`secrets\smspro_login` и `secrets\smspro_password` (в репозиторий, чат и журналы — ничего; Q-385), и (2) после
+письменного «да» пользователя на конкретную отправку (число SMS и номер; Q-235). Порядок: повторный запуск
+install.ps1 с теми же параметрами (дописывает `SMSPRO_LOGIN_FILE`/`SMSPRO_PASSWORD_FILE` и права служб на файлы), затем
+в `config\api.env` и `config\worker.env` вручную: `SMS_PROVIDER=smspro`, `AUTH_OTP_TEST_MODE=false`, `AUTH_OTP_TEST_CODE=`
+и `AUTH_OTP_TEST_PHONES=` (пусто — иначе API не стартует: при `smspro` тестового кода нет), `SMSPRO_SENDER=<имя>`;
+сначала `SMSPRO_TEST_FLAG=true` (проверка канала без SMS, `docs/integration/smspro_connect.md` §4), потом
+`SMSPRO_TEST_FLAG=false` и `SMS_STAGING_ALLOWED_PHONES=<разрешённые номера>` — остальным уходит `<test>1</test>` (§5);
+перезапуск `OptomstroyApi` и `OptomstroyWorker`.
 
 ## 8. Резервное копирование
 

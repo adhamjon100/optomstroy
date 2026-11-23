@@ -299,7 +299,11 @@ else
     || die "имя сайта тестовой копии совпадает с рабочим (--domain api-test.<домен>, 16 §11)"
   env_set_if_empty "$ENV_FILE" AUTH_OTP_TEST_PHONES "$TEST_PHONES"
   if [ -z "$(env_get "$ENV_FILE" AUTH_OTP_TEST_CODE)" ]; then
-    env_set "$ENV_FILE" AUTH_OTP_TEST_CODE "$(od -An -N4 -tu4 /dev/urandom | awk '{ printf "%06d", $1 % 1000000 }')"
+    # Шесть случайных цифр; код демо 246810 при APP_ENV=staging pos-api не принимает (ADR-124) — тогда заново.
+    code=246810
+    while [ "$code" = 246810 ]; do code="$(od -An -N4 -tu4 /dev/urandom | awk '{ printf "%06d", $1 % 1000000 }')"; done
+    env_set "$ENV_FILE" AUTH_OTP_TEST_CODE "$code"
+    unset code
     log ".env: создан AUTH_OTP_TEST_CODE (код входа тестовых номеров; смотреть: sudo grep AUTH_OTP_TEST_CODE $ENV_FILE)"
   fi
 fi

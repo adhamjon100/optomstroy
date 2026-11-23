@@ -447,13 +447,19 @@ function Read-OpsEnvTemplate([string]$Path) {
 }
 
 # Несекретные настройки из шаблонов релиза (scripts\templates\prod.env.example, для тестового контура поверх —
-# test.env.example) без имён уровня compose/резервного копирования Linux (программа их не читает) и без пустых
-# значений (пустое = «не задано»). Общая часть install.ps1 (шаг 6) и update.ps1 (новые имена новой версии).
-function Get-OpsEnvTemplatePairs([string]$ReleaseDir, [string]$Contour) {
+# test.env.example, для тестового стенда ADR-125 (install.ps1 -Stand) ещё поверх — stand.env.example) без имён уровня
+# compose/резервного копирования Linux (программа их не читает) и без пустых значений (пустое = «не задано»).
+# Общая часть install.ps1 (шаг 6) и update.ps1 (новые имена новой версии).
+function Get-OpsEnvTemplatePairs([string]$ReleaseDir, [string]$Contour, [switch]$Stand) {
     $tpl = Read-OpsEnvTemplate (Join-Path $ReleaseDir 'scripts\templates\prod.env.example')
     if ($Contour -eq 'test') {
         $t2 = Read-OpsEnvTemplate (Join-Path $ReleaseDir 'scripts\templates\test.env.example')
         foreach ($k in $t2.Keys) { $tpl[$k] = $t2[$k] }
+    }
+    if ($Stand) {
+        if ($Contour -ne 'test') { throw 'профиль тестового стенда (-Stand) — только для контура test (APP_ENV=staging, ADR-125)' }
+        $t3 = Read-OpsEnvTemplate (Join-Path $ReleaseDir 'scripts\templates\stand.env.example')
+        foreach ($k in $t3.Keys) { $tpl[$k] = $t3[$k] }
     }
     foreach ($k in @('API_TAG', 'BACKUP_TAG', 'POSTGRES_USER', 'POSTGRES_DB', 'BACKUP_KEEP_DAYS', 'BACKUP_REMOTE', 'BACKUP_SCHEDULE',
             'BACKUP_AGE_RECIPIENT', 'BACKUP_PITR', 'CADDY_SITE_ADDRESS', 'CADDY_TLS', 'CADDY_TEST_SITE_ADDRESS', 'PG_SHARED_BUFFERS',

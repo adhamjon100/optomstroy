@@ -32,6 +32,14 @@
       [--date ГГГГ-ММ-ДД]
   python -I -X utf8 scripts/md2docx.py --verify <in.md> <out.docx> [--title-page] [--title-note "<строка>"]
 
+Выпуск 2026-11-24 — P-004: телефон, QR от банка через наш сервер, SMS, тестовый сервер (оба — с --date 2026-11-24;
+у --verify — те же --title-page и --title-note):
+  docs/customer/STATUS_GOTOVNOSTI.md    -> docs/customer/Optomstroy_Status_gotovnosti.docx
+      "Оптомстрой POS · что готово и что дальше · 24.11.2026"
+  docs/customer/Voprosy_zakazchiku.md   -> docs/customer/Voprosy_zakazchiku.docx
+      "Оптомстрой POS — вопросы заказчику" --title-page
+      --title-note "Дата: 24.11.2026 · 132 вопроса и 18 просьб · начните с вопросов 126–132 (новое от 23.11.2026), затем вопрос 125 и раздел 1 «Срочно» (вопросы 1–14)"
+
 Выпуск 2026-11-20 — отмена P-003, 1С снова главная система (все — с --date 2026-11-20; у --verify — те же
 --title-page и --title-note, что при выпуске):
   docs/customer/SERVER_REQUIREMENTS.md  -> docs/customer/Optomstroy_Trebovaniya_k_serveru.docx

@@ -55,6 +55,14 @@
       -OnecBaseUrl https://1c.example.kg/ut11 -OnecHsPath hs/optomstroy-pos `
       -BackupPublicKey C:\Users\admin\setup\backup-public.pem -ApacheDir C:\Apache24 -ApacheServiceName Apache2.4
 .EXAMPLE
+  # Администратор, тестовый стенд optomstroy-test (ADR-125; профиль scripts\templates\stand.env.example):
+  # APP_ENV=staging, 1С — фикстуры (адрес и секреты 1С не нужны), QR — песочница банка (QR_PROVIDER=bank,
+  # BANK_QR_ADAPTER=sandbox), SMS не отправляются (SMS_PROVIDER=fake, вход — тестовые номера +99670000000x с
+  # кодом AUTH_OTP_TEST_CODE из config\api.env), адрес по умолчанию https://api-test.37.114.51.144.sslip.io:
+  .\install.ps1 -Stand -Zip C:\Users\admin\setup\Optomstroy-Server-0.1.0-abc-win-x64.zip -Sha256 <SHA256 из письма> `
+      -PgBin 'C:\Program Files\PostgreSQL\17\bin' -BackupPublicKey C:\Users\admin\setup\backup-public.pem `
+      -ApacheDir C:\Apache24 -ApacheServiceName Apache2.4 -AdminPhone +996700000001 -AdminName "Тестовый Администратор"
+.EXAMPLE
   # ПК разработчика:
   .\install.ps1 -DevTest -Zip .tmp\wn-release\Optomstroy-Server-X-win-x64.zip -InstallRoot .tmp\wn-install\root `
       -BackupRoot .tmp\wn-install\backups -PgBin pos-api\node_modules\@embedded-postgres\windows-x64\native\bin -ApiPort 3330 -PgPort 55450
@@ -94,11 +102,18 @@ param(
     [switch]$AllowNewPeppers,
     [switch]$AllowOtherOs,
     [switch]$NonInteractive,
+    [switch]$Stand,
     [switch]$DevTest
 )
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'OptomstroyCommon.ps1')
+
+# Тестовый стенд (ADR-125): только контур test; профиль — scripts\templates\stand.env.example поверх test.env.example.
+if ($Stand) {
+    if ($PSBoundParameters.ContainsKey('Contour') -and $Contour -ne 'test') { throw '-Stand: тестовый стенд — только -Contour test (APP_ENV=staging, ADR-125)' }
+    $Contour = 'test'
+}
 
 if ($DevTest -and -not $PSBoundParameters.ContainsKey('InstallRoot')) { throw '-DevTest: укажите -InstallRoot (тестовая папка), путь по умолчанию D:\Optomstroy в проверочном прогоне не используется' }
 if ($DevTest -and -not $PSBoundParameters.ContainsKey('Contour')) { $Contour = 'test' }
@@ -142,7 +157,7 @@ function Resolve-Sid([string]$Account) {
 $logDir = $L.Logs
 if ($whatIf) { $logDir = Join-Path $env:TEMP 'optomstroy-install-whatif' }
 $null = Initialize-OpsLog $logDir 'install'
-Write-OpsLog ("install.ps1: InstallRoot={0} BackupRoot={1} контур={2} (APP_ENV={3}) API 127.0.0.1:{4} PostgreSQL 127.0.0.1:{5} база {6}{7}" -f $L.Root, $L.BackupRoot, $Contour, $appEnv, $ApiPort, $PgPort, $DbName, $(if ($DevTest) { ' DevTest' } else { '' }))
+Write-OpsLog ("install.ps1: InstallRoot={0} BackupRoot={1} контур={2} (APP_ENV={3}) API 127.0.0.1:{4} PostgreSQL 127.0.0.1:{5} база {6}{7}{8}" -f $L.Root, $L.BackupRoot, $Contour, $appEnv, $ApiPort, $PgPort, $DbName, $(if ($Stand) { ' стенд (ADR-125)' } else { '' }), $(if ($DevTest) { ' DevTest' } else { '' }))
 
 $state = ConvertTo-OpsHashtable (Read-OpsState $L)
 $failed = $true
@@ -198,6 +213,8 @@ try {
         foreach ($p in @(@('apiPort', $ApiPort), @('pgPort', $PgPort), @('dbName', $DbName), @('contour', $Contour))) {
             if ([string]$installJson.($p[0]) -ne [string]$p[1]) { throw "в $($L.InstallJson) $($p[0]) = $($installJson.($p[0])), а задано $($p[1]): смена после установки — только вручную" }
         }
+        $prevStand = ($null -ne $installJson.PSObject.Properties['stand']) -and [bool]$installJson.stand
+        if ($prevStand -ne [bool]$Stand) { throw "в $($L.InstallJson) stand = $prevStand, а задано -Stand:$([bool]$Stand): смена профиля стенда после установки — только вручную" }
         $ours = $true
         Write-OpsLog "повторный запуск: $($L.InstallJson) найден, параметры совпадают"
     }
@@ -251,6 +268,14 @@ try {
         } else { Write-OpsLog "SQL Server: max server memory не прочитан ($mem)" 'WARN' }
     } else { Write-OpsLog 'sqlcmd.exe не найден — память SQL Server проверьте вручную (план, раздел 3)' 'WARN' }
 
+    if (-not $PublicBaseUrl -and $Stand -and -not ($null -ne $installJson -and $installJson.publicBaseUrl)) {
+        # Адрес стенда по умолчанию — PUBLIC_BASE_URL профиля (в пакете — рядом со скриптом; в репозитории — infra\env);
+        # при повторном запуске — адрес из install.json (ниже).
+        foreach ($sp in @((Join-Path $PSScriptRoot 'templates\stand.env.example'), (Join-Path $PSScriptRoot '..\..\env\stand.env.example'))) {
+            if (-not $PublicBaseUrl -and (Test-Path -LiteralPath $sp)) { $PublicBaseUrl = [string](Read-OpsEnvTemplate $sp)['PUBLIC_BASE_URL'] }
+        }
+        if ($PublicBaseUrl) { Write-OpsLog "стенд: адрес из профиля stand.env.example — $PublicBaseUrl" }
+    }
     if (-not $PublicBaseUrl) {
         if ($DevTest) { $PublicBaseUrl = 'https://api-test.devtest.invalid' }
         elseif ($null -ne $installJson) { $PublicBaseUrl = [string]$installJson.publicBaseUrl }
@@ -261,6 +286,12 @@ try {
     $serverName = ([Uri]$PublicBaseUrl).Host
     # 1С (обмен онлайн через HTTP-сервис расширения «OptomstroyPOS», ONEC_MODE=extension): без адреса, пути и
     # секретов onec_hs_* API не запускается (onec-adapters.ts → ConfigError при старте).
+    # Тестовый стенд (-Stand, ADR-125): 1С — фикстуры (ONEC_MODE=fixtures из stand.env.example), адрес и секреты 1С
+    # не задаются; рабочая 1С к стенду не подключается никогда.
+    if ($Stand) {
+        if ($OnecBaseUrl -or $OnecHsPath) { throw '-Stand: 1С на стенде — фикстуры (ONEC_MODE=fixtures, ADR-125); -OnecBaseUrl и -OnecHsPath не задаются' }
+        Write-OpsLog '1С: фикстуры (ONEC_MODE=fixtures, тестовый стенд ADR-125) — адрес и секреты 1С не нужны'
+    } else {
     if (-not $OnecBaseUrl -and $null -ne $installJson -and $installJson.PSObject.Properties['onecBaseUrl']) { $OnecBaseUrl = [string]$installJson.onecBaseUrl }
     if (-not $OnecHsPath -and $null -ne $installJson -and $installJson.PSObject.Properties['onecHsPath']) { $OnecHsPath = [string]$installJson.onecHsPath }
     if ($DevTest) {
@@ -275,6 +306,7 @@ try {
     if ($OnecHsPath -notmatch '^[A-Za-z0-9._~/-]+$') { throw "-OnecHsPath: путь без пробелов и параметров, например hs/optomstroy-pos: $OnecHsPath" }
     $OnecHsPath = $OnecHsPath.Trim('/')
     Write-OpsLog "1С: $OnecBaseUrl/$OnecHsPath (ONEC_MODE=extension, обмен онлайн)"
+    }
     if ($BackupPublicKey -and -not (Test-Path -LiteralPath $BackupPublicKey)) { throw "нет файла -BackupPublicKey $BackupPublicKey" }
     if (-not $BackupPublicKey -and -not (Test-Path -LiteralPath (Join-Path $L.Config 'backup-public.pem')) -and -not $DevTest) {
         throw 'укажите -BackupPublicKey <backup-public.pem> (открытый ключ держателя ключа, keygen.ps1 на его ПК)'
@@ -369,10 +401,13 @@ try {
         [void]$askSecrets.Add(@('smspro_login', 'Логин SMSPro', $true))
         [void]$askSecrets.Add(@('smspro_password', 'Пароль SMSPro', $true))
     }
-    [void]$askSecrets.Add(@('onec_hs_user', 'Пользователь 1С для HTTP-сервиса (pos_hs)', $true))
-    [void]$askSecrets.Add(@('onec_hs_token', 'Ключ клиента X-POS-Client-Key HTTP-сервиса 1С', $true))
-    [void]$askSecrets.Add(@('onec_hs_password', 'Пароль pos_hs в 1С (Enter — без пароля)', $false))
-    if ($DevTest) {
+    # Тестовый стенд (-Stand): ни SMSPro (SMS не отправляются, ADR-124), ни 1С (фикстуры) — ничего не вводится.
+    if (-not $Stand) {
+        [void]$askSecrets.Add(@('onec_hs_user', 'Пользователь 1С для HTTP-сервиса (pos_hs)', $true))
+        [void]$askSecrets.Add(@('onec_hs_token', 'Ключ клиента X-POS-Client-Key HTTP-сервиса 1С', $true))
+        [void]$askSecrets.Add(@('onec_hs_password', 'Пароль pos_hs в 1С (Enter — без пароля)', $false))
+    }
+    if ($DevTest -and -not $Stand) {
         # Проверочный прогон: тестовые значения 1С создаются здесь (в тестовой папке), а не вводятся.
         foreach ($s in @('onec_hs_user', 'onec_hs_token')) {
             $f = Join-Path $L.Secrets $s
@@ -412,6 +447,7 @@ try {
         Write-OpsLog "секрет записан: secrets\$s" 'OK'
     }
     foreach ($s in @('onec_hs_user', 'onec_hs_token')) {
+        if ($Stand) { break }   # стенд: 1С — фикстуры
         $f = Join-Path $L.Secrets $s
         if (-not ((Test-Path -LiteralPath $f) -and (Get-Item -LiteralPath $f).Length -gt 0)) { throw "нет secrets\$s — без него API не запускается (обмен с 1С онлайн, ONEC_MODE=extension)" }
     }
@@ -422,7 +458,7 @@ try {
     # =========================================================================================================
     Start-Step 'Файлы настроек'
     # Шаблоны релиза без имён уровня compose/резервного копирования Linux (программа их не читает).
-    $tpl = Get-OpsEnvTemplatePairs $rel.Dir $Contour
+    $tpl = Get-OpsEnvTemplatePairs $rel.Dir $Contour -Stand:$Stand
     if (-not $MinAppVersion) {
         if ($null -ne $installJson -and $installJson.minAppVersion) { $MinAppVersion = [string]$installJson.minAppVersion }
         elseif ($info.PSObject.Properties['posApp'] -and $info.posApp.version) { $MinAppVersion = "android=$($info.posApp.version),windows=$($info.posApp.version)" }
@@ -436,18 +472,24 @@ try {
     $tpl['API_HOST'] = '127.0.0.1'
     $tpl['API_PORT'] = [string]$ApiPort
     $tpl['POS_SHUTDOWN_ON_STDIN_EOF'] = '1'
-    $tpl['ONEC_MODE'] = 'extension'
-    $tpl['ONEC_BASE_URL'] = $OnecBaseUrl
-    $tpl['ONEC_HS_PATH'] = $OnecHsPath
+    if (-not $Stand) {
+        $tpl['ONEC_MODE'] = 'extension'
+        $tpl['ONEC_BASE_URL'] = $OnecBaseUrl
+        $tpl['ONEC_HS_PATH'] = $OnecHsPath
+    } elseif ($tpl['ONEC_MODE'] -ne 'fixtures' -or $tpl['SMS_PROVIDER'] -ne 'fake' -or $tpl['QR_PROVIDER'] -ne 'bank') {
+        throw 'stand.env.example: профиль стенда — ONEC_MODE=fixtures, SMS_PROVIDER=fake, QR_PROVIDER=bank (ADR-125); шаблон пакета изменён'
+    }
     if ($Contour -eq 'test') {
         if ($TestPhones) { $tpl['AUTH_OTP_TEST_PHONES'] = $TestPhones }
-        if (-not $tpl['AUTH_OTP_TEST_CODE']) { $tpl['AUTH_OTP_TEST_CODE'] = '{0:D6}' -f (Get-Random -Minimum 0 -Maximum 1000000) }
+        # Шесть случайных цифр; общеизвестный код демо 246810 при APP_ENV=staging API не принимает (ADR-124).
+        while (-not $tpl['AUTH_OTP_TEST_CODE'] -or $tpl['AUTH_OTP_TEST_CODE'] -eq '246810') { $tpl['AUTH_OTP_TEST_CODE'] = '{0:D6}' -f (Get-Random -Minimum 0 -Maximum 1000000) }
         # SMS_PROVIDER=fake в схеме staging (без dev_outbox): запрос кода на нетестовый номер — CONFIG_ERROR, и
         # выключатель SMS закрывает выдачу кодов всем, в том числе тестовым номерам. В тесте — 1 мин вместо 5.
         $tpl['SMSPRO_CB_OPEN_MINUTES'] = '1'
         $tpExisting = ''
         $apiEnvPath = Join-Path $L.Config 'api.env'
         if (Test-Path -LiteralPath $apiEnvPath) { $ae = Read-OpsEnvTemplate $apiEnvPath; if ($ae.Contains('AUTH_OTP_TEST_PHONES')) { $tpExisting = [string]$ae['AUTH_OTP_TEST_PHONES'] } }
+        if (-not $tpExisting) { $tpExisting = [string]$tpl['AUTH_OTP_TEST_PHONES'] }   # стенд: номера профиля +99670000000x
         if (-not $TestPhones -and -not $tpExisting) {
             Write-OpsLog 'тестовый контур без -TestPhones: войти нельзя никому (SMS не отправляются), а запрос кода на любой номер на минуту закрывает выдачу кодов. Задайте -TestPhones +996…,+996… (номер первого администратора — тоже)' 'WARN'
         }
@@ -579,7 +621,7 @@ try {
     $ij = [ordered]@{
         contour = $Contour; appEnv = $appEnv; publicBaseUrl = $PublicBaseUrl; serverName = $serverName; minAppVersion = $MinAppVersion
         apiPort = $ApiPort; pgPort = $PgPort; dbName = $DbName; pgBin = $PgBin; backupRoot = $L.BackupRoot; jwtKeyId = $jwtKid
-        onecBaseUrl = $OnecBaseUrl; onecHsPath = $OnecHsPath
+        onecBaseUrl = $OnecBaseUrl; onecHsPath = $OnecHsPath; stand = [bool]$Stand
         deployUser = $DeployUser; apacheDir = $ApacheDir; apacheServiceName = $ApacheServiceName; devTest = [bool]$DevTest
         apacheCertFile = $CertFile; apacheKeyFile = $KeyFile; apacheListenPort = $ApacheListenPort
     }

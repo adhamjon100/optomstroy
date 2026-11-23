@@ -397,9 +397,11 @@ NOT_DONE_F: dict[str, str] = {
     'T-SYNC-F15': 'этап H (RM-H-004, RM-H-008): восстановление ≤ RTO — учение на контуре; часть «API без БД → '
     'восстановление без ручных действий» — health.e2e T-FAIL-012',
     'T-SYNC-F16': 'этап H (T-SYNC-048): восстановление backend из бэкапа и reconcile по externalId — учение на контуре',
-    'T-PAY-012': 'R2 (ядро §24.4): прямой провайдер QR bakai',
-    'T-PAY-014': 'R2 (ядро §24.4): вебхук банка bakai',
-    'T-PAY-015': 'R2 (ядро §24.4): вебхук банка bakai (расхождение суммы при onec — payments-qr-onec amount_mismatch)',
+    'T-PAY-012': 'QR банка через наш сервер (QR_PROVIDER=bank, ADR-123) — на песочнице банка; адаптер настоящего банка '
+    '— после Q-381/Q-382',
+    'T-PAY-014': 'вебхук банка (QR_PROVIDER=bank, ADR-123) — на песочнице банка; подпись и IP настоящего банка — Q-382',
+    'T-PAY-015': 'вебхук банка (QR_PROVIDER=bank, ADR-123) — на песочнице банка; при onec — payments-qr-onec '
+    'amount_mismatch',
     # --- приёмочные наборы pos-app (счётчик AC-UI выводит этот скрипт; SCR-20…22 — полные наборы
     # cart_acceptance_test, checkout_acceptance_test, order_created_acceptance_test) ---
     'T-UI-023': 'приёмочный набор SCR-23 неполон (счётчик AC-UI — в этой строке): widget-кейсы presentation в '
@@ -421,8 +423,9 @@ NOT_DONE_F: dict[str, str] = {
     'не хранятся — R1 без фискализации (10 ORD-…); позиции с ценой/количеством/единицей/способом — orders-create.e2e',
     'T-PRINT-005': 'manual: печать на принтерах 80 мм и A4 с Windows-POS — нет принтеров (RM-A-008)',
     'T-PRINT-009': 'review: Q-019 (принтеры, формы, НДС) — ответ заказчика не получен (FIX-FE-03)',
-    'T-PAY-019': 'integration L3 (Q-012): один способ создания документа поступления — на F QR создаёт и проводит 1С '
-    '(provider onec), outbox POS для QR нет (payments-qr-onec); проверка на копии 1С — RM-F-010',
+    'T-PAY-019': 'integration L3 (Q-012, Q-383): один способ создания документа поступления — при QR_PROVIDER=bank '
+    'документ ставит POS (onec_outbox payment/create, payments-qr-bank, фикстуры 1С), при onec — интеграция 1С '
+    '(payments-qr-onec); проверка на копии 1С — RM-F-010',
     # --- 1С: L3 / известные проблемы этапа E ---
     'T-SYNC-F17': 'L3: нет тестовой копии 1С (RM-F-010, F_onec_e2e_report.md)',
     'T-SYNC-F18': 'L3: нет тестовой копии 1С (RM-F-010, F_onec_e2e_report.md)',

@@ -45,8 +45,18 @@ pos-worker ──`sms.balance_poll` (каждые SMSPRO_BALANCE_POLL_MINUTES)�
 - **Текст SMS** с кодом хранится только в задании, в зашифрованном виде: AES-256-GCM, ключ выводится из
   `OTP_HMAC_SECRET`. В БД, логах и аудите кода нет (SEC-062, SEC-078).
 
-**Следствие:** секрет `OTP_HMAC_SECRET_FILE` должен быть подключён и к `api`, и к `worker`, и у обоих совпадать.
-По 16 §4.3 сейчас указано «только api» — вопрос EQ-AUTH-08 в `docs/stages/E_spec_questions.md`.
+**Следствие:** секрет `OTP_HMAC_SECRET_FILE` должен быть подключён и к `api`, и к `worker`, и у обоих совпадать
+(EQ-AUTH-08; 16 §4.3; ADR-124 п. 2). Так сделано в обоих комплектах:
+
+- Docker — `infra/compose.prod.yml`: у `api` и `worker` `OTP_HMAC_SECRET_FILE=/run/secrets/otp_pepper` и секрет
+  `otp_pepper` (сверка — `infra/docker/scripts/check_compose_prod.py`);
+- Windows — `infra/windows/scripts/install.ps1`: строка `OTP_HMAC_SECRET_FILE=<InstallRoot>\secrets\otp_pepper` и
+  в `config\api.env`, и в `config\worker.env`; файл читают `NT SERVICE\OptomstroyApi` и `NT SERVICE\OptomstroyWorker`
+  (проверка — `infra/windows/tests/scripts.tests.ps1`, раздел 7a).
+
+**Единственный канал (ADR-124).** Других путей отправки SMS нет: 1С SMS приложения не отправляет (Q-290), Firebase не
+используется, веб-демо и локальное демо SMS не отправляют (код `246810` — только демо). Логин и пароль SMSPro есть
+только в секретах нашего сервера.
 
 ## 2. Что нужно от заказчика (09 §6.12)
 
@@ -87,7 +97,16 @@ pos-worker ──`sms.balance_poll` (каждые SMSPRO_BALANCE_POLL_MINUTES)�
 | `SMSPRO_CB_OPEN_MINUTES` | `5` | пауза после `CONFIG_ERROR`/`INSUFFICIENT_FUNDS` |
 | `SMS_OTP_TEMPLATE` | `Kod: {code}. Optomstroy` | обязательно `{code}`; одна часть SMS (≤ 70 кириллицей / ≤ 160 латиницей) |
 | `OTP_HMAC_SECRET_FILE` | `/run/secrets/otp_pepper` | **api и worker** (§1) |
-| `AUTH_OTP_TEST_MODE`, `AUTH_OTP_TEST_PHONES`, `AUTH_OTP_TEST_CODE` | выключено | тестовый режим OTP без SMS (09 §5.8) — только dev и staging; при prod — отказ в старте |
+| `AUTH_OTP_TEST_MODE`, `AUTH_OTP_TEST_PHONES`, `AUTH_OTP_TEST_CODE` | выключено | тестовый режим OTP без SMS (09 §5.8) — только dev и staging и только с `SMS_PROVIDER=fake`: при prod, а также при `SMS_PROVIDER=smspro` (ADR-124) — отказ в старте; код демо `246810` при staging — отказ в старте |
+
+**Тестовый стенд без трат** (ADR-125; `infra/env/stand.env.example`, `install.ps1 -Stand`): `SMS_PROVIDER=fake`,
+`SMSPRO_TEST_FLAG=true`, вход — номера `+996700000001…05` с кодом `AUTH_OTP_TEST_CODE` из `config\api.env` (шесть
+случайных цифр); учётных данных SMSPro на стенде нет. §4 и §5 на стенде — только после того, как заказчик **сам**
+положит `secrets\smspro_login` и `secrets\smspro_password` (Q-385), и §5 — после письменного «да» пользователя
+(число SMS и номер, Q-235). При переходе на `smspro` в `config\api.env` и `config\worker.env`:
+`AUTH_OTP_TEST_MODE=false`, `AUTH_OTP_TEST_CODE` и `AUTH_OTP_TEST_PHONES` — пусто (иначе отказ в старте), `SMSPRO_SENDER`.
+Строка `SMSPRO_LOGIN_FILE=…`/`SMSPRO_PASSWORD_FILE=…` в `.env` дописывается install.ps1 при повторном запуске, если
+файлы секретов есть (`infra/windows/README.md` §7.1).
 
 Проверка конфигурации без запуска сервиса: `node dist/main.js` с неверной комбинацией завершается с кодом 1 и
 списком нарушений. Значения секретов в этом списке не печатаются.
