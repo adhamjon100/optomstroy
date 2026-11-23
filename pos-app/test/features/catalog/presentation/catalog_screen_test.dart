@@ -595,7 +595,10 @@ void main() {
       CatalogHarness(extra: <Override>[catalogCartPortProvider.overrideWithValue(compact)]),
       size: kCompact,
     );
-    await tester.tap(find.byIcon(Icons.add_rounded).first);
+    // compact 390 — по умолчанию сетка в 2 колонки (ADR-122 п. 5): «+ Добавить» — кнопка карточки.
+    await tester.tap(
+      find.descendant(of: find.byKey(const ValueKey<String>('product-p0')), matching: find.byType(AppButton)),
+    );
     await settle(tester);
     expect(compact.added, hasLength(1));
     expect(find.text('Добавлено'), findsOneWidget, reason: 'compact — прежний снекбар');
@@ -611,7 +614,10 @@ void main() {
       CatalogHarness(extra: <Override>[catalogCartPortProvider.overrideWithValue(port)]),
       size: kCompact,
     );
-    await tester.tap(find.byIcon(Icons.add_rounded).first);
+    // compact 390 — по умолчанию сетка в 2 колонки (ADR-122 п. 5): «+ Добавить» — кнопка карточки.
+    await tester.tap(
+      find.descendant(of: find.byKey(const ValueKey<String>('product-p0')), matching: find.byType(AppButton)),
+    );
     await settle(tester);
     expect(port.added, hasLength(1));
     expect(find.text(_RejectingCartPort.text), findsOneWidget);

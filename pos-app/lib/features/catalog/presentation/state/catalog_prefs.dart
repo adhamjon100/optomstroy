@@ -70,6 +70,16 @@ abstract final class CatalogDefaults {
   static ProductViewMode viewFor(WindowClass wc) =>
       wc == WindowClass.compact ? ProductViewMode.list : ProductViewMode.grid;
 
+  /// Наименьшая ширина окна телефона, с которой каталог SCR-10/11/12 по умолчанию — сетка в 2 колонки
+  /// (`visual/responsive-spec.md` §1.3: при 360 lp карточка 156; уже — только список).
+  static const double phoneGridMinWidth = 360; // money-double: allow — геометрия UI (lp)
+
+  /// Вид каталога SCR-10/11/12 по умолчанию (15 ADR-122 п. 5, по прототипу): на телефоне шириной от
+  /// [phoneGridMinWidth] — сетка в 2 колонки, уже — список; medium и шире — сетка. Выбор пользователя (настройка
+  /// класса окна, `?view=`) — сильнее. Планшет магазина берёт [viewFor] (ADR-115 не меняется).
+  static ProductViewMode workspaceViewFor(WindowClass wc, double width) => // money-double: allow — геометрия UI (lp)
+      wc == WindowClass.compact && width < phoneGridMinWidth ? ProductViewMode.list : ProductViewMode.grid;
+
   /// Каталог — «По названию А–Я» [ТИПОВО].
   static const CatalogSort catalogSort = CatalogSort.nameAsc;
 

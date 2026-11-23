@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +10,7 @@ import 'package:optomstroy/app/router/shells/app_mode.dart';
 import 'package:optomstroy/app/router/shells/cashier_shell.dart';
 import 'package:optomstroy/app/router/shells/customer_shell.dart';
 import 'package:optomstroy/app/router/shells/owner_shell.dart';
+import 'package:optomstroy/app/router/shells/phone_shell_header.dart';
 import 'package:optomstroy/app/router/shells/seller_shell.dart';
 import 'package:optomstroy/app/router/shells/shell_tab.dart';
 import 'package:optomstroy/app/router/shells/staff_nav_drawer.dart';
@@ -74,6 +76,9 @@ bool shellDrawerNavigationFor(AppMode mode, WindowClass windowClass) =>
 /// (D6). Шапка medium+ у сотрудника: на ветке «Каталог» её рисует `CatalogWorkspace` (ADR-110, одно поле поиска),
 /// на остальных ветках — оболочка ([StaffShellHeader], тот же `CatalogHeader`). [DsShellScope] — мост к шапкам
 /// экранов: `openNavigation` (drawer навигации).
+/// compact (ADR-122): на корнях веток, кроме «Каталога» и главной клиента (их шапку рисуют экраны), — шапка телефона
+/// [PhoneShellHeader] (логотип, поиск со сканером, корзина, синхронизация, колокольчик, аватар → лист профиля); адрес
+/// верхнего маршрута оболочка узнаёт от `routerDelegate` (вложенные экраны веток — со своей шапкой «Назад», без неё).
 /// Баннер оболочки — индикатор первичной загрузки кэша каталога «Загружаем каталог… N %» (NFR-PERF-006,
 /// RM-E-009). Баннер офлайна и панель корзины рисуют экраны веток.
 ///
@@ -118,6 +123,46 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   /// Сочетания оболочки последней сборки ([build]) — и для `CallbackShortcuts`, и для [_onIdleKey].
   Map<ShortcutActivator, VoidCallback> _keyBindings = const <ShortcutActivator, VoidCallback>{};
+
+  /// Роутер, на `routerDelegate` которого подписана оболочка (адрес верхнего маршрута — для шапки телефона).
+  GoRouter? _router;
+
+  /// Адрес верхнего маршрута стека (без параметров).
+  String _path = '';
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final GoRouter? router = GoRouter.maybeOf(context);
+    if (!identical(router, _router)) {
+      _router?.routerDelegate.removeListener(_onRoute);
+      _router = router;
+      router?.routerDelegate.addListener(_onRoute);
+      _path = _currentPath();
+    }
+  }
+
+  String _currentPath() {
+    try {
+      return _router?.state.uri.path ?? '';
+    } on Object {
+      return '';
+    }
+  }
+
+  /// Смена верхнего маршрута: шапка телефона появляется на корне ветки и уходит на вложенном экране.
+  void _onRoute() {
+    if (!mounted) return;
+    final String path = _currentPath();
+    if (path == _path) return;
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _path = _currentPath());
+      });
+    } else {
+      setState(() => _path = path);
+    }
+  }
 
   @override
   void initState() {
@@ -254,6 +299,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onIdleKey);
+    _router?.routerDelegate.removeListener(_onRoute);
     _keysFocus.dispose();
     _headerSearchFocus.dispose();
     _headerSearchText.dispose();
@@ -303,6 +349,8 @@ class _AppShellState extends ConsumerState<AppShell> {
     final bool drawerNav = shellDrawerNavigationFor(mode, wc);
     // На ветке «Каталог» шапку рисует `CatalogWorkspace` (ADR-110): вторая шапка дала бы два поля поиска.
     final bool shellHeader = drawerNav && shell.currentIndex != ShellBranch.catalog.index;
+    // compact (ADR-122): шапка телефона на корнях веток (кроме «Каталога» и главной клиента — её рисуют экраны).
+    final bool phoneHeader = phoneShellHeaderAt(_path, wc);
     void select(int index) => _selectTab(tabs, index);
     final Future<void> Function(BuildContext context)? openCart = _openCartFor(
       mode,
@@ -343,11 +391,15 @@ class _AppShellState extends ConsumerState<AppShell> {
                 // Часы шапки на ветке «Касса» — с полной датой (UI-30-013, AC-UI-30-020).
                 clockLongDate: shell.currentIndex == ShellBranch.cashier.index,
               )
-            : null,
+            : (phoneHeader ? (BuildContext context, WindowClass windowClass) => PhoneShellHeader(mode: mode) : null),
         banner: const CatalogInitialLoadBanner(),
       ),
     );
-    final Widget scoped = DsShellScope(openNavigation: drawerNav ? _openNavigation : null, child: scaffold);
+    final Widget scoped = DsShellScope(
+      openNavigation: drawerNav ? _openNavigation : null,
+      phoneHeader: phoneHeader,
+      child: scaffold,
+    );
     _keyBindings = staff
         ? <ShortcutActivator, VoidCallback>{
             for (int i = 0; i < tabs.length && i < 9; i++)

@@ -21,6 +21,7 @@ const List<String> _schemas = <String>[
   'AdminReportsReceivables',
   'AdminReportsQrReconciliationRow',
   'AdminReportsQrReconciliation',
+  'AdminReportsQrUnknownOperation',
 ];
 
 void main() {
@@ -41,6 +42,7 @@ void main() {
     matches('AdminReportsReceivables', ReceivablesReportDto.jsonKeys, ReceivablesReportDto.requiredKeys);
     matches('AdminReportsQrReconciliationRow', QrReconciliationRowDto.jsonKeys, QrReconciliationRowDto.requiredKeys);
     matches('AdminReportsQrReconciliation', QrReconciliationReportDto.jsonKeys, QrReconciliationReportDto.requiredKeys);
+    matches('AdminReportsQrUnknownOperation', QrUnknownOperationDto.jsonKeys, QrUnknownOperationDto.requiredKeys);
   }, skip: skip);
 
   test('примеры разбираются', () {
@@ -54,6 +56,35 @@ void main() {
     );
     expect(qr.rows.single.status, PaymentStatus.initiated);
   }, skip: skip);
+
+  test('unknownOperations и summary.unknownReference (1.5.0, ADR-123); без поля — пустой список', () {
+    final QrReconciliationReport qr = QrReconciliationReportDto.fromJson(<String, dynamic>{
+      'period': <String, dynamic>{'from': '2026-11-01', 'to': '2026-11-24'},
+      'rows': <dynamic>[],
+      'unknownOperations': <dynamic>[
+        <String, dynamic>{
+          'operationId': 'op-1',
+          'reference': 'ref-x',
+          'amount': <String, dynamic>{'amount': '150.00', 'currency': 'KGS'},
+          'paidAt': null,
+          'receivedAt': '2026-11-24T05:00:00Z',
+          'source': 'webhook',
+        },
+      ],
+      'summary': <String, dynamic>{'webhook': 0, 'manual': 0, 'unmatched': 0, 'unknownReference': 1},
+    });
+    expect(qr.unknownOperations.single.operationId, 'op-1');
+    expect(qr.unknownOperations.single.amount, isA<Money>());
+    expect(qr.unknownOperations.single.source, QrUnknownOperationSource.webhook);
+    expect(qr.summary.unknownReference, 1);
+    final QrReconciliationReport old = QrReconciliationReportDto.fromJson(<String, dynamic>{
+      'period': <String, dynamic>{'from': '2026-11-01', 'to': '2026-11-24'},
+      'rows': <dynamic>[],
+      'summary': <String, dynamic>{'webhook': 0, 'manual': 0, 'unmatched': 0},
+    });
+    expect(old.unknownOperations, isEmpty);
+    expect(old.summary.unknownReference, 0);
+  });
 
   test('запросы: groupBy/status по контракту, format не передаётся', () async {
     final List<RequestOptions> seen = <RequestOptions>[];

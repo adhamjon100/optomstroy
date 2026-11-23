@@ -7541,6 +7541,10 @@
   "@profile_logout_unsynced_cart": {
     "description": "Экран: SCR-41. ч. E; предупреждение. Источник: 02 §7"
   },
+  "profile_menu_favorites": "Избранное",
+  "@profile_menu_favorites": {
+    "description": "Экран: SCR-41, лист профиля. ч. E; пункт, второй (ADR-122); SCR-40. Источник: 02 §7"
+  },
   "profile_menu_lock": "Заблокировать",
   "@profile_menu_lock": {
     "description": "Экран: SCR-41. ч. E; пункт, `Ctrl+L`. Источник: 02 §7"
@@ -7556,6 +7560,10 @@
   "profile_menu_notifications": "Уведомления",
   "@profile_menu_notifications": {
     "description": "Экран: SCR-41. ч. E; пункт. Источник: 02 §7"
+  },
+  "profile_menu_order_history": "История заказов",
+  "@profile_menu_order_history": {
+    "description": "Экран: SCR-41, лист профиля. ч. E; пункт, первый (ADR-122; было «Мои заказы» `profile_menu_my_orders`); SCR-25 `?mine=1`. Источник: 02 §7"
   },
   "profile_menu_settings": "Настройки",
   "@profile_menu_settings": {
@@ -7642,6 +7650,10 @@
   "profile_saved": "Данные сохранены",
   "@profile_saved": {
     "description": "Экран: SCR-41. ч. E; снекбар. Источник: 02 §7"
+  },
+  "profile_sheet_open_profile": "Открыть профиль",
+  "@profile_sheet_open_profile": {
+    "description": "Экран: лист профиля. ч. E; ссылка под карточкой пользователя в листе по аватару шапки телефона (ADR-122) → SCR-41. Источник: 02 §7"
   },
   "profile_stale_banner": "Данные профиля от {time}",
   "@profile_stale_banner": {

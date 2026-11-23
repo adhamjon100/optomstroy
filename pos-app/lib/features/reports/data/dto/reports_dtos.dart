@@ -1,6 +1,7 @@
 // DTO-кодеки отчётов (contracts/openapi/pos-api.v1.yaml 1.2.0; ADR-085 — вручную): `AdminReportsSalesSummary`,
 // `AdminReportsSalesSummaryRow`, `AdminReportsSalesSummaryTotals`, `AdminReportsSalesByMethod`, `AdminReportsPeriod`,
-// `AdminReportsReceivables`, `AdminReportsQrReconciliation`, `AdminReportsQrReconciliationRow`.
+// `AdminReportsReceivables`, `AdminReportsQrReconciliation`, `AdminReportsQrReconciliationRow`,
+// `AdminReportsQrUnknownOperation` (1.5.0, ADR-123).
 // Сверка ключей — test/features/reports/data/reports_dtos_contract_test.dart.
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/network/dto_json.dart';
@@ -131,21 +132,39 @@ abstract final class QrReconciliationRowDto {
   );
 }
 
+/// `AdminReportsQrUnknownOperation` (OpenAPI 1.5.0, ADR-123).
+abstract final class QrUnknownOperationDto {
+  static const Set<String> jsonKeys = {'operationId', 'reference', 'amount', 'paidAt', 'receivedAt', 'source'};
+  static const Set<String> requiredKeys = {'operationId', 'reference', 'amount', 'receivedAt', 'source'};
+
+  static QrUnknownOperation fromJson(JsonMap j) => QrUnknownOperation(
+    operationId: jOpt<String>(j, 'operationId'),
+    reference: jOpt<String>(j, 'reference'),
+    amount: jMoney(j, 'amount'),
+    paidAt: jDate(j, 'paidAt'),
+    receivedAt: jReqDate(j, 'receivedAt'),
+    source: jEnum(j, 'source', QrUnknownOperationSource.tryParse),
+  );
+}
+
 /// `AdminReportsQrReconciliation`.
 abstract final class QrReconciliationReportDto {
-  static const Set<String> jsonKeys = {'period', 'rows', 'summary'};
+  static const Set<String> jsonKeys = {'period', 'rows', 'unknownOperations', 'summary'};
   static const Set<String> requiredKeys = {'period', 'rows', 'summary'};
-  static const Set<String> summaryKeys = {'webhook', 'manual', 'unmatched'};
+  static const Set<String> summaryKeys = {'webhook', 'manual', 'unmatched', 'unknownReference'};
 
   static QrReconciliationReport fromJson(JsonMap j) {
     final JsonMap s = jReqObject(j, 'summary');
     return QrReconciliationReport(
       period: ReportPeriodDto.fromJson(jReqObject(j, 'period')),
       rows: jObjects(j, 'rows', QrReconciliationRowDto.fromJson, required: true),
+      // С 1.5.0; сервер до 1.5.0 поле не передаёт — пустой список.
+      unknownOperations: jObjects(j, 'unknownOperations', QrUnknownOperationDto.fromJson),
       summary: QrReconciliationSummary(
         webhook: jInt(s, 'webhook') ?? 0,
         manual: jInt(s, 'manual') ?? 0,
         unmatched: jInt(s, 'unmatched') ?? 0,
+        unknownReference: jInt(s, 'unknownReference') ?? 0,
       ),
     );
   }

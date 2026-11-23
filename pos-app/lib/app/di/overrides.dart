@@ -85,6 +85,7 @@ import 'package:optomstroy/features/orders/presentation/providers/orders_ports.d
 import 'package:optomstroy/features/orders/presentation/providers/printing_document_printer.dart';
 import 'package:optomstroy/features/product_details/presentation/widgets/variant_replace_sheet.dart';
 import 'package:optomstroy/features/profile/data/profile_bindings.dart';
+import 'package:optomstroy/features/profile/presentation/widgets/profile_menu_sheet.dart' show showProfileMenuSheet;
 import 'package:optomstroy/features/registration/data/registration_bindings.dart';
 import 'package:optomstroy/features/registration/registration_providers.dart' as reg;
 import 'package:optomstroy/features/reports/data/reports_bindings.dart';
@@ -190,6 +191,11 @@ final List<Override> appOverrides = <Override>[
   // устаревших данных, ошибке и без сети — иконка с текстом; compact — только иконка.
   catalog_ports.catalogSyncIndicatorProvider.overrideWithValue(
     (BuildContext context) => const ConnectedSyncIndicator(adaptive: true),
+  ),
+  // Меню профиля по аватару шапки телефона (compact, ADR-122): лист фичи profile — «История заказов», «Избранное»,
+  // затем прежние пункты SCR-41.
+  catalog_ports.catalogProfileSheetProvider.overrideWithValue(
+    (BuildContext context, String name, String role) => showProfileMenuSheet(context, name: name, role: role),
   ),
   // «Заблокировать» в меню аватара шапки (02 SCR-10.3 A9): ручная блокировка сессии — то же, что Ctrl+L (SCR-08).
   catalog_ports.catalogHeaderLockProvider.overrideWith(

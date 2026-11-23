@@ -471,7 +471,9 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
       (_isSearch ? _prefSortSearch : _prefSortCatalog) ??
       (_isSearch ? CatalogDefaults.searchSort : CatalogDefaults.catalogSort);
 
-  ProductViewMode _effectiveView(WindowClass wc) => _urlView ?? _prefViews[wc] ?? CatalogDefaults.viewFor(wc);
+  /// Вид списка: `?view=` → настройка класса окна → по умолчанию (телефон от 360 lp — сетка, ADR-122 п. 5).
+  ProductViewMode _effectiveView(WindowClass wc) =>
+      _urlView ?? _prefViews[wc] ?? CatalogDefaults.workspaceViewFor(wc, MediaQuery.sizeOf(context).width);
 
   CatalogListKey? get _listKey {
     if (_isSearch) {

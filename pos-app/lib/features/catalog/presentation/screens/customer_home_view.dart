@@ -67,7 +67,9 @@ import 'package:optomstroy/features/catalog/presentation/widgets/catalog_formats
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_header.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_logo.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_logout.dart';
+import 'package:optomstroy/features/catalog/presentation/widgets/catalog_phone_header.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_product_view.dart';
+import 'package:optomstroy/features/catalog/presentation/widgets/catalog_profile_menu.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_sidebar.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_toolbar.dart';
 
@@ -667,30 +669,17 @@ class _CustomerHomeViewState extends ConsumerState<CustomerHomeView> {
       onSubmitted: _input.submit,
     );
     if (compact) {
+      // Шапка телефона по прототипу (ADR-122): логотип · поиск (без камеры) второй строкой · корзина с числом позиций ·
+      // колокольчик · аватар → меню профиля (лист «История заказов», «Избранное», …). Прежние «поиск»-иконка и
+      // колокольчик-точка заменены полем поиска и колокольчиком со счётчиком (функции те же).
       return KeyedSubtree(
         key: CustomerHomeKeys.header,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            TopAppBarPos(
-              variant: TopAppBarVariant.compact,
-              windowClass: wc,
-              logo: CatalogLogo(markSize: 28, wordmark: false, onTap: _toTop),
-              title: l10n.category_breadcrumb_root,
-              actions: <Widget>[
-                AppIconButton(icon: Icons.search_rounded, semanticLabel: l10n.search_title, onPressed: _focusSearch),
-                bell,
-              ],
-            ),
-            ColoredBox(
-              color: context.colors.surface,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(context.space.s4, context.space.s1, context.space.s4, context.space.s2),
-                child: search,
-              ),
-            ),
-          ],
+        child: CatalogPhoneHeader(
+          search: search,
+          onLogo: _toTop,
+          onNotifications: () => _push(CatalogPaths.notifications),
+          onProfileMenu: (BuildContext anchor) =>
+              unawaited(showCatalogProfileMenu(context: context, anchor: anchor, ref: ref, onNavigate: _push)),
         ),
       );
     }

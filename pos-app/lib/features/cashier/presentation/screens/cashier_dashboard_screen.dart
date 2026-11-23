@@ -35,6 +35,7 @@ import 'package:optomstroy/design_system/components/offline_banner.dart';
 import 'package:optomstroy/design_system/components/shift_summary_card.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/top_app_bar_pos.dart';
+import 'package:optomstroy/design_system/layout/shell_scope.dart';
 import 'package:optomstroy/design_system/layout/window_class.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -61,6 +62,9 @@ class CashierDashboardScreen extends ConsumerStatefulWidget {
 
   /// Ключ корня экрана (тесты маршрутов).
   static const ValueKey<String> rootKey = ValueKey<String>('stub-SCR-30');
+
+  /// Строка заголовка «Касса» под шапкой телефона оболочки (compact, ADR-122; тесты).
+  static const ValueKey<String> phoneTitleKey = ValueKey<String>('cashier-phone-title');
 
   /// Заголовок раздела «Касса» на medium и шире (тесты).
   static const ValueKey<String> titleKey = ValueKey<String>('cashier-page-title');
@@ -347,8 +351,14 @@ class _CashierDashboardScreenState extends ConsumerState<CashierDashboardScreen>
         child: Scaffold(
           key: CashierDashboardScreen.rootKey,
           backgroundColor: c.background,
-          // medium+ — шапку даёт оболочка (`StaffShellHeader`, ADR-112): своя шапка только на compact.
-          appBar: wc == WindowClass.compact ? _header(context, l10n, s, wc) : null,
+          // medium+ — шапку даёт оболочка (`StaffShellHeader`, ADR-112): своя шапка только на compact. На compact в
+          // оболочке над экраном — шапка телефона (ADR-122: логотип, поиск, корзина, синхронизация, колокольчик,
+          // аватар) — у экрана остаётся строка заголовка «Касса».
+          appBar: wc != WindowClass.compact
+              ? null
+              : (DsShellScope.maybeOf(context)?.phoneHeader ?? false)
+              ? AppBar(key: CashierDashboardScreen.phoneTitleKey, title: Text(l10n.cashier_title))
+              : _header(context, l10n, s, wc),
           body: Column(
             children: <Widget>[
               if (!online && s.dashboard != null)

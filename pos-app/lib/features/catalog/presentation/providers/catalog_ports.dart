@@ -83,6 +83,13 @@ final catalogCartQuantitiesProvider = Provider<Map<String, Qty>>((ref) => const 
 /// Заменяет порт постоянной CP expanded (`catalogCartPanelProvider`, удалён в редакции 1.16, ADR-112).
 final catalogCartButtonProvider = Provider<WidgetBuilder?>((ref) => null);
 
+/// Меню профиля нижним листом по аватару шапки телефона (compact; 15 ADR-122 п. 2): корень подставляет лист фичи
+/// profile (catalog ↛ profile, 06 §6.1) — «История заказов», «Избранное», затем прежние пункты SCR-41. Аргументы — имя
+/// и подпись роли пользователя сессии. `null` — прежнее меню аватара (`showCatalogProfileMenu`; тесты без корня).
+final catalogProfileSheetProvider = Provider<Future<void> Function(BuildContext context, String name, String role)?>(
+  (ref) => null,
+);
+
 /// «Заблокировать» в меню аватара шапки (SCR-08, ручная блокировка сессии — как Ctrl+L, 02 SCR-10.3 A9);
 /// корень подставляет `sessionController.lock(manual)`. `null` — пункта нет.
 final catalogHeaderLockProvider = Provider<VoidCallback?>((ref) => null);

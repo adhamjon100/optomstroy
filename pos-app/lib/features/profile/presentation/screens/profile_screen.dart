@@ -3,13 +3,15 @@
 //
 // Шапка (UI-41-001): инициалы, ФИО, телефон `+996 XXX XXX XXX`, роли, строка «Вход: {устройство} · {время}» из
 // `Me.session` (без второго запроса). «Изменить данные» (UI-41-009) — лист (compact) / боковая панель 480.
-// Данные профиля (UI-41-012) — «Не указано» для пустых. Пункты (UI-41-003): «Мои заказы», «Мои транзакции» (по праву
+// Данные профиля (UI-41-012) — «Не указано» для пустых. Пункты (UI-41-003; порядок — 15 ADR-122 п. 2, тот же список
+// [ProfileMenuList], что в листе профиля по аватару шапки телефона): «История заказов» (SCR-25 `?mine=1`; держатель
+// `order.read.all` переключает «Мои / Все» на SCR-25), «Избранное» (SCR-40), «Мои транзакции» (по праву
 // `transactions.read.*`), «Уведомления», «Синхронизация» (staff), «Настройки», «Сменить номер телефона» (S!, мастер
 // UI-41-010), «Заблокировать» (staff, overlay SCR-08 без запросов). Опасные: «Выйти» (подтверждение; офлайн —
 // отложенный выход SessionController), «Выйти на всех устройствах» (destructive + S!; офлайн недоступно).
 // ПДн (ФИО, телефон) — только память экрана (09 §8.5): ни drift, ни логи. Офлайн без данных — пункты меню и «Выйти».
-// Режим клиента (RM-G-014): «Мои заказы» первым пунктом (UI-41-016), без «Мои транзакции», «Синхронизация» и
-// «Заблокировать»; блок «Клиент 1С» (UI-41-011) — статус привязки и переходы SCR-06 / своя карточка SCR-32.
+// Режим клиента (RM-G-014): «История заказов» (до ADR-122 — «Мои заказы») первым пунктом (UI-41-016), без «Мои
+// транзакции», «Синхронизация» и «Заблокировать»; блок «Клиент 1С» (UI-41-011) — статус привязки и переходы SCR-06 / своя карточка SCR-32.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -29,7 +31,6 @@ import 'package:optomstroy/design_system/components/app_bottom_sheet.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/app_list_tile.dart';
 import 'package:optomstroy/design_system/components/app_snackbar.dart';
-import 'package:optomstroy/design_system/components/confirm_dialog.dart';
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
@@ -38,8 +39,9 @@ import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/features/profile/domain/entities/user_profile.dart';
 import 'package:optomstroy/features/profile/domain/repositories/profile_repository.dart';
-import 'package:optomstroy/features/profile/presentation/widgets/phone_change_flow.dart';
+import 'package:optomstroy/features/profile/presentation/widgets/profile_actions.dart';
 import 'package:optomstroy/features/profile/presentation/widgets/profile_edit_form.dart';
+import 'package:optomstroy/features/profile/presentation/widgets/profile_menu_list.dart';
 import 'package:optomstroy/features/profile/profile_providers.dart';
 
 /// SCR-41. Профиль `/profile` (все роли).
@@ -59,6 +61,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
   static const Key logoutAllKey = ValueKey<String>('profile-logout-all');
   static const Key lockKey = ValueKey<String>('profile-lock');
   static const Key ordersKey = ValueKey<String>('profile-orders');
+  static const Key favoritesKey = ValueKey<String>('profile-favorites');
   static const Key transactionsKey = ValueKey<String>('profile-transactions');
   static const Key notificationsKey = ValueKey<String>('profile-notifications');
   static const Key syncKey = ValueKey<String>('profile-sync');
@@ -139,51 +142,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Future<void> _changePhone(UserProfile me) async {
     final AppLocalizations l10n = AppLocalizations.of(context);
-    final bool go = await ConfirmDialog.show(
-      context,
-      title: l10n.profile_phone_change,
-      message: l10n.profile_phone_change_confirm,
-      confirmLabel: l10n.profile_phone_get_code,
-    );
-    if (!go || !mounted) return;
-    final Widget flow = PhoneChangeFlow(repository: _repo, currentPhoneE164: me.profile.phoneE164);
-    final PhoneChangeResult? done;
-    if (context.windowClass == WindowClass.compact) {
-      done = await AppBottomSheet.show<PhoneChangeResult>(
-        context,
-        title: l10n.profile_phone_change,
-        body: flow,
-        variant: AppBottomSheetVariant.fullHeight,
-      );
-    } else {
-      done = await AppBottomSheet.showSide<PhoneChangeResult>(
-        context,
-        title: l10n.profile_phone_change,
-        width: AppBottomSheet.sideExpanded,
-        body: flow,
-      );
-    }
-    if (done == null || !mounted) return;
+    final bool done = await startProfilePhoneChange(context, _repo, me);
+    if (!done || !mounted) return;
     AppSnackbar.show(context, message: l10n.profile_phone_changed, variant: AppSnackbarVariant.success);
     unawaited(_load());
   }
 
   Future<void> _logout() async {
-    final AppLocalizations l10n = AppLocalizations.of(context);
     final SessionController session = ref.read(sessionControllerProvider.notifier);
-    bool unsent = false;
-    try {
-      unsent = !(await session.pendingLocalChanges()).isEmpty;
-    } on Object {
-      // Сбой чтения локальной БД не блокирует выход.
-    }
-    if (!mounted) return;
-    final bool ok = await ConfirmDialog.show(
-      context,
-      title: l10n.profile_logout_confirm,
-      message: unsent ? l10n.profile_logout_unsynced_cart : l10n.pending_logout_body,
-      confirmLabel: unsent ? l10n.profile_logout_anyway : l10n.profile_logout,
-    );
+    final bool ok = await confirmProfileLogout(context, session);
     if (!ok || !mounted) return;
     setState(() => _loggingOut = true);
     await session.logout();
@@ -192,14 +159,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Future<void> _logoutAll() async {
     final AppLocalizations l10n = AppLocalizations.of(context);
-    final bool ok = await ConfirmDialog.show(
-      context,
-      title: l10n.profile_logout_all,
-      message: l10n.profile_logout_all_confirm,
-      confirmLabel: l10n.profile_logout_all,
-      variant: ConfirmDialogVariant.destructive,
-      destructiveCta: true,
-    );
+    final bool ok = await confirmProfileLogoutAll(context);
     if (!ok || !mounted) return;
     setState(() => _loggingOut = true);
     final error = await ref.read(sessionControllerProvider.notifier).logoutAll();
@@ -275,76 +235,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ],
       SizedBox(height: context.space.s3),
       Divider(height: 1, color: context.colors.border),
-      AppListTile(
-        key: ProfileScreen.ordersKey,
-        title: l10n.profile_menu_my_orders,
-        leadingIcon: Icons.receipt_outlined,
-        showChevron: true,
-        onTap: () => _go('/orders?mine=1'),
-      ),
-      if (staff &&
-          (me == null || me.permissions.isEmpty || me.permissions.any((String p) => p.startsWith('transactions.read'))))
-        AppListTile(
-          key: ProfileScreen.transactionsKey,
-          title: l10n.profile_menu_my_transactions,
-          leadingIcon: Icons.swap_horiz_rounded,
-          showChevron: true,
-          onTap: () => _go('/transactions?mine=1'),
-        ),
-      AppListTile(
-        key: ProfileScreen.notificationsKey,
-        title: l10n.profile_menu_notifications,
-        leadingIcon: Icons.notifications_outlined,
-        showChevron: true,
-        onTap: () => _go('/notifications', push: true),
-      ),
-      if (staff)
-        AppListTile(
-          key: ProfileScreen.syncKey,
-          title: l10n.profile_menu_sync,
-          leadingIcon: Icons.sync_rounded,
-          showChevron: true,
-          onTap: () => _go('/sync', push: true),
-        ),
-      AppListTile(
-        key: ProfileScreen.settingsKey,
-        title: l10n.profile_menu_settings,
-        leadingIcon: Icons.settings_outlined,
-        showChevron: true,
-        onTap: () => _go('/settings', push: true),
-      ),
-      if (me != null)
-        AppListTile(
-          key: ProfileScreen.phoneChangeKey,
-          title: l10n.profile_phone_change,
-          subtitle: online ? null : l10n.profile_offline_action_disabled,
-          leadingIcon: Icons.phone_iphone_rounded,
-          showChevron: true,
-          enabled: online,
-          onTap: online ? () => unawaited(_changePhone(me)) : null,
-        ),
-      if (staff)
-        AppListTile(
-          key: ProfileScreen.lockKey,
-          title: l10n.profile_menu_lock,
-          leadingIcon: Icons.lock_outline_rounded,
-          onTap: () => ref.read(sessionControllerProvider.notifier).lock(SessionLockReason.manual),
-        ),
-      Divider(height: 1, color: context.colors.border),
-      AppListTile(
-        key: ProfileScreen.logoutKey,
-        title: l10n.profile_logout,
-        leading: Icon(Icons.logout_rounded, color: context.colors.error),
-        enabled: !_loggingOut,
-        onTap: _loggingOut ? null : () => unawaited(_logout()),
-      ),
-      AppListTile(
-        key: ProfileScreen.logoutAllKey,
-        title: l10n.profile_logout_all,
-        subtitle: online ? null : l10n.profile_offline_action_disabled,
-        leading: Icon(Icons.logout_rounded, color: context.colors.error),
-        enabled: online && !_loggingOut,
-        onTap: online && !_loggingOut ? () => unawaited(_logoutAll()) : null,
+      ProfileMenuList(
+        // Телефон — порядок ADR-122 («История заказов», «Избранное»); medium+ — прежний список (ADR-122 п. 8).
+        phoneOrder: compact,
+        staff: staff,
+        showTransactions:
+            me == null || me.permissions.isEmpty || me.permissions.any((String p) => p.startsWith('transactions.read')),
+        online: online,
+        loggingOut: _loggingOut,
+        onNavigate: (String location, bool push) => _go(location, push: push),
+        onPhoneChange: me == null ? null : () => unawaited(_changePhone(me)),
+        onLock: staff ? () => ref.read(sessionControllerProvider.notifier).lock(SessionLockReason.manual) : null,
+        onLogout: () => unawaited(_logout()),
+        onLogoutAll: () => unawaited(_logoutAll()),
       ),
     ];
 

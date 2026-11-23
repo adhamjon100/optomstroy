@@ -8817,6 +8817,12 @@ abstract class AppLocalizations {
   /// **'В корзине есть неотправленные изменения'**
   String get profile_logout_unsynced_cart;
 
+  /// Экран: SCR-41, лист профиля. ч. E; пункт, второй (ADR-122); SCR-40. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Избранное'**
+  String get profile_menu_favorites;
+
   /// Экран: SCR-41. ч. E; пункт, `Ctrl+L`. Источник: 02 §7
   ///
   /// In ru, this message translates to:
@@ -8840,6 +8846,12 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Уведомления'**
   String get profile_menu_notifications;
+
+  /// Экран: SCR-41, лист профиля. ч. E; пункт, первый (ADR-122; было «Мои заказы» `profile_menu_my_orders`); SCR-25 `?mine=1`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'История заказов'**
+  String get profile_menu_order_history;
 
   /// Экран: SCR-41. ч. E; пункт. Источник: 02 §7
   ///
@@ -8954,6 +8966,12 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Данные сохранены'**
   String get profile_saved;
+
+  /// Экран: лист профиля. ч. E; ссылка под карточкой пользователя в листе по аватару шапки телефона (ADR-122) → SCR-41. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Открыть профиль'**
+  String get profile_sheet_open_profile;
 
   /// Экран: SCR-41. ч. E; устаревшие данные. Источник: 02 §7
   ///

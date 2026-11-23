@@ -5159,6 +5159,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profile_logout_unsynced_cart => 'В корзине есть неотправленные изменения';
 
   @override
+  String get profile_menu_favorites => 'Избранное';
+
+  @override
   String get profile_menu_lock => 'Заблокировать';
 
   @override
@@ -5169,6 +5172,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get profile_menu_notifications => 'Уведомления';
+
+  @override
+  String get profile_menu_order_history => 'История заказов';
 
   @override
   String get profile_menu_settings => 'Настройки';
@@ -5231,6 +5237,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get profile_saved => 'Данные сохранены';
+
+  @override
+  String get profile_sheet_open_profile => 'Открыть профиль';
 
   @override
   String profile_stale_banner(String time) {

@@ -6,8 +6,9 @@
 // и ролью. Необязательное (роль, имя, «Оптомстрой», строка «Корзина», дата) шапка сворачивает по доступной ширине, а
 // не по классу окна (`TopAppBarFit`, 02 §3.1 п. 7, ADR-112 «паритет функций, раунд 2»): свёрнутое — в тултипах,
 // `Semantics` и заголовке меню аватара.
-// compact — `TopAppBarPos.compact` 56 (знак · заголовок · аватар · колокольчик-точка) + отдельная строка
-// `SearchBar.compact` — без изменений.
+// compact: корень SCR-10 — шапка телефона `CatalogPhoneHeader` (ADR-122: логотип · поиск со сканером второй строкой ·
+// корзина с числом позиций · синхронизация · колокольчик · аватар → меню профиля); вложенные SCR-11/12 (со стрелкой
+// «Назад») — прежний `TopAppBarPos.compact` 56.
 // Тот же класс рисует шапку оболочки на прочих экранах сотрудника (`StaffShellHeader`, app/router/shells).
 import 'dart:async';
 
@@ -30,6 +31,7 @@ import 'package:optomstroy/features/catalog/catalog_providers.dart';
 import 'package:optomstroy/features/catalog/presentation/catalog_paths.dart';
 import 'package:optomstroy/features/catalog/presentation/providers/catalog_ports.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_logo.dart';
+import 'package:optomstroy/features/catalog/presentation/widgets/catalog_phone_header.dart';
 
 /// Подпись роли (`role_<code>`, 03 §16.2).
 String catalogRoleLabel(AppLocalizations l10n, RoleCode? role) => switch (role) {
@@ -156,6 +158,16 @@ class CatalogHeader extends ConsumerWidget {
       semanticLabel: unread > 0 ? l10n.notifications_bell_a11y(unread) : l10n.notifications_title,
       onPressed: actions.onNotifications,
     );
+    if (compact && actions.onBack == null && actions.onSearchIcon == null && !searchInTopBar) {
+      // Основной экран режима на телефоне (SCR-10 корень) — шапка телефона по прототипу (ADR-122): логотип, поиск
+      // со сканером, корзина с числом позиций, синхронизация, колокольчик, аватар → меню профиля.
+      return CatalogPhoneHeader(
+        search: search,
+        onLogo: actions.onLogo,
+        onNotifications: actions.onNotifications,
+        onProfileMenu: actions.onProfileMenu,
+      );
+    }
     if (compact) {
       final Widget top = TopAppBarPos(
         variant: TopAppBarVariant.compact,

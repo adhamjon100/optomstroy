@@ -797,6 +797,7 @@ class TopAppBarUser extends StatelessWidget {
     this.showRole = true,
     this.maxTextWidth = textMaxWidth,
     this.semanticLabel,
+    this.initials,
   });
 
   /// Имя (из `/me`).
@@ -820,6 +821,22 @@ class TopAppBarUser extends StatelessWidget {
   /// Подпись для screen reader (из ARB); `null` — «имя, роль».
   final String? semanticLabel;
 
+  /// Буквы в круге аватара; `null` — первая буква [name] (шапка medium+). Шапка телефона передаёт инициалы
+  /// ([initialsOf]: первые буквы двух первых слов ФИО; ADR-122).
+  final String? initials;
+
+  /// Инициалы ФИО: первые буквы двух первых слов (`Айбек Асанов` → `АА`); пусто — `?`.
+  static String initialsOf(String name) {
+    final String letters = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((String p) => p.isNotEmpty)
+        .take(2)
+        .map((String p) => p.characters.first.toUpperCase())
+        .join();
+    return letters.isEmpty ? '?' : letters;
+  }
+
   /// Диаметр аватара.
   static const double avatarSize = 38;
 
@@ -841,7 +858,7 @@ class TopAppBarUser extends StatelessWidget {
         ? this.maxTextWidth
         : (this.maxTextWidth < nameShortMaxWidth ? this.maxTextWidth : nameShortMaxWidth);
     final DsColors c = context.colors;
-    final String initials = name.trim().isEmpty ? '?' : name.trim().characters.first.toUpperCase();
+    final String initials = this.initials ?? (name.trim().isEmpty ? '?' : name.trim().characters.first.toUpperCase());
     final BorderRadius radius = BorderRadius.all(context.radii.control);
     return Semantics(
       button: onTap != null,

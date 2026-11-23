@@ -143,7 +143,11 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
           Expanded(
             child: Stack(
               children: <Widget>[
-                Positioned.fill(child: body),
+                // Шапка compact (шапка телефона, ADR-122) уже заняла верхний системный отступ — телу он не нужен,
+                // иначе `AppBar` экрана под шапкой добавил бы второй отступ статус-бара.
+                Positioned.fill(
+                  child: top == null ? body : MediaQuery.removePadding(context: context, removeTop: true, child: body),
+                ),
                 if (widget.cartFab != null) PositionedDirectional(end: 16, bottom: 16, child: widget.cartFab!),
               ],
             ),

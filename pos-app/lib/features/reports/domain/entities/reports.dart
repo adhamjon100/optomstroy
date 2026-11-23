@@ -175,18 +175,67 @@ final class QrReconciliationRow {
 
 /// Итог QR-сверки (`summary`).
 final class QrReconciliationSummary {
-  const QrReconciliationSummary({this.webhook = 0, this.manual = 0, this.unmatched = 0});
+  const QrReconciliationSummary({this.webhook = 0, this.manual = 0, this.unmatched = 0, this.unknownReference = 0});
 
   final int webhook;
   final int manual;
   final int unmatched;
+
+  /// Число строк `unknownOperations` (OpenAPI 1.5.0, ADR-123).
+  final int unknownReference;
+}
+
+/// Источник сведений о зачислении по неизвестному референсу (`AdminReportsQrUnknownOperation.source`).
+enum QrUnknownOperationSource {
+  webhook('webhook'),
+  reconciliation('reconciliation');
+
+  const QrUnknownOperationSource(this.value);
+  final String value;
+
+  static QrUnknownOperationSource? tryParse(String? v) {
+    for (final QrUnknownOperationSource s in values) {
+      if (s.value == v) return s;
+    }
+    return null;
+  }
+}
+
+/// Зачисление банка по неизвестному референсу QR (`AdminReportsQrUnknownOperation`, OpenAPI 1.5.0, ADR-123).
+/// Поля тела банка — [НЕ ПОДТВЕРЖДЕНО Q-382]. Показ на SCR-48 — решение владельца 02 (known_issues P4-KI-02).
+final class QrUnknownOperation {
+  const QrUnknownOperation({
+    required this.receivedAt,
+    this.operationId,
+    this.reference,
+    this.amount,
+    this.paidAt,
+    this.source,
+  });
+
+  final String? operationId;
+  final String? reference;
+  final Money? amount;
+  final DateTime? paidAt;
+  final DateTime receivedAt;
+
+  /// `null` — источник, неизвестный клиенту.
+  final QrUnknownOperationSource? source;
 }
 
 /// QR-сверка (`AdminReportsQrReconciliation`).
 final class QrReconciliationReport {
-  const QrReconciliationReport({required this.period, required this.rows, required this.summary});
+  const QrReconciliationReport({
+    required this.period,
+    required this.rows,
+    required this.summary,
+    this.unknownOperations = const <QrUnknownOperation>[],
+  });
 
   final ReportPeriod period;
   final List<QrReconciliationRow> rows;
   final QrReconciliationSummary summary;
+
+  /// Зачисления по неизвестному референсу (с 1.5.0; при `QR_PROVIDER=onec|none` и фильтре `manual` — пусто).
+  final List<QrUnknownOperation> unknownOperations;
 }
