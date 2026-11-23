@@ -842,7 +842,7 @@ update.sh не удаляет образы прежних версий (нужн
 |---|---|---|
 | Каталоги | `/opt/optomstroy/prod`, `/srv/optomstroy/prod` | `/opt/optomstroy/test`, `/srv/optomstroy/test` |
 | `APP_ENV` | `prod` | `staging` (закреплён в `compose.staging.yml`) |
-| SMS | SMSPro | не отправляются (`SMS_PROVIDER=fake`); вход — номера `AUTH_OTP_TEST_PHONES` с кодом `AUTH_OTP_TEST_CODE` (09 §5.8) |
+| SMS | SMSPro — отправляет только `worker` (api → `sms_outbox` → `worker` → SMSPro; `OTP_HMAC_SECRET_FILE` у `api` и `worker` — один файл `secrets/otp_pepper`; ADR-124) | не отправляются (`SMS_PROVIDER=fake`); вход — номера `AUTH_OTP_TEST_PHONES` с кодом `AUTH_OTP_TEST_CODE` (09 §5.8; шесть случайных цифр — код демо `246810` при `staging` pos-api не принимает) |
 | 1С | рабочая база | только тестовая копия базы 1С (своя `ONEC_BASE_URL` и секреты) или не подключена; рабочая — никогда (install.sh/update.sh сверяют адрес) |
 | Память | профиль по объёму сервера | `postgres` 512M (shared_buffers 128MB), `api` 512M, `worker` 512M |
 | Копии | §4, вне сервера; непрерывная копия WAL (`BACKUP_PITR=on`, §4.8) | только локальные, 7 суток, в 05:45; без непрерывной копии (`BACKUP_PITR=off`) |
@@ -865,6 +865,27 @@ sudo bash infra/scripts/install.sh --contour test --domain api-test.<домен>
 контура и пересоздаёт общий caddy с сайтом теста. Код входа тестовых номеров — в `.env` тестовой копии
 (`sudo grep AUTH_OTP_TEST_CODE /opt/optomstroy/test/.env`), в журнал не печатается. Сборка `pos-app` для теста — с
 адресом `https://api-test.<домен>/api/v1` (профиль `staging`).
+
+### 10.1а. Тестовый стенд на Windows-сервере заказчика (ADR-125)
+
+На Windows VPS заказчика (Windows Server 2022, без Docker и Hyper-V, порты 80/443 — у Apache заказчика) стенд
+`optomstroy-test` ставится не `install.sh`, а Windows-комплектом: `install.ps1 -Stand` (`infra/windows/README.md` §7.1;
+профиль `infra/env/stand.env.example`): `APP_ENV=staging`, `ONEC_MODE=fixtures`, `QR_PROVIDER=bank` +
+`BANK_QR_ADAPTER=sandbox`, SMS без трат (`SMS_PROVIDER=fake`, вход — `+996700000001…05` с кодом из
+`config\api.env`), адрес `https://api-test.37.114.51.144.sslip.io` (постоянный — `api-test.optomstroy.kg`
+`[ПРЕДЛОЖЕНИЕ]`; сертификат — у Apache заказчика, Q-384). Ставит администратор заказчика по
+`docs/customer/WINDOWS_SERVER_INSTALL.md`, мы проверяем под `posdeploy` по SSH (`status.ps1`, журналы, `/health`;
+SSH 23.11.2026 недоступен — Q-386). Каждая команда, меняющая сервер, — после явного «да» пользователя (16 §6.3).
+Настоящая SMS на стенде — только после секретов SMSPro от заказчика (Q-385) и письменного «да» пользователя
+(`infra/windows/README.md` §7.1, `docs/integration/smspro_connect.md` §4–§5).
+
+Уведомления QR банка (`QR_PROVIDER=bank`, 08 §6.2) и что делать: «Оплата QR по неизвестному референсу» (кассирам и
+администраторам) — найти операцию в выписке, строка есть в отчёте «Сверка QR» (`unknownOperations`), деньги —
+`confirm-manual` нужного платежа или документом в 1С; «Сверка QR: повторная оплата» — на один платёж пришли две
+операции банка (`payment_webhook_events.processing_error = duplicate_payment`), лишнюю сумму оформить в 1С возвратом
+или авансом (Q-012); «Документ оплаты 1С: ссылка занята» — 1С вернула один документ на два платежа: запись
+`DUPLICATE_SUSPECTED` (`payload.code = ONEC_REF_CONFLICT`) в журнале синхронизации, разбор со специалистом 1С. Лимит
+вебхука RL-WEBHOOK — 600 запросов в минуту с IP (`429`).
 
 ### 10.2. Обновление: сначала тест, потом рабочий контур
 
