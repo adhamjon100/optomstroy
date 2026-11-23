@@ -3,6 +3,7 @@ import { type INestApplicationContext, Logger as NestLogger, type LoggerService 
 import { NestFactory } from '@nestjs/core';
 import pino, { type Logger } from 'pino';
 import { AppModule } from './app.module.js';
+import { shutdownOnStdinEof } from './bootstrap/stdin-shutdown.js';
 import { CartJobsHandler, registerCartJobs } from './cart/cart-jobs.js';
 import { type AppConfig, ConfigError, loadAppConfig } from './common/config/app-config.js';
 import { createPool } from './common/db/database.module.js';
@@ -185,6 +186,8 @@ async function bootstrap(): Promise<void> {
   };
   process.once('SIGTERM', () => void shutdown('SIGTERM'));
   process.once('SIGINT', () => void shutdown('SIGINT'));
+  // Служба Windows (POS_SHUTDOWN_ON_STDIN_EOF=true): хост закрывает stdin — та же остановка, что по SIGTERM.
+  shutdownOnStdinEof(config.POS_SHUTDOWN_ON_STDIN_EOF, (reason) => void shutdown(reason));
 
   // БД может быть недоступна при старте (compose: depends_on + healthcheck) — повторяем, не падая.
   for (;;) {

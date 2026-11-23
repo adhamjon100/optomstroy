@@ -1,0 +1,131 @@
+# Оптомстрой POS — виртуальный хост API (@@SITE_ID@@) для Apache 2.4 под Windows рядом с публикацией 1С.
+# Файл получен из infra/windows/apache/optomstroy-pos.conf.template скриптом render-apache-conf.ps1 — правьте шаблон,
+# а не этот файл. Подключается одной строкой Include в конце httpd.conf (enable-apache-site.ps1).
+#
+# Аналог сниппета api_site из infra/caddy/Caddyfile.edge (комплект Linux/Docker). Правила те же:
+#   /api/*            → API http://127.0.0.1:@@API_PORT@@ (таймаут ответа 30 с — long-poll оплаты ≤ 25 с, R0 §17.4);
+#   /health, /health/ready → API (/health/ready — только с адресов из списка, иначе 404);
+#   /images/<sha256>/(thumb|card|full)[.webp] → файлы из @@INSTALL_ROOT@@/data/media/images (только GET/HEAD);
+#   всё остальное     → 404.
+# Apache НЕ аутентифицирует и НЕ авторизует (DEPLOY-049): доступ решает API.
+#
+# Глобальная конфигурация Apache (Listen, хосты 1С, SSLSessionCache, ServerTokens) этим файлом не меняется.
+# Нужные модули — README.md этой папки (раздел «Модули»).
+
+<VirtualHost *:@@LISTEN_PORT@@>
+    ServerName @@SERVER_NAME@@
+
+    # --- TLS (SNI). Сертификат — свой для имени API; сертификаты 1С не трогаются. ---
+    SSLEngine on
+    SSLProtocol -all +TLSv1.2 +TLSv1.3
+    SSLCertificateFile    "@@CERT_FILE@@"
+    SSLCertificateKeyFile "@@KEY_FILE@@"
+
+    # Версия Apache не показывается на страницах ошибок этого хоста (заголовок Server убирается только
+    # глобально — ServerTokens Prod, это решение администратора: затронет и 1С).
+    ServerSignature Off
+
+    # Страницы ошибок — встроенные Apache, без страниц ошибок основной конфигурации (сайта 1С).
+    # Тело 502/503/504 намеренно НЕ problem+json: приложение по такому ответу без поля code считает
+    # сервер недоступным (pos-app: online_status_interceptor.dart, error_mapper.dart) — как с пустым ответом Caddy.
+    ErrorDocument 403 default
+    ErrorDocument 404 default
+    ErrorDocument 413 default
+    ErrorDocument 500 default
+    ErrorDocument 502 default
+    ErrorDocument 503 default
+    ErrorDocument 504 default
+
+    # Предел тела запроса — как у API (JSON ≤ 1 МБ, 08 §2.1). LimitRequestBody действует на всё, что Apache
+    # обрабатывает сам; запросы, которые mod_proxy передаёт в API, он не ограничивает (проверено на Apache 2.4.71:
+    # тело 1 МБ + 1 байт доходило до API). Поэтому для /api/* и /health* предел проверяет правило mod_rewrite
+    # по Content-Length (раздел «Маршруты»). Тело без Content-Length (chunked) ограничивает сам API (413).
+    LimitRequestBody 1048576
+
+    # --- Заголовки к API ---
+    # Клиентским X-Forwarded-* не доверяем (как reverse_proxy Caddy без trusted_proxies): удаляем до обработки,
+    # mod_proxy добавит свои X-Forwarded-For (IP клиента), X-Forwarded-Host, X-Forwarded-Server.
+    # API доверяет прокси с loopback (trust proxy 'loopback, uniquelocal') и берёт IP клиента из X-Forwarded-For.
+    RequestHeader unset X-Forwarded-For early
+    RequestHeader unset X-Forwarded-Host early
+    RequestHeader unset X-Forwarded-Server early
+    RequestHeader unset X-Forwarded-Proto early
+    RequestHeader set X-Forwarded-Proto "https"
+    ProxyRequests Off
+    ProxyPreserveHost On
+    ProxyAddHeaders On
+    # Ответы API об ошибках (problem+json) отдаются как есть.
+    ProxyErrorOverride Off
+
+    # --- Заголовки безопасности (11 SEC-003, SEC-018; 08 §2.3) — те же, что у Caddy. ---
+    # API ставит часть из них сам: сначала убираем его значение, затем ставим одно своё (без дублей).
+    Header unset Strict-Transport-Security
+    Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains"
+    Header unset X-Content-Type-Options
+    Header always set X-Content-Type-Options "nosniff"
+    Header unset X-Frame-Options
+    Header always set X-Frame-Options "DENY"
+    Header unset Content-Security-Policy
+    Header always set Content-Security-Policy "frame-ancestors 'none'"
+    Header unset Referrer-Policy
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header unset X-Powered-By
+    Header always unset X-Powered-By
+
+    # Сжатие JSON (у Caddy — encode zstd gzip). Работает, если загружены mod_deflate и mod_filter; без них
+    # ответы идут без сжатия — на работу не влияет.
+    <IfModule deflate_module>
+        <IfModule filter_module>
+            AddOutputFilterByType DEFLATE application/json application/problem+json text/plain
+        </IfModule>
+    </IfModule>
+
+    # --- Маршруты ---
+    # Правила mod_rewrite срабатывают раньше ProxyPass/AliasMatch: запрещённое не доходит ни до API, ни до файлов.
+    RewriteEngine On
+    # Тело больше 1 МБ (1048576 байт) по Content-Length — 413, до API запрос не доходит.
+    RewriteCond %{HTTP:Content-Length} ^[0-9]+$
+    RewriteCond expr "%{HTTP:Content-Length} -gt 1048576"
+    RewriteRule "^" - [R=413,L]
+    # Readiness (/health/ready) — только с разрешённых адресов (ARCH-006), иначе 404. Liveness /health — всем.
+    # [NC] обязателен: Express (API) сравнивает пути без учёта регистра, /health/READY — тот же обработчик.
+    # Остальные правила регистр учитывают намеренно: /HEALTH, /API/… отсекаются как неизвестные пути (404).
+    RewriteCond expr "@@READY_DENY_EXPR@@"
+    RewriteRule "^/health/ready(/.*)?$" - [R=404,L,NC]
+    # Фото: только GET/HEAD и только контент-адресуемые имена; иное под /images/ — 404.
+    RewriteCond %{REQUEST_METHOD} !^(GET|HEAD)$
+    RewriteRule "^/images/" - [R=404,L]
+    # Всё, что не /api/…, не /health[/…] и не фото, — 404 (веб-таргет вне R1, D-39). Поэтому DocumentRoot
+    # здесь не задаётся: файлы из корня основной конфигурации (сайта 1С) через этот хост не отдаются никогда.
+    RewriteCond %{REQUEST_URI} !^/api/
+    RewriteCond %{REQUEST_URI} !^/health(/.*)?$
+    RewriteCond %{REQUEST_URI} !^/images/[0-9a-f]{64}/(thumb|card|full)(\.webp)?$
+    RewriteRule "^" - [R=404,L]
+
+    # Фото отдаёт Apache напрямую из папки, куда их пишет OptomstroyWorker (MEDIA_DIR\images\<sha>\<size>.webp).
+    # Найденному файлу — неизменяемый кэш (D-30); на отсутствующий — 404 без Cache-Control.
+    AliasMatch "^/images/([0-9a-f]{64})/(thumb|card|full)(?:\.webp)?$" "@@INSTALL_ROOT@@/data/media/images/$1/$2.webp"
+    <Directory "@@INSTALL_ROOT@@/data/media/images">
+        Options None
+        AllowOverride None
+        Require all granted
+        AddType image/webp .webp
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </Directory>
+
+    # API. timeout=30 — как read_timeout 30s у Caddy (long-poll GET /api/v1/payments/{id}?wait= ≤ 25 с);
+    # retry=0 — после перезапуска службы API запросы идут сразу, без 60-секундной паузы mod_proxy;
+    # ttl=4 — простаивающее соединение закрывается раньше, чем его закроет Node (keepAliveTimeout 5 с).
+    ProxyPass        "/api/" "http://127.0.0.1:@@API_PORT@@/api/" connectiontimeout=5 timeout=30 retry=0 ttl=4
+    ProxyPassReverse "/api/" "http://127.0.0.1:@@API_PORT@@/api/"
+    ProxyPassMatch   "^/health(/.*)?$" "http://127.0.0.1:@@API_PORT@@/health$1" connectiontimeout=5 timeout=30 retry=0 ttl=4
+
+    # --- Журналы хоста: отдельно от 1С, JSON, ротация 20 МБ × 5 (как json-file у Docker). ---
+    # Время — местное со смещением от UTC (%z). Запрос — строка запроса как пришла (%r: путь не раскодирован,
+    # с параметрами, как uri у Caddy): раскодированный путь (%U) мог содержать управляющие байты, которые Apache
+    # пишет как \xNN — это не JSON. В %r они попасть не могут: при HttpProtocolOptions Strict (по умолчанию)
+    # Apache такой запрос отклоняет. Исключение — отклонённые запросы (400) с мусором в строке запроса (README).
+    LogFormat "{\"t\":\"%{%Y-%m-%dT%H:%M:%S%z}t\",\"ip\":\"%a\",\"host\":\"%{Host}i\",\"m\":\"%m\",\"r\":\"%r\",\"s\":%>s,\"b\":%B,\"us\":%D,\"rid\":\"%{X-Request-Id}o\"}" optomstroy_@@SITE_KEY@@_json
+    CustomLog "|@@ROTATELOGS@@ -n 5 @@LOG_DIR@@/optomstroy-@@SITE_ID@@-access.log 20M" optomstroy_@@SITE_KEY@@_json
+    ErrorLog  "|@@ROTATELOGS@@ -n 5 @@LOG_DIR@@/optomstroy-@@SITE_ID@@-error.log 20M"
+</VirtualHost>

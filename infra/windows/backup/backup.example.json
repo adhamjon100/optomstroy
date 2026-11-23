@@ -1,0 +1,32 @@
+{
+  "backupRoot": "D:\\OptomstroyBackups",
+  "pgBin": "C:\\Program Files\\PostgreSQL\\17\\bin",
+  "pg": {
+    "host": "127.0.0.1",
+    "port": 5433,
+    "user": "pos_backup",
+    "database": "optomstroy",
+    "credentialFile": "D:\\Optomstroy\\secrets\\pgpass_backup.conf"
+  },
+  "publicKeyFile": "D:\\Optomstroy\\config\\backup-public.pem",
+  "walSpoolDir": "D:\\Optomstroy\\data\\walspool",
+  "timeZone": "Asia/Bishkek",
+  "dailyAt": "05:30",
+  "keepDays": 30,
+  "monthlyExtraDays": 93,
+  "globalsKeepDays": 90,
+  "globalsWeekday": 0,
+  "pitr": true,
+  "walShipEverySeconds": 20,
+  "walOffsiteEverySeconds": 300,
+  "retryMinutes": 30,
+  "chunkSize": 1048576,
+  "gzipLevel": 3,
+  "mediaDirs": [
+    { "name": "media", "path": "D:\\Optomstroy\\data\\media" },
+    { "name": "audit-anchors", "path": "D:\\Optomstroy\\data\\audit-anchors" }
+  ],
+  "offsite": null,
+  "healthchecksUrlFile": "D:\\Optomstroy\\secrets\\healthchecks_url",
+  "statusCheckEveryMinutes": 10
+}

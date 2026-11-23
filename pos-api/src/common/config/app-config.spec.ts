@@ -55,6 +55,39 @@ describe('загрузчик env (*_FILE, zod) — RM-C-009', () => {
     expect(c.SMS_OTP_TEMPLATE).toBe('Kod: {code}. Optomstroy');
   });
 
+  it('API_HOST / API_PORT / POS_SHUTDOWN_ON_STDIN_EOF: по умолчанию 0.0.0.0:3000 и выключено (Docker-комплект без изменений)', () => {
+    const c = loadAppConfig(BASE);
+    expect([c.API_HOST, c.API_PORT, c.POS_SHUTDOWN_ON_STDIN_EOF]).toEqual(['0.0.0.0', 3000, false]);
+    // Пустые строки — «не задано» (как в .env с пустым значением).
+    const e = loadAppConfig({ ...BASE, API_HOST: '', API_PORT: ' ', POS_SHUTDOWN_ON_STDIN_EOF: '' });
+    expect([e.API_HOST, e.API_PORT, e.POS_SHUTDOWN_ON_STDIN_EOF]).toEqual(['0.0.0.0', 3000, false]);
+  });
+
+  it('Windows: API_HOST=127.0.0.1, API_PORT в пределах 1…65535, POS_SHUTDOWN_ON_STDIN_EOF=1|true', () => {
+    const c = loadAppConfig({ ...BASE, API_HOST: '127.0.0.1', API_PORT: '3301', POS_SHUTDOWN_ON_STDIN_EOF: '1' });
+    expect([c.API_HOST, c.API_PORT, c.POS_SHUTDOWN_ON_STDIN_EOF]).toEqual(['127.0.0.1', 3301, true]);
+    expect(loadAppConfig({ ...BASE, API_HOST: '::1', API_PORT: '65535' }).API_PORT).toBe(65535);
+    expect(loadAppConfig({ ...BASE, API_PORT: '1', POS_SHUTDOWN_ON_STDIN_EOF: 'true' }).POS_SHUTDOWN_ON_STDIN_EOF).toBe(
+      true,
+    );
+    expect(loadAppConfig({ ...BASE, POS_SHUTDOWN_ON_STDIN_EOF: 'false' }).POS_SHUTDOWN_ON_STDIN_EOF).toBe(false);
+  });
+
+  it('API_HOST не IP-литерал, API_PORT вне 1…65535 или не целое, POS_SHUTDOWN_ON_STDIN_EOF не булево → отказ в старте', () => {
+    for (const [key, value] of [
+      ['API_HOST', 'localhost'],
+      ['API_HOST', '127.0.0.256'],
+      ['API_PORT', '0'],
+      ['API_PORT', '65536'],
+      ['API_PORT', '3000.5'],
+      ['API_PORT', 'http'],
+      ['POS_SHUTDOWN_ON_STDIN_EOF', 'maybe'],
+    ] as const) {
+      const err = expectConfigError(() => loadAppConfig({ ...BASE, [key]: value }));
+      expect(err.problems.join('\n'), `${key}=${value}`).toContain(key);
+    }
+  });
+
   it('T-BIO-023 (6), DEPLOY-055: вход по лицу — по умолчанию off/24/off; AUTH_BIO_WEAK_REAUTH_HOURS вне 1…24 → отказ в старте', () => {
     const c = loadAppConfig(BASE);
     expect([c.AUTH_BIO_ALLOW_WEAK, c.AUTH_BIO_WEAK_REAUTH_HOURS, c.AUTH_WINDOWS_HELLO_KEY]).toEqual(['off', 24, 'off']);

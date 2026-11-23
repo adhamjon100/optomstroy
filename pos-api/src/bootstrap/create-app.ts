@@ -8,8 +8,8 @@ import { securityHeadersMiddleware } from '../common/http/security-headers.middl
 import { requestIdMiddleware } from '../common/logging/request-id.middleware.js';
 import { buildOpenApiDocument, OPENAPI_DOCUMENT, type OpenApiDocumentHolder } from '../health/openapi.document.js';
 
-/** Внутренний порт pos-api (ядро R0 §16 п. 1): наружу — только через pos-proxy. */
-export const API_PORT = 3000;
+// Внутренний адрес и порт pos-api (ядро R0 §16 п. 1; наружу — только через pos-proxy / Apache) — переменные
+// API_HOST / API_PORT схемы env (по умолчанию 0.0.0.0:3000, как было в коде), слушает main.ts.
 /** Предел тела JSON (08 §2.1: ≤ 1 MB → 413). */
 export const JSON_BODY_LIMIT = '1mb';
 /** Пути вне префикса `/api/v1` (pos-proxy: `handle /health*`; healthcheck compose — `http://localhost:3000/health`). */
