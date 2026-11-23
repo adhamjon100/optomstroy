@@ -5,7 +5,9 @@
  *   `OnecGateway` (протокол 1С здесь не дублируется — ARCH-007);
  * - `none` → `ManualQrProvider` — запасной: статический QR торговой точки (или без QR) и ручное подтверждение
  *   кассиром со step-up (D-21), без внешних вызовов;
- * - `bakai` → `BakaiQrProvider` — **R2**, в R1 не создаётся (фабрика отвечает ошибкой конфигурации).
+ * - `bank` (устаревший синоним `bakai`) → `BankQrProvider` — QR напрямую от банка через наш сервер (ADR-123, P-004):
+ *   клиент банка `BankQrApi` по `BANK_QR_ADAPTER` (пока только песочница `sandbox`; банк `[НЕ ПОДТВЕРЖДЕНО: Q-381]`),
+ *   подтверждение — подписанный вебхук банка (08 §4.9.5) и опрос статуса; 1С получает только документ оплаты.
  *
  * Модули `orders`/`payments` и клиент от выбранной реализации не зависят: результат `issue()` проецируется в
  * `QrInfo` (contracts/openapi `QrInfo`: provider, payload, bankReference, amount, expiresAt, issuedAt, autoConfirm).
@@ -14,9 +16,9 @@
 /** DI-токен порта. */
 export const PAYMENT_PROVIDER = 'PaymentProvider' as const;
 
-/** Значения env `QR_PROVIDER` (16 §4.3). */
-export type QrProviderMode = 'onec' | 'none' | 'bakai';
-/** `QrInfo.provider` — свойство показанного QR (08 §3.10). */
+/** Значения env `QR_PROVIDER` после разбора (16 §4.3; `bakai` → `bank`, ADR-123). */
+export type QrProviderMode = 'onec' | 'none' | 'bank';
+/** `QrInfo.provider` — свойство показанного QR (08 §3.10); `bakai` — код QR банка через наш сервер (ADR-123). */
 export type QrInfoProvider = 'onec' | 'bakai' | 'elqr_static' | 'none';
 
 export interface QrIssueRequest {
@@ -25,6 +27,8 @@ export interface QrIssueRequest {
   readonly orderExternalId: string;
   readonly orderRef: string | null;
   readonly customerRef: string | null;
+  /** Публичный номер заказа (`POS-…`) — второй ключ сопоставления вебхука банка (08 §6); 1С его не получает. */
+  readonly orderPublicNumber?: string | null;
   /** Деньги строкой `"16007.50"` (08 §2.1); сумму формирует сервер из заказа. */
   readonly amount: string;
   readonly currency: 'KGS';

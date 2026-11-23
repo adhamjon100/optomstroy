@@ -110,14 +110,15 @@ describe('PaymentProvider (ARCH-063, ядро v1.9 §24.4)', () => {
     expect((await new ManualQrProvider().cancel()).state).toBe('not_applicable');
   });
 
-  it('createPaymentProvider: onec/none по QR_PROVIDER; bakai (R2) и onec при odata_only / C-2 → ConfigError', () => {
+  it('createPaymentProvider: onec/none по QR_PROVIDER; bank без клиента банка и onec при odata_only / C-2 → ConfigError', () => {
     const onec = new FakeOnecGateway();
     const base = { ONEC_MODE: 'fixtures', ONEC_INBOUND_ENABLED: false } as const;
     expect(createPaymentProvider({ ...base, QR_PROVIDER: 'onec' }, { onecGateway: onec })).toBeInstanceOf(
       OnecQrProvider,
     );
     expect(createPaymentProvider({ ...base, QR_PROVIDER: 'none' })).toBeInstanceOf(ManualQrProvider);
-    expect(() => createPaymentProvider({ ...base, QR_PROVIDER: 'bakai' })).toThrow(ConfigError);
+    // ADR-123: `bank` (синоним `bakai`) без клиента банка (`BANK_QR_ADAPTER`) — отказ в старте.
+    expect(() => createPaymentProvider({ ...base, QR_PROVIDER: 'bank' })).toThrow(ConfigError);
     expect(() =>
       createPaymentProvider(
         { QR_PROVIDER: 'onec', ONEC_MODE: 'odata_only', ONEC_INBOUND_ENABLED: false },

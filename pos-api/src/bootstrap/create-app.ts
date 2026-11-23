@@ -4,6 +4,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger } from 'nestjs-pino';
 import { AppModule, type AppModuleOptions } from '../app.module.js';
 import type { AppConfig } from '../common/config/app-config.js';
+import { jsonBodyType } from '../common/http/raw-body.js';
 import { securityHeadersMiddleware } from '../common/http/security-headers.middleware.js';
 import { requestIdMiddleware } from '../common/logging/request-id.middleware.js';
 import { buildOpenApiDocument, OPENAPI_DOCUMENT, type OpenApiDocumentHolder } from '../health/openapi.document.js';
@@ -25,7 +26,8 @@ export function configureHttpApp(app: NestExpressApplication): void {
   app.set('trust proxy', 'loopback, uniquelocal');
   app.use(requestIdMiddleware);
   app.use(securityHeadersMiddleware);
-  app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
+  // Вебхук банка (ADR-123; 08 §6) читает сырое тело сам — подпись считается по байтам, а не по разобранному JSON.
+  app.useBodyParser('json', { limit: JSON_BODY_LIMIT, type: jsonBodyType });
   app.setGlobalPrefix('api/v1', { exclude: PREFIX_EXCLUDED_PATHS });
 }
 

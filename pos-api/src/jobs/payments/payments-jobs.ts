@@ -8,13 +8,23 @@ import { QUEUES } from '../../common/jobs/contracts/queues.js';
  *   `qr_shown` (и до `expiresAt` + 60 с — поздняя оплата), одна задача на платёж (`singletonKey` = id платежа,
  *   политика `short`: не более одной ожидающей); также отмена QR в 1С у аннулированного платежа;
  * - `payments.qr_expire` — `qr_shown` с наступившим `qr_expires_at` → `qr_expired` (каждую минуту);
- * - `payments.onec-qr-status` — элемент `QrPaymentStatus` плана обмена (`/changes`, публикует `sync`).
+ * - `payments.onec-qr-status` — элемент `QrPaymentStatus` плана обмена (`/changes`, публикует `sync`);
+ * - `payments.qr_reconcile` — ежедневная сверка QR банка через наш сервер (ADR-123; 10 PAY-029), 00:30 по Бишкеку
+ *   за прошедший день; при `QR_PROVIDER≠bank` обработчик ничего не делает.
+ * Опрос QR банка (та же очередь `payments.qr_onec_poll`, интервал 30 с) и сверку исполняет процесс, у которого есть
+ * клиент банка: при `BANK_QR_ADAPTER=sandbox` — pos-api (песочница живёт в его памяти), иначе — процесс с
+ * `WORKERS_ENABLED=true` (`PaymentsJobsBridge`).
  */
 export const PAYMENTS_QUEUES = [
   QUEUES.paymentsQrOnecPoll,
   QUEUES.paymentsQrExpire,
   QUEUES.paymentsOnecQrStatus,
+  QUEUES.paymentsQrReconcile,
 ] as const;
+
+/** Расписание сверки QR банка (ADR-123): каждый день в 00:30 по Бишкеку — за прошедший день. */
+export const QR_RECONCILE_CRON = '30 0 * * *';
+export const QR_RECONCILE_TIME_ZONE = 'Asia/Bishkek';
 
 /** Payload `payments.qr_onec_poll`. */
 export interface QrOnecPollPayload {
@@ -54,6 +64,8 @@ export interface PaymentsJobHandlers {
   applyOnecQrStatus(payload: OnecQrStatusPayload): Promise<string>;
   /** Платежи, для которых нужно возобновить опрос/отмену после перезапуска процесса. */
   pollCandidates(): Promise<readonly string[]>;
+  /** Ежедневная сверка QR банка (ADR-123); `undefined` — не регистрируется. */
+  reconcileQr?(): Promise<unknown>;
 }
 
 /** Минимальный клиент для `send … { db }` (задача в транзакции бизнес-операции). */
@@ -69,6 +81,10 @@ export async function ensurePaymentsQueues(boss: PgBoss): Promise<void> {
     },
     { name: QUEUES.paymentsQrExpire, options: { policy: 'singleton', retryLimit: 1, expireInSeconds: 120 } },
     { name: QUEUES.paymentsOnecQrStatus, options: { policy: 'standard', retryLimit: 5, retryDelay: 10 } },
+    {
+      name: QUEUES.paymentsQrReconcile,
+      options: { policy: 'singleton', retryLimit: 2, retryDelay: 300, expireInSeconds: 1800 },
+    },
   ];
   for (const s of specs) {
     const existing = await boss.getQueue(s.name);
@@ -101,6 +117,12 @@ export interface RegisterPaymentsJobsOptions {
   /** Интервал опроса очередей pg-boss, секунды (минимум pg-boss — 0.5). */
   readonly pollingIntervalSeconds: number; // money-double: allow — секунды
   readonly log: { warn(obj: object, msg: string): void; info(obj: object, msg: string): void };
+  /**
+   * Какие группы обработчиков регистрирует этот процесс (ADR-123): `core` — `qr_expire`, `onec-qr-status`
+   * (процесс с `WORKERS_ENABLED=true`); `poll` — опрос/отмена QR у провайдера; `reconcile` — сверка QR банка.
+   * По умолчанию — все (прежнее поведение).
+   */
+  readonly groups?: { readonly core: boolean; readonly poll: boolean; readonly reconcile: boolean };
 }
 
 /**
@@ -114,21 +136,37 @@ export async function registerPaymentsJobs(
   opts: RegisterPaymentsJobsOptions,
 ): Promise<void> {
   await ensurePaymentsQueues(boss);
+  const groups = opts.groups ?? { core: true, poll: true, reconcile: true };
   const work = { pollingIntervalSeconds: opts.pollingIntervalSeconds, batchSize: 1 };
-  await boss.work<QrOnecPollPayload>(QUEUES.paymentsQrOnecPoll, work, async ([job]) => {
-    if (!job?.data?.paymentId) return undefined;
-    const outcome = await handlers.pollQr(job.data.paymentId);
-    if (outcome.continue) await schedulePaymentPoll(boss, job.data.paymentId, outcome.delaySeconds);
-    return outcome;
-  });
-  await boss.work(QUEUES.paymentsQrExpire, work, async () => ({ expired: await handlers.expireDue() }));
-  await boss.work<OnecQrStatusPayload>(QUEUES.paymentsOnecQrStatus, work, async ([job]) => {
-    if (!job?.data?.externalId) return undefined;
-    return { result: await handlers.applyOnecQrStatus(job.data) };
-  });
-  await boss
-    .schedule(QUEUES.paymentsQrExpire, '* * * * *', {}, { singletonKey: 'payments.qr_expire' })
-    .catch((err: unknown) => opts.log.warn({ err }, 'payments.qr_expire: расписание не установлено'));
-  for (const id of await handlers.pollCandidates()) await schedulePaymentPoll(boss, id, 0);
-  opts.log.info({ queues: PAYMENTS_QUEUES }, 'payments.jobs.registered');
+  if (groups.poll) {
+    await boss.work<QrOnecPollPayload>(QUEUES.paymentsQrOnecPoll, work, async ([job]) => {
+      if (!job?.data?.paymentId) return undefined;
+      const outcome = await handlers.pollQr(job.data.paymentId);
+      if (outcome.continue) await schedulePaymentPoll(boss, job.data.paymentId, outcome.delaySeconds);
+      return outcome;
+    });
+  }
+  if (groups.core) {
+    await boss.work(QUEUES.paymentsQrExpire, work, async () => ({ expired: await handlers.expireDue() }));
+    await boss.work<OnecQrStatusPayload>(QUEUES.paymentsOnecQrStatus, work, async ([job]) => {
+      if (!job?.data?.externalId) return undefined;
+      return { result: await handlers.applyOnecQrStatus(job.data) };
+    });
+    await boss
+      .schedule(QUEUES.paymentsQrExpire, '* * * * *', {}, { singletonKey: 'payments.qr_expire' })
+      .catch((err: unknown) => opts.log.warn({ err }, 'payments.qr_expire: расписание не установлено'));
+  }
+  if (groups.reconcile && handlers.reconcileQr) {
+    await boss.work(QUEUES.paymentsQrReconcile, work, async () => ({ summary: await handlers.reconcileQr?.() }));
+    await boss
+      .schedule(
+        QUEUES.paymentsQrReconcile,
+        QR_RECONCILE_CRON,
+        {},
+        { tz: QR_RECONCILE_TIME_ZONE, singletonKey: QUEUES.paymentsQrReconcile },
+      )
+      .catch((err: unknown) => opts.log.warn({ err }, 'payments.qr_reconcile: расписание не установлено'));
+  }
+  if (groups.poll) for (const id of await handlers.pollCandidates()) await schedulePaymentPoll(boss, id, 0);
+  opts.log.info({ queues: PAYMENTS_QUEUES, groups }, 'payments.jobs.registered');
 }

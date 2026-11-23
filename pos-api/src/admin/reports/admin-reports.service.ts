@@ -63,6 +63,9 @@ function salesTotals(r: SalesAggRow | undefined): Record<string, unknown> {
  *   (`initiated`, `qr_pending`); `unmatched` — `manual_confirm` (требуют разбора, `reviewReason`) и `qr_shown`/
  *   `qr_expired` без подтверждения старше `QR_TTL_MINUTES` (RM-G-006 п. 3); `manual` — полученные ручным
  *   подтверждением; `webhook` — полученные автоматически (подтверждение 1С при `QR_PROVIDER=onec`, ядро §24.4).
+ *   `unknownOperations` (при `status` ≠ `manual`) — зачисления банка по неизвестному референсу QR за период (строки
+ *   `payment_webhook_events` без `payment_id`, `processing_error = unknown_reference`; вебхук и сверка, одна операция
+ *   — одна строка; 08 §6 «Сопоставление», ADR-123).
  */
 @Injectable()
 export class AdminReportsService {
@@ -183,6 +186,34 @@ export class AdminReportsService {
          WHERE ${base}${filter}
          ORDER BY p.created_at DESC, p.id DESC`)
     ).rows;
+    // Зачисления банка по неизвестному референсу QR (08 §6 «Сопоставление», POS-053; ADR-123): строки
+    // `payment_webhook_events` без платежа — от вебхука и от ежедневной сверки; одна операция банка — одна строка.
+    const unknown =
+      status === 'manual'
+        ? []
+        : (
+            await this.db.execute<{
+              operation_id: string | null;
+              reference: string | null;
+              amount: string | null;
+              paid_at: string | null;
+              source: string;
+              received_at: Date | string;
+            }>(sql`
+              SELECT * FROM (
+                SELECT DISTINCT ON (coalesce(e.payload ->> 'operationId', e.provider_event_id))
+                       e.payload ->> 'operationId' AS operation_id, e.payload ->> 'reference' AS reference,
+                       e.payload ->> 'amount' AS amount, e.payload ->> 'paidAt' AS paid_at,
+                       CASE WHEN e.payload ->> 'source' = 'reconciliation' THEN 'reconciliation' ELSE 'webhook' END
+                         AS source,
+                       e.created_at AS received_at
+                  FROM payment_webhook_events e
+                 WHERE e.payment_id IS NULL AND e.signature_valid AND e.processing_error = 'unknown_reference'
+                   AND e.created_at >= ${period.from.toISOString()}::timestamptz
+                   AND e.created_at < ${period.to.toISOString()}::timestamptz
+                 ORDER BY coalesce(e.payload ->> 'operationId', e.provider_event_id), e.created_at
+              ) u ORDER BY u.received_at DESC`)
+          ).rows;
     const summary = (
       await this.db.execute<{ webhook: number; manual: number; unmatched: number }>(sql`
         SELECT count(*) FILTER (WHERE p.status IN ('received', 'refunded')
@@ -215,10 +246,19 @@ export class AdminReportsService {
           bankAmount: r.bank_amount === null ? null : money(r.bank_amount),
         };
       }),
+      unknownOperations: unknown.map((u) => ({
+        operationId: u.operation_id,
+        reference: u.reference,
+        amount: u.amount !== null && /^\d{1,12}(\.\d{1,2})?$/.test(u.amount) ? money(u.amount) : null,
+        paidAt: u.paid_at && !Number.isNaN(Date.parse(u.paid_at)) ? new Date(u.paid_at).toISOString() : null,
+        receivedAt: new Date(u.received_at).toISOString(),
+        source: u.source,
+      })),
       summary: {
         webhook: Number(summary?.webhook ?? 0), // money-double: allow — число платежей
         manual: Number(summary?.manual ?? 0), // money-double: allow — число платежей
         unmatched: Number(summary?.unmatched ?? 0), // money-double: allow — число платежей
+        unknownReference: unknown.length,
       },
     };
   }

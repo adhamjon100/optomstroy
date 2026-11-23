@@ -346,8 +346,12 @@ describe(`smoke тестового контура (${VIA_PROXY ? `через pos
       // фото `/images/{sha}/{size}` (отдаёт pos-proxy из MEDIA_DIR, не pos-api — 16 §4.3, Caddyfile `@image`) и
       // входящего обмена `/integrations/onec/*` (только вариант C-2 `ONEC_INBOUND_ENABLED=true`, ПРЕДВАРИТЕЛЬНО:
       // Q-010, Q-011, Q-031; в R1 не регистрируется — 404).
+      // ADR-123: служебные маршруты песочницы банка — только QR_PROVIDER=bank и BANK_QR_ADAPTER=sandbox (в smoke — onec).
       const notServedByApi = (op: string) =>
-        notInF.has(op) || /^GET \/images\//.test(op) || /^[A-Z]+ \/integrations\/onec\//.test(op);
+        notInF.has(op) ||
+        /^GET \/images\//.test(op) ||
+        /^[A-Z]+ \/integrations\/onec\//.test(op) ||
+        /^[A-Z]+ \/sandbox\/bank\//.test(op);
       expect([...contractOps].filter((op) => !exportedSet.has(op) && !notServedByApi(op))).toEqual([]);
     });
   });

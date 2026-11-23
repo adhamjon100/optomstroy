@@ -556,7 +556,9 @@ describe('payments: QR через 1С (RM-F-016)', () => {
       bankReference: 'BK-CHANGES-1',
     };
     expect(await t.qrStatus.applyOnecQrStatus(payload)).toBe('received');
-    expect(await t.qrStatus.applyOnecQrStatus(payload)).toBe('review_only');
+    // Повтор того же зачисления (тот же bankReference) — без разбора и уведомления; другая операция — разбор.
+    expect(await t.qrStatus.applyOnecQrStatus(payload)).toBe('unchanged');
+    expect(await t.qrStatus.applyOnecQrStatus({ ...payload, bankReference: 'BK-CHANGES-2' })).toBe('review_only');
     expect(await t.transactionsOf(o.paymentId)).toHaveLength(1);
     expect(await t.orderMoney(o.orderId)).toMatchObject({ paid_amount: o.total });
   });

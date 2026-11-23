@@ -9,6 +9,39 @@
 Собранный файл не редактируется вручную: правки вносятся в `parts/*.yaml`, затем
 `python -I -X utf8 scripts/build_openapi.py` (правила — `NOTES.md` §1, §7).
 
+## [1.5.0] — 2026-11-24 — QR напрямую от банка через наш сервер, песочница банка (P-004, ADR-123)
+
+Аддитивное изменение (MINOR): `info.version` 1.4.0 → 1.5.0. Основание — слова владельца 2026-11-23 и ответ
+пользователя 2026-11-23 (`docs/customer/P-004_OWNER_DECISIONS.md`): QR — напрямую от банка через наш сервер, банк —
+«другой», не Бакай, название неизвестно; решение — ADR-123. Источник — 08 §4.9.5, §4.9.7, §4.9.8, §6, §6.2. Путь `v1`,
+существующие пути, поля и их обязательность не менялись; коды `QrProvider`/`QrProviderMode` (`bakai`) не
+переименовывались (ADR-123 п. 3: исторический код «QR банка через наш сервер» независимо от банка); нового кода
+ошибки нет.
+
+### Добавлено
+
+- `POST /sandbox/bank/qr/{reference}/pay` (`sandbox_bank_qr_pay`; 08 §4.9.7) и `GET /sandbox/bank/operations`
+  (`sandbox_bank_operations`; 08 §4.9.8) — служебные маршруты **песочницы банка**, только тестовый контур
+  (`x-feature-flag: BANK_QR_ADAPTER=sandbox`, `x-status: proposed`; при `APP_ENV=prod` маршрутов нет): «оплата» QR
+  (полная, частичная, поздняя) с доставкой подписанного вебхука и операции дня для сверки. Права —
+  `payment.qr.confirm_manual`; список операций — также `reports.qr_reconciliation.read`. Схемы `SandboxBankPayRequest`,
+  `SandboxBankPayResponse`, `SandboxBankOperation`, `SandboxBankOperationList`.
+- `PaymentsQrWebhookEvent.operationId` (необязательное): идентификатор операции зачисления у банка
+  (`payment.externalRef`, `bankReference` документа оплаты в 1С, ключ сверки).
+- `AdminReportsQrReconciliation.unknownOperations` (схема `AdminReportsQrUnknownOperation`) и
+  `summary.unknownReference` (ревью P-004, пакеты B–C): зачисления банка по неизвестному референсу QR за период —
+  строки журнала вебхука и сверки без платежа (08 §4.18.8, §6 «Сопоставление»). Необязательные поля ответа.
+
+### Изменено
+
+- `POST /payments/qr/webhook`: условие регистрации — `QR_PROVIDER=bank` (устаревший синоним `bakai`) и
+  `QR_WEBHOOK_ENABLED=true` (`x-feature-flag: QR_PROVIDER=bank`); описание — порядок проверок (IP → подпись по сырому
+  телу и `X-Timestamp` ±5 мин → схема тела), идемпотентность по `eventId`, запись события в одной транзакции с
+  переходом платежа и постановкой документа оплаты в 1С. Схема запроса и ответы не менялись. Уточнено по ревью
+  P-004 (пакеты B–C): лимит RL-WEBHOOK (600/мин с IP, `429 RATE_LIMITED` — первым шагом) реализован; неизвестный
+  референс — уведомление кассирам и администраторам и строка отчёта сверки (`unknownOperations`).
+- Описания `QrInfo`, `QrProvider`, `QrProviderMode`: `bakai` — код QR банка через наш сервер (env `QR_PROVIDER=bank`).
+
 ## [1.4.0] — 2026-11-08 — вход по лицу на всех платформах (ADR-116)
 
 Аддитивное изменение (MINOR): `info.version` 1.3.0 → 1.4.0. Основание — ответы владельца 2026-11-07 (выбраны все три

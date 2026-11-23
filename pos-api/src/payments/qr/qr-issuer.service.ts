@@ -21,6 +21,12 @@ export const QR_UNAVAILABLE_WARNING: WarningDto = {
   message: 'QR не сформирован: 1С недоступна или отказала. Повторите или подтвердите оплату вручную.',
 };
 
+/** То же при QR банка через наш сервер (ADR-123). */
+export const QR_UNAVAILABLE_BANK_WARNING: WarningDto = {
+  code: 'QR_UNAVAILABLE',
+  message: 'QR не сформирован: банк недоступен или отказал. Повторите или подтвердите оплату вручную.',
+};
+
 export interface QrIssueCommand {
   readonly paymentId: string;
   /** `manualOnly: true` — статический QR и ручное подтверждение (запасной путь, 08 API-185). */
@@ -69,14 +75,20 @@ export class QrIssuer {
     // не выпускается — явный отказ `QR_UNAVAILABLE` (ручной путь остаётся) до решения Q-152 (оплата долга без заказа).
     if (!manual && p.orderId === null) {
       this.logger.warn({ paymentId: p.id }, 'payments.qr.issue_refused: платёж без заказа — QR_UNAVAILABLE (Q-152)');
-      return { payment: p, warnings: [QR_UNAVAILABLE_WARNING] };
+      return { payment: p, warnings: [this.unavailable()] };
     }
     const order = p.orderId ? await this.lookups.order(this.db, p.orderId) : null;
     // Перевыпуск при QR через 1С (10 PAY-025, 05 SYNC-078 «… или перевыпуске QR backend вызывает /qr/cancel»; ревью
     // F-orders-1c-5): прежний QR отменяется в 1С до запроса нового (тот же externalId); ошибка отмены не мешает
     // перевыпуску — прежний референс инвалидируется в backend (история референсов). Ответ «уже оплачен» — оплата
     // применяется к платежу как обычный отчёт 1С, новый QR не выдаётся.
-    if (this.providers.dynamic && p.qrProvider === 'onec' && p.qrProviderRef && p.status !== 'qr_pending') {
+    // Тот же порядок при QR банка (ADR-123): прежний QR отменяется у банка до выпуска нового.
+    if (
+      this.providers.dynamic &&
+      p.qrProvider === this.providers.mode &&
+      p.qrProviderRef &&
+      p.status !== 'qr_pending'
+    ) {
       const paid = await this.cancelPreviousQr(p);
       if (paid) return { payment: (await this.repo.findById(this.db, p.id)) ?? p, warnings: [] };
     }
@@ -88,6 +100,7 @@ export class QrIssuer {
         orderExternalId: p.orderId ?? '',
         orderRef: order?.onecRef ?? null,
         customerRef: order?.customerOnecRef ?? null,
+        orderPublicNumber: order?.publicNumber ?? null,
         amount: Money.of(p.amount).toString(),
         currency: 'KGS' as const,
         purpose: order ? `Оплата заказа ${order.publicNumber}` : `Оплата ${p.publicNumber}`,
@@ -100,7 +113,7 @@ export class QrIssuer {
           : await withTimeout(this.config.ONEC_SYNC_CHECK_TIMEOUT_MS, (signal) => dynamic.issue(req, { signal }));
     } catch (err) {
       this.logger.warn({ err, paymentId: p.id }, 'payments.qr.issue_failed: QR_UNAVAILABLE');
-      return { payment: p, warnings: [QR_UNAVAILABLE_WARNING] };
+      return { payment: p, warnings: [this.unavailable()] };
     }
     const now = this.clock.now();
     const expiresAt = manual ? null : this.expiry(issued, now);
@@ -134,7 +147,7 @@ export class QrIssuer {
               status: moved.status,
               qrReference: moved.qrProviderRef,
               qrExpiresAt: moved.qrExpiresAt?.toISOString() ?? null,
-              provider: manual ? 'manual' : 'onec',
+              provider: manual ? 'manual' : this.providers.source,
             },
           },
           tx,
@@ -147,7 +160,7 @@ export class QrIssuer {
       if (!manual && outcome.payment?.status === 'voided') this.qrStatus.cancelInBackground(p.id, 'voided');
       return { payment: outcome.payment, warnings: [] };
     }
-    if (!manual) await this.jobs.kickPoll(p.id);
+    if (!manual) await this.jobs.kickPoll(p.id, this.providers.pollSeconds);
     return { payment: outcome.payment, warnings: [] };
   }
 
@@ -171,6 +184,10 @@ export class QrIssuer {
       this.logger.warn({ err, paymentId: p.id }, 'payments.qr.reissue_cancel_failed');
       return false;
     }
+  }
+
+  private unavailable(): WarningDto {
+    return this.providers.source === 'bank' ? QR_UNAVAILABLE_BANK_WARNING : QR_UNAVAILABLE_WARNING;
   }
 
   /** Срок QR: из ответа 1С, если он в будущем; иначе момент выдачи + `QR_TTL_MINUTES` (07 §5.40, 10 PAY-021). */

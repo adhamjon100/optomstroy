@@ -5,7 +5,7 @@ import pino, { type Logger } from 'pino';
 import { AppModule } from './app.module.js';
 import { shutdownOnStdinEof } from './bootstrap/stdin-shutdown.js';
 import { CartJobsHandler, registerCartJobs } from './cart/cart-jobs.js';
-import { type AppConfig, ConfigError, loadAppConfig } from './common/config/app-config.js';
+import { type AppConfig, ConfigError, configWarnings, loadAppConfig } from './common/config/app-config.js';
 import { createPool } from './common/db/database.module.js';
 import {
   CART_READER,
@@ -19,8 +19,10 @@ import { buildPinoOptions } from './common/logging/logger.config.js';
 import { SettingsReader } from './common/settings/settings-reader.js';
 import { createOrdersWorkerWiring } from './jobs/orders/orders-worker.wiring.js';
 import { createOtpDeliveryListener } from './jobs/otp/otp-delivery-listener.js';
+import { registerPaymentOnecResults } from './jobs/payments/payments-onec-results.js';
 import { createSyncWorkerWiring } from './jobs/sync/sync-worker.wiring.js';
 import { WorkerRuntime } from './jobs/worker-runtime.js';
+import { PaymentOnecDocument } from './payments/onec/payment-onec-document.js';
 import { ReturnsStatusSyncHandler } from './returns/onec/returns-jobs.bridge.js';
 import { pinoSmsLogger } from './integrations/sms/sms-telemetry.js';
 import { SmsRuntime } from './notifications/sms/sms-runtime.js';
@@ -87,6 +89,7 @@ async function bootstrap(): Promise<void> {
   }
   const log = pino(buildPinoOptions(config, 'pos-worker'));
   NestLogger.overrideLogger(new PinoNestLogger(log));
+  for (const w of configWarnings()) log.warn({ event: 'config.warning' }, w);
 
   if (!config.WORKERS_ENABLED) {
     log.warn('worker.disabled: WORKERS_ENABLED=false — процесс pos-worker завершается без запуска обработчиков');
@@ -101,7 +104,7 @@ async function bootstrap(): Promise<void> {
   // `cart` (`catalog.prices-changed|stock-changed`, `cart.parked_expire`) регистрируются ниже (`registerCartJobs`).
   let nest: INestApplicationContext;
   try {
-    nest = await NestFactory.createApplicationContext(AppModule.forRoot(config), {
+    nest = await NestFactory.createApplicationContext(AppModule.forRoot(config, { processRole: 'worker' }), {
       logger: new PinoNestLogger(log.child({ component: 'nest' })),
       abortOnError: false,
     });
@@ -114,6 +117,8 @@ async function bootstrap(): Promise<void> {
   const paymentsPort = nest.get<PaymentsPort>(PAYMENTS_PORT);
   const notificationsPort = nest.get<NotificationsPort>(NOTIFICATIONS_PORT);
   const cartJobs = nest.get(CartJobsHandler, { strict: false });
+  // ADR-123: результат доставки документа оплаты QR банка в 1С (`payment/create`) → `payments.onec_ref`.
+  const paymentOnecResults = nest.get(PaymentOnecDocument, { strict: false });
 
   const pool = createPool(config, 'pos-worker', (info) => log.warn(info, 'pg.pool.idle_client_error'));
   // SMS-контур (RM-D-002): `sms.send`, DR-опрос и баланс SMSPro — обработчики pg-boss этого процесса.
@@ -159,6 +164,7 @@ async function bootstrap(): Promise<void> {
       (boss) => sync.changeJobs.attach(boss),
       (boss) => sms.register(boss),
       (boss) => orders.register(boss),
+      (boss) => registerPaymentOnecResults(boss, paymentOnecResults),
       (boss) =>
         registerCartJobs(boss, cartJobs, {
           pollingIntervalSeconds: 2, // money-double: allow — секунды

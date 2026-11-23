@@ -295,16 +295,72 @@ export class PaymentsRepository {
     return r.map((x) => x.id);
   }
 
-  /** Платежи с QR 1С, которые нужно опрашивать или отменить в 1С (восстановление цепочки опроса после рестарта). */
-  async pollCandidates(tx: DbExecutor, limit: number): Promise<string[]> {
+  /**
+   * Платежи с QR провайдера (`onec` — 1С, `bakai` — банк через наш сервер, ADR-123), которые нужно опрашивать или
+   * отменить у провайдера (восстановление цепочки опроса после рестарта).
+   */
+  async pollCandidates(tx: DbExecutor, limit: number, provider: 'onec' | 'bakai' | 'none' = 'onec'): Promise<string[]> {
+    if (provider === 'none') return [];
     const r = await rows<{ id: string }>(
       tx,
       sql`SELECT id FROM payments
-           WHERE qr_provider = 'onec' AND qr_provider_ref IS NOT NULL
+           WHERE qr_provider = ${provider} AND qr_provider_ref IS NOT NULL
              AND (status = 'qr_shown'
                   OR (status = 'voided' AND coalesce(qr_provider_status_raw, '') NOT IN ('cancelled', 'paid', 'cancel_failed')))
            ORDER BY updated_at LIMIT ${limit}`,
     );
     return r.map((x) => x.id);
+  }
+
+  /**
+   * QR-платёж по референсу банка (ADR-123; 08 §6 «Сопоставление»): текущий `qr_provider_ref` или референс из истории
+   * перевыпусков (`qr_ref_history`, 10 PAY-025). `null` — неизвестный референс (`unknown_reference`).
+   */
+  async findByQrReference(tx: DbExecutor, provider: 'onec' | 'bakai', reference: string): Promise<string | null> {
+    const r = await rows<{ id: string }>(
+      tx,
+      sql`SELECT id FROM payments
+           WHERE method = 'qr_bakai' AND qr_provider = ${provider}
+             AND (qr_provider_ref = ${reference} OR ${reference}::text = ANY (qr_ref_history))
+           ORDER BY (qr_provider_ref = ${reference}) DESC, created_at DESC LIMIT 1`,
+    );
+    return r[0]?.id ?? null;
+  }
+
+  /** Последний QR-платёж заказа по публичному номеру заказа (второй ключ сопоставления вебхука, 08 §6). */
+  async findQrByOrderNumber(tx: DbExecutor, provider: 'onec' | 'bakai', orderNumber: string): Promise<string | null> {
+    const r = await rows<{ id: string }>(
+      tx,
+      sql`SELECT p.id FROM payments p JOIN orders o ON o.id = p.order_id
+           WHERE o.public_number = ${orderNumber} AND p.method = 'qr_bakai' AND p.qr_provider = ${provider}
+           ORDER BY p.created_at DESC LIMIT 1`,
+    );
+    return r[0]?.id ?? null;
+  }
+
+  /**
+   * QR-платежи банка, полученные (`received`) в календарный день Бишкека `day` (`YYYY-MM-DD`) — сверка с выпиской
+   * банка (ADR-123; 10 PAY-029). `dynamicQr` — платежу выдан динамический QR банка (`qr_provider_ref` задан); без него
+   * (статический QR, `manualOnly` при недоступности банка) операцию банка по референсу не сопоставить.
+   */
+  async receivedQrOfDay(
+    tx: DbExecutor,
+    provider: 'onec' | 'bakai',
+    day: string,
+  ): Promise<{ id: string; amount: string; bankReference: string | null; qrRef: string | null; dynamicQr: boolean }[]> {
+    const r = await rows<{ id: string; amount: string; bank_reference: string | null; qr_provider_ref: string | null }>(
+      tx,
+      sql`SELECT id, amount::text AS amount, bank_reference, qr_provider_ref FROM payments
+           WHERE method = 'qr_bakai' AND qr_provider = ${provider} AND status = 'received'
+             AND received_at >= (${day}::date::timestamp AT TIME ZONE 'Asia/Bishkek')
+             AND received_at < ((${day}::date + 1)::timestamp AT TIME ZONE 'Asia/Bishkek')`,
+    );
+    return r.map((x) => ({
+      id: x.id,
+      amount: x.amount,
+      bankReference: x.bank_reference,
+      qrRef: x.qr_provider_ref,
+      dynamicQr: x.qr_provider_ref !== null,
+    }));
   }
 }

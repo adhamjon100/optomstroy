@@ -21,6 +21,16 @@ export interface OutboxRow {
     readonly contractorRef: string | null;
     readonly agreementRef: string | null;
   } | null;
+  /**
+   * Ссылки 1С заказа-основания (`depends_on_outbox_id` → строка `order/create`, `sent|confirmed`): документ оплаты QR
+   * банка ставится в очередь в момент оплаты, когда заказа в 1С может ещё не быть (ADR-123) — пустые `orderRef` и
+   * `customerRef` тела `POST /pos/v1/payments` дополняются при доставке. Ссылка заказа — `orders.onec_ref` или Ref
+   * ответа 1С строки заказа; `undefined` — зависимости нет.
+   */
+  readonly dependencyOrder?: {
+    readonly ref: string | null;
+    readonly customerRef: string | null;
+  } | null;
 }
 
 /**

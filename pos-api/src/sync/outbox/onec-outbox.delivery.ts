@@ -36,6 +36,21 @@ export function withDependencyCustomer(payload: OnecJsonObject, dep: OutboxRow['
 }
 
 /**
+ * Тело документа оплаты дополняется ссылками 1С заказа-основания в момент доставки (ADR-123; контракт 1С
+ * `PaymentCreateRequest.customerRef` обязателен): сохранённый `payload` (и `payload_hash`) не меняется. Заполняются
+ * только пустые `orderRef` и `customerRef`.
+ */
+export function withDependencyOrder(payload: OnecJsonObject, dep: OutboxRow['dependencyOrder']): OnecJsonObject {
+  if (!dep) return payload;
+  const empty = (k: string) => typeof payload[k] !== 'string' || payload[k] === '';
+  return {
+    ...payload,
+    ...(empty('orderRef') && dep.ref ? { orderRef: dep.ref } : {}),
+    ...(empty('customerRef') && dep.customerRef ? { customerRef: dep.customerRef } : {}),
+  };
+}
+
+/**
  * Канал записи outbox → 1С поверх `OnecGateway` (05 §6, §8; 07 §8.2; ядро §22.1): маршрут
  * `aggregate_type × operation` → метод `/pos/v1/*`. Внешний ключ идемпотентности — `externalId` = UUID агрегата, поэтому
  * повтор после таймаута безопасен (1С вернёт существующий документ, 200 или `POS_E_DUPLICATE` → `sent`).
@@ -73,7 +88,10 @@ export class OnecOutboxDelivery implements OutboxDeliveryPort {
           res = await this.gateway.cancelOrder(row.externalId, payload, callOpts);
           break;
         case 'payment/create':
-          res = await this.gateway.createPayment({ ...payload, externalId: row.externalId }, callOpts);
+          res = await this.gateway.createPayment(
+            withDependencyOrder({ ...payload, externalId: row.externalId }, row.dependencyOrder),
+            callOpts,
+          );
           break;
         case 'return_request/create':
           // Заявка на возврат (этап G, RM-G-005; 05 §6.3 `POST /pos/v1/returns`, ONEC-048) — только при

@@ -3,6 +3,7 @@ import { formatVersionHeader, parsePlatformVersions } from '../../common/app-ver
 import { applyAuditGucs, auditContextFromRequest } from '../../common/audit/audit-context.js';
 import { AuditService } from '../../common/audit/audit.service.js';
 import type { DbExecutor } from '../../common/audit/db-executor.js';
+import { qrProviderCode } from '../../common/config/qr-provider.js';
 import { APP_CONFIG, type AppConfig } from '../../common/config/app-config.js';
 import { DRIZZLE } from '../../common/db/database.module.js';
 import type { RequestWithContext } from '../../common/http/request-context.js';
@@ -218,7 +219,7 @@ export class AdminSettingsService {
       customerSelfService: c.CUSTOMER_SELF_SERVICE,
       kioskMode: c.KIOSK_MODE,
       debtPaymentsFromPos: c.DEBT_PAYMENTS_FROM_POS,
-      qrProvider: c.QR_PROVIDER,
+      qrProvider: qrProviderCode(c.QR_PROVIDER),
       qrTtlMinutes: c.QR_TTL_MINUTES,
       qrOnecPollSeconds: c.QR_ONEC_POLL_SECONDS,
       receivablesMaxAgeMin: c.RECEIVABLES_MAX_AGE_MIN,

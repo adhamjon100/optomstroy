@@ -10,7 +10,8 @@ import { SalesDomainError } from '../domain-error.js';
  */
 export interface PaymentMethodsContext {
   readonly isCustomerMode: boolean;
-  readonly qrProvider: 'onec' | 'none' | 'bakai';
+  /** env `QR_PROVIDER` (`bank`) или код хранения (`bakai`) — ADR-123; важно только `none`. */
+  readonly qrProvider: 'onec' | 'none' | 'bank' | 'bakai';
   /** Право `credit.sale.create`. */
   readonly canSellOnCredit: boolean;
 }

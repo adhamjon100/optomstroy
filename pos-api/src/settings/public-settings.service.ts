@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { AppVersionPolicy } from '../common/app-version/app-version.policy.js';
 import { formatVersionHeader } from '../common/app-version/version-policy.js';
 import { APP_CONFIG, type AppConfig } from '../common/config/app-config.js';
+import { qrProviderCode } from '../common/config/qr-provider.js';
 import { SettingsReader } from '../common/settings/settings-reader.js';
 import { kioskIntegerSetting } from './public-settings.map.js';
 
@@ -63,7 +64,7 @@ const CONTACT_KINDS = new Set(['phone', 'telegram', 'email']);
 
 type PublicSettingsConfig = Pick<
   AppConfig,
-  'CUSTOMER_SELF_SERVICE' | 'DEBT_PAYMENTS_FROM_POS' | 'QR_PROVIDER' | 'KIOSK_MODE'
+  'CUSTOMER_SELF_SERVICE' | 'DEBT_PAYMENTS_FROM_POS' | 'QR_PROVIDER' | 'KIOSK_MODE' | 'QR_WEBHOOK_ENABLED'
 >;
 
 /**
@@ -98,7 +99,8 @@ export class PublicSettingsService {
       ]);
     const policy = await this.versions.refresh();
     const qrOn = typeof qrEnabled === 'boolean' ? qrEnabled : PUBLIC_SETTINGS_DEFAULTS.qrEnabled;
-    const provider: QrProviderMode = this.config.QR_PROVIDER;
+    // Код контракта (`bank` → `bakai`, ADR-123): `QrProviderMode` OpenAPI не меняется.
+    const provider: QrProviderMode = qrProviderCode(this.config.QR_PROVIDER);
     return {
       deliverySlots: coerceSlots(slots),
       supportContacts: coerceContacts(contacts),
@@ -122,7 +124,8 @@ export class PublicSettingsService {
         customerSelfService: this.config.CUSTOMER_SELF_SERVICE,
         returnsFromPos: typeof returnsEnabled === 'boolean' ? returnsEnabled : PUBLIC_SETTINGS_DEFAULTS.returnsEnabled,
         qrProvider: qrOn ? provider : 'none',
-        qrWebhook: provider === 'bakai' && qrOn,
+        // По факту: маршрут вебхука банка зарегистрирован (QR_PROVIDER=bank и QR_WEBHOOK_ENABLED=true) и QR включён.
+        qrWebhook: this.config.QR_PROVIDER === 'bank' && this.config.QR_WEBHOOK_ENABLED && qrOn,
         debtPaymentsFromPos: this.config.DEBT_PAYMENTS_FROM_POS,
         storeTablet: this.config.KIOSK_MODE,
       },

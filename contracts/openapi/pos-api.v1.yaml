@@ -7,7 +7,7 @@
 openapi: 3.0.3
 info:
   title: Optomstroy POS API
-  version: 1.4.0
+  version: 1.5.0
   description: |
     REST/JSON API pos-api (NestJS) для pos-app (Flutter: Android, Windows, iOS) — сотрудники и (R1, ядро §24.2) клиенты-покупатели, общий планшет магазина в торговом зале (технический пользователь kind=kiosk, флаг KIOSK_MODE, по умолчанию false — 08 §4.25, ADR-115), а также входящий обмен 1С (вариант C-2) и вебхук банка (только QR_PROVIDER=bakai, R2). Ошибки — RFC 9457 application/problem+json с машинным полем code (закрытый перечень 08 §2.4). Деньги — строки с 2 знаками + currency KGS; количества — строки с точностью единицы (≤ 3 знаков); время — UTC ISO-8601 с суффиксом Z; идентификаторы — UUID в нижнем регистре. Клиент никогда не передаёт цены, суммы и итоги (08 §2.14). Права проверяются сервером (deny by default).
   contact:
@@ -7892,23 +7892,23 @@ paths:
       tags:
       - payments
       operationId: payments_qr_webhook
-      summary: Вебхук банка о зачислении — только QR_PROVIDER=bakai (R2; контракт банка НЕ ПОДТВЕРЖДЁН, Q-014)
+      summary: Вебхук банка о зачислении — только QR_PROVIDER=bank и QR_WEBHOOK_ENABLED=true (ADR-123; контракт банка НЕ ПОДТВЕРЖДЁН, Q-381, Q-382)
       description: |
-        08 §4.9.5, §6. Маршрут регистрируется только при QR_PROVIDER=bakai (R2, ядро §24.4) и QR_WEBHOOK_ENABLED=true (ядро §17.7; 13 RM-F-014); при QR_PROVIDER=onec (основной R1) и none → 404 NOT_FOUND, оплату подтверждает 1С (§6.1) или кассир (POST /payments/{id}/confirm-manual). Вызывает только банк: пользовательских ролей нет, Authorization: Bearer не используется; аутентификация — подпись тела X-Signature = HMAC-SHA256(secret, timestamp + "." + rawBody) + X-Timestamp (±5 мин) — ИЛИ mTLS, ИЛИ Basic/API-key + allowlist IP, по возможностям банка (секрет — QR_WEBHOOK_SECRET_FILE). Провал подписи → 401 WEBHOOK_SIGNATURE_INVALID (минимальное тело); IP вне QR_WEBHOOK_ALLOWED_IPS → 403 FORBIDDEN (обязательная проверка в pos-api, ядро §18.2 п.13); 429 RATE_LIMITED; 5xx — только при недоступной БД (банк повторит). Бизнес-расхождения ошибкой не являются: 200, платёж → manual_confirm с reviewReason (amount_mismatch, unknown_reference, late_payment) или запись сверки. Идемпотентность — по (reference, eventId) в payment_webhook_events: повтор → 200 без побочных эффектов (заголовок Idempotency-Key не применяется). Ответ всегда быстрый (≤ 2 с), обработка — в фоне. Тело — ПРЕДПОЛОЖЕНИЕ для проектирования. Аудит payment.webhook_rejected / payment.webhook_received / payment.received (confirmationKind=webhook).
+        08 §4.9.5, §6; ADR-123 (P-004). Маршрут регистрируется только при QR_PROVIDER=bank (устаревший синоним bakai) и QR_WEBHOOK_ENABLED=true; при QR_PROVIDER=onec и none маршрута нет → 404 NOT_FOUND, оплату подтверждает 1С (§6.1) или кассир (POST /payments/{id}/confirm-manual). Вызывает только банк: пользовательских ролей нет, Authorization: Bearer не используется; аутентификация — подпись тела X-Signature = HMAC-SHA256(secret, X-Timestamp + "." + rawBody) в hex по СЫРОМУ телу запроса + X-Timestamp (Unix-секунды или ISO 8601, ±5 мин); секрет — QR_WEBHOOK_SECRET_FILE (без секрета при QR_WEBHOOK_ENABLED=true сервер не стартует). Порядок проверок: RL-WEBHOOK (600 запросов в минуту с одного IP источника, счётчик PostgreSQL) → 429 RATE_LIMITED; IP вне QR_WEBHOOK_ALLOWED_IPS → 403 FORBIDDEN (обязательная проверка в pos-api, ядро §18.2 п.13); провал подписи или метки времени → 401 WEBHOOK_SIGNATURE_INVALID (минимальное тело), платёж не меняется; тело не по схеме → 400 VALIDATION_FAILED; 5xx — только при недоступной БД (банк повторит). Бизнес-расхождения ошибкой не являются: 200, платёж → manual_confirm с reviewReason (amount_mismatch, unknown_reference, late_payment); платёж не найден → 200 {received, status: unknown_reference}, строка журнала без платежа (отчёт qr-reconciliation, unknownOperations) и уведомление кассирам и администраторам (kind=system). Идемпотентность — по eventId (UNIQUE (provider, provider_event_id) в payment_webhook_events): повтор → 200 без побочных эффектов (заголовок Idempotency-Key не применяется). Событие записывается в одной транзакции с переходом платежа (ответ обычно < 1 с); при received в той же транзакции ставится документ оплаты в 1С (onec_outbox payment/create). Тело — ПРЕДПОЛОЖЕНИЕ для проектирования (Q-382); банк — НЕ ПОДТВЕРЖДЁН (Q-381). Аудит payment.webhook_rejected / payment.webhook_received / payment.received (confirmationKind=webhook).
       security:
       - webhookSignature: []
       x-permissions: []
       x-roles: []
       x-step-up: false
       x-idempotent: false
-      x-feature-flag: QR_PROVIDER=bakai
+      x-feature-flag: QR_PROVIDER=bank
       x-status: proposed
       x-rate-limit-group: RL-WEBHOOK
       parameters:
       - name: X-Timestamp
         in: header
         required: false
-        description: 'Метка времени подписи (вариант (а) 08 §6, допуск ±5 мин — защита от replay). [НЕ ПОДТВЕРЖДЕНО: контракт банка, Q-014]'
+        description: 'Метка времени подписи (вариант (а) 08 §6, Unix-секунды или ISO 8601, допуск ±5 мин — защита от replay). Без неё → 401. [НЕ ПОДТВЕРЖДЕНО: контракт банка, Q-382]'
         schema:
           type: string
           maxLength: 64
@@ -9170,6 +9170,113 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         default:
           $ref: '#/components/responses/Problem'
+  /sandbox/bank/operations:
+    get:
+      tags:
+      - payments
+      operationId: sandbox_bank_operations
+      summary: Песочница банка — операции зачисления за день (только тестовый контур, ADR-123)
+      description: |
+        08 §4.9.8; ADR-123. Выписка песочницы банка за календарный день Бишкека — то, что ежедневная сверка QR сравнивает с платежами. Регистрируется при тех же условиях, что POST /sandbox/bank/qr/{reference}/pay, иначе → 404. Песочница хранит операции в памяти процесса pos-api: после перезапуска список пуст. Права — reports.qr_reconciliation.read (владелец, администратор) или payment.qr.confirm_manual (кассир, старший продавец).
+      x-permissions:
+      - reports.qr_reconciliation.read
+      - payment.qr.confirm_manual
+      x-roles:
+      - owner
+      - admin
+      - cashier
+      - senior_seller
+      x-step-up: false
+      x-idempotent: false
+      x-feature-flag: BANK_QR_ADAPTER=sandbox
+      x-status: proposed
+      x-rate-limit-group: RL-READ
+      parameters:
+      - name: day
+        in: query
+        required: false
+        description: Дата YYYY-MM-DD (Asia/Bishkek); по умолчанию — сегодня.
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Операции песочницы за день.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SandboxBankOperationList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /sandbox/bank/qr/{reference}/pay:
+    post:
+      tags:
+      - payments
+      operationId: sandbox_bank_qr_pay
+      summary: Песочница банка — оплатить выданный QR (только тестовый контур, ADR-123)
+      description: |
+        08 §4.9.7; ADR-123 (P-004). Служебный маршрут ПЕСОЧНИЦЫ банка — не API настоящего банка. Регистрируется только при QR_PROVIDER=bank, BANK_QR_ADAPTER=sandbox и APP_ENV≠prod (при APP_ENV=prod песочница — отказ в старте), иначе → 404. Записывает операцию зачисления песочницы по референсу QR (QrInfo.bankReference): сумма по умолчанию — сумма QR, amount меньше/больше — частичная/лишняя оплата (amount_mismatch); истёкший QR — только с allowExpired=true (поздняя оплата, late_payment), иначе 422. Если QR_WEBHOOK_ENABLED=true, песочница формирует ПОДПИСАННЫЙ вебхук (08 §6) и доставляет его в обработчик POST /payments/qr/webhook внутри процесса — с проверкой IP (адрес песочницы 127.0.0.1 должен быть в QR_WEBHOOK_ALLOWED_IPS) и подписи по сырому телу; итог — в webhook. Без вебхука оплату найдут опрос статуса, GET /payments/{id}?refreshStatus=true и ежедневная сверка QR. Права — payment.qr.confirm_manual (кассир, старший продавец); step-up не нужен (тестовый контур, деньги не двигаются). Аудит не пишется (переход платежа — аудитом вебхука).
+      x-permissions:
+      - payment.qr.confirm_manual
+      x-roles:
+      - cashier
+      - senior_seller
+      x-step-up: false
+      x-idempotent: false
+      x-feature-flag: BANK_QR_ADAPTER=sandbox
+      x-status: proposed
+      x-rate-limit-group: RL-FIN
+      parameters:
+      - name: reference
+        in: path
+        required: true
+        description: Референс QR песочницы (QrInfo.bankReference).
+        schema:
+          type: string
+          maxLength: 64
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SandboxBankPayRequest'
+      responses:
+        '200':
+          description: Операция записана; вебхук доставлен (или нет — см. webhook.delivered).
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SandboxBankPayResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        default:
+          $ref: '#/components/responses/Problem'
   /search/barcode/{value}:
     get:
       operationId: search_barcode_get
@@ -10381,6 +10488,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AdminReportsQrReconciliationRow'
+        unknownOperations:
+          type: array
+          description: |
+            Зачисления банка по неизвестному референсу QR за период (08 §6 «Сопоставление», POS-053; ADR-123): платёж не найден, деньги разбираются вручную. Источник — вебхук банка или ежедневная сверка; одна операция банка — одна строка. Передаётся при status=all|unmatched (при manual — пустой массив); при QR_PROVIDER=onec|none пуст. С 1.5.0.
+          items:
+            $ref: '#/components/schemas/AdminReportsQrUnknownOperation'
         summary:
           type: object
           properties:
@@ -10393,6 +10506,10 @@ components:
             unmatched:
               type: integer
               minimum: 0
+            unknownReference:
+              type: integer
+              minimum: 0
+              description: Число строк unknownOperations. С 1.5.0.
     AdminReportsQrReconciliationRow:
       type: object
       required:
@@ -10441,6 +10558,42 @@ components:
           nullable: true
           allOf:
           - $ref: '#/components/schemas/Money'
+    AdminReportsQrUnknownOperation:
+      type: object
+      required:
+      - operationId
+      - reference
+      - amount
+      - receivedAt
+      - source
+      description: Зачисление банка по неизвестному референсу QR (ADR-123). Поля тела банка — [НЕ ПОДТВЕРЖДЕНО Q-382]. С 1.5.0.
+      properties:
+        operationId:
+          type: string
+          nullable: true
+          description: Идентификатор операции зачисления у банка (null — банк не передал).
+        reference:
+          type: string
+          nullable: true
+          description: Референс QR из сообщения банка.
+        amount:
+          type: object
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/Money'
+        paidAt:
+          type: string
+          format: date-time
+          nullable: true
+        receivedAt:
+          type: string
+          format: date-time
+          description: Когда сервер POS узнал о зачислении (вебхук или сверка).
+        source:
+          type: string
+          enum:
+          - webhook
+          - reconciliation
     AdminReportsReceivables:
       type: object
       required:
@@ -16213,7 +16366,7 @@ components:
       - amount
       - currency
       additionalProperties: false
-      description: 'Тело вебхука банка — проектное предположение 08 §6 [НЕ ПОДТВЕРЖДЕНО: Q-014]; заменяется контрактом банка (13 RM-F-014).'
+      description: 'Тело вебхука банка — проектное предположение 08 §6 [НЕ ПОДТВЕРЖДЕНО: Q-381, Q-382]; заменяется контрактом банка. Так же формирует вебхук песочница банка (ADR-123).'
       properties:
         eventId:
           type: string
@@ -16230,6 +16383,11 @@ components:
           maxLength: 64
           description: = payment.qr.bankReference.
           example: BK-77123
+        operationId:
+          type: string
+          maxLength: 64
+          description: 'Идентификатор операции зачисления у банка (1.5.0, ADR-123): payment.externalRef, PaymentCreateRequest.bankReference документа оплаты в 1С и ключ ежедневной сверки QR.'
+          example: SBX-OP-0A1B2C3D4E5F
         merchantOrderId:
           type: string
           maxLength: 64
@@ -17039,7 +17197,7 @@ components:
       - provider
       - issuedAt
       - autoConfirm
-      description: Сериализуется только при payment.qr.show (08 §3.15). provider=onec — QR от 1С (основной R1); elqr_static — без суммы и срока; none — ручное подтверждение.
+      description: Сериализуется только при payment.qr.show (08 §3.15). provider=onec — QR от 1С; bakai — QR банка через наш сервер (QR_PROVIDER=bank, ADR-123; у песочницы банка payload — заведомо тестовая строка SANDBOX-QR|…); elqr_static — без суммы и срока; none — ручное подтверждение.
       properties:
         provider:
           $ref: '#/components/schemas/QrProvider'
@@ -17071,14 +17229,14 @@ components:
       - bakai
       - elqr_static
       - none
-      description: QrInfo.provider — свойство показанного QR; env QR_PROVIDER = none|onec|bakai (ядро §24.4).
+      description: 'QrInfo.provider — свойство показанного QR; env QR_PROVIDER = none|onec|bank (bakai — устаревший синоним bank). Код bakai — исторический код «QR банка через наш сервер (прямой API банка)» независимо от банка (ADR-123): значение не меняется.'
     QrProviderMode:
       type: string
       enum:
       - none
       - onec
       - bakai
-      description: 'Значение env QR_PROVIDER (ядро §17.7, §24.4; 07 payments.qr_provider): onec — основной R1, none — запасной, bakai — R2.'
+      description: 'Код режима QR (07 payments.qr_provider; ядро §17.7, §24.4; ADR-123): onec — QR через 1С, none — статический QR и ручное подтверждение, bakai — QR напрямую от банка через наш сервер (env QR_PROVIDER=bank, устаревший синоним bakai; код bakai — исторический, независимо от банка).'
     Quantity:
       type: object
       required:
@@ -17707,6 +17865,89 @@ components:
       - kiosk
       description: |
         role_code 07 §6.1; kiosk — неназначаемая техническая роль планшета магазина (is_assignable=false; ADR-115, 11 §4.2), с 1.3.0; выдаётся только при подключении планшета (POST /admin/store-tablets). Встречается и в UserRef.role (audit.createdBy заявки с планшета).
+    SandboxBankOperation:
+      type: object
+      required:
+      - operationId
+      - reference
+      - merchantOrderId
+      - amount
+      - paidAt
+      additionalProperties: false
+      description: Операция зачисления песочницы банка (тестовые данные).
+      properties:
+        operationId:
+          type: string
+          maxLength: 64
+          example: SBX-OP-0A1B2C3D4E5F
+        reference:
+          type: string
+          maxLength: 64
+          example: SBX-1A2B3C4D5E6F
+        merchantOrderId:
+          type: string
+          nullable: true
+          maxLength: 64
+          example: POS-2026-000123
+        amount:
+          $ref: '#/components/schemas/Money'
+        paidAt:
+          type: string
+          format: date-time
+    SandboxBankOperationList:
+      type: object
+      required:
+      - day
+      - items
+      additionalProperties: false
+      properties:
+        day:
+          type: string
+          format: date
+          example: '2026-11-24'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SandboxBankOperation'
+    SandboxBankPayRequest:
+      type: object
+      additionalProperties: false
+      description: Тело POST /sandbox/bank/qr/{reference}/pay; пустое тело — оплатить полную сумму QR.
+      properties:
+        amount:
+          $ref: '#/components/schemas/MoneyAmount'
+        allowExpired:
+          type: boolean
+          description: Оплатить истёкший QR (поздняя оплата, late_payment).
+    SandboxBankPayResponse:
+      type: object
+      required:
+      - operation
+      - webhook
+      additionalProperties: false
+      properties:
+        operation:
+          $ref: '#/components/schemas/SandboxBankOperation'
+        webhook:
+          type: object
+          required:
+          - delivered
+          - httpStatus
+          - result
+          additionalProperties: false
+          description: 'Итог доставки подписанного вебхука в обработчик: delivered=false — вебхук выключен (QR_WEBHOOK_ENABLED=false); result — итог обработки (received, manual_confirm:<reviewReason>, unknown_reference, duplicate) или код ошибки (FORBIDDEN, WEBHOOK_SIGNATURE_INVALID).'
+          properties:
+            delivered:
+              type: boolean
+            httpStatus:
+              type: integer
+              nullable: true
+              example: 200
+            result:
+              type: string
+              nullable: true
+              maxLength: 100
+              example: received
     SearchBarcodeResult:
       type: object
       required:

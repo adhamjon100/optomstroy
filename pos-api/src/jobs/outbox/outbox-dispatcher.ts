@@ -108,6 +108,7 @@ interface ClaimedRow {
   attempts: number;
   created_at: Date;
   dep_customer?: { ref: string | null; contractorRef: string | null; agreementRef: string | null } | null;
+  dep_order?: { ref: string | null; customerRef: string | null } | null;
 }
 
 /**
@@ -282,7 +283,13 @@ export class OutboxDispatcher {
                                            'contractorRef', c.onec_counterparty_ref::text,
                                            'agreementRef', c.onec_agreement_ref::text)
                     FROM onec_outbox d LEFT JOIN customers c ON c.id = d.aggregate_id
-                   WHERE d.id = o.depends_on_outbox_id AND d.aggregate_type = 'customer') AS dep_customer`,
+                   WHERE d.id = o.depends_on_outbox_id AND d.aggregate_type = 'customer') AS dep_customer,
+                 -- Заказ-основание документа оплаты (ADR-123): ссылки 1С заказа и клиента в момент доставки.
+                 (SELECT json_build_object('ref', coalesce(ord.onec_ref, d.onec_ref)::text,
+                                           'customerRef', c.onec_ref::text)
+                    FROM onec_outbox d LEFT JOIN orders ord ON ord.id = d.aggregate_id
+                         LEFT JOIN customers c ON c.id = ord.customer_id
+                   WHERE d.id = o.depends_on_outbox_id AND d.aggregate_type = 'order') AS dep_order`,
       [this.workerId, this.cfg.batchSize, this.cfg.leaseMs / 1000],
     );
     return r.rows.map(toRow);
@@ -509,6 +516,7 @@ function toRow(r: ClaimedRow): OutboxRow & { readonly payloadIntact: boolean } {
     attempts: Number(r.attempts),
     createdAt: r.created_at,
     ...(r.dep_customer ? { dependencyCustomer: r.dep_customer } : {}),
+    ...(r.dep_order ? { dependencyOrder: r.dep_order } : {}),
     payloadIntact: outboxPayloadIntact(r.payload, r.payload_hash),
   };
 }

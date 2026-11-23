@@ -82,6 +82,8 @@ export const HTTP_RATE_LIMIT_ROUTES: Readonly<Record<HttpRateLimitGroup, readonl
     'GET /registration/customer-match',
     'GET /returns',
     'GET /returns/{id}',
+    // Песочница банка (ADR-123; только тестовый контур, BANK_QR_ADAPTER=sandbox).
+    'GET /sandbox/bank/operations',
     'GET /settings/public',
     'GET /sync/status',
     'GET /transactions',
@@ -120,6 +122,8 @@ export const HTTP_RATE_LIMIT_ROUTES: Readonly<Record<HttpRateLimitGroup, readonl
     'POST /returns/{id}/accept',
     'POST /returns/{id}/reject',
     'POST /returns/{id}/submit',
+    // Песочница банка (ADR-123; только тестовый контур, BANK_QR_ADAPTER=sandbox).
+    'POST /sandbox/bank/qr/{reference}/pay',
   ],
 };
 

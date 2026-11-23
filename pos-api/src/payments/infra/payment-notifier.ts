@@ -43,6 +43,35 @@ export class PaymentNotifier {
     }
   }
 
+  /**
+   * Служебное уведомление роли без платежа (`notification_kind = system`, `payload.target = null`) — например,
+   * зачисление банка по неизвестному референсу QR (08 §6 «Сопоставление», POS-053). `dedupeKey` — ключ события
+   * (к нему добавляется роль).
+   */
+  async notifySystemRole(
+    role: string,
+    n: {
+      readonly severity: 'info' | 'warning' | 'error';
+      readonly title: string;
+      readonly body: string;
+      readonly dedupeKey: string;
+    },
+  ): Promise<void> {
+    if (!this.registry.isBound(NOTIFICATIONS_PORT)) return;
+    try {
+      await this.registry.get(NOTIFICATIONS_PORT).notifyRole(null, role, {
+        kind: 'system',
+        severity: n.severity,
+        title: n.title,
+        body: n.body,
+        payload: { target: null },
+        dedupeKey: `${n.dedupeKey}:${role}`,
+      });
+    } catch (err) {
+      this.logger.warn({ err, event: n.dedupeKey, role }, 'payments.notify_system_failed');
+    }
+  }
+
   async notify(n: PaymentNotice): Promise<void> {
     if (!this.registry.isBound(NOTIFICATIONS_PORT)) return;
     try {

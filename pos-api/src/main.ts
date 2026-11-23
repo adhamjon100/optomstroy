@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { createApp } from './bootstrap/create-app.js';
 import { shutdownOnStdinEof } from './bootstrap/stdin-shutdown.js';
-import { type AppConfig, ConfigError, loadAppConfig } from './common/config/app-config.js';
+import { type AppConfig, ConfigError, configWarnings, loadAppConfig } from './common/config/app-config.js';
 
 /**
  * Точка входа pos-api (`node dist/main.js`). Конфигурация валидируется до создания приложения: при ошибке —
@@ -23,6 +23,7 @@ async function bootstrap(): Promise<void> {
     throw e;
   }
   const app = await createApp(config);
+  for (const w of configWarnings()) Logger.warn(w, 'Config');
   shutdownOnStdinEof(config.POS_SHUTDOWN_ON_STDIN_EOF, (reason) => {
     Logger.log(`api.shutdown: ${reason} — штатная остановка`, 'Main');
     app.close().then(

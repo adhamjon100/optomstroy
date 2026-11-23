@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -333,8 +334,14 @@ export class FakeOnecGateway implements OnecGateway {
     return this.respond('cancelOrder', [externalId, request, opts], { externalId });
   }
 
+  /**
+   * Документ оплаты: `ref` ответа — детерминированный по `externalId` платежа (`fixtureDocumentRef`), а не общий Ref
+   * фикстуры: иначе на стенде (`ONEC_MODE=fixtures`) все платежи получили бы один документ 1С, и `payments.onec_ref`
+   * записался бы только у первого (ревью P-004, пакет C). Повтор того же `externalId` — тот же Ref (как у 1С).
+   */
   createPayment(request: OnecJsonObject, opts?: OnecCallOptions): Promise<OnecResult<OnecJsonObject>> {
-    return this.respond('createPayment', [request, opts]);
+    const id = typeof request.externalId === 'string' ? request.externalId : undefined;
+    return this.respond('createPayment', [request, opts], id ? { ref: fixtureDocumentRef('payment', id) } : undefined);
   }
 
   createQrPayment(request: OnecQrCreateRequest, opts?: OnecCallOptions): Promise<OnecResult<OnecQrCreateResponse>> {
@@ -483,6 +490,16 @@ export class FakeOnecGateway implements OnecGateway {
     }
     return Promise.resolve({ status, body: body as T, ...(requestId ? { requestId } : {}) });
   }
+}
+
+/**
+ * Ref документа 1С для фикстур — детерминированный UUID (вид v4) из вида документа и `externalId`: разные платежи —
+ * разные документы, повтор — тот же (**тестовые данные**).
+ */
+export function fixtureDocumentRef(kind: string, externalId: string): string {
+  const h = createHash('sha256').update(`${kind}:${externalId}`).digest('hex');
+  const variant = ((parseInt(h[16] ?? '0', 16) & 0x3) | 0x8).toString(16);
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
 /** Товары каталога для строк реализаций кассира: первые `limit` цен базовой единицы первого вида цены генератора. */

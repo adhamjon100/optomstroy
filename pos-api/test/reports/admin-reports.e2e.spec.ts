@@ -243,7 +243,8 @@ describe('admin/reports: сводка продаж, долги, сверка QR 
   it('qr-reconciliation: подтверждения 1С и ручные, расхождения (manual_confirm и qr_shown старше QR_TTL_MINUTES)', async () => {
     const r = await get(w.actors.owner, 'qr-reconciliation', { from: FROM, to: TO });
     expect(r.status).toBe(200);
-    expect(r.body.summary).toEqual({ webhook: 1, manual: 1, unmatched: 2 });
+    expect(r.body.summary).toEqual({ webhook: 1, manual: 1, unmatched: 2, unknownReference: 0 });
+    expect(r.body.unknownOperations).toEqual([]);
     const byId = new Map((r.body.rows as { paymentId: string }[]).map((x) => [x.paymentId, x]));
     expect([...byId.keys()].sort()).toEqual([o.o2, o.o6, o.o7, o.o8, o.o9].map((x) => x.paymentId).sort());
     expect(byId.get(o.o2.paymentId)).toMatchObject({

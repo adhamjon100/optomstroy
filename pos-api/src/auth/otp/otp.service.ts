@@ -124,11 +124,13 @@ export class OtpService {
   /**
    * Тестовый режим 09 §5.8: только `APP_ENV ∈ {dev, staging}` и номер из `AUTH_OTP_TEST_PHONES`.
    * Значение `*` (любой номер) — только `APP_ENV=dev`: локальное демо на тестовых данных (ADR-109); в staging и prod
-   * запрещено проверкой конфигурации (env.schema.ts).
+   * запрещено проверкой конфигурации (env.schema.ts). При настоящем шлюзе (`SMS_PROVIDER=smspro`) тестового кода нет
+   * (ADR-124 п. 4): env.schema.ts отвергает такую конфигурацию при старте, здесь — второй рубеж.
    */
   isTestPhone(phoneE164: string): boolean {
     const c = this.config;
     if (!c.AUTH_OTP_TEST_MODE || (c.APP_ENV !== 'dev' && c.APP_ENV !== 'staging')) return false;
+    if (c.SMS_PROVIDER === 'smspro') return false;
     if (!c.AUTH_OTP_TEST_CODE || !/^\d{6}$/.test(c.AUTH_OTP_TEST_CODE)) return false;
     const phones = (c.AUTH_OTP_TEST_PHONES ?? '').split(',').map((s) => s.trim());
     if (phones.includes('*')) return c.APP_ENV === 'dev';

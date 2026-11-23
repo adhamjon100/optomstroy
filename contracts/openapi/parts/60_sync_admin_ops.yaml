@@ -2938,6 +2938,13 @@ components:
         rows:
           type: array
           items: {$ref: '#/components/schemas/AdminReportsQrReconciliationRow'}
+        unknownOperations:
+          type: array
+          description: >
+            Зачисления банка по неизвестному референсу QR за период (08 §6 «Сопоставление», POS-053; ADR-123): платёж не
+            найден, деньги разбираются вручную. Источник — вебхук банка или ежедневная сверка; одна операция банка — одна
+            строка. Передаётся при status=all|unmatched (при manual — пустой массив); при QR_PROVIDER=onec|none пуст. С 1.5.0.
+          items: {$ref: '#/components/schemas/AdminReportsQrUnknownOperation'}
         summary:
           type: object
           properties:
@@ -2950,6 +2957,38 @@ components:
             unmatched:
               type: integer
               minimum: 0
+            unknownReference:
+              type: integer
+              minimum: 0
+              description: Число строк unknownOperations. С 1.5.0.
+    AdminReportsQrUnknownOperation:
+      type: object
+      required: [operationId, reference, amount, receivedAt, source]
+      description: Зачисление банка по неизвестному референсу QR (ADR-123). Поля тела банка — [НЕ ПОДТВЕРЖДЕНО Q-382]. С 1.5.0.
+      properties:
+        operationId:
+          type: string
+          nullable: true
+          description: Идентификатор операции зачисления у банка (null — банк не передал).
+        reference:
+          type: string
+          nullable: true
+          description: Референс QR из сообщения банка.
+        amount:
+          type: object
+          nullable: true
+          allOf: [{$ref: '#/components/schemas/Money'}]
+        paidAt:
+          type: string
+          format: date-time
+          nullable: true
+        receivedAt:
+          type: string
+          format: date-time
+          description: Когда сервер POS узнал о зачислении (вебхук или сверка).
+        source:
+          type: string
+          enum: [webhook, reconciliation]
     HealthLiveness:
       type: object
       required: [status, apiVersion, serverTime]

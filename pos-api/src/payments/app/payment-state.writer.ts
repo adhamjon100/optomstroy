@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { type AuditContext, systemActor } from '../../common/audit/audit-context.js';
 import { AuditService, type AuditStepUpMethod } from '../../common/audit/audit.service.js';
 import type { DbExecutor } from '../../common/audit/db-executor.js';
@@ -17,6 +17,7 @@ import {
   paymentStateInvalid,
 } from '../../sales-domain/payment/payment-status.js';
 import { PaymentJournal, type PaymentJournalKind } from '../infra/payment-journal.js';
+import { PaymentOnecDocument } from '../onec/payment-onec-document.js';
 import { type PaymentPatch, type PaymentRow, PaymentsRepository } from '../infra/payments.repository.js';
 
 export interface ReceiveInput {
@@ -39,7 +40,8 @@ export interface ReceiveInput {
 /**
  * Переходы автомата `payment_status` с побочными записями (07 §6.4, правило 3): условный UPDATE строки платежа,
  * при `received` — `OrderStatusPort.applyReceived` (paid_amount, paid_at, проекция D-20), строка `transactions` и
- * `audit_logs` в той же транзакции (10 PAY-006; 11 SEC-073). Допустимость перехода — только доменная таблица
+ * `audit_logs` в той же транзакции (10 PAY-006; 11 SEC-073); для QR банка через наш сервер — элемент `onec_outbox`
+ * `payment/create` (ADR-123, `PaymentOnecDocument`). Допустимость перехода — только доменная таблица
  * `PAYMENT_TRANSITIONS` (sales-domain/payment).
  */
 @Injectable()
@@ -50,6 +52,7 @@ export class PaymentStateWriter {
     private readonly audit: AuditService,
     @Inject(ORDER_STATUS_PORT) private readonly orders: OrderStatusPort,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Optional() private readonly onecDocument?: PaymentOnecDocument,
   ) {}
 
   /** Переход `p.status → to` (или только поля при `to = null`); гонка → `409 PAYMENT_STATE_INVALID`. */
@@ -126,6 +129,8 @@ export class PaymentStateWriter {
     i: ReceiveInput,
   ): Promise<{ payment: PaymentRow; paidAmount: string; isPaid: boolean }> {
     const received = await this.move(tx, i.payment, 'received', i.actorKind, i.patch);
+    // ADR-123: документ оплаты в 1С по QR банка — элемент onec_outbox в этой же транзакции (без двойных документов).
+    if (this.onecDocument && PaymentOnecDocument.applies(received)) await this.onecDocument.enqueue(tx, received);
     await this.orders.applyReceived(tx, {
       orderId: i.order.orderId,
       amount: Money.of(received.amount).toString(),

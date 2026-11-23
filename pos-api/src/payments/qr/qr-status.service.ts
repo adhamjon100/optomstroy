@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { applyAuditGucs, systemActor } from '../../common/audit/audit-context.js';
+import type { DbExecutor } from '../../common/audit/db-executor.js';
 import { CLOCK, type Clock } from '../../common/auth/clock.js';
 import { APP_CONFIG, type AppConfig } from '../../common/config/app-config.js';
 import { DRIZZLE, type Database } from '../../common/db/database.module.js';
@@ -34,6 +35,14 @@ export function qrCancelRetryDelaySeconds(elapsedMs: number): number {
 const CANCEL_DONE = new Set(['cancelled', 'paid', 'cancel_failed']);
 
 const STOP: QrPollOutcome = { continue: false, delaySeconds: 0, status: null };
+
+/** Итог применения отчёта провайдера (`applyReportIn`). */
+export interface ReportOutcome {
+  readonly result: string;
+  readonly payment?: PaymentRow;
+  readonly bankReference?: string | null;
+  readonly paidAmount?: string | null;
+}
 
 export interface ProviderReportInput {
   readonly state: QrStatusResult['state'];
@@ -76,7 +85,9 @@ export class QrStatusService {
   async pollOnce(paymentId: string, timeoutMs = this.config.ONEC_TIMEOUT_MS): Promise<QrPollOutcome> {
     const p = await this.repo.findById(this.db, paymentId);
     const provider = this.providers.dynamic;
-    if (!p || !provider || p.method !== 'qr_bakai' || p.qrProvider !== 'onec' || !isProviderQr(p)) return STOP;
+    if (!p || !provider || p.method !== 'qr_bakai' || p.qrProvider !== this.providers.mode || !isProviderQr(p)) {
+      return STOP;
+    }
     const now = this.clock.now();
     if (p.status === 'voided') return this.cancelVoided(p, now);
     // Опрос только пока QR показан (RM-F-016 п. 5, PAY-023); позднюю оплату после истечения доставляет план
@@ -177,7 +188,7 @@ export class QrStatusService {
   }
 
   pollCandidates(): Promise<string[]> {
-    return this.providers.dynamic ? this.repo.pollCandidates(this.db, 500) : Promise.resolve([]);
+    return this.providers.dynamic ? this.repo.pollCandidates(this.db, 500, this.providers.mode) : Promise.resolve([]);
   }
 
   /**
@@ -300,7 +311,7 @@ export class QrStatusService {
     const now = this.clock.now().getTime();
     const horizon = (p.qrExpiresAt?.getTime() ?? now) + QR_POLL_GRACE_MS;
     const cont = p.status === 'qr_shown' && now <= horizon;
-    return { continue: cont, delaySeconds: this.config.QR_ONEC_POLL_SECONDS, status: p.status };
+    return { continue: cont, delaySeconds: this.providers.pollSeconds, status: p.status };
   }
 
   private async cancelVoided(p: PaymentRow, now: Date): Promise<QrPollOutcome> {
@@ -366,123 +377,142 @@ export class QrStatusService {
   /** Применить отчёт провайдера к платежу (идемпотентно; блокировка заказ → платёж). */
   private async applyReport(paymentId: string, r: ProviderReportInput): Promise<string> {
     const outcome = await this.db.transaction(async (tx) => {
-      const audit = systemActor('payments');
-      await applyAuditGucs(tx, audit);
-      const pre = await this.repo.findById(tx, paymentId);
-      if (!pre) return { result: 'ignored_unknown_payment' } as const;
-      const order = pre.orderId ? await this.orders.lockForPayment(tx, pre.orderId) : null;
-      const p = await this.repo.findById(tx, paymentId, true);
-      if (!p) return { result: 'ignored_unknown_payment' } as const;
-      const now = this.clock.now();
-      const paid = r.paidAmount !== null ? Money.of(r.paidAmount) : null;
-      const decision: ProviderDecision = decideProviderReport(p.status, Money.of(p.amount).toTyiyn(), {
-        state: r.state,
-        paidTyiyn: paid ? paid.toTyiyn() : null,
-        referenceKnown: r.reference !== null && r.reference === p.qrProviderRef,
-        // История референсов (перевыпуск, PAY-025; ревью F-orders-1c-5).
-        referencePrevious:
-          r.reference !== null && r.reference !== p.qrProviderRef && p.qrRefHistory.includes(r.reference),
-      });
-      const seen: PaymentPatch = {
-        qrStatusCheckedAt: now,
-        qrProviderStatusRaw: r.raw ? r.raw.slice(0, 100) : null,
-      };
-      if (decision.kind === 'transition' && decision.to === 'received') {
-        if (!order) return { result: 'ignored_no_order' } as const;
-        const res = await this.writer.receive(tx, {
-          payment: p,
-          order,
-          actorKind: 'provider',
-          salesActor: SYSTEM_ACTOR,
-          patch: {
-            ...seen,
-            receivedByUserId: null,
-            receivedAt: r.paidAt ? new Date(r.paidAt) : now,
-            bankAmount: positiveOrNull(r.paidAmount),
-            bankReference: r.bankReference,
-            ...(r.documentRef && isUuid(r.documentRef) ? { onecRef: r.documentRef } : {}),
-            ...(r.documentType ? { onecDocType: r.documentType } : {}),
-          },
-          journal: 'payment_received',
-          journalDetails: { confirmationKind: 'webhook', provider: 'onec', reference: r.reference },
-          audit: {
-            ctx: audit,
-            action: 'payment.received',
-            after: {
-              confirmationKind: 'webhook',
-              provider: 'onec',
-              reference: r.reference,
-              bankReference: r.bankReference,
-            },
-          },
-        });
-        return { result: 'received', payment: res.payment } as const;
-      }
-      if (decision.kind === 'transition' && decision.to === 'manual_confirm') {
-        const moved = await this.writer.move(tx, p, 'manual_confirm', 'provider', {
-          ...seen,
-          reviewReason: decision.reviewReason,
-          bankAmount: positiveOrNull(r.paidAmount),
-          bankReference: r.bankReference,
-        });
-        return { result: `manual_confirm:${decision.reviewReason}`, payment: moved } as const;
-      }
-      if (decision.kind === 'transition' && decision.to === 'qr_expired') {
-        // 05 §6.7.3: QR отменён в 1С или банком без запроса backend — QR больше не принимает оплату: срок QR
-        // наступает сейчас (`qr_expires_at = now`), переход по таймеру автомата 07 §6.4 (ревью F-orders-1c-7).
-        if (decision.cause === 'provider_cancelled') {
-          const moved = await this.writer.move(tx, p, 'qr_expired', 'timer', {
-            ...seen,
-            qrExpiresAt: now,
-          });
-          return { result: 'qr_expired', payment: moved } as const;
-        }
-        // 08 §6.1: «срок истёк» от 1С статус не меняет до qr_expires_at; далее — таймер.
-        if (p.qrExpiresAt && p.qrExpiresAt <= now) {
-          const moved = await this.writer.move(tx, p, 'qr_expired', 'timer', seen);
-          return { result: 'qr_expired', payment: moved } as const;
-        }
-        await this.repo.transition(tx, p.id, p.status, null, seen);
-        return { result: 'pending' } as const;
-      }
-      if (decision.kind === 'review_only' && p.status === 'voided' && r.state === 'paid') {
-        // Оплата по аннулированному QR (план обмена / опрос): статус не меняется, факт — в полях QR и журнале.
-        if (p.qrProviderStatusRaw === 'paid') return { result: 'unchanged' } as const;
-        const marked = await this.repo.transition(tx, p.id, 'voided', null, {
-          qrStatusCheckedAt: now,
-          qrProviderStatusRaw: 'paid',
-          bankAmount: positiveOrNull(r.paidAmount),
-          bankReference: r.bankReference,
-        });
-        return {
-          result: 'voided_paid',
-          payment: marked ?? p,
-          bankReference: r.bankReference,
-          paidAmount: r.paidAmount,
-        } as const;
-      }
-      if (decision.kind === 'review_only') {
-        return { result: 'review_only', payment: p } as const;
-      }
-      if (p.status === 'qr_shown' || p.status === 'qr_expired') {
-        await this.repo.transition(tx, p.id, p.status, null, seen);
-      }
-      if (p.status === 'qr_shown' && p.qrExpiresAt && p.qrExpiresAt <= now && p.reviewReason === null) {
-        const moved = await this.writer.move(tx, p, 'qr_expired', 'timer', {});
-        return { result: 'qr_expired', payment: moved } as const;
-      }
-      return { result: 'unchanged' } as const;
+      await applyAuditGucs(tx, systemActor('payments'));
+      return this.applyReportIn(tx, paymentId, r);
     });
     await this.afterReport(outcome);
     return outcome.result;
   }
 
-  private async afterReport(o: {
-    readonly result: string;
-    readonly payment?: PaymentRow;
-    readonly bankReference?: string | null;
-    readonly paidAmount?: string | null;
-  }): Promise<void> {
+  /**
+   * Отчёт провайдера в транзакции вызывающего (вебхук банка и сверка QR — вместе с записью `payment_webhook_events`,
+   * ADR-123). Уведомления — после COMMIT: `notifyOutcome(outcome)`.
+   */
+  async applyReportIn(tx: DbExecutor, paymentId: string, r: ProviderReportInput): Promise<ReportOutcome> {
+    const audit = systemActor('payments');
+    const pre = await this.repo.findById(tx, paymentId);
+    if (!pre) return { result: 'ignored_unknown_payment' } as const;
+    const order = pre.orderId ? await this.orders.lockForPayment(tx, pre.orderId) : null;
+    const p = await this.repo.findById(tx, paymentId, true);
+    if (!p) return { result: 'ignored_unknown_payment' } as const;
+    const now = this.clock.now();
+    const paid = r.paidAmount !== null ? Money.of(r.paidAmount) : null;
+    const decision: ProviderDecision = decideProviderReport(p.status, Money.of(p.amount).toTyiyn(), {
+      state: r.state,
+      paidTyiyn: paid ? paid.toTyiyn() : null,
+      referenceKnown: r.reference !== null && r.reference === p.qrProviderRef,
+      // История референсов (перевыпуск, PAY-025; ревью F-orders-1c-5).
+      referencePrevious:
+        r.reference !== null && r.reference !== p.qrProviderRef && p.qrRefHistory.includes(r.reference),
+    });
+    const seen: PaymentPatch = {
+      qrStatusCheckedAt: now,
+      qrProviderStatusRaw: r.raw ? r.raw.slice(0, 100) : null,
+    };
+    if (decision.kind === 'transition' && decision.to === 'received') {
+      if (!order) return { result: 'ignored_no_order' } as const;
+      const res = await this.writer.receive(tx, {
+        payment: p,
+        order,
+        actorKind: 'provider',
+        salesActor: SYSTEM_ACTOR,
+        patch: {
+          ...seen,
+          receivedByUserId: null,
+          receivedAt: r.paidAt ? new Date(r.paidAt) : now,
+          bankAmount: positiveOrNull(r.paidAmount),
+          bankReference: r.bankReference,
+          ...(r.documentRef && isUuid(r.documentRef) ? { onecRef: r.documentRef } : {}),
+          ...(r.documentType ? { onecDocType: r.documentType } : {}),
+        },
+        journal: 'payment_received',
+        journalDetails: { confirmationKind: 'webhook', provider: this.providers.source, reference: r.reference },
+        audit: {
+          ctx: audit,
+          action: 'payment.received',
+          after: {
+            confirmationKind: 'webhook',
+            provider: this.providers.source,
+            reference: r.reference,
+            bankReference: r.bankReference,
+          },
+        },
+      });
+      return { result: 'received', payment: res.payment } as const;
+    }
+    if (decision.kind === 'transition' && decision.to === 'manual_confirm') {
+      const moved = await this.writer.move(tx, p, 'manual_confirm', 'provider', {
+        ...seen,
+        reviewReason: decision.reviewReason,
+        bankAmount: positiveOrNull(r.paidAmount),
+        bankReference: r.bankReference,
+      });
+      return { result: `manual_confirm:${decision.reviewReason}`, payment: moved } as const;
+    }
+    if (decision.kind === 'transition' && decision.to === 'qr_expired') {
+      // 05 §6.7.3: QR отменён в 1С или банком без запроса backend — QR больше не принимает оплату: срок QR
+      // наступает сейчас (`qr_expires_at = now`), переход по таймеру автомата 07 §6.4 (ревью F-orders-1c-7).
+      if (decision.cause === 'provider_cancelled') {
+        const moved = await this.writer.move(tx, p, 'qr_expired', 'timer', {
+          ...seen,
+          qrExpiresAt: now,
+        });
+        return { result: 'qr_expired', payment: moved } as const;
+      }
+      // 08 §6.1: «срок истёк» от 1С статус не меняет до qr_expires_at; далее — таймер.
+      if (p.qrExpiresAt && p.qrExpiresAt <= now) {
+        const moved = await this.writer.move(tx, p, 'qr_expired', 'timer', seen);
+        return { result: 'qr_expired', payment: moved } as const;
+      }
+      await this.repo.transition(tx, p.id, p.status, null, seen);
+      return { result: 'pending' } as const;
+    }
+    if (decision.kind === 'review_only' && p.status === 'voided' && r.state === 'paid') {
+      // Оплата по аннулированному QR (план обмена / опрос): статус не меняется, факт — в полях QR и журнале.
+      if (p.qrProviderStatusRaw === 'paid') return { result: 'unchanged' } as const;
+      const marked = await this.repo.transition(tx, p.id, 'voided', null, {
+        qrStatusCheckedAt: now,
+        qrProviderStatusRaw: 'paid',
+        bankAmount: positiveOrNull(r.paidAmount),
+        bankReference: r.bankReference,
+      });
+      return {
+        result: 'voided_paid',
+        payment: marked ?? p,
+        bankReference: r.bankReference,
+        paidAmount: r.paidAmount,
+      } as const;
+    }
+    if (
+      decision.kind === 'review_only' &&
+      r.state === 'paid' &&
+      (p.status === 'received' || p.status === 'manual_confirm') &&
+      r.bankReference !== null &&
+      r.bankReference === p.bankReference
+    ) {
+      // Повтор того же зачисления (опрос прочитал `qr_shown`, а вебхук уже применил эту операцию; сверка по уже
+      // учтённой операции): не разбор и не уведомление (ревью P-004, пакет C).
+      return { result: 'unchanged' } as const;
+    }
+    if (decision.kind === 'review_only') {
+      return { result: 'review_only', payment: p } as const;
+    }
+    if (p.status === 'qr_shown' || p.status === 'qr_expired') {
+      await this.repo.transition(tx, p.id, p.status, null, seen);
+    }
+    if (p.status === 'qr_shown' && p.qrExpiresAt && p.qrExpiresAt <= now && p.reviewReason === null) {
+      const moved = await this.writer.move(tx, p, 'qr_expired', 'timer', {});
+      return { result: 'qr_expired', payment: moved } as const;
+    }
+    return { result: 'unchanged' } as const;
+  }
+
+  /** Уведомления по итогу `applyReportIn` (после COMMIT). */
+  notifyOutcome(o: ReportOutcome): Promise<void> {
+    return this.afterReport(o);
+  }
+
+  private async afterReport(o: ReportOutcome): Promise<void> {
     const p = o.payment;
     if (!p) return;
     if (o.result === 'voided_paid') {
@@ -513,13 +543,15 @@ export class QrStatusService {
       });
     } else if (o.result === 'review_only') {
       this.logger.warn({ paymentId: p.id, status: p.status }, 'payments.qr.paid_while_not_awaiting');
+      // Источник — по режиму QR: при `QR_PROVIDER=bank` отчёт приходит от банка (вебхук, опрос, сверка), не от 1С.
+      const from = this.providers.source === 'onec' ? '1С' : 'банка';
       await this.notifier.notify({
         userId: p.createdByUserId,
         paymentId: p.id,
         orderId: p.orderId,
         severity: 'warning',
         title: 'Поступление по QR требует разбора',
-        body: `По платежу ${p.publicNumber} 1С сообщила об оплате в статусе «${p.status}».`,
+        body: `По платежу ${p.publicNumber} пришло сообщение об оплате от ${from} в статусе «${p.status}».`,
         event: `review_only:${p.status}`,
       });
     }

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { AppVersionPolicy } from '../../src/common/app-version/app-version.policy.js';
@@ -33,13 +34,30 @@ describe('RM-D-015 PublicSettingsService (unit): флаги env и значен�
     expect((await ignored.read()).features.customerSelfService).toBe(false);
   });
 
-  it('debtPaymentsFromPos — env; qrProvider — env QR_PROVIDER, none при qr.enabled=false; qrWebhook — bakai и qr.enabled', async () => {
+  // 12: T-PAY-043 (features.qrWebhook — по факту включённости вебхука, ADR-123)
+  it('debtPaymentsFromPos — env; qrProvider — env QR_PROVIDER (bank → код контракта bakai), none при qr.enabled=false; qrWebhook — по факту', async () => {
     expect((await serviceWith({ DEBT_PAYMENTS_FROM_POS: 'true' }).read()).features.debtPaymentsFromPos).toBe(true);
     expect((await serviceWith({}).read()).features).toMatchObject({ qrProvider: 'onec', qrWebhook: false });
     expect((await serviceWith({ QR_PROVIDER: 'none' }).read()).features.qrProvider).toBe('none');
     expect((await serviceWith({}, { 'qr.enabled': false }).read()).features.qrProvider).toBe('none');
-    const bakai = await serviceWith({ QR_PROVIDER: 'bakai' }, { 'qr.enabled': true }).read();
-    expect(bakai.features).toMatchObject({ qrProvider: 'bakai', qrWebhook: true });
+    // ADR-123: QR банка через наш сервер; вебхук выключен — qrWebhook=false (опрос статуса и сверка).
+    const bank = await serviceWith({ QR_PROVIDER: 'bank' }, { 'qr.enabled': true }).read();
+    expect(bank.features).toMatchObject({ qrProvider: 'bakai', qrWebhook: false });
+    // Синоним bakai, вебхук включён (секрет — значение при APP_ENV=dev теста) — маршрут есть, qrWebhook=true.
+    const on = {
+      QR_PROVIDER: 'bakai',
+      QR_WEBHOOK_ENABLED: 'true',
+      QR_WEBHOOK_SECRET: randomBytes(24).toString('hex'),
+      QR_WEBHOOK_ALLOWED_IPS: '127.0.0.1',
+    };
+    expect((await serviceWith(on, { 'qr.enabled': true }).read()).features).toMatchObject({
+      qrProvider: 'bakai',
+      qrWebhook: true,
+    });
+    expect((await serviceWith(on, { 'qr.enabled': false }).read()).features).toMatchObject({
+      qrProvider: 'none',
+      qrWebhook: false,
+    });
   });
 
   it('пустая app_settings → значения по умолчанию 08 §4.18.6; ответ проходит схему контракта', async () => {

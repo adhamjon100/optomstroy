@@ -379,6 +379,8 @@ describe('RBAC: матрица операция × роль из контрак�
         'POST /payments',
         'POST /payments/{id}/confirm-manual',
         'POST /payments/{id}/void',
+        // Песочница банка (ADR-123; только тестовый контур, BANK_QR_ADAPTER=sandbox) — право payment.qr.confirm_manual.
+        'POST /sandbox/bank/qr/{reference}/pay',
       ].sort(),
     );
     for (const op of cashierOps) {

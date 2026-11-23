@@ -5,6 +5,8 @@ import { OnecGatewayModule } from '../integrations/onec/onec.module.js';
 import { PaymentProviderModule } from '../integrations/payments/payment-provider.module.js';
 import { bindSalesPort } from '../sales-domain/sales-ports.module.js';
 import { PaymentsController } from './api/payments.controller.js';
+import { BankWebhookService } from './bank/bank-webhook.service.js';
+import { QrReconciliationService } from './bank/qr-reconciliation.service.js';
 import { PaymentsStepUpGuard } from './api/payments-step-up.guard.js';
 import { PaymentStateWriter } from './app/payment-state.writer.js';
 import { PaymentsPortService } from './app/payments-port.service.js';
@@ -19,6 +21,7 @@ import { PaymentNotifier } from './infra/payment-notifier.js';
 import { PaymentsLookups } from './infra/payments-lookups.js';
 import { PaymentsRepository } from './infra/payments.repository.js';
 import { PaymentsJobsBridge } from './jobs/payments-jobs.bridge.js';
+import { PaymentOnecDocument } from './onec/payment-onec-document.js';
 import { PaymentStatusWaiter } from './long-poll/payment-status-waiter.js';
 import { QrIssuer } from './qr/qr-issuer.service.js';
 import { QrProviders } from './qr/qr-providers.js';
@@ -32,11 +35,16 @@ import { QrStatusService } from './qr/qr-status.service.js';
  * - Порт `PAYMENTS_PORT` привязывается здесь (`bindSalesPort`); заказ — только через `ORDER_STATUS_PORT`
  *   (модуль `orders` не импортируется — MOD-022), уведомления — `NOTIFICATIONS_PORT` (если привязан).
  * - Провайдер QR — `PaymentProviderModule` (`QR_PROVIDER`), порт 1С — `OnecGatewayModule` (ARCH-063).
- * - Маршрут `/payments/qr/webhook` в R1 не регистрируется (RM-F-014 — R2).
+ * - QR банка через наш сервер (`QR_PROVIDER=bank`, ADR-123): `BankWebhookService` (вебхук), `QrReconciliationService`
+ *   (ежедневная сверка), `PaymentOnecDocument` (документ оплаты в `onec_outbox`); маршруты вебхука и песочницы
+ *   подключает `BankQrHttpModule.forRoot(config)` только при включённых флагах.
  * - `CreditGate` — решение о долге через `CREDIT_DECISION_SERVICE` (экспорт для модуля `orders`).
  */
+/** Провайдер QR и клиент банка (`BANK_QR_API`) — один экземпляр на процесс; реэкспорт для `BankQrHttpModule`. */
+const PAYMENT_PROVIDER_MODULE = PaymentProviderModule.forRoot(OnecGatewayModule);
+
 @Module({
-  imports: [PaymentProviderModule.forRoot(OnecGatewayModule)],
+  imports: [PAYMENT_PROVIDER_MODULE],
   controllers: [PaymentsController, PosDashboardController, DebtPaymentsController],
   providers: [
     StepUpTokenVerifier,
@@ -49,6 +57,9 @@ import { QrStatusService } from './qr/qr-status.service.js';
     QrProviders,
     QrStatusService,
     QrIssuer,
+    PaymentOnecDocument,
+    BankWebhookService,
+    QrReconciliationService,
     PaymentsJobsBridge,
     PaymentStatusWaiter,
     PaymentsService,
@@ -56,6 +67,6 @@ import { QrStatusService } from './qr/qr-status.service.js';
     PosDashboardService,
     ...bindSalesPort(PAYMENTS_PORT, PaymentsPortService),
   ],
-  exports: [CreditGate, QrStatusService],
+  exports: [CreditGate, QrStatusService, BankWebhookService, QrReconciliationService, PAYMENT_PROVIDER_MODULE],
 })
 export class PaymentsModule {}

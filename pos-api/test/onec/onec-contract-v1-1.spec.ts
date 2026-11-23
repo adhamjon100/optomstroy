@@ -461,7 +461,25 @@ describe('Фикстуры contracts/onec/fixtures 1.1.0 (пп. 2, 12, 13, 43, 6
 
 describe('Версия контракта', () => {
   // 1.2.0 (2026-11-04, ADR-115): только описания заявки с планшета — contracts/onec/CHANGELOG.md.
-  it('info.version — 1.2.0 (минорная: изменения аддитивные или ослабляющие, ONEC-033)', () => {
-    expect(doc.info.version).toBe('1.2.0');
+  // 1.3.0 (2026-11-24, ADR-123): QR банка через сервер POS — createPayment вызывается при QR_PROVIDER=bank,
+  // PaymentCreateRequest.customerRef nullable (ослабление), методы QR — «не нужен при QR_PROVIDER=bank».
+  it('info.version — 1.3.0 (минорная: изменения аддитивные или ослабляющие, ONEC-033)', () => {
+    expect(doc.info.version).toBe('1.3.0');
+  });
+
+  it('1.3.0 (ADR-123): методы QR помечены «не нужен при QR_PROVIDER=bank», но не удалены; customerRef допускает null', () => {
+    const paths = doc.paths as Record<string, Record<string, { summary?: string; 'x-priority'?: string }>>;
+    for (const [p, m] of [
+      ['/pos/v1/payments/qr', 'post'],
+      ['/pos/v1/payments/{externalId}/status', 'get'],
+      ['/pos/v1/payments/{externalId}/qr/cancel', 'post'],
+    ] as const) {
+      const op = paths[p]?.[m];
+      expect(op, p).toBeDefined();
+      expect(op?.summary, p).toMatch(/не нужен при QR_PROVIDER=bank/);
+      expect(op?.['x-priority'], p).toMatch(/не нужен при QR_PROVIDER=bank/);
+    }
+    const f = fixtures.find((x) => x.file === 'payments-create.request.qr-bank.json');
+    expect(f?.body).toMatchObject({ kind: 'qr_bakai', customerRef: null });
   });
 });

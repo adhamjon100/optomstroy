@@ -44,6 +44,8 @@ export const QUEUES = {
   ordersManualSlaCheck: 'orders.manual_sla_check',
   paymentsQrExpire: 'payments.qr_expire',
   paymentsQrOnecPoll: 'payments.qr_onec_poll',
+  // Ежедневная сверка QR банка через наш сервер (ADR-123; 10 PAY-029) — 00:30 Asia/Bishkek за прошедший день.
+  paymentsQrReconcile: 'payments.qr_reconcile',
   cartParkedExpire: 'cart.parked_expire',
   smsSend: 'sms.send',
   smsBalancePoll: 'sms.balance_poll',

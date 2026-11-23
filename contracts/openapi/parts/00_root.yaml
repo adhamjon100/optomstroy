@@ -13,7 +13,7 @@
 openapi: 3.0.3
 info:
   title: Optomstroy POS API
-  version: "1.4.0"
+  version: "1.5.0"
   description: >
     REST/JSON API pos-api (NestJS) для pos-app (Flutter: Android, Windows, iOS) — сотрудники и (R1, ядро §24.2)
     клиенты-покупатели, общий планшет магазина в торговом зале (технический пользователь kind=kiosk, флаг
@@ -872,11 +872,11 @@ components:
     QrProvider:
       type: string
       enum: [onec, bakai, elqr_static, none]
-      description: "QrInfo.provider — свойство показанного QR; env QR_PROVIDER = none|onec|bakai (ядро §24.4)."
+      description: "QrInfo.provider — свойство показанного QR; env QR_PROVIDER = none|onec|bank (bakai — устаревший синоним bank). Код bakai — исторический код «QR банка через наш сервер (прямой API банка)» независимо от банка (ADR-123): значение не меняется."
     QrProviderMode:
       type: string
       enum: [none, onec, bakai]
-      description: "Значение env QR_PROVIDER (ядро §17.7, §24.4; 07 payments.qr_provider): onec — основной R1, none — запасной, bakai — R2."
+      description: "Код режима QR (07 payments.qr_provider; ядро §17.7, §24.4; ADR-123): onec — QR через 1С, none — статический QR и ручное подтверждение, bakai — QR напрямую от банка через наш сервер (env QR_PROVIDER=bank, устаревший синоним bakai; код bakai — исторический, независимо от банка)."
     CustomerStockDisplay:
       type: string
       enum: [status, quantity]
@@ -1917,7 +1917,7 @@ components:
     QrInfo:
       type: object
       required: [provider, issuedAt, autoConfirm]
-      description: "Сериализуется только при payment.qr.show (08 §3.15). provider=onec — QR от 1С (основной R1); elqr_static — без суммы и срока; none — ручное подтверждение."
+      description: "Сериализуется только при payment.qr.show (08 §3.15). provider=onec — QR от 1С; bakai — QR банка через наш сервер (QR_PROVIDER=bank, ADR-123; у песочницы банка payload — заведомо тестовая строка SANDBOX-QR|…); elqr_static — без суммы и срока; none — ручное подтверждение."
       properties:
         provider: { $ref: "#/components/schemas/QrProvider" }
         payload: { type: string, nullable: true, description: "EMVCo/ELQR payload." }

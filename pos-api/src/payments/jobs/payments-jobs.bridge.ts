@@ -1,9 +1,11 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, Optional } from '@nestjs/common';
 import type { DbExecutor } from '../../common/audit/db-executor.js';
 import { APP_CONFIG, type AppConfig } from '../../common/config/app-config.js';
+import { PROCESS_ROLE, type ProcessRole } from '../../common/config/config.module.js';
 import { PgBossService } from '../../common/jobs/pg-boss.service.js';
 import { ensurePaymentsQueues, registerPaymentsJobs, schedulePaymentPoll } from '../../jobs/payments/payments-jobs.js';
 import { bossExecutor } from '../infra/sql-executor.js';
+import { QrReconciliationService } from '../bank/qr-reconciliation.service.js';
 import { QrStatusService } from '../qr/qr-status.service.js';
 
 /**
@@ -24,7 +26,25 @@ export class PaymentsJobsBridge implements OnApplicationBootstrap {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly qrStatus: QrStatusService,
     @Optional() private readonly boss?: PgBossService,
+    @Optional() private readonly reconciliation?: QrReconciliationService,
+    @Optional() @Inject(PROCESS_ROLE) private readonly role?: ProcessRole,
   ) {}
+
+  /**
+   * Группы обработчиков этого процесса (ADR-123). Опрос/отмена QR и сверка банка — у процесса с клиентом банка: при
+   * `QR_PROVIDER=bank` и `BANK_QR_ADAPTER=sandbox` песочница живёт в памяти pos-api, поэтому эти задачи исполняет
+   * pos-api (даже при `WORKERS_ENABLED=false`), а pos-worker их не берёт; иначе — процесс с `WORKERS_ENABLED=true`.
+   */
+  jobGroups(): { core: boolean; poll: boolean; reconcile: boolean } {
+    const workers = this.config.WORKERS_ENABLED;
+    const sandbox = this.config.QR_PROVIDER === 'bank' && this.config.BANK_QR_ADAPTER === 'sandbox';
+    const bankHost = sandbox ? (this.role ?? 'api') === 'api' : workers;
+    return {
+      core: workers,
+      poll: this.config.QR_PROVIDER === 'bank' ? bankHost : workers,
+      reconcile: this.config.QR_PROVIDER === 'bank' && bankHost,
+    };
+  }
 
   onApplicationBootstrap(): void {
     if (!this.boss) return;
@@ -34,7 +54,9 @@ export class PaymentsJobsBridge implements OnApplicationBootstrap {
         const instance = this.boss?.instance;
         if (!instance) return;
         await this.ensureQueues();
-        if (!this.config.WORKERS_ENABLED) return;
+        const groups = this.jobGroups();
+        if (!groups.core && !groups.poll && !groups.reconcile) return;
+        const reconciliation = this.reconciliation;
         await registerPaymentsJobs(
           instance,
           {
@@ -42,6 +64,7 @@ export class PaymentsJobsBridge implements OnApplicationBootstrap {
             expireDue: () => this.qrStatus.expireDue(),
             applyOnecQrStatus: (p) => this.qrStatus.applyOnecQrStatus(p),
             pollCandidates: () => this.qrStatus.pollCandidates(),
+            ...(reconciliation ? { reconcileQr: () => reconciliation.reconcileDay() } : {}),
           },
           {
             pollingIntervalSeconds: Math.min(2, this.config.QR_ONEC_POLL_SECONDS), // money-double: allow — секунды
@@ -49,6 +72,7 @@ export class PaymentsJobsBridge implements OnApplicationBootstrap {
               warn: (o, m) => this.logger.warn(o, m),
               info: (o, m) => this.logger.log(o, m),
             },
+            groups,
           },
         );
       })

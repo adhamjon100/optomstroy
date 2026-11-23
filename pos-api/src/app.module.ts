@@ -11,7 +11,7 @@ import { AppVersionModule } from './common/app-version/app-version.module.js';
 import { AuditModule } from './common/audit/audit.module.js';
 import { AUTH_APP_GUARD, AuthCoreModule } from './common/auth/auth-core.module.js';
 import type { AppConfig } from './common/config/app-config.js';
-import { ConfigModule } from './common/config/config.module.js';
+import { ConfigModule, type ProcessRole } from './common/config/config.module.js';
 import { CryptoModule } from './common/crypto/crypto.module.js';
 import { DatabaseModule } from './common/db/database.module.js';
 import { IdempotencyInterceptor } from './common/idempotency/idempotency.interceptor.js';
@@ -37,6 +37,7 @@ import { KioskModule } from './kiosk/kiosk.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { DocumentsModule } from './orders/documents/documents.module.js';
 import { OrdersModule } from './orders/orders.module.js';
+import { BankQrHttpModule } from './payments/bank/bank-qr-http.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { ProfileModule } from './profile/profile.module.js';
 import { RegistrationModule } from './registration/registration.module.js';
@@ -94,12 +95,14 @@ export interface AppModuleOptions {
    * 11 SEC-119 «все мутации → 503»; ревью C-MJ-03). Тесты подставляют ADR_083_ALLOWED_MUTATIONS явно.
    */
   readonly readOnlyAllowlist?: readonly AllowedMutation[];
+  /** Роль процесса: `api` (по умолчанию) или `worker` (worker.ts) — `PROCESS_ROLE`, ADR-123. */
+  readonly processRole?: ProcessRole;
 }
 
 /** Общая инфраструктура common/*. */
 export function commonImports(config: AppConfig, options: AppModuleOptions = {}): DynamicModule['imports'] {
   return [
-    ConfigModule.forRoot(config),
+    ConfigModule.forRoot(config, options.processRole ?? 'api'),
     LoggingModule.forRoot(config, options.logStream),
     DatabaseModule,
     SettingsModule,
@@ -144,6 +147,8 @@ export class AppModule implements NestModule {
         ...DOMAIN_MODULES,
         ...SALES_F_MODULES,
         ...EXTRA_API_MODULES,
+        // QR банка через наш сервер (ADR-123): вебхук и песочница — только при включённых флагах конфигурации.
+        BankQrHttpModule.forRoot(config),
         // RL-READ / RL-SEARCH / RL-CART (08 §2.9, memory; ревью E-security-2).
         HttpRateLimitModule,
         ...(options.extraModules ?? []),

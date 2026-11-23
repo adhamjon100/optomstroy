@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { z } from 'zod';
 import { parsePlatformVersions, VersionListFormatError } from '../app-version/version-policy.js';
 
@@ -37,7 +38,24 @@ const platformVersions = z.string().superRefine((v, ctx) => {
   }
 });
 
+/** IP-адрес или подсеть `адрес/префикс` (IPv4/IPv6) — для списков allowlist. */
+function isIpOrCidr(v: string): boolean {
+  const [addr, prefix, ...rest] = v.split('/');
+  if (rest.length > 0) return false;
+  const family = isIP(addr ?? '');
+  if (family === 0) return false;
+  if (prefix === undefined) return true;
+  if (!/^\d{1,3}$/.test(prefix)) return false;
+  const n = Number(prefix); // money-double: allow — длина префикса сети, не сумма
+  return n >= 0 && n <= (family === 4 ? 32 : 128);
+}
+
 export const APP_ENVS = ['dev', 'staging', 'prod'] as const;
+/**
+ * Общеизвестный тестовый код OTP демо (ADR-109, ADR-113; `docs/customer/WEB_DEMO_INSTRUCTION.md`): только `APP_ENV=dev`
+ * и демо. При `APP_ENV=staging` — отказ в старте, при `prod` тестовый код запрещён вообще (ADR-124, OPS-027).
+ */
+export const DEMO_OTP_TEST_CODE = '246810';
 export const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 /** `AUTH_BIO_ALLOW_WEAK` (16 §4.3): кому разрешён уровень W Android — никому, только покупателям, всем. */
 export const AUTH_BIO_ALLOW_WEAK_VALUES = ['off', 'customer', 'all'] as const;
@@ -193,7 +211,20 @@ export const envShape = {
   // --- Платежи, долги, возвраты ---
   DEBT_PAYMENTS_FROM_POS: bool(false),
   RETURNS_FROM_POS_ENABLED: bool(false),
-  QR_PROVIDER: z.enum(['onec', 'none', 'bakai']).default('onec'),
+  // ADR-123 (P-004): `bank` — QR напрямую от банка через наш сервер; `bakai` — устаревший синоним `bank`
+  // (принимается, внутри приводится к `bank`, при старте — предупреждение `configWarnings`). Коды хранения и
+  // контрактов не меняются: `payments.qr_provider = 'bakai'`, `QrInfo.provider = 'bakai'`, `qr_bakai` (qr-provider.ts).
+  QR_PROVIDER: z
+    .enum(['onec', 'none', 'bank', 'bakai'])
+    .default('onec')
+    .transform((v): 'onec' | 'none' | 'bank' => (v === 'bakai' ? 'bank' : v)),
+  // Адаптер банка за портом PaymentProvider (ADR-123): пока только `sandbox` — песочница банка (встроена в pos-api);
+  // адаптер настоящего банка — после Q-381/Q-382/Q-014. `sandbox` при APP_ENV=prod — отказ в старте.
+  BANK_QR_ADAPTER: z.enum(['sandbox']).default('sandbox'),
+  // Параметры адаптера настоящего банка — [НЕ ПОДТВЕРЖДЕНО: Q-381, Q-382]: имена условные, песочница их не читает.
+  BANK_QR_API_BASE_URL: z.url().optional(),
+  BANK_QR_MERCHANT_ID: optStr(),
+  BANK_QR_API_KEY: secret(),
   QR_ONEC_POLL_SECONDS: int(5, 1),
   QR_TTL_MINUTES: int(15, 1),
   QR_WEBHOOK_ENABLED: bool(false),
@@ -233,6 +264,7 @@ export const SECRET_ENV_KEYS = [
   'ONEC_ODATA_WRITE_PASSWORD',
   'QR_WEBHOOK_SECRET',
   'QR_WEBHOOK_PUBLIC_KEY',
+  'BANK_QR_API_KEY',
   'HEALTHCHECKS_PING_URL',
 ] as const satisfies readonly (keyof typeof envShape)[];
 
@@ -282,11 +314,43 @@ export const envSchema = z.object(envShape).superRefine((env, ctx) => {
   if (env.SMS_STAGING_ALLOWED_PHONES !== undefined && env.APP_ENV !== 'staging') {
     fail('SMS_STAGING_ALLOWED_PHONES', 'допускается только при APP_ENV=staging (09 §5.8)');
   }
-  if (env.QR_WEBHOOK_ENABLED && env.QR_PROVIDER !== 'bakai') {
-    fail('QR_WEBHOOK_ENABLED', 'true допустимо только при QR_PROVIDER=bakai (R2; 11 SEC-135)');
+  // ADR-124 п. 4 (AC-ADR-124 (3)): при настоящем шлюзе SMSPro тестовый код OTP выключен — вход только кодом из SMS.
+  // При prod те же переменные отвергает правило OPS-027 выше (одна ошибка на переменную).
+  if (!prod && env.SMS_PROVIDER === 'smspro') {
+    if (env.AUTH_OTP_TEST_MODE) {
+      fail('AUTH_OTP_TEST_MODE', 'true запрещено при SMS_PROVIDER=smspro: тестовый код — только с fake (ADR-124)');
+    }
+    if (env.AUTH_OTP_TEST_CODE !== undefined) {
+      fail('AUTH_OTP_TEST_CODE', 'должна быть пустой при SMS_PROVIDER=smspro (ADR-124)');
+    }
+  }
+  // Общеизвестный код демо 246810 (ADR-109, ADR-113) — только dev и демо; на стенде и в рабочем контуре — нет (ADR-124).
+  if (env.APP_ENV === 'staging' && env.AUTH_OTP_TEST_CODE === DEMO_OTP_TEST_CODE) {
+    fail('AUTH_OTP_TEST_CODE', 'код демо запрещён при APP_ENV=staging — задайте свой случайный код (ADR-124)');
+  }
+  // Вебхук банка (ADR-123; 11 SEC-135; 08 §4.9.5): только при QR_PROVIDER=bank (синоним bakai); без секрета подписи
+  // и без IP-allowlist — отказ в старте. Асимметричная подпись (QR_WEBHOOK_PUBLIC_KEY) — [НЕ ПОДТВЕРЖДЕНО: Q-382]:
+  // проверка в коде пока только HMAC, поэтому одного открытого ключа мало.
+  if (env.QR_WEBHOOK_ENABLED && env.QR_PROVIDER !== 'bank') {
+    fail('QR_WEBHOOK_ENABLED', 'true допустимо только при QR_PROVIDER=bank (ADR-123; 11 SEC-135)');
+  }
+  if (env.QR_WEBHOOK_ENABLED && env.QR_WEBHOOK_SECRET === undefined) {
+    fail(
+      'QR_WEBHOOK_SECRET',
+      'обязательна (QR_WEBHOOK_SECRET_FILE) при QR_WEBHOOK_ENABLED=true — без секрета подписи вебхук не включается',
+    );
   }
   if (env.QR_WEBHOOK_ENABLED && env.QR_WEBHOOK_ALLOWED_IPS === undefined) {
     fail('QR_WEBHOOK_ALLOWED_IPS', 'обязательна при QR_WEBHOOK_ENABLED=true');
+  }
+  if (env.QR_WEBHOOK_ALLOWED_IPS !== undefined) {
+    const bad = env.QR_WEBHOOK_ALLOWED_IPS.split(',')
+      .map((x) => x.trim())
+      .filter((x) => x !== '' && !isIpOrCidr(x));
+    if (bad.length > 0) fail('QR_WEBHOOK_ALLOWED_IPS', 'ожидается список IP или IP/префикс через запятую');
+  }
+  if (prod && env.QR_PROVIDER === 'bank' && env.BANK_QR_ADAPTER === 'sandbox') {
+    fail('BANK_QR_ADAPTER', 'sandbox (песочница банка) запрещён при APP_ENV=prod (ADR-123)');
   }
   if (env.QR_PROVIDER === 'onec' && env.ONEC_MODE === 'odata_only') {
     fail('QR_PROVIDER', 'onec требует ONEC_MODE=extension (или fixtures на тестовом контуре)');

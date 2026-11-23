@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { qrProviderCode } from '../../../src/common/config/qr-provider.js';
 import pino from 'pino';
 import { sql } from 'drizzle-orm';
 import { Money, Quantity } from '../../../src/common/money/money.js';
@@ -325,7 +326,7 @@ export class DbPaymentsPort implements PaymentsPort {
                             idempotency_key)
       VALUES (next_payment_public_number(), -- генератор 07 §5.40 (FQ-PAY-02), как PaymentsRepository
               ${input.orderId}::uuid, ${input.customerId}::uuid, ${input.method}::payment_method,
-              ${input.method === 'qr_bakai' ? this.t.config.QR_PROVIDER : null}, ${status}::payment_status,
+              ${input.method === 'qr_bakai' ? qrProviderCode(this.t.config.QR_PROVIDER) : null}, ${status}::payment_status,
               ${input.amount}::numeric, ${input.actor.userId}::uuid, ${input.idempotencyKey})
       RETURNING id, public_number`);
     const row = r.rows[0];
@@ -337,7 +338,7 @@ export class DbPaymentsPort implements PaymentsPort {
       amount: Money.of(input.amount).toString(),
       receivedAt: null,
       reviewReason: null,
-      qrProvider: input.method === 'qr_bakai' ? this.t.config.QR_PROVIDER : null,
+      qrProvider: input.method === 'qr_bakai' ? qrProviderCode(this.t.config.QR_PROVIDER) : null,
     };
   }
 

@@ -17,6 +17,7 @@ import { AUTH_APP_GUARD, AuthCoreModule } from '../../src/common/auth/auth-core.
 import { CLOCK, type FixedClock } from '../../src/common/auth/clock.js';
 import { JwtService } from '../../src/common/auth/jwt.service.js';
 import { type AppConfig, loadAppConfig } from '../../src/common/config/app-config.js';
+import { qrProviderCode } from '../../src/common/config/qr-provider.js';
 import { ConfigModule } from '../../src/common/config/config.module.js';
 import { CryptoModule } from '../../src/common/crypto/crypto.module.js';
 import { generateOpaqueToken, sha256 } from '../../src/common/crypto/random.js';
@@ -106,6 +107,8 @@ export interface PosFixtureOptions {
   readonly env?: Record<string, string>;
   /** Модули этапа F (по умолчанию `F_MODULES`); `[]` — только каталог и порты. */
   readonly modules?: readonly (Type | DynamicModule)[];
+  /** Модули, собираемые по готовой конфигурации стенда (например, `BankQrHttpModule.forRoot(config)`, ADR-123). */
+  readonly modulesFor?: (config: AppConfig) => readonly (Type | DynamicModule)[];
   readonly providers?: readonly Provider[];
   /**
    * Глобальные guard-ы между AuthGuard и RbacGuard (порядок app.module `GLOBAL_PROVIDERS`), например
@@ -272,6 +275,7 @@ export class PosTestApp {
         CatalogModule,
         SalesPortsModule,
         ...(opts.modules ?? F_MODULES),
+        ...(opts.modulesFor?.(this.config) ?? []),
       ],
       controllers: [...(opts.controllers ?? [])],
       providers: [
@@ -774,7 +778,7 @@ export class PosTestApp {
           orderId,
           customerId,
           o.method,
-          o.method === 'qr_bakai' ? this.config.QR_PROVIDER : null,
+          o.method === 'qr_bakai' ? qrProviderCode(this.config.QR_PROVIDER) : null,
           payStatus,
           priced.total.toString(),
           o.createdBy.userId,
