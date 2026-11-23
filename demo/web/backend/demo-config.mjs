@@ -99,6 +99,12 @@ export function demoEnv(secrets, { appVersion = DEMO_BUILD.appVersion, overrides
     // Планшет магазина (P-002, ADR-115): режим включён в демо на тестовых данных (16 §4.3; на рабочем контуре — false).
     // Не входит в ключ эпохи (lib/epoch.mjs) — данные и схема от него не зависят.
     KIOSK_MODE: 'true',
+    // Вход без PIN приложения в браузере на Windows (15 ADR-116 п. 4; 09 BIO-041; 16 §4.3 `AUTH_WINDOWS_HELLO_KEY`):
+    // ключ входа под PRF passkey (`helloKey.source = webauthn_prf`), путь `POST /auth/unlock {method: hello_key}`.
+    // `all` — в одном браузере демо входят разные пользователи (правило `personal` отзывало бы ключи друг друга); на
+    // рабочем контуре — по 16 (`off` до T-BIO-031). Без PRF у браузера или Windows Hello — гейт перед PIN. Не входит в
+    // ключ эпохи (lib/epoch.mjs), как KIOSK_MODE: данные и схема от него не зависят.
+    AUTH_WINDOWS_HELLO_KEY: 'all',
     RECEIVABLES_MAX_AGE_MIN: '60',
     MEDIA_DIR: '/vfs/media',
     // OTP: тестовый код для любого номера (только APP_ENV=dev, ADR-109); лимиты подняты, как в local-stack.

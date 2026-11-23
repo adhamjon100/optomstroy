@@ -13,11 +13,14 @@ import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/app_text_field.dart';
 import 'package:optomstroy/design_system/components/category_chip.dart';
 import 'package:optomstroy/design_system/components/date_range_picker.dart' show DsBishkekTime;
+import 'package:optomstroy/design_system/components/keep_words_text.dart';
 import 'package:optomstroy/design_system/components/order_status_chip.dart';
 import 'package:optomstroy/design_system/components/price_text.dart';
 import 'package:optomstroy/design_system/components/qr_panel.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
+import 'package:optomstroy/design_system/layout/title_trailing_bar.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/design_system/tokens/ds_typography.dart';
@@ -53,6 +56,10 @@ class PaymentOrderContext extends StatelessWidget {
       );
     } else {
       final String customer = o.customer?.displayName ?? o.customer?.name ?? '';
+      final TextStyle contextStyle = context.text.bodyMedium.copyWith(
+        color: c.textPrimary,
+        fontFeatures: DsTypography.numeric,
+      );
       final Money total = o.totalToPay ?? o.total;
       final String? breakdown = o.subtotal == null
           ? null
@@ -66,33 +73,43 @@ class PaymentOrderContext extends StatelessWidget {
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  l10n.payment_order_context(customer, o.publicNumber),
-                  key: const ValueKey<String>('payment-order-context'),
-                  style: context.text.bodyMedium.copyWith(color: c.textPrimary, fontFeatures: DsTypography.numeric),
-                ),
-              ),
-              SizedBox(width: context.space.s2),
-              OrderStatusChip(status: o.status, dense: true),
-            ],
+          // Чип статуса — рядом, если там помещается номер заказа целиком; иначе строкой ниже: номер «POS-2026-000123»
+          // не разрывается между цифрами (телефон; T-UI-117, пакет own-server:GAP-APP).
+          TitleTrailingBar(
+            alignTop: true,
+            spacing: context.space.s2,
+            overflowSpacing: context.space.s1,
+            minTitleWidth: dsLongestWordWidth(
+              context,
+              l10n.payment_order_context(customer, o.publicNumber),
+              contextStyle,
+            ),
+            title: Text(
+              l10n.payment_order_context(customer, o.publicNumber),
+              key: const ValueKey<String>('payment-order-context'),
+              style: contextStyle,
+            ),
+            trailing: OrderStatusChip(status: o.status, dense: true),
           ),
           SizedBox(height: context.space.s3),
           Text(l10n.payment_to_pay, style: context.text.caption.copyWith(color: c.textSecondary)),
+          // Сумма к оплате целиком: не помещается в строку `display` (телефон, крупный текст) — начертание на ступень
+          // меньше, а не разрыв внутри «сом» (T-UI-117, пакет own-server:GAP-APP).
           Semantics(
             label: '${l10n.payment_to_pay}: ${CashierFormat.money(due)}',
             excludeSemantics: true,
-            child: Text(
+            child: DsKeepWordsText(
               CashierFormat.money(due),
-              key: const ValueKey<String>('payment-due'),
+              textKey: const ValueKey<String>('payment-due'),
               style: context.text.display.copyWith(
                 color: c.textPrimary,
                 fontWeight: FontWeight.w700,
                 fontFeatures: DsTypography.numeric,
               ),
+              fallback: <TextStyle>[
+                for (final TextStyle s in <TextStyle>[context.text.h1, context.text.h2, context.text.h3])
+                  s.copyWith(color: c.textPrimary, fontWeight: FontWeight.w700, fontFeatures: DsTypography.numeric),
+              ],
             ),
           ),
           if (breakdown != null)

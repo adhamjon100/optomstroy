@@ -8,11 +8,13 @@ import 'package:dio/dio.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:optomstroy/core/biometrics/biometric_authenticator.dart';
+import 'package:optomstroy/core/biometrics/hello_gate_users.dart';
 import 'package:optomstroy/core/database/app_database.dart';
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/network/api_headers.dart';
 import 'package:optomstroy/core/network/app_version/app_version_controller.dart';
 import 'package:optomstroy/core/network/interceptors/auth_interceptor.dart';
+import 'package:optomstroy/core/session/profile_cache.dart';
 import 'package:optomstroy/core/session/session_api.dart';
 import 'package:optomstroy/core/session/session_controller.dart';
 import 'package:optomstroy/core/session/session_overlay.dart';
@@ -43,18 +45,28 @@ void main() {
   group('восстановление и вход', () {
     test('SCR-00 паритет (10 KIOSK-029): зависшее хранилище — refresh и признак планшета читаются параллельно, '
         'холодный старт ждёт не дольше одного storageTimeout, затем вход по телефону', () async {
-      const Duration limit = Duration(milliseconds: 200);
-      final SessionHarness h = SessionHarness(
+      // Два ожидания подряд всегда ≥ 2 × limit, одно — limit плюс накладные расходы. Порог 2 × limit разделяет их
+      // точно; limit 400 мс оставляет до 400 мс на накладные расходы под нагрузкой (было 200 мс и порог 1,5 × —
+      // красный при полном прогоне на батарее, 339 мс). Прогрев без секундомера снимает разовую цену первого старта.
+      const Duration limit = Duration(milliseconds: 400);
+      SessionHarness harness() => SessionHarness(
         (o) async => json(200, {}),
         policy: const SessionPolicy(storageTimeout: limit),
         secureStorage: _HangingStorage(),
       );
+      final SessionHarness warmUp = harness();
+      addTearDown(warmUp.dispose);
+      warmUp.start();
+      expect(await warmUp.container.read(sessionStatusProvider.future), SessionStatus.unauthenticated);
+
+      final SessionHarness h = harness();
       addTearDown(h.dispose);
       final Stopwatch sw = Stopwatch()..start();
       h.start();
       expect(await h.container.read(sessionStatusProvider.future), SessionStatus.unauthenticated);
       sw.stop();
-      expect(sw.elapsed, lessThan(limit * 1.5), reason: 'одно ожидание, а не два подряд (было до 2 × storageTimeout)');
+      expect(sw.elapsed, greaterThanOrEqualTo(limit), reason: 'путь таймаута хранилища действительно пройден');
+      expect(sw.elapsed, lessThan(limit * 2), reason: 'одно ожидание, а не два подряд (было до 2 × storageTimeout)');
       expect(h.state.kioskTabletId, isNull);
     });
 
@@ -611,6 +623,122 @@ void main() {
       await c.logout().timeout(const Duration(seconds: 2));
       expect(h.state.status, SessionStatus.unauthenticated);
       expect(h.storage.values.keys, [SecureKey.deviceId]);
+    });
+  });
+
+  group('T-BIO-028: признак Windows Hello по userId вне сессии, userId в кэше профиля (09 BIO-034; 11 SEC-145)', () {
+    const String legacyCache = '{"kind":"staff","status":"active","roles":["seller"],"pinSet":true}';
+
+    Future<CachedProfile?> cached(SessionHarness h) => ProfileCacheStore(h.storage).read();
+    Future<Set<String>> gate(SessionHarness h) => HelloGateUsers(h.storage).read();
+
+    test('(1)–(3) вход A пишет userId в кэш; признак A переживает «Выйти» и SESSION_REVOKED, вход A по SMS — '
+        'userId снова в кэше', () async {
+      bool revoke = false;
+      final h = SessionHarness((o) async {
+        if (revoke) return json(401, problem('SESSION_REVOKED', 401, extra: {'reason': 'admin'}));
+        return json(204, null);
+      });
+      addTearDown(h.dispose);
+      final c = h.start();
+      await c.establish(accessToken: fakeJwt(), refreshToken: 'r1');
+      expect((await cached(h))?.userId, staffUserId, reason: 'холодный старт знает пользователя (02 §0.4)');
+      // SCR-42: A включает «Windows Hello перед PIN».
+      await HelloGateUsers(h.storage).add(staffUserId);
+
+      await c.logout();
+      expect(await cached(h), isNull, reason: 'кэш профиля — в группе сессии');
+      expect(h.storage.values[SecureKey.refreshToken], isNull);
+      expect(await gate(h), {staffUserId}, reason: '(2) признак пережил выход');
+
+      await c.establish(accessToken: fakeJwt(tag: 'again'), refreshToken: 'r2');
+      expect((await cached(h))?.userId, staffUserId);
+      revoke = true;
+      await fails(h.dio.get<Object?>('/orders'));
+      await until(() => h.state.status == SessionStatus.unauthenticated);
+      expect(h.state.endReason, SessionEndReason.admin);
+      expect(h.storage.values[SecureKey.refreshToken], isNull);
+      expect(await gate(h), {staffUserId}, reason: '(3) признак пережил SESSION_REVOKED');
+
+      revoke = false;
+      await c.establish(accessToken: fakeJwt(tag: 'third'), refreshToken: 'r3');
+      expect((await cached(h))?.userId, staffUserId);
+      expect(await HelloGateUsers(h.storage).contains(h.state.userId), isTrue);
+    });
+
+    test('(4) вход B на том же ПК: кэш профиля A заменён кэшем B, признака у B нет, признак A на месте', () async {
+      final h = SessionHarness((o) async => json(204, null));
+      addTearDown(h.dispose);
+      final c = h.start();
+      await c.establish(accessToken: fakeJwt(), refreshToken: 'r1');
+      await ProfileCacheStore(h.storage).write(
+        const CachedProfile(userId: staffUserId, kind: UserKind.staff, displayName: 'Тестов А'),
+      );
+      await HelloGateUsers(h.storage).add(staffUserId);
+      c.leaveToPhoneLogin();
+      await c.establish(accessToken: fakeJwt(sub: otherUserId, tag: 'b'), refreshToken: 'r2');
+      expect(await cached(h), const CachedProfile(userId: otherUserId));
+      expect(h.storage.values.containsKey(SecureKey.profileDisplayName), isFalse, reason: 'ФИО A не показывается B');
+      expect(await HelloGateUsers(h.storage).contains(otherUserId), isFalse);
+      expect(await gate(h), {staffUserId});
+    });
+
+    test('(6) прежний признак windows_hello в ключах сессии → первая разблокировка PIN переносит его на userId; '
+        '(7) кэш без userId дополняется, имя сохраняется', () async {
+      final h = SessionHarness((o) async {
+        if (o.path.endsWith('/auth/unlock')) return json(200, tokenPair(fakeJwt(tag: 'unlocked'), 'r2'));
+        return json(204, null);
+      }, refresh: 'r1');
+      addTearDown(h.dispose);
+      h.storage.values
+        ..[SecureKey.biometricsEnabled] = HelloGateUsers.legacyFlag
+        ..[SecureKey.profileCache] = legacyCache
+        ..[SecureKey.profileDisplayName] = 'Тестов Продавец';
+      final c = h.start();
+      expect(await c.restore(), SessionStatus.authenticated);
+      expect(h.state.lock, SessionLockReason.coldStart);
+      expect(h.state.userId, isNull, reason: '(7) до разблокировки пользователь неизвестен — кнопки нет');
+      expect((await cached(h))!.userId, isNull);
+
+      expect(await c.unlockWithPin('482913'), isA<UnlockSucceeded>());
+      expect(await gate(h), {staffUserId}, reason: '(6) признак перенесён в auth.hello_gate_users');
+      expect(h.storage.values.containsKey(SecureKey.biometricsEnabled), isFalse);
+      final CachedProfile? after = await cached(h);
+      expect(after!.userId, staffUserId);
+      expect((after.kind, after.displayName), (UserKind.staff, 'Тестов Продавец'));
+    });
+
+    test('(6) разблокировка через SCR-08 (establish при заблокированной сессии) — тот же перенос', () async {
+      final h = SessionHarness((o) async => json(204, null), refresh: 'r1');
+      addTearDown(h.dispose);
+      h.storage.values
+        ..[SecureKey.biometricsEnabled] = HelloGateUsers.legacyFlag
+        ..[SecureKey.profileCache] = legacyCache;
+      final c = h.start();
+      await c.restore();
+      expect(h.state.isLocked, isTrue);
+      await c.establish(accessToken: fakeJwt(tag: 'unlocked'), refreshToken: 'r2');
+      expect(await gate(h), {staffUserId});
+      expect((await cached(h))!.userId, staffUserId);
+      expect((await cached(h))!.kind, UserKind.staff);
+    });
+
+    test('вход по SMS при прежнем признаке windows_hello: владелец неизвестен — признак удалён, никому не перенесён',
+        () async {
+      final h = SessionHarness((o) async => json(204, null), refresh: 'r1');
+      addTearDown(h.dispose);
+      h.storage.values
+        ..[SecureKey.biometricsEnabled] = HelloGateUsers.legacyFlag
+        ..[SecureKey.profileCache] = legacyCache
+        ..[SecureKey.profileDisplayName] = 'Тестов Продавец';
+      final c = h.start();
+      await c.restore();
+      c.leaveToPhoneLogin();
+      await c.establish(accessToken: fakeJwt(sub: otherUserId, tag: 'b'), refreshToken: 'r2');
+      expect(h.storage.values.containsKey(SecureKey.biometricsEnabled), isFalse);
+      expect(await gate(h), isEmpty);
+      expect(await cached(h), const CachedProfile(userId: otherUserId));
+      expect(h.storage.values.containsKey(SecureKey.profileDisplayName), isFalse);
     });
   });
 }

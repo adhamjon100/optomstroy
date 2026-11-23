@@ -83,6 +83,8 @@ final List<Override> settingsBindings = <Override>[
       clock: ref.watch(clockProvider),
       fallbackLabel: _platformLabel(),
       enqueueOffline: profileSettingsEnqueue(ref),
+      // Гейт Windows Hello по пользователю сессии (09 BIO-034).
+      currentUserId: () async => ref.read(sessionControllerProvider).userId,
     ),
   ),
   displayPreferencesRepositoryProvider.overrideWith(

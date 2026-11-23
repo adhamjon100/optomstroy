@@ -35,7 +35,9 @@ enum SearchBarVariant {
 /// * [SearchBarVariant.compact] / [SearchBarVariant.customers]: высота 44 (compact) / 48, иконка 20, текст
 ///   `bodyLg`, плейсхолдер `textSecondary`, кнопки `AppIconButton`.
 ///
-/// Фокус — обводка 2 px `primaryText` и фон `surface`; загрузка — `AppProgress.linear` 2 px под полем.
+/// Фокус — обводка 2 px и каретка `textPrimary` (нейтральное состояние ввода, как у `AppTextField`; не фирменная
+/// `primaryText`, которую не отличить от `error`; пакет wave2:APP-POLISH) и фон `surface`; загрузка —
+/// `AppProgress.linear` 2 px под полем.
 /// Debounce, история и подсказки — у фичи каталога (компонент только сообщает ввод).
 ///
 /// В области «общее устройство» `PrivateInputScope` (03 §9.7, §9.74, редакция 1.19; DS-099): системная клавиатура
@@ -201,7 +203,7 @@ class _SearchBarState extends State<SearchBar> {
                 contextMenuBuilder: PrivateInputScope.contextMenuBuilderFor(private: private),
                 autofillHints: private ? null : PrivateInputScope.defaultAutofillHints,
                 style: textStyle.copyWith(color: c.textPrimary),
-                cursorColor: c.primaryText,
+                cursorColor: c.textPrimary,
                 onChanged: widget.onChanged,
                 onSubmitted: widget.onSubmitted,
                 maxLines: 1,
@@ -269,13 +271,13 @@ class _SearchBarState extends State<SearchBar> {
       duration: context.motion.of(context.motion.fast),
       height: height,
       // Фокус: у поля шапки фон не меняется (прототип: `#EAF1FB`, `outline: none`; ревью V-02) — фокус видно по обводке
-      // 2 `primaryText` (A11Y-010); у остальных вариантов — фон `surface` (03 §9.7).
+      // 2 `textPrimary` (A11Y-010; 14,7 : 1 к `surfaceVariant`); у остальных вариантов — фон `surface` (03 §9.7).
       decoration: BoxDecoration(color: focused && !header ? c.surface : c.surfaceVariant, borderRadius: radius),
       // Обводка рисуется поверх (foreground), чтобы не уменьшать высоту поля и тач-целей.
       foregroundDecoration: BoxDecoration(
         borderRadius: radius,
         border: focused
-            ? Border.all(color: c.primaryText, width: 2)
+            ? Border.all(color: c.textPrimary, width: 2)
             : Border.all(color: hovered ? c.border : Colors.transparent),
       ),
       child: header ? null : content,

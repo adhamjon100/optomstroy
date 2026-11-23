@@ -155,9 +155,11 @@ export async function kioskClosedList(w, T, tablet) {
   const { ops, closed } = kioskContractOps();
   const publicOps = ops.filter((o) => o.isPublic);
   const outside = ops.filter((o) => !o.isPublic && !closed.has(o.key));
+  // 11-я публичная — POST /auth/unlock/challenge (вход по лицу, ключ Windows Hello; контракт 1.4.0, 08 §4.1.10, ADR-116),
+  // как в pos-api `kiosk/kiosk-public-routes.e2e-spec.ts`.
   ctx.check(
-    'T-KIOSK-005 закрытый список планшета из контракта: 23 маршрута (x-roles kiosk + GET /catalog/price-lists), публичных 10, пересечения нет',
-    closed.size === 23 && publicOps.length === 10 && publicOps.every((o) => !closed.has(o.key)) && outside.length === ops.length - 33,
+    'T-KIOSK-005 закрытый список планшета из контракта: 23 маршрута (x-roles kiosk + GET /catalog/price-lists), публичных 11, пересечения нет',
+    closed.size === 23 && publicOps.length === 11 && publicOps.every((o) => !closed.has(o.key)) && outside.length === ops.length - 34,
     { closed: closed.size, public: publicOps.length, outside: outside.length, total: ops.length },
   );
 

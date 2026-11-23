@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type DynamicModule, Global, Module, type Provider, type Type } from '@nestjs/common';
@@ -59,6 +58,7 @@ import { pemPair, publicSet, testSecret } from '../foundation/support/keys.js';
 import { type CatalogFixture, startCatalogFixture } from './catalog-fixture.js';
 import { type FakeSalesPorts, createFakeSalesRegistry } from './sales-ports.fakes.js';
 import { ScriptedOnecGateway } from './scripted-onec.gateway.js';
+import { createSecretsDir, removeSecretsDir } from './secrets-dir.js';
 import { LogCapture } from './test-app.js';
 
 /**
@@ -182,7 +182,6 @@ const SEED_FILE = fileURLToPath(new URL('../../seeds/0001_defaults.sql', import.
 
 export class PosTestApp {
   readonly logs = new LogCapture();
-  readonly secretsDir = mkdtempSync(join(tmpdir(), 'pos-sales-secrets-'));
   readonly onec = new ScriptedOnecGateway();
   fx!: CatalogFixture;
   pool!: pg.Pool;
@@ -193,15 +192,34 @@ export class PosTestApp {
   registry!: SalesPortRegistry;
   fakes: FakeSalesPorts | undefined;
   private boss: PgBossService | undefined;
+  /** Каталог файлов секретов (`secrets-dir.ts`): создаётся в start(), удаляется в stop(). */
+  private secretsDir: string | undefined;
+  private stopping: Promise<void> | undefined;
 
+  /**
+   * Сбой запуска убирает уже поднятое (приложение, pg-boss, пул, кластер, каталог секретов) здесь же: вызывающий
+   * `t = await new PosTestApp().start()` экземпляра при ошибке не получает и stop() не вызовет.
+   */
   async start(opts: PosFixtureOptions = {}): Promise<this> {
+    this.stopping = undefined;
+    const secretsDir = createSecretsDir('pos-sales-secrets-');
+    this.secretsDir = secretsDir;
+    try {
+      return await this.boot(opts, secretsDir);
+    } catch (e) {
+      await this.stop().catch(() => undefined);
+      throw e;
+    }
+  }
+
+  private async boot(opts: PosFixtureOptions, secretsDir: string): Promise<this> {
     this.fx = await startCatalogFixture({ skuCount: opts.skuCount ?? 120, database: 'pos_sales' });
     this.pool = new pg.Pool({ connectionString: this.fx.url, max: 20 });
     this.db = createDatabase(this.pool);
     await this.applySeeds();
     const k = pemPair();
     const file = (name: string, content: string) => {
-      const p = join(this.secretsDir, name);
+      const p = join(secretsDir, name);
       writeFileSync(p, content, { mode: 0o600 });
       return p;
     };
@@ -306,12 +324,22 @@ export class PosTestApp {
     return all.filter((t) => this.registry.isBound(t));
   }
 
-  async stop(): Promise<void> {
-    await this.app?.close();
-    await this.boss?.onApplicationShutdown().catch(() => undefined);
-    await this.pool?.end().catch(() => undefined);
-    await this.fx?.stop();
-    rmSync(this.secretsDir, { recursive: true, force: true });
+  /** Повторный вызов (в том числе после сбоя start()) ждёт ту же остановку; каталог секретов удаляется всегда. */
+  stop(): Promise<void> {
+    this.stopping ??= this.release();
+    return this.stopping;
+  }
+
+  private async release(): Promise<void> {
+    try {
+      await this.app?.close();
+      await this.boss?.onApplicationShutdown().catch(() => undefined);
+      await this.pool?.end().catch(() => undefined);
+      await this.fx?.stop();
+    } finally {
+      removeSecretsDir(this.secretsDir);
+      this.secretsDir = undefined;
+    }
   }
 
   private async applySeeds(): Promise<void> {

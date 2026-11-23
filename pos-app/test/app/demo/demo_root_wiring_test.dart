@@ -1,6 +1,9 @@
-// Корень DI веб-демо (12 T-DEMO-001 (2); 15 ADR-113 п. 1; 06 §6.10):
-// - `demoOverrides` — ровно три провайдера ядра, ни одного из них нет в `appOverrides`: контейнер
-//   `[...appOverrides, ...demoOverrides]` собирается без AssertionError (контроль: двойное переопределение ловится);
+// Корень DI веб-демо (12 T-DEMO-001 (2), T-DEMO-016 (4); 15 ADR-113 п. 1, ADR-116 п. 1; 06 §6.10):
+// - `demoOverrides` — ровно четыре провайдера: три из `core_providers.dart` и порт биометрии
+//   `biometricAuthenticatorProvider`; ни одного из них нет в `appOverrides`: контейнер `[...appOverrides,
+//   ...demoOverrides]` собирается без AssertionError (контроль: двойное переопределение ловится);
+// - порт биометрии — `WebPasskeyAuthenticator` поверх шлюза страницы: режим — по ОС браузера из `ClientMeta`, адаптер
+//   SCR-08 и хук очистки сессии корня идут через него;
 // - `API_BASE_URL` — от origin сайта; основной Dio (`dioProvider`) и Dio для `POST /auth/refresh` идут через мост, как и
 //   `/health`; ни одного HttpClient dart:io (в сеть мимо моста ничего не уходит);
 // - точка входа запускается только при `DEMO_BACKEND=browser`, `ENV` ≠ `prod` и мосте протокола 1; проверка синхронна,
@@ -20,19 +23,28 @@ import 'package:optomstroy/app/demo/demo_bridge_adapter.dart';
 import 'package:optomstroy/app/demo/demo_bridge_stub.dart';
 import 'package:optomstroy/app/demo/demo_health_probe.dart';
 import 'package:optomstroy/app/demo/demo_overrides.dart';
+import 'package:optomstroy/app/demo/demo_passkey.dart';
+import 'package:optomstroy/app/demo/demo_passkey_gateway.dart';
 import 'package:optomstroy/app/demo/main_web_demo.dart';
 import 'package:optomstroy/app/demo/main_web_demo.dart' as entry show main;
 import 'package:optomstroy/app/di/overrides.dart';
+import 'package:optomstroy/core/biometrics/biometric_authenticator.dart';
+import 'package:optomstroy/core/biometrics/biometric_providers.dart';
 import 'package:optomstroy/core/config/environment.dart';
 import 'package:optomstroy/core/connectivity/connectivity_watcher.dart';
 import 'package:optomstroy/core/di/core_providers.dart';
 import 'package:optomstroy/core/network/api_headers.dart';
 import 'package:optomstroy/core/network/backend_health.dart';
 import 'package:optomstroy/core/network/client_meta.dart';
+import 'package:optomstroy/core/session/profile_cache.dart';
+import 'package:optomstroy/core/session/session_controller.dart';
 import 'package:optomstroy/core/storage/secure_storage.dart';
+import 'package:optomstroy/features/auth/auth_providers.dart';
+import 'package:optomstroy/features/auth/domain/ports/biometric_unlock.dart';
 
 import '../../core/storage/in_memory_secure_storage.dart';
 import 'fake_demo_bridge.dart';
+import 'fake_demo_passkey.dart';
 
 const String _deviceId = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 const Map<String, String> _devConstants = <String, String>{'ENV': 'dev', 'LOG_LEVEL': 'info'};
@@ -75,15 +87,18 @@ DemoBridgeResponse _server(FakeBridgeCall call) => switch (call.url) {
 };
 
 /// Корень приложения веб-демо: `[...appOverrides, ...demoOverrides]` + то, что в приложении даёт bootstrap и платформа
-/// (метаданные клиента, secure storage, сеть ОС).
-ProviderContainer _root(FakeDemoBridge bridge, {Map<SecureKey, String> secure = const <SecureKey, String>{}}) {
+/// (метаданные клиента — ОС браузера [browserOs], secure storage, сеть ОС); [passkey] — шлюз passkey страницы.
+ProviderContainer _root(
+  FakeDemoBridge bridge, {
+  Map<SecureKey, String> secure = const <SecureKey, String>{},
+  ClientPlatform? browserOs = ClientPlatform.windows,
+  DemoPasskeyGateway? passkey,
+}) {
   final ProviderContainer c = ProviderContainer(
     overrides: <Override>[
       ...appOverrides,
-      ...demoOverrides(bridge, origin: demoTestOrigin, constants: _devConstants),
-      clientMetaProvider.overrideWithValue(
-        const ClientMeta(appVersion: '0.1.0+1', platform: ClientPlatform.windows, deviceId: _deviceId),
-      ),
+      ...demoOverrides(bridge, origin: demoTestOrigin, constants: _devConstants, passkey: passkey),
+      clientMetaProvider.overrideWithValue(ClientMeta(appVersion: '0.1.0+1', platform: browserOs, deviceId: _deviceId)),
       secureStorageProvider.overrideWithValue(InMemorySecureStorage(secure)),
       connectivityWatcherProvider.overrideWithValue(ConnectivityWatcher(_Net())),
     ],
@@ -94,14 +109,17 @@ ProviderContainer _root(FakeDemoBridge bridge, {Map<SecureKey, String> secure = 
 
 void main() {
   group('demoOverrides', () {
-    test('ровно три провайдера ядра; контейнер [...appOverrides, ...demoOverrides] без AssertionError', () {
+    test('T-DEMO-016 (4): ровно четыре провайдера — три ядра и порт биометрии; [...appOverrides, ...demoOverrides] '
+        'без AssertionError', () {
       final FakeDemoBridge bridge = FakeDemoBridge();
       final List<Override> demo = demoOverrides(bridge, origin: demoTestOrigin, constants: _devConstants);
 
-      expect(demo, hasLength(3));
+      expect(demo, hasLength(4));
       final ProviderContainer c = ProviderContainer(overrides: <Override>[...appOverrides, ...demo]);
       addTearDown(c.dispose);
       expect(c.read(httpClientAdapterProvider), isA<DemoBridgeAdapter>());
+      // Без шлюза страницы (VM) порт веб-демо отвечает «биометрии нет»; без метаданных клиента — ОС `defaultTargetPlatform`.
+      expect(c.read(biometricAuthenticatorProvider), isA<WebPasskeyAuthenticator>());
 
       // Контроль: двойное переопределение Riverpod ловит в debug — значит, проверка выше настоящая.
       expect(() => ProviderContainer(overrides: <Override>[...demo, ...demo]), throwsA(isA<AssertionError>()));
@@ -112,6 +130,61 @@ void main() {
         );
       }
     });
+
+    test('T-DEMO-016 (4): порт биометрии — WebPasskeyAuthenticator; режим — по ОС браузера из ClientMeta', () async {
+      final Map<ClientPlatform?, DemoPasskeyMode> expected = <ClientPlatform?, DemoPasskeyMode>{
+        ClientPlatform.windows: DemoPasskeyMode.gate,
+        ClientPlatform.android: DemoPasskeyMode.bound,
+        ClientPlatform.ios: DemoPasskeyMode.bound,
+        null: DemoPasskeyMode.bound,
+      };
+      for (final MapEntry<ClientPlatform?, DemoPasskeyMode> e in expected.entries) {
+        final FakeDemoPasskeyGateway page = FakeDemoPasskeyGateway();
+        final ProviderContainer c = _root(FakeDemoBridge(), browserOs: e.key, passkey: page);
+        final BiometricAuthenticator port = c.read(biometricAuthenticatorProvider);
+
+        expect(port, isA<WebPasskeyAuthenticator>().having((WebPasskeyAuthenticator w) => w.mode, 'mode', e.value));
+        final BiometricCapability capability = await port.capability();
+        expect(page.calls.single.args, <String, Object?>{'mode': e.value.wire}, reason: '${e.key}');
+        expect(
+          capability.kind,
+          e.value == DemoPasskeyMode.gate ? BiometricKind.windowsHello : BiometricKind.androidClass3,
+        );
+      }
+    });
+
+    test(
+      'T-DEMO-016 (4): адаптер SCR-08 и хук очистки сессии корня идут через шлюз страницы; запись — по кэшу профиля',
+      () async {
+        final FakeDemoPasskeyGateway page = FakeDemoPasskeyGateway()
+          ..bound = (owner: '0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4fa1', secret: 'demo-bio-refresh'); // check-secrets: allow
+        final ProviderContainer c = _root(
+          FakeDemoBridge(),
+          browserOs: ClientPlatform.android,
+          passkey: page,
+          secure: <SecureKey, String>{
+            SecureKey.profileCache: const CachedProfile(userId: '0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4fa1').encode(),
+          },
+        );
+
+        // AuthDeviceInfo.biometricClass при входе по SMS — через адаптер корня (authBindings) поверх порта демо.
+        expect(await c.read(biometricUnlockProvider).capability(), BiometricUnlockKind.cryptoBound);
+        expect(await c.read(biometricAuthenticatorProvider).hasStoredSecret(), isTrue);
+        expect(page.calls.last.args, <String, Object?>{'owner': '0192f3a1-6c3e-7a1b-9f00-2b7c1d3e4fa1'});
+
+        // Выход, SESSION_REVOKED, подключение планшета: хук корня удаляет только блоб привязки.
+        page
+          ..gate = true
+          ..calls.clear();
+        for (final SessionCleanupHook hook in c.read(sessionCleanupHooksProvider)) {
+          await hook();
+        }
+        expect(page.methods, <String>[DemoPasskeyMethod.clear]);
+        expect(page.bound, isNull);
+        expect(page.gate, isTrue);
+        expect(page.dialogs, isEmpty);
+      },
+    );
 
     test('API_BASE_URL — origin сайта + /api/v1, остальное из констант сборки; ENV не prod', () {
       final ProviderContainer c = _root(FakeDemoBridge());

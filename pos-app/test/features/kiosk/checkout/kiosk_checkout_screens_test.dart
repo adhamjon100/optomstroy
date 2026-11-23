@@ -30,6 +30,8 @@ import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/kiosk_keypad.dart';
 import 'package:optomstroy/design_system/components/private_input_scope.dart';
 import 'package:optomstroy/design_system/theme/app_theme.dart';
+import 'package:optomstroy/design_system/theme/ds_theme.dart';
+import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/features/cart/cart_providers.dart';
 import 'package:optomstroy/features/catalog/catalog_providers.dart' as catalog;
 import 'package:optomstroy/features/kiosk/domain/kiosk_checkout.dart';
@@ -503,6 +505,39 @@ void main() {
     await tester.pumpAndSettle();
     expect(s.location, '/kiosk/done');
     expect(s.f.repo.orderCalls.map((c) => c.request.challengeId).toSet(), <String>{kChallengeA});
+  });
+
+  testWidgets('UI-52, T-ANIM-012 (указание владельца 2026-11-18): после неверного кода ячейки красные до первой цифры; '
+      'первая цифра — обычные ячейки, текст ошибки снят (03 §9.5 ред. 1.24)', (tester) async {
+    final _Stand s = _Stand(tester);
+    await s.pump();
+    await s.toCode();
+    await s.keypad('111111');
+    s.f.repo.answerOrder(refused(const AuthFailure(AuthReason.otpInvalid, attemptsLeft: 4)));
+    await tester.tap(find.byKey(KioskCodeStep.sendKey));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.kiosk_code_invalid(4)), findsOneWidget);
+    final DsColors c = tester.element(find.byKey(KioskCodeStep.fieldKey)).colors;
+    List<Color> cells() => tester
+        .widgetList<Container>(
+          find.descendant(
+            of: find.byKey(KioskCodeStep.fieldKey),
+            matching: find.byWidgetPredicate(
+              (Widget w) =>
+                  w is Container &&
+                  w.decoration is BoxDecoration &&
+                  (w.decoration! as BoxDecoration).border is Border &&
+                  (w.decoration! as BoxDecoration).borderRadius != null,
+            ),
+          ),
+        )
+        .map((Container w) => ((w.decoration! as BoxDecoration).border! as Border).top.color)
+        .toList();
+    expect(cells(), hasLength(KioskKeypad.smsCodeLength));
+    expect(cells().every((Color b) => b == c.error), isTrue, reason: 'момент ошибки: поле пустое, ячейки `error`');
+    await s.keypad('5');
+    expect(cells().any((Color b) => b == c.error), isFalse, reason: 'новая цифра красной не бывает');
+    expect(find.text(l10n.kiosk_code_invalid(4)), findsNothing);
   });
 
   testWidgets('ошибки — нейтральные тексты: неверный код, код не действует, отказ 1С, лимит', (tester) async {

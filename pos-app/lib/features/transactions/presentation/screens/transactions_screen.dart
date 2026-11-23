@@ -8,6 +8,7 @@
 // `TransactionRow` с заголовками дней (compact/medium) или таблица 8 колонок (expanded) · курсорная подгрузка.
 // Экспорт CSV в R1 нет (TXN-010, Q-217). Фильтры — в query маршрута (`go` без новой записи). Данные — только память.
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart' hide SearchBar;
 import 'package:flutter/services.dart';
@@ -34,6 +35,8 @@ import 'package:optomstroy/design_system/components/search_bar.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
 import 'package:optomstroy/design_system/components/transaction_row.dart';
+import 'package:optomstroy/design_system/layout/large_content.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/layout/window_class.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -313,28 +316,33 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
           key: TransactionsScreen.rootKey,
           backgroundColor: c.background,
           appBar: AppBar(title: Text(l10n.transactions_title)),
+          // Окно ≥ 1600: таблица с панелью фильтров — не шире 1200 + 320 по центру (03 §8.8; указание владельца
+          // 2026-11-18, 15 §5.8 (3)).
           body: expanded
-              ? Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Expanded(child: main),
-                    FilterPanel(
-                      key: const ValueKey<String>('tx-filter-panel'),
-                      width: 320,
-                      title: l10n.catalog_filters_button,
-                      activeCount: _filters.activeCount,
-                      resetLabel: l10n.ds_button_reset,
-                      closeLabel: l10n.ds_button_close,
-                      onReset: _filters.activeCount == 0 ? null : _reset,
-                      sections: <Widget>[
-                        TransactionsFilterSections(
-                          filters: _filters,
-                          showActor: showActor,
-                          onChanged: (TransactionsFilters f) => _apply(f, debounce: true),
-                        ),
-                      ],
-                    ),
-                  ],
+              ? DsLargeContent(
+                  sidePanel: 320,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(child: main),
+                      FilterPanel(
+                        key: const ValueKey<String>('tx-filter-panel'),
+                        width: 320,
+                        title: l10n.catalog_filters_button,
+                        activeCount: _filters.activeCount,
+                        resetLabel: l10n.ds_button_reset,
+                        closeLabel: l10n.ds_button_close,
+                        onReset: _filters.activeCount == 0 ? null : _reset,
+                        sections: <Widget>[
+                          TransactionsFilterSections(
+                            filters: _filters,
+                            showActor: showActor,
+                            onChanged: (TransactionsFilters f) => _apply(f, debounce: true),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 )
               : main,
         ),
@@ -593,7 +601,15 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
       case TransactionsPhase.list:
         return RefreshIndicator(
           onRefresh: _ctl.refresh,
-          child: expanded ? _table(context, l10n, s) : _list(context, l10n, s),
+          // Таблица — только если дата и самая длинная сумма помещаются в свои колонки без обрезки; иначе (окно 1024 с
+          // открытыми фильтрами, крупный текст) — строки `TransactionRow` (02 SCR-36.2; указание владельца 2026-11-18,
+          // 15 §5.8 (3) — [ВЫВОД исполнителя]; прежде «+16 007,50 с» и «22.10.2026» без времени).
+          child: expanded
+              ? LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints box) =>
+                      _tableFits(context, s, box.maxWidth) ? _table(context, l10n, s) : _list(context, l10n, s),
+                )
+              : _list(context, l10n, s),
         );
     }
   }
@@ -667,6 +683,29 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
 
   static const List<int> _flex = <int>[3, 2, 3, 3, 3, 3, 2];
 
+  /// Колонки «Дата» и «Сумма» таблицы шириной [width] вмещают дату со временем и самую длинную сумму со знаком (стили
+  /// ячеек [_table], масштаб текста окна).
+  bool _tableFits(BuildContext context, TransactionsListState s, double /* money-double: allow — ширина (lp) */ width) {
+    final int total = _flex.fold<int>(0, (int a, int b) => a + b);
+    final double unit = (width - 2 * context.space.s4) / total; // money-double: allow — геометрия UI (lp)
+    final TextStyle body = context.text.body.copyWith(fontFeatures: DsTypography.numeric);
+    final TextStyle amount = body.copyWith(fontWeight: FontWeight.w700);
+    double date = 0; // money-double: allow — геометрия UI (lp)
+    double sum = 0; // money-double: allow — геометрия UI (lp)
+    for (final Transaction t in s.items) {
+      date = math.max(date, dsTextWidth(context, DsBishkekTime.dateTime(t.occurredAt), body));
+      sum = math.max(
+        sum,
+        dsTextWidth(
+          context,
+          TransactionRow.signed(TransactionsTexts.money(t.amount), TransactionsTexts.tone(t)),
+          amount,
+        ),
+      );
+    }
+    return date <= unit * _flex[2] - context.space.s2 && sum <= unit * _flex[4] - context.space.s2;
+  }
+
   Widget _table(BuildContext context, AppLocalizations l10n, TransactionsListState s) {
     final DsColors c = context.colors;
     final TextStyle head = context.text.label.copyWith(color: c.textSecondary, fontWeight: FontWeight.w600);
@@ -695,15 +734,20 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
       return cell(
         i,
         sortable
+            // Сортировка — по всей высоте шапки 44 (03 §7.4; прогон адаптивности 2026-11-18, 12 T-UI-117: прежде
+            // цель была высотой строки текста, 18 lp).
             ? InkWell(
                 key: ValueKey<String>('tx-sort-${sort!.name}'),
                 onTap: () => unawaited(_ctl.setSort(sort)),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Flexible(child: text),
-                    if (s.sort == sort) Icon(Icons.arrow_downward_rounded, size: 16, color: c.textSecondary),
-                  ],
+                child: SizedBox(
+                  height: 44,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Flexible(child: text),
+                      if (s.sort == sort) Icon(Icons.arrow_downward_rounded, size: 16, color: c.textSecondary),
+                    ],
+                  ),
                 ),
               )
             : text,
@@ -716,7 +760,8 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         Container(
-          height: 40,
+          // Ячейки 44 и нижняя граница 1.
+          height: 45,
           padding: EdgeInsets.symmetric(horizontal: context.space.s4),
           decoration: BoxDecoration(
             color: c.surfaceVariant,

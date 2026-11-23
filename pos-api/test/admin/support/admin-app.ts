@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Global, Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
@@ -36,9 +35,15 @@ import { createValidationPipe } from '../../../src/common/validation/validation.
 import { UserProfilesRepository } from '../../../src/users/user-profiles.repository.js';
 import { UsersModule } from '../../../src/users/users.module.js';
 import type { RoleCode, UserKind, UserStatusValue } from '../../../src/users/users.types.js';
+import { createSecretsDir, removeSecretsDir } from '../../support/secrets-dir.js';
 import { LogCapture } from '../../support/test-app.js';
 import { FoundationDb, seedSubject, type SeededSubject } from '../../foundation/support/foundation-db.js';
 import { pemPair, publicSet, testSecret } from '../../foundation/support/keys.js';
+
+export interface AdminTestAppOptions {
+  readonly adminRateLimit?: number;
+  readonly audit?: boolean;
+}
 
 export interface Actor extends SeededSubject {
   readonly role: RoleCode;
@@ -56,22 +61,34 @@ export class AdminTestApp {
   readonly fdb = new FoundationDb();
   readonly clock = new FixedClock(new Date());
   readonly logs = new LogCapture();
-  private readonly secretsDir = mkdtempSync(join(tmpdir(), 'pos-admin-secrets-'));
+  /** Каталог файлов секретов (`secrets-dir.ts`): создаётся в start(), удаляется в stop(). */
+  private secretsDir: string | undefined;
+  private stopping: Promise<void> | undefined;
   app!: NestExpressApplication;
   jwt!: JwtService;
 
   /**
    * `adminRateLimit` — лимит RL-ADMIN в минуту (по умолчанию 120 по 08 §2.9); `audit` — журнал аудита этапа G
    * (`AdminAuditModule`: `GET /admin/audit-logs`, порт `AuditQueryPort` в реестре портов, как `SalesPortsModule`).
+   * Сбой запуска убирает уже поднятое (приложение, кластер, каталог секретов) здесь же.
    */
-  async start(
-    dbName: string,
-    opts: { readonly adminRateLimit?: number; readonly audit?: boolean } = {},
-  ): Promise<this> {
+  async start(dbName: string, opts: AdminTestAppOptions = {}): Promise<this> {
+    this.stopping = undefined;
+    const secretsDir = createSecretsDir('pos-admin-secrets-');
+    this.secretsDir = secretsDir;
+    try {
+      return await this.boot(dbName, opts, secretsDir);
+    } catch (e) {
+      await this.stop().catch(() => undefined);
+      throw e;
+    }
+  }
+
+  private async boot(dbName: string, opts: AdminTestAppOptions, secretsDir: string): Promise<this> {
     await this.fdb.start(dbName);
     const k1 = pemPair();
     const file = (name: string, content: string) => {
-      const p = join(this.secretsDir, name);
+      const p = join(secretsDir, name);
       writeFileSync(p, content, { mode: 0o600 });
       return p;
     };
@@ -158,10 +175,20 @@ export class AdminTestApp {
     return this;
   }
 
-  async stop(): Promise<void> {
-    await this.app?.close();
-    await this.fdb.stop();
-    rmSync(this.secretsDir, { recursive: true, force: true });
+  /** Повторный вызов (в том числе после сбоя start()) ждёт ту же остановку; каталог секретов удаляется всегда. */
+  stop(): Promise<void> {
+    this.stopping ??= this.release();
+    return this.stopping;
+  }
+
+  private async release(): Promise<void> {
+    try {
+      await this.app?.close();
+      await this.fdb.stop();
+    } finally {
+      removeSecretsDir(this.secretsDir);
+      this.secretsDir = undefined;
+    }
   }
 
   /** Пользователь с ролью, устройством, сессией, профилем (ФИО) и access-токеном. */

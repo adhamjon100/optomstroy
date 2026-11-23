@@ -102,7 +102,8 @@ paths:
         одна сессия планшета (amr ["pin"], сроки AUTH_REFRESH_IDLE_KIOSK_DAYS и AUTH_REFRESH_TTL_KIOSK_DAYS — 08 §2.2,
         09 §8.9); строка store_tablets (status=active, хэш аварийного кода Argon2id(pepper ∥ код ∥ tablet_id) с версией
         pepper — 11 SEC-140; lock_task_enabled = NULL); сессии администратора на этом устройстве отзываются, его access jti —
-        в token_denylist. Технический пользователь kind=kiosk создаётся только здесь (11 SEC-136). Ответ — токены планшета и
+        в token_denylist; с 1.4.0 — и ключи Windows Hello всех пользователей с этим device_key (kiosk_connect; 08 §4.18.11,
+        ADR-116). Технический пользователь kind=kiosk создаётся только здесь (11 SEC-136). Ответ — токены планшета и
         аварийный код выхода exitCode (8 цифр CSPRNG): показывается один раз и не пишется в логи, аудит, уведомления и
         хранилище идемпотентности. Ширину экрана сервер не проверяет — подключение на compact отклоняет приложение.
         kiosk.manage — только admin, step-up (operation kiosk.manage, область admin_users); owner и прочие → 403 FORBIDDEN.
@@ -270,7 +271,8 @@ paths:
         401 KIOSK_REVOKED); строка devices для текущего device_key и store_tablets.device_id на неё; новая сессия планшета;
         новый аварийный код (прежний перестаёт действовать, счётчик и пауза неверных кодов обнуляются); коды kiosk_order
         планшета гасятся; lock_task_enabled = NULL; сессии администратора на устройстве отзываются, его access jti — в
-        token_denylist. Тело — пустой объект. kiosk.manage — только admin, step-up (operation kiosk.manage). Новый
+        token_denylist; с 1.4.0 — и ключи Windows Hello пользователей с этим device_key (kiosk_connect; ADR-116). Тело —
+        пустой объект. kiosk.manage — только admin, step-up (operation kiosk.manage). Новый
         пользователь kind=kiosk этой операцией не создаётся. Идемпотентность — как у POST /admin/store-tablets (08 §2.7).
         Ошибки: 400 VALIDATION_FAILED (forbidden_field, idempotency_key_required); 401; 403 KIOSK_DISABLED (KIOSK_MODE=false),
         STEP_UP_REQUIRED, FORBIDDEN; 404 NOT_FOUND; 409 IDEMPOTENCY_IN_PROGRESS (Retry-After); 422 IDEMPOTENCY_KEY_REUSED

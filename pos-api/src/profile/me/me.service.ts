@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import type { DbExecutor } from '../../common/audit/db-executor.js';
 import { CLOCK, type Clock } from '../../common/auth/clock.js';
+import { biometricWeakAllowed } from '../../common/auth/weak-biometrics.js';
 import { APP_CONFIG, type AppConfig } from '../../common/config/app-config.js';
 import { DRIZZLE } from '../../common/db/database.module.js';
 import { ProblemException } from '../../common/problem-details/problem.exception.js';
@@ -16,6 +17,7 @@ import type { DeviceRow, RoleCode, UserProfileRow, UserRow } from '../../users/u
 import { type ConsentDto, ConsentsService } from '../consents/consents.service.js';
 import { CustomerLinkReader, type MeCustomerLinkDto } from '../customer-link.reader.js';
 import { AppPinsRepository } from '../../auth/pin/app-pins.repository.js';
+import { HelloKeyService } from '../../auth/sessions/hello-key.service.js';
 import { IDLE_LOCK_MAX_CUSTOMER } from '../profile.constants.js';
 import { type SettingsContext, type SettingsDto, settingsFromProfile } from './settings.projection.js';
 
@@ -29,7 +31,12 @@ export interface ProfileDto {
   readonly rowVersion: number;
 }
 
-export type BiometricsPlatform = 'android_class3' | 'ios' | 'windows_hello_gate' | 'none';
+/**
+ * `Me.security.biometricsPlatform` (08 §3.14); `android_class2` — уровень W Android, `windows_hello_key` — ключ Windows
+ * Hello (W2) — ADR-116, в конце перечня.
+ */
+export type BiometricsPlatform =
+  'android_class3' | 'ios' | 'windows_hello_gate' | 'none' | 'android_class2' | 'windows_hello_key';
 
 /** contracts/openapi `Me` (08 §4.3.1, §3.14). */
 export interface MeDto {
@@ -47,6 +54,10 @@ export interface MeDto {
     readonly pinSet: boolean;
     readonly biometricsEnabled: boolean;
     readonly biometricsPlatform: BiometricsPlatform;
+    /** Уровень W Android разрешён субъекту на устройстве запроса (08 §3.14, API-201; ADR-116). */
+    readonly biometricWeakAllowed: boolean;
+    /** Ключ Windows Hello (W2) разрешён на устройстве запроса: переменная, `platform=windows`, правило `personal`. */
+    readonly windowsHelloKeyAllowed: boolean;
   };
   readonly consents: ConsentDto[];
   readonly session?: {
@@ -108,11 +119,22 @@ export function profileToDto(p: UserProfileRow | undefined, user: Pick<UserRow, 
   };
 }
 
-export function biometricsPlatformOf(device: DeviceRow | undefined): BiometricsPlatform {
+/**
+ * Биометрия устройства запроса (08 §3.14). `weakOnDevice` — на устройстве неотозванная семья уровня W (ADR-116):
+ * тогда `android_class2`, а не `android_class3` [толкование: «живая» = не отозвана, как у уровня S, где признак —
+ * `devices.biometric_enrolled_at`; истёкшая семья отзывается при следующей разблокировке]. `helloKeyOnDevice` — живой
+ * (не отозванный) ключ Windows Hello устройства (W2, ADR-116): `windows_hello_key`, иначе на Windows — гейт W1.
+ */
+export function biometricsPlatformOf(
+  device: DeviceRow | undefined,
+  weakOnDevice = false,
+  helloKeyOnDevice = false,
+): BiometricsPlatform {
   if (!device) return 'none';
-  if (device.platform === 'windows') return 'windows_hello_gate';
+  if (device.platform === 'windows') return helloKeyOnDevice ? 'windows_hello_key' : 'windows_hello_gate';
   if (device.biometricEnrolledAt === null) return 'none';
-  return device.platform === 'ios' ? 'ios' : 'android_class3';
+  if (device.platform === 'ios') return 'ios';
+  return weakOnDevice ? 'android_class2' : 'android_class3';
 }
 
 /**
@@ -136,6 +158,7 @@ export class MeService {
     private readonly consents: ConsentsService,
     private readonly links: CustomerLinkReader,
     private readonly catalog: PermissionCatalog,
+    private readonly helloKeys: HelloKeyService,
   ) {}
 
   settingsContext(kind: SettingsContext['kind'], roles: readonly string[], platform?: string | null) {
@@ -164,11 +187,18 @@ export class MeService {
     ];
     permissions.sort();
     const kind = user.kind;
-    const [consents, customerLink, discountLimitPercent] = await Promise.all([
-      this.consents.latestView(userId, device?.id ?? null, ex),
-      !pending && kind === 'customer' ? this.links.meLink(userId, ex) : Promise.resolve(undefined),
-      !pending && kind === 'staff' ? this.discountLimit(roles, ex) : Promise.resolve(undefined),
-    ]);
+    const [consents, customerLink, discountLimitPercent, weakFamilies, helloKeyOnDevice, helloKeyAllowed] =
+      await Promise.all([
+        this.consents.latestView(userId, device?.id ?? null, ex),
+        !pending && kind === 'customer' ? this.links.meLink(userId, ex) : Promise.resolve(undefined),
+        !pending && kind === 'staff' ? this.discountLimit(roles, ex) : Promise.resolve(undefined),
+        device?.platform === 'android'
+          ? this.sessions.listWeakFamilies(userId, { deviceId: device.id }, ex)
+          : Promise.resolve([]),
+        // Ключ Windows Hello (W2, ADR-116; 08 §3.14, API-201).
+        this.helloKeys.liveOnDevice(device, ex),
+        this.helloKeys.allowedOn(user, device, ex),
+      ]);
     const profileDto = profileToDto(profile, user);
     const sessionOk = session && session.userId === userId ? session : undefined;
     return {
@@ -185,7 +215,9 @@ export class MeService {
       security: {
         pinSet: pin !== undefined,
         biometricsEnabled: device?.biometricEnrolledAt !== null && device?.biometricEnrolledAt !== undefined,
-        biometricsPlatform: biometricsPlatformOf(device),
+        biometricsPlatform: biometricsPlatformOf(device, weakFamilies.length > 0, helloKeyOnDevice),
+        biometricWeakAllowed: biometricWeakAllowed(this.config.AUTH_BIO_ALLOW_WEAK, kind, device?.platform),
+        windowsHelloKeyAllowed: helloKeyAllowed,
       },
       consents,
       ...(sessionOk

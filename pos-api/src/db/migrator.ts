@@ -62,7 +62,10 @@ export class MigrationError extends Error {
       | 'MIGRATION_MISSING_FILE'
       | 'MIGRATION_OUT_OF_ORDER'
       | 'MIGRATION_BAD_NAME'
-      | 'MIGRATION_FAILED',
+      | 'MIGRATION_FAILED'
+      // Схема pg-boss (src/db/pgboss-install.ts; 07 DATA-012): владелец — чужая роль / установка не удалась.
+      | 'PGBOSS_FOREIGN_OWNER'
+      | 'PGBOSS_INSTALL_FAILED',
     message: string,
     options?: { cause?: unknown },
   ) {

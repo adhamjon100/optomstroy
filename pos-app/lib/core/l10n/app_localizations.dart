@@ -1113,6 +1113,12 @@ abstract class AppLocalizations {
   /// **'Входить по биометрии?'**
   String get auth_bio_offer_title;
 
+  /// Экран: SCR-08, SCR-42. ч. A; ред. 1.30, 15 ADR-116; заголовок системного диалога уровня W (`local_auth`, 09 BIO-030); в плане — `bio_prompt_title_face`, имя приведено к семейству `auth_bio_*` (03 §16.2). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Вход по лицу или отпечатку'**
+  String get auth_bio_prompt_face;
+
   /// Экран: SCR-02. ч. A; 09 §4.3. Источник: 02 §7
   ///
   /// In ru, this message translates to:
@@ -4964,6 +4970,12 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'1С недоступна: заказы будут отправлены позже; продажа в долг — только по актуальным данным о долге'**
   String get ds_onec_down;
+
+  /// Экран: веб-демо: поля ввода (меню поля «Вставить»). владелец 03; 03 §16.5 (ред. 1.22); 15 ADR-113 п. 1 (уточнение 2026-11-08, вставка на экранах входа); только веб-сборка: браузер отказал в чтении буфера обмена (`clipboard-read`) — меню поля закрывается, подсказка — `AppSnackbar` (03 §9.74) [НОВОЕ ИМЯ]. Источник: 02 §7; текст совпадает с 03 §16.5
+  ///
+  /// In ru, this message translates to:
+  /// **'Браузер не разрешил вставку из буфера обмена. Нажмите Ctrl+V (на Mac — ⌘V) или откройте меню в самом поле'**
+  String get ds_paste_blocked_hint;
 
   /// Экран: все. ч. B; 03 §16.5. Источник: 02 §7; текст совпадает с 03 §16.5
   ///
@@ -10989,6 +11001,24 @@ abstract class AppLocalizations {
   /// **'Вход по Face ID / Touch ID'**
   String get settings_bio_ios;
 
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; UI-42-027, выбран по умолчанию (Q-354). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Только отпечаток (надёжнее)'**
+  String get settings_bio_mode_strong;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; заголовок UI-42-027. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Способ входа'**
+  String get settings_bio_mode_title;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; UI-42-027, уровень W (09 BIO-030). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Лицо или отпечаток (проще, защита ниже)'**
+  String get settings_bio_mode_weak;
+
   /// Экран: SCR-42. ч. E; ссылка. Источник: 02 §7
   ///
   /// In ru, this message translates to:
@@ -11001,16 +11031,52 @@ abstract class AppLocalizations {
   /// **'Биометрия на устройстве недоступна или не настроена'**
   String get settings_bio_unavailable;
 
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; UI-42-028; переход W → S (09 BIO-033). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'На телефоне есть более надёжный вход по отпечатку. Выключите и включите вход заново, чтобы перейти'**
+  String get settings_bio_upgrade_hint;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; UI-42-027, UI-42-028; уровень W только при заданном PIN (09 BIO-030); «не реже раза в сутки» — срок `AUTH_BIO_WEAK_REAUTH_HOURS` 1…24 (16 §4.3; доработка 2026-11-18). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Сначала задайте PIN — он нужен не реже раза в сутки'**
+  String get settings_bio_weak_needs_pin;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; UI-42-028 (09 BIO-031, 11 RR-9); «не реже раза в сутки» — срок `AUTH_BIO_WEAK_REAUTH_HOURS` 1…24 (16 §4.3; доработка 2026-11-18). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Распознавание лица на этом телефоне упрощённое: защита ниже, чем у отпечатка. Не реже раза в сутки приложение попросит PIN'**
+  String get settings_bio_weak_note;
+
   /// Экран: SCR-42. ч. E; тумблер Windows. Источник: 02 §7
   ///
   /// In ru, this message translates to:
   /// **'Windows Hello перед вводом PIN'**
   String get settings_bio_windows;
 
-  /// Экран: SCR-42. ч. E; подпись. Источник: 02 §7
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; тумблер UI-42-010 на Windows в режиме ключа (W2, 09 BIO-038). Источник: 02 §7
   ///
   /// In ru, this message translates to:
-  /// **'Windows Hello только подтверждает присутствие. Вход всегда завершается PIN приложения'**
+  /// **'Вход через Windows Hello'**
+  String get settings_bio_windows_key;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; UI-42-029; ключ Windows Hello только при заданном PIN (09 BIO-038). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Сначала задайте PIN приложения — он остаётся запасным способом входа'**
+  String get settings_bio_windows_key_needs_pin;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; UI-42-029, режим ключа (W2; 09 BIO-038, BIO-039; step-up — PIN или OTP, BIO-024). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Вход без PIN приложения: Windows Hello примет лицо, отпечаток или PIN Windows. PIN приложения остаётся запасным способом и подтверждает важные действия'**
+  String get settings_bio_windows_key_note;
+
+  /// Экран: SCR-42. ч. E; подпись; ред. 1.30 (15 ADR-116, 09 BIO-036) — пояснение UI-42-029 режима гейта (W1), добавлено «(лицо, отпечаток или PIN Windows)». Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Windows Hello (лицо, отпечаток или PIN Windows) только подтверждает присутствие. Вход всегда завершается PIN приложения'**
   String get settings_bio_windows_note;
 
   /// Экран: SCR-42. ч. E; 409. Источник: 02 §7
@@ -11048,6 +11114,48 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'От 1 до 60 символов'**
   String get settings_device_name_error;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; UI-42-029; `availability = device_busy` канала `kg.optomstroy/windows_hello` (бывш. LF-1-04). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Windows Hello сейчас занят. Повторите попытку'**
+  String get settings_hello_busy;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; UI-42-029; `availability = disabled_by_policy`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Windows Hello отключён политикой этого компьютера'**
+  String get settings_hello_disabled_by_policy;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; снекбар; `POST /me/biometrics` → `200 {enabled:false, reason:"hello_key_disabled"}` (09 §9.2 W2 п. 1). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Вход через Windows Hello без PIN сейчас выключен. Можно включить Windows Hello перед вводом PIN'**
+  String get settings_hello_key_disabled;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; только веб-демо: при создании passkey `prf.enabled !== true` — запасной режим гейта (BIO-041). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Браузер не поддерживает вход без PIN. Windows Hello включён перед вводом PIN'**
+  String get settings_hello_key_no_prf;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; снекбар; `reason:"hello_key_shared_device"` — правило `personal` (09 BIO-040). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'На этом компьютере входили и другие пользователи, поэтому вход без PIN недоступен. Можно включить Windows Hello перед вводом PIN'**
+  String get settings_hello_key_shared_device;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; UI-42-029; `availability = device_not_present`; формулировка камеры — из пояснения варианта ответа на Q-355 (15 §5.7). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Windows Hello на этом компьютере недоступен. Для входа по лицу нужна камера с поддержкой Windows Hello (инфракрасная)'**
+  String get settings_hello_no_device;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; UI-42-029; `availability = not_configured`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Windows Hello не настроен. Настройте лицо, отпечаток или PIN в параметрах Windows: «Учётные записи» → «Варианты входа»'**
+  String get settings_hello_not_configured;
 
   /// Экран: SCR-42. этап E, 03 §16.7 (ADR-097); самоназвание языка (SCR-42.2), при переводе не меняется; EQ-DREST-01. Источник: 02 §7
   ///
@@ -11096,6 +11204,18 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'PIN изменён'**
   String get settings_pin_changed;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; UI-42-024; `400 VALIDATION_FAILED {rule:"hello_key_active"}` (09 BIO-040). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Сначала выключите вход через Windows Hello: без PIN он не работает'**
+  String get settings_pin_delete_hello_key_active;
+
+  /// Экран: SCR-42. ч. E; ред. 1.30, 15 ADR-116; UI-42-024; `400 VALIDATION_FAILED {rule:"weak_biometrics_active"}` (09 BIO-031, AC-AUTH-091 (в)). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Сначала выключите вход по лицу: без PIN он не работает'**
+  String get settings_pin_delete_weak_active;
 
   /// Экран: SCR-42. ч. E; валидация. Источник: 02 §7
   ///
@@ -12777,6 +12897,24 @@ abstract class AppLocalizations {
   /// **'Войти по биометрии'**
   String get unlock_bio_button;
 
+  /// Экран: SCR-08. ч. A; ред. 1.30, 15 ADR-116; кнопка UI-08-004 уровня W, иконка `face_unlock` (09 BIO-036). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Войти по лицу или отпечатку'**
+  String get unlock_bio_button_face;
+
+  /// Экран: SCR-08. ч. A; ред. 1.30, 15 ADR-116; UI-08-018: `UNLOCK_REQUIRED bio_weak_pin_due` (09 §9.3, BIO-031); без срока: та же причина и по сроку `AUTH_BIO_WEAK_REAUTH_HOURS` (1…24), и при заблокированном PIN (доработка 2026-11-18). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Пора ввести PIN. Введите PIN'**
+  String get unlock_bio_pin_due;
+
+  /// Экран: SCR-08. ч. A; ред. 1.30, 15 ADR-116; UI-08-018: `UNLOCK_REQUIRED bio_weak_disabled` (09 §9.3, BIO-032). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Вход по лицу выключен. Введите PIN'**
+  String get unlock_bio_weak_disabled;
+
   /// Экран: SCR-08. ч. A. Источник: 02 §7
   ///
   /// In ru, this message translates to:
@@ -12788,6 +12926,30 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Windows Hello'**
   String get unlock_hello_button;
+
+  /// Экран: SCR-08. ч. A; ред. 1.30, 15 ADR-116; UI-08-018: отмена или отказ Windows Hello (W1), отмена диалога и `UNLOCK_REQUIRED hello_key_invalid` (W2) — 09 §9.3, BIO-034. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Windows Hello не подтвердил вход. Введите PIN'**
+  String get unlock_hello_failed;
+
+  /// Экран: SCR-08. ч. A; ред. 1.30, 15 ADR-116; кнопка UI-08-004 ключа Windows Hello (W2), иконка `face_unlock`, без автовызова (09 BIO-036, BIO-039). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Войти через Windows Hello'**
+  String get unlock_hello_key_button;
+
+  /// Экран: SCR-08. ч. A; ред. 1.30, 15 ADR-116; UI-08-018: ключ пропал в Windows, PIN с `helloKeyInvalidated: true` (09 §9.2 W2 п. 4, BIO-039); текст предложен владельцем словаря — согласовать при вычитке. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Ключ Windows Hello на этом компьютере больше не действует. Введите PIN и включите вход заново в настройках'**
+  String get unlock_hello_key_lost;
+
+  /// Экран: SCR-08. ч. A; ред. 1.30, 15 ADR-116; UI-08-018: `UNLOCK_REQUIRED hello_key_unavailable` (09 §9.3). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Вход через Windows Hello выключен на этом компьютере. Введите PIN'**
+  String get unlock_hello_key_unavailable;
 
   /// Экран: SCR-08. ч. A. Источник: 02 §7
   ///

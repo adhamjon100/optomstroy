@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { applyAuditGucs, auditContextFromRequest } from '../../common/audit/audit-context.js';
+import { HelloKeyService } from '../../auth/sessions/hello-key.service.js';
 import { AuditService } from '../../common/audit/audit.service.js';
 import type { DbExecutor } from '../../common/audit/db-executor.js';
 import { AuthStateCache } from '../../common/auth/auth-state.js';
@@ -81,6 +82,7 @@ export class AdminUsersService {
     private readonly audit: AuditService,
     private readonly authz: AdminAuthzService,
     private readonly authState: AuthStateCache,
+    private readonly helloKeys: HelloKeyService,
     hmac: OtpHmacService,
   ) {
     this.cursor = new AdminCursorCodec(hmac, 'admin_users');
@@ -216,8 +218,10 @@ export class AdminUsersService {
 
   /**
    * `POST /admin/users/{id}/block` (08 §4.18.3): `blocked:true` → `status=blocked`, все сессии отозваны
-   * (`revoke_reason=blocked`), действующие приглашения номера аннулированы, `permissions_version++`;
-   * `blocked:false` → `active`. Повтор с тем же значением → 200 без изменений. Причина обязательна (SEC-076).
+   * (`revoke_reason=blocked`), живые ключи Windows Hello отозваны (`hello_keys.revoke_reason=blocked`, ADR-116;
+   * блокировка шире `logout-all` администратором, который ключи уже отзывает), действующие приглашения номера
+   * аннулированы, `permissions_version++`; `blocked:false` → `active` (ключи не возвращаются: включить заново — SCR-42).
+   * Повтор с тем же значением → 200 без изменений. Причина обязательна (SEC-076).
    */
   async block(req: Req, id: string, body: AdminUsersBlockDto): Promise<AdminUserDto> {
     const actor = principalOf(req);
@@ -243,8 +247,10 @@ export class AdminUsersService {
       );
       let revokedIds: string[] = [];
       let invitations: string[] = [];
+      let keys = 0;
       if (body.blocked) {
         revokedIds = await this.sessions.revokeAllForUser(id, 'blocked', {}, tx);
+        keys = (await this.helloKeys.revoke({ userId: id }, 'blocked', ctx, tx)).length;
         if (user.phoneE164) invitations = await this.repo.revokePendingInvitationsForPhone(user.phoneE164, tx);
         await this.users.bumpPermissionsVersion(id, tx);
       }
@@ -255,7 +261,12 @@ export class AdminUsersService {
           entityType: 'user',
           entityId: id,
           before: { status: user.status },
-          after: { status: target, revokedSessions: revokedIds.length, revokedInvitations: invitations.length },
+          after: {
+            status: target,
+            revokedSessions: revokedIds.length,
+            revokedInvitations: invitations.length,
+            ...(keys > 0 ? { revokedHelloKeys: keys } : {}),
+          },
           reason,
           stepUpMethod: verifiedStepUp(req)?.method ?? null,
         },
@@ -267,7 +278,11 @@ export class AdminUsersService {
     return toAdminUserDto(await this.load(id), isAdminActor(actor));
   }
 
-  /** `POST /admin/users/{id}/logout-all` (08 §4.18.3): отзыв всех сессий цели; аудит `session.revoked`. */
+  /**
+   * `POST /admin/users/{id}/logout-all` (08 §4.18.3): отзыв всех сессий цели и её живых ключей Windows Hello
+   * (`logout_all`; 08 §4.18.3 `[ВЫВОД: как POST /auth/logout-all]`, ADR-116); аудит `session.revoked` и
+   * `auth.biometrics.disabled` на каждый ключ.
+   */
   async logoutAll(req: Req, id: string): Promise<void> {
     const actor = principalOf(req);
     const record = await this.load(id);
@@ -276,13 +291,14 @@ export class AdminUsersService {
     const revoked = await this.db.transaction(async (tx) => {
       await applyAuditGucs(tx, ctx);
       const ids = await this.sessions.revokeAllForUser(id, 'admin', {}, tx);
+      const keys = await this.helloKeys.revoke({ userId: id }, 'logout_all', ctx, tx);
       await this.audit.write(
         ctx,
         {
           action: 'session.revoked',
           entityType: 'user',
           entityId: id,
-          after: { scope: 'all', revokedSessions: ids.length, by: 'admin' },
+          after: { scope: 'all', revokedSessions: ids.length, revokedHelloKeys: keys.length, by: 'admin' },
           reason: 'logout-all администратором',
           stepUpMethod: verifiedStepUp(req)?.method ?? null,
         },
@@ -295,7 +311,9 @@ export class AdminUsersService {
 
   /**
    * `DELETE /admin/users/{id}/pin` (08 §4.18.9): `app_pins` удаляется (снимаются счётчик и `PIN_LOCKED`); сессии не
-   * отзываются; повтор → 204 (аудит `auth.pin.reset` — только при фактическом удалении).
+   * отзываются; живые ключи Windows Hello пользователя отзываются (`hello_keys.revoke_reason=pin_reset`, ADR-116):
+   * ключ без PIN не живёт (08 §4.3.5 `hello_key_active`, включение — только при заданном PIN); повтор → 204 (аудит
+   * `auth.pin.reset` и отзыв — только при фактическом удалении).
    */
   async resetPin(req: Req, id: string, body: AdminUsersPinResetDto): Promise<void> {
     const actor = principalOf(req);
@@ -306,13 +324,14 @@ export class AdminUsersService {
       await applyAuditGucs(tx, ctx);
       const deleted = await this.repo.deletePin(id, tx);
       if (!deleted) return;
+      const keys = await this.helloKeys.revoke({ userId: id }, 'pin_reset', ctx, tx);
       await this.audit.write(
         ctx,
         {
           action: 'auth.pin.reset',
           entityType: 'user',
           entityId: id,
-          after: { pinSet: false },
+          after: { pinSet: false, ...(keys.length > 0 ? { revokedHelloKeys: keys.length } : {}) },
           reason: body.reason.trim(),
           stepUpMethod: verifiedStepUp(req)?.method ?? null,
         },

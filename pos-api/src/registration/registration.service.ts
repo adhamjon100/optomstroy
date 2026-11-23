@@ -372,6 +372,7 @@ export class RegistrationService {
             ip: meta.ctx.ip ?? null,
             userAgent: meta.userAgent,
             challengeId: token.challengeId,
+            audit: meta.ctx,
           },
           tx,
         );

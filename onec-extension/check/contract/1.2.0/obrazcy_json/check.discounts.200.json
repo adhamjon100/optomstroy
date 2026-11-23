@@ -1,0 +1,36 @@
+{
+  "_note": "тестовые данные",
+  "description": "calculateDiscounts=true, наличные: итог с автоскидкой 1С, без блока долга",
+  "operation": "POST /pos/v1/check",
+  "kind": "response",
+  "status": 200,
+  "body": {
+    "checkedAt": "2026-10-21T13:40:10+06:00",
+    "lines": [
+      {
+        "productRef": "a1b2c3d4-0000-4000-8000-000000000001",
+        "variantRef": "a1b2c3d4-0000-4000-8000-000000000101",
+        "price": "2350.00",
+        "available": "14.000",
+        "onHand": "16.000",
+        "reserved": "2.000",
+        "isAvailable": true,
+        "warehouses": [
+          {
+            "warehouseRef": "d4e5f6a7-0000-4000-8000-000000000001",
+            "available": "14.000"
+          }
+        ],
+        "issues": []
+      }
+    ],
+    "receivables": null,
+    "totals": {
+      "subtotal": "4700.00",
+      "discount": "141.00",
+      "total": "4559.00",
+      "currency": "KGS"
+    },
+    "issues": []
+  }
+}

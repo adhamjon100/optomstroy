@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PRODUCT_FILTER_PARAMS } from '../../src/catalog/api/product-filters.js';
 import { validateAgainst } from '../settings/support/openapi-check.js';
 import { type CatalogFixture, startCatalogFixture } from '../support/catalog-fixture.js';
+import { tamperChar } from '../support/tamper.js';
 import { createSearchApp, principalHeader } from './support/search-app.js';
 import { allMigrations, assertCyrillicCtype, SearchPg } from './support/search-pg.js';
 
@@ -300,7 +301,9 @@ describe('страницы, сортировки, фильтры (RM-E-014)', ()
     expect(mism.body.errors[0].rule).toBe('cursor_sort_mismatch');
     const forged = await get('/search/products', 'seller', {
       q: 'смеситель',
-      cursor: `${p1.nextCursor!.slice(0, -2)}xx`,
+      // Первый символ (байт IV AES-GCM) — другой символ base64url: курсор отличается всегда и остаётся
+      // каноническим, отказ даёт проверка целостности (запись «xx» в конец могла совпасть с настоящим курсором).
+      cursor: tamperChar(p1.nextCursor!),
     });
     expect(forged.body.errors[0].rule).toBe('cursor');
     const otherQ = await get('/search/products', 'seller', { q: 'унитаз', limit: '3', cursor: p1.nextCursor! });

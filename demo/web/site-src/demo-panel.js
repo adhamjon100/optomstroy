@@ -3,7 +3,8 @@
  *
  * HTML поверх Flutter, вне ARB и 02: строки только русские. Цвета — CSS-переменные из contracts/design-tokens
  * (demo-tokens.css, генерирует build-site.mjs). Разделы: «Как войти», «Планшет магазина», «Оплата QR», «1С», «Сеть»,
- * «Сервис». «Планшет магазина» (P-002 TAB-3-01, ADR-115) — подсказка и список планшетов из GET state: первое
+ * «Сервис». В «Как войти» — и подсказка о входе по лицу или отпечатку (passkey, 15 ADR-116; сам вход — в интерфейсе
+ * приложения, SCR-42 → SCR-08; страница — demo-passkey.js). «Планшет магазина» (P-002 TAB-3-01, ADR-115) — подсказка и список планшетов из GET state: первое
  * подключение идёт через настоящий интерфейс приложения (вход администратором, SCR-54), новых точек входа нет.
  * Переключение «Вернуться к обычному входу» / «Планшет магазина» / «Подключить этот браузер заново» (TAB-3-02) —
  * перенос данных приложения в хранилище страницы при перезагрузке (demo-kiosk.js, P.boot.kioskSwitch).
@@ -49,6 +50,9 @@
   var lastStateError = null;
   var panelPointers = {};
   var statusTimer = null;
+  // Поле ввода приложения, в котором был фокус, когда «ДЕМО» нажали мышью (вставка на экранах входа, 2026-11-08):
+  // после закрытия панели фокус возвращается в него, и Ctrl+V сразу после «Скопировать» вставляет номер или код.
+  var appFocus = null;
 
   // ---------------------------------------------------------------- DOM
   function el(tag, props) {
@@ -196,6 +200,13 @@
         el('b', { text: D.pinExample || '715382' }),
         '. Простые PIN ' + (D.pinBad || ['111111', '123456']).join(' и ') + ' не подойдут.'),
       D.customerPinNote ? el('p', { class: 'pd-note', text: D.customerPinNote }) : null,
+      // Вход по лицу или отпечатку — passkey браузера (15 ADR-116 п. 1, п. 4; 09 BIO-035, BIO-041). Подписи переключателя
+      // SCR-42 — из 02 §7: settings_bio_windows_key, settings_bio_windows, settings_bio_android. Режим выбирает приложение
+      // (браузер на Windows — ключ входа или гейт; остальные — привязка), поэтому текст называет оба случая.
+      el('h3', { class: 'pd-subtitle', text: 'Вход по лицу или отпечатку' }),
+      el('p', { class: 'pd-note', id: 'pd-login-passkey', text: 'После входа по коду: «Настройки» (меню профиля в шапке или «Профиль») → «Защита входа». Браузер попросит лицо, отпечаток или PIN устройства и сохранит ключ доступа (passkey) для этого адреса сайта.' }),
+      el('p', { class: 'pd-note', id: 'pd-login-passkey-os', text: 'Windows: «Вход через Windows Hello» — дальше вход без PIN приложения. Если браузер так не умеет, будет «Windows Hello перед вводом PIN»: после Windows Hello нужен PIN приложения. Телефон и другие системы: «Вход по отпечатку или лицу» — вход без PIN.' }),
+      el('p', { class: 'pd-note', id: 'pd-login-passkey-reset', text: '«Сбросить демо» может не удалить ключ из Windows или Google — его удаляют в настройках ключей доступа. На планшете магазина вход по лицу не предлагается.' }),
       el('h3', { class: 'pd-subtitle', text: 'Тестовые клиенты' }),
       el('p', { class: 'pd-note', text: 'Кассир, старший продавец, администратор и руководитель находят клиента по имени (слово на метке) или по полному номеру. Продавец ищет только по полному номеру телефона.' }),
       el('ul', { class: 'pd-list', id: 'pd-login-customers' }, customers),
@@ -713,11 +724,30 @@
     isOpen = false;
     closeConfirm(false);
     var hadFocus = ui.panel.contains(doc.activeElement);
+    var back = appFocus;
+    appFocus = null;
     ui.panel.hidden = true;
     ui.root.classList.remove('is-open');
     ui.fab.setAttribute('aria-expanded', 'false');
     stopPolling();
-    if (returnFocus || hadFocus) ui.fab.focus();
+    if (!(returnFocus || hadFocus)) return;
+    // Панель открыли мышью из поля ввода приложения — фокус обратно в поле (элемент ввода движка Flutter: связь с
+    // полем у движка остаётся, пока фокус ушёл в панель); иначе — на кнопку «ДЕМО», как прежде.
+    if (back && back.isConnected && engineInput(back)) {
+      try {
+        back.focus({ preventScroll: true });
+        return;
+      } catch (e) { /* ignore */ }
+    }
+    ui.fab.focus();
+  }
+
+  // Элемент ввода движка Flutter web (скрытый INPUT/TEXTAREA поля в фокусе) или null.
+  function engineInput(a) {
+    if (!a || (a.tagName !== 'INPUT' && a.tagName !== 'TEXTAREA')) return null;
+    if (a.classList && a.classList.contains('flt-text-editing')) return a;
+    if (typeof a.closest === 'function' && a.closest('flt-text-editing-host')) return a;
+    return null;
   }
 
   function toggle() {
@@ -807,6 +837,10 @@
       el('span', { class: 'pd-fab-label', text: 'ДЕМО' }),
       el('span', { class: 'pd-fab-dot', 'aria-hidden': 'true' }));
     fab.addEventListener('click', toggle);
+    // До того как нажатие мышью переведёт фокус на «ДЕМО»: запомнить поле ввода приложения (см. appFocus).
+    fab.addEventListener('pointerdown', function () {
+      if (!isOpen) appFocus = engineInput(doc.activeElement);
+    }, true);
     var status = el('div', { class: 'pd-status', id: 'pd-status', role: 'status', 'aria-live': 'polite' });
     var panel = el('section', { id: 'pos-demo-panel', class: 'pd-panel', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'pd-panel-title', tabindex: '-1', hidden: true },
       el('header', { class: 'pd-panel-head' },

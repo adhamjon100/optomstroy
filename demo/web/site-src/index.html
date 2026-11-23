@@ -5,7 +5,10 @@
     Страница веб-демо «Оптомстрой POS» (ADR-113; WP-S1). Заменяет web/index.html сборки Flutter.
     Порядок (plan §3.1): проверка среды → замок одной вкладки → сброс/эпоха → переключение «планшет ↔ обычный вход»
     (demo-kiosk.js, P-002 TAB-3-02) → воркер backend/backend.js
-    и flutter_bootstrap.js (вставляет demo-boot.js). Экран #loading совместим с web/flutter_bootstrap.js
+    и flutter_bootstrap.js (вставляет demo-boot.js). demo-passkey.js — шлюз входа по лицу или отпечатку через passkey
+    для приложения (globalThis.__posPasskey, протокол 1; 15 ADR-116 п. 1, п. 4): после demo-env.js (хранилище и имена
+    ключей страницы), до demo-reset.js («Сбросить демо» снимает passkey сайта) и demo-boot.js (запуск Flutter).
+    Экран #loading совместим с web/flutter_bootstrap.js
     (__posHideLoading, .spinner, .error). Строки — только русские. Тестовые данные, не реальная система.
     Код «Оптомстрой POS» (приложение и сервер) — только для просмотра, без лицензии; все права защищены
     (ADR-113 п. 11 (а)). Лицензии сторонних компонентов — THIRD_PARTY_NOTICES.txt.
@@ -30,6 +33,7 @@
   <link rel="stylesheet" href="demo-panel.css">
   <script defer src="demo-data.js"></script>
   <script defer src="demo-env.js"></script>
+  <script defer src="demo-passkey.js"></script>
   <script defer src="demo-lock.js"></script>
   <script defer src="demo-reset.js"></script>
   <script defer src="demo-kiosk.js"></script>

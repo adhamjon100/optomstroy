@@ -5,13 +5,16 @@ import pg from 'pg';
 import { pino } from 'pino';
 import { loadMigratorEnv, type MigratorEnv, MigratorConfigError, migratorConnection } from './db/migrator-config.js';
 import { DEV_MIGRATIONS_SCHEMA, migrate, MigrationError, type MigrationLogger, seed } from './db/migrator.js';
+import { installPgBoss, type PgBossInstallResult } from './db/pgboss-install.js';
 
 /**
  * Точка входа контейнера `migrate` (`node dist/migrate.js`, 16 §4.4; RM-C-006):
  * - без аргументов — применяет недостающие `migrations/NNNN_*.sql` (forward-only, журнал
  *   `pos_meta.schema_migrations`), повторный запуск — 0 изменений;
  * - `--seed` (`npm run seed`) — то же и затем идемпотентный seed `seeds/NNNN_*.sql` (значения по умолчанию
- *   `app_settings`, «Розничный покупатель», вид цены по умолчанию, лимиты скидок).
+ *   `app_settings`, «Розничный покупатель», вид цены по умолчанию, лимиты скидок);
+ * - после SQL-миграций — установка или обновление схемы pg-boss под той же ролью и права `pos_app` на неё
+ *   (`src/db/pgboss-install.ts`; 07 DATA-012): api и worker схему не создают и не мигрируют.
  * Код выхода: 0 — успех; 1 — ошибка конфигурации, подключения или миграции (сообщение без секретов).
  */
 const MIGRATIONS_DIR = fileURLToPath(new URL('../migrations/', import.meta.url));
@@ -36,6 +39,8 @@ export interface RunSummary {
   readonly alreadyApplied: readonly string[];
   /** Применённые dev-миграции (`db/migrations-dev/`, только APP_ENV=dev). */
   readonly devApplied: readonly string[];
+  /** Схема pg-boss после шага установки (07 DATA-012). */
+  readonly pgBoss: PgBossInstallResult;
   readonly seeded?: Readonly<Record<string, number>>;
 }
 
@@ -75,6 +80,8 @@ export async function run(
       devApplied = dev.applied;
       if (dev.applied.length > 0) logger.info({ devApplied }, 'migrate: dev-миграции применены (APP_ENV=dev)');
     }
+    // Очереди pg-boss (D-44): схему ставит и обновляет только мигратор, api/worker — без DDL (07 DATA-012).
+    const pgBoss = await installPgBoss(client, conn.connectionString, { logger });
     // Поиск (07 §10.1): norm_search() = lower(…) — при локали БД без Unicode-регистра (libc «C») кириллица не
     // приводится к нижнему регистру, generated-столбцы name_norm и поиск без учёта регистра не работают.
     const ctype = await client.query<{ ok: boolean; collate: string; ctype: string }>(
@@ -87,7 +94,7 @@ export async function run(
         'локаль БД не приводит кириллицу к нижнему регистру: norm_search/name_norm (07 §10.1) работают неверно — создайте БД с UTF-8-локалью (en_US.UTF-8, ru_RU.UTF-8 или builtin C.UTF-8)',
       );
     }
-    if (!options.seed) return { user: conn.user, ...result, devApplied };
+    if (!options.seed) return { user: conn.user, ...result, devApplied, pgBoss };
     const seeded = await seed(client, {
       dir: options.seedsDir ?? SEEDS_DIR,
       logger,
@@ -95,7 +102,7 @@ export async function run(
     });
     const total = Object.values(seeded.inserted).reduce((a, b) => a + b, 0);
     logger.info({ inserted: seeded.inserted }, total === 0 ? 'seed: 0 изменений' : `seed: вставлено строк ${total}`);
-    return { user: conn.user, ...result, devApplied, seeded: seeded.inserted };
+    return { user: conn.user, ...result, devApplied, pgBoss, seeded: seeded.inserted };
   } finally {
     await client.end();
   }

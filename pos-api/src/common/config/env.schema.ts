@@ -39,6 +39,10 @@ const platformVersions = z.string().superRefine((v, ctx) => {
 
 export const APP_ENVS = ['dev', 'staging', 'prod'] as const;
 export const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
+/** `AUTH_BIO_ALLOW_WEAK` (16 §4.3): кому разрешён уровень W Android — никому, только покупателям, всем. */
+export const AUTH_BIO_ALLOW_WEAK_VALUES = ['off', 'customer', 'all'] as const;
+/** `AUTH_WINDOWS_HELLO_KEY` (16 §4.3): ключ Windows Hello — выключен, только личная установка, всем. */
+export const AUTH_WINDOWS_HELLO_KEY_VALUES = ['off', 'personal', 'all'] as const;
 
 export const envShape = {
   // --- Общие и платформа ---
@@ -99,6 +103,13 @@ export const envShape = {
   AUTH_REFRESH_GRACE_SECONDS: int(30, 0),
   AUTH_BACKGROUND_LOCK_MINUTES: int(5, 0),
   AUTH_BIO_AUTO_PROMPT: bool(true),
+  // Вход по лицу (15 ADR-116; 16 §4.3, DEPLOY-055): только env, не app_settings — ослабляющий переключатель меняется
+  // выкладкой. Уровень W Android (Class 2, без криптопривязки; 09 BIO-030…BIO-033, 11 RR-9): off | customer | all;
+  // срок разблокировки лицом без PIN — 1…24 ч (больше 24 — отказ в старте, 09 BIO-031). Ключ Windows Hello без PIN
+  // приложения (W2; 09 BIO-038…BIO-041): off | personal | all — принимает и проверяет сервер W2 (пакет LF-2-06).
+  AUTH_BIO_ALLOW_WEAK: z.enum(AUTH_BIO_ALLOW_WEAK_VALUES).default('off'),
+  AUTH_BIO_WEAK_REAUTH_HOURS: int(24, 1, 24),
+  AUTH_WINDOWS_HELLO_KEY: z.enum(AUTH_WINDOWS_HELLO_KEY_VALUES).default('off'),
   AUTH_NOTIFY_OLD_PHONE: bool(false),
   PIN_MIN_LENGTH_STAFF: int(6, 4),
   PIN_MAX_ATTEMPTS: int(5, 1),

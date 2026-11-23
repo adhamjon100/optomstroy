@@ -38,6 +38,8 @@ export const PUBLISHED = [
   'demo-panel.css',
   'demo-data.js',
   'demo-env.js',
+  // 15 ADR-116 п. 1, п. 4: шлюз passkey для приложения (globalThis.__posPasskey); check-site сверяет протокол с main.dart.js.
+  'demo-passkey.js',
   'demo-lock.js',
   'demo-reset.js',
   'demo-kiosk.js',

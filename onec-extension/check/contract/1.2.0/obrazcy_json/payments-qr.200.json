@@ -1,0 +1,16 @@
+{
+  "_note": "тестовые данные",
+  "description": "Повтор, пока QR действует — тот же reference",
+  "operation": "POST /pos/v1/payments/qr",
+  "kind": "response",
+  "status": 200,
+  "body": {
+    "externalId": "0192f5a1-2b3c-7d4e-8f50-6a7b8c9d0e1f",
+    "status": "pending",
+    "qrPayload": "TEST-QR-PAYLOAD-0192f5a1",
+    "reference": "QR-7F3A9C21",
+    "amount": "16007.50",
+    "createdAt": "2099-10-21T14:05:00+06:00",
+    "expiresAt": "2099-10-21T14:20:00+06:00"
+  }
+}

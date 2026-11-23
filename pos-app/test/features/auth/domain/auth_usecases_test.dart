@@ -7,6 +7,7 @@ import 'package:optomstroy/core/error/result.dart';
 import 'package:optomstroy/core/utils/clock.dart';
 import 'package:optomstroy/features/auth/domain/entities/otp_challenge.dart';
 import 'package:optomstroy/features/auth/domain/entities/session_profile.dart';
+import 'package:optomstroy/features/auth/domain/entities/unlock.dart';
 import 'package:optomstroy/features/auth/domain/entities/verify_outcome.dart';
 import 'package:optomstroy/features/auth/domain/ports/biometric_unlock.dart';
 import 'package:optomstroy/features/auth/domain/repositories/auth_repository.dart';
@@ -190,6 +191,43 @@ void main() {
       final FakeBiometricUnlock bio = FakeBiometricUnlock();
       expect(await UnlockWithBiometric(repo, bio)(), isA<BiometricUnlockFailed>());
       expect(bio.clears, 1);
+    });
+
+    test('T-BIO-020 (3): уровень W, UNLOCK_REQUIRED bio_weak_pin_due → PinDue, секрет не тронут, токен не записан '
+        '(09 BIO-031)', () async {
+      final FakeAuthRepository repo = FakeAuthRepository()
+        ..bioResult = const FailureResult<BiometricUnlockSuccess>(
+          AuthFailure(AuthReason.unlockRequired, unlockReason: BiometricWeakRefusal.pinDue),
+        );
+      final FakeBiometricUnlock bio = FakeBiometricUnlock(kindValue: BiometricUnlockKind.weakBound);
+      expect(await UnlockWithBiometric(repo, bio)(), isA<BiometricUnlockPinDue>());
+      expect(repo.bioUnlocks, <String>['bio']);
+      expect(bio.clears, 0, reason: 'после PIN тот же токен снова действует');
+      expect(bio.stored, isEmpty);
+    });
+
+    test(
+      'T-BIO-020 (4): уровень W, UNLOCK_REQUIRED bio_weak_disabled → WeakDisabled, секрет удалён (09 BIO-032)',
+      () async {
+        final FakeAuthRepository repo = FakeAuthRepository()
+          ..bioResult = const FailureResult<BiometricUnlockSuccess>(
+            AuthFailure(AuthReason.unlockRequired, unlockReason: BiometricWeakRefusal.disabled),
+          );
+        final FakeBiometricUnlock bio = FakeBiometricUnlock(kindValue: BiometricUnlockKind.weakBound);
+        expect(await UnlockWithBiometric(repo, bio)(), isA<BiometricUnlockWeakDisabled>());
+        expect(bio.clears, 1);
+        expect(bio.stored, isEmpty);
+      },
+    );
+
+    test('прочие причины UNLOCK_REQUIRED на биометрии — как прежде: ошибка, секрет не тронут', () async {
+      final FakeAuthRepository repo = FakeAuthRepository()
+        ..bioResult = const FailureResult<BiometricUnlockSuccess>(
+          AuthFailure(AuthReason.unlockRequired, unlockReason: 'refresh_replay'),
+        );
+      final FakeBiometricUnlock bio = FakeBiometricUnlock();
+      expect(await UnlockWithBiometric(repo, bio)(), isA<BiometricUnlockFailed>());
+      expect(bio.clears, 0);
     });
   });
 }

@@ -25,8 +25,29 @@ abstract final class SettingsTexts {
     BiometricPlatformLabel.windows => l10n.settings_bio_windows,
   };
 
-  /// Ошибка запроса (без технических подробностей).
+  /// Подпись тумблера UI-42-010 по режиму: ключ Windows Hello (W2) — «Вход через Windows Hello»; иначе — по платформе
+  /// ([biometricLabel]; Windows — «Windows Hello перед вводом PIN», режим гейта W1).
+  static String biometricSwitchLabel(AppLocalizations l10n, LoginProtectionState data) =>
+      data.support == BiometricSupport.windowsHelloKey
+      ? l10n.settings_bio_windows_key
+      : biometricLabel(l10n, data.platformLabel);
+
+  /// Причина недоступности Windows Hello (UI-42-029).
+  static String helloIssue(AppLocalizations l10n, WindowsHelloIssue issue) => switch (issue) {
+    WindowsHelloIssue.notConfigured => l10n.settings_hello_not_configured,
+    WindowsHelloIssue.noDevice => l10n.settings_hello_no_device,
+    WindowsHelloIssue.disabledByPolicy => l10n.settings_hello_disabled_by_policy,
+    WindowsHelloIssue.busy => l10n.settings_hello_busy,
+  };
+
+  /// Ошибка запроса (без технических подробностей). `DELETE /me/pin` при живом уровне W или ключе Windows Hello —
+  /// `400 VALIDATION_FAILED {field: pin, rule: weak_biometrics_active | hello_key_active}` (02 UI-42-024; 09 BIO-031,
+  /// BIO-040).
   static String failure(AppLocalizations l10n, Failure f) => switch (f) {
+    ValidationFailure(:final errors) when _hasRule(errors, 'weak_biometrics_active') =>
+      l10n.settings_pin_delete_weak_active,
+    ValidationFailure(:final errors) when _hasRule(errors, 'hello_key_active') =>
+      l10n.settings_pin_delete_hello_key_active,
     NetworkFailure(kind: NetworkFailureKind.timeout) => l10n.auth_error_timeout,
     NetworkFailure(kind: NetworkFailureKind.serverUnavailable) => l10n.ds_server_down,
     NetworkFailure() => l10n.auth_error_network,
@@ -34,6 +55,8 @@ abstract final class SettingsTexts {
     ConflictFailure(kind: ConflictKind.versionConflict) => l10n.settings_conflict,
     _ => l10n.settings_save_error,
   };
+
+  static bool _hasRule(List<FieldError> errors, String rule) => errors.any((FieldError e) => e.rule == rule);
 
   /// Название платформы сессии (без ARB-ключей — EQ-SET-02: имена платформ не переводятся).
   static String platform(DevicePlatform? p) => switch (p) {

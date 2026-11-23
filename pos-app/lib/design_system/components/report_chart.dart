@@ -2,7 +2,10 @@
 // 03 §9.63 `AppProgress` определённый; анимация 0 → доля 300 мс `standardDecelerate`, reduce-motion — без анимации).
 // Без сторонних пакетов: полоса — трек `primaryContainer` + заполнение тона. Доля передаётся целыми промилле
 // (0…1000), чтобы вызывающий код не работал с плавающей точкой (деньги — тыйыны, D-19).
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/design_system/tokens/ds_typography.dart';
@@ -68,6 +71,27 @@ class ReportChart extends StatelessWidget {
     final DsColors c = context.colors;
     final DsTypography t = context.text;
     final Duration d = context.motion.of(context.motion.slow);
+    // Указание владельца 2026-11-18 (15 §5.8 (3); 03 §9.63): в узкой карточке (окно 600, масштаб текста 1,3)
+    // колонка подписей сужается настолько, чтобы полоса не уже 40 и сумма справа помещались (прежде сумма выходила
+    // за край на 7,7 lp); подпись — с многоточием, полностью — в `Semantics`.
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        double lw = labelWidth; // money-double: allow — ширина колонки подписей, lp
+        if (box.hasBoundedWidth) {
+          final TextStyle valueStyle = t.caption.copyWith(fontFeatures: DsTypography.numeric);
+          double value = 0; // money-double: allow — ширина подписи суммы, lp
+          for (final ReportBar bar in bars) {
+            value = math.max(value, dsTextWidth(context, bar.valueLabel, valueStyle));
+          }
+          final double gaps = 2 * context.space.s2; // money-double: allow — зазоры строки, lp
+          lw = math.max(0, math.min(labelWidth, box.maxWidth - gaps - 40 - value));
+        }
+        return _bars(context, c, t, d, lw);
+      },
+    );
+  }
+
+  Widget _bars(BuildContext context, DsColors c, DsTypography t, Duration d, double labelWidth) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[

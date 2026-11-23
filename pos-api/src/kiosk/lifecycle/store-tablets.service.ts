@@ -238,7 +238,10 @@ export class StoreTabletsService {
         },
         tx,
       );
-      const issued = await this.issuer.createKioskSession({ user, roles: KIOSK_ROLES, device, ip, userAgent }, tx);
+      const issued = await this.issuer.createKioskSession(
+        { user, roles: KIOSK_ROLES, device, ip, userAgent, audit: ctx },
+        tx,
+      );
       await this.repo.insert(
         {
           id: tabletId,
@@ -516,7 +519,7 @@ export class StoreTabletsService {
         tx,
       );
       const roles = await this.roles.activeRoleCodes(tablet.userId, tx);
-      const issued = await this.issuer.createKioskSession({ user, roles, device, ip, userAgent }, tx);
+      const issued = await this.issuer.createKioskSession({ user, roles, device, ip, userAgent, audit: ctx }, tx);
       const codes = await this.otpChallenges.gashKioskCodes(tx, tablet.id, now);
       // Корзина прошлого покупателя (04 FLOW-045.A1): тот же users.id — активная корзина, оставшаяся после отключения,
       // аварийного выхода или истёкшей сессии, закрывается здесь; новая — первым GET /cart новой сессии. Порядок

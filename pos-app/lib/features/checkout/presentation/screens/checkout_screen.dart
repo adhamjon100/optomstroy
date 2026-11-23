@@ -5,6 +5,7 @@
 // «Состав заказа» + печать, «Оплата» под колонками 1–2, футер «Отмена · 🔒 подпись о 1С · Создать заказ…»;
 // medium — диалог ≈ 90 % в 2 колонки; compact — 4 (у клиента — 3) последовательных шага.
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -601,26 +602,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           ),
           // G — футер.
           Container(
-            height: 72,
             padding: EdgeInsets.symmetric(horizontal: context.space.s6),
             decoration: BoxDecoration(
               border: Border(top: BorderSide(color: c.border)),
             ),
-            child: Row(
-              children: <Widget>[
-                AppButton(
-                  key: const ValueKey<String>('checkout-cancel'),
-                  label: l10n.checkout_cancel,
-                  variant: AppButtonVariant.outlined,
-                  size: AppButtonSize.l,
-                  onPressed: s.submitting ? null : () => unawaited(_cancel()),
-                ),
-                const SizedBox(width: 16),
-                Expanded(child: Center(child: _onecNoteRow(context, l10n, s))),
-                const SizedBox(width: 16),
-                ConstrainedBox(constraints: const BoxConstraints(minWidth: 280), child: _cta(l10n, v)),
-              ],
-            ),
+            child: _dialogFooter(context, l10n, v),
           ),
         ],
       ),
@@ -637,6 +623,95 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Футер окна (02 SCR-21.2 G): «Отмена» · пометка 1С · CTA (не уже 280) в строку 72. Указание владельца 2026-11-18
+  /// (15 §5.8 (3); 02 SCR-21.2 «Адаптивность»): не помещается (окно 600–700 и масштаб текста 1,3) — пометка 1С
+  /// строкой над кнопками, CTA занимает остаток ряда; не помещаются и кнопки — CTA и «Отмена» друг под другом во
+  /// всю ширину (прежде ряд выходил за окно на 40 lp).
+  Widget _dialogFooter(BuildContext context, AppLocalizations l10n, CheckoutView v) {
+    final CheckoutState s = v.state;
+    Widget cancelButton({bool expand = false}) => AppButton(
+      key: const ValueKey<String>('checkout-cancel'),
+      label: l10n.checkout_cancel,
+      variant: AppButtonVariant.outlined,
+      size: AppButtonSize.l,
+      expand: expand,
+      onPressed: s.submitting ? null : () => unawaited(_cancel()),
+    );
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        final double cancelW = // money-double: allow — ширина кнопки футера, lp
+        AppButton.estimateWidth(
+          context,
+          l10n.checkout_cancel,
+          size: AppButtonSize.l,
+          variant: AppButtonVariant.outlined,
+        );
+        final double ctaW = // money-double: allow — ширина кнопки футера, lp
+        AppButton.estimateWidth(
+          context,
+          _ctaLabel(l10n, s, v.online),
+          size: AppButtonSize.l,
+          hasIcon: true,
+          variant: AppButtonVariant.success,
+        );
+        const double noteMin = 160; // money-double: allow — наименьшая ширина пометки 1С в ряду, lp
+        // Строка футера 72 вместе с верхней границей 1 (как прежде у `Container(height: 72)`).
+        const double rowHeight = 71; // money-double: allow — высота строки футера без границы, lp
+        if (cancelW + 16 + noteMin + 16 + math.max(280, ctaW) <= box.maxWidth) {
+          return SizedBox(
+            height: rowHeight,
+            child: Row(
+              children: <Widget>[
+                cancelButton(),
+                const SizedBox(width: 16),
+                Expanded(child: Center(child: _onecNoteRow(context, l10n, s))),
+                const SizedBox(width: 16),
+                ConstrainedBox(constraints: const BoxConstraints(minWidth: 280), child: _cta(l10n, v)),
+              ],
+            ),
+          );
+        }
+        final Widget note = Padding(
+          padding: EdgeInsets.only(top: context.space.s3),
+          child: Center(child: _onecNoteRow(context, l10n, s)),
+        );
+        if (cancelW + 16 + ctaW <= box.maxWidth) {
+          return Column(
+            key: const ValueKey<String>('checkout-footer-narrow'),
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              note,
+              SizedBox(
+                height: rowHeight,
+                child: Row(
+                  children: <Widget>[
+                    cancelButton(),
+                    const SizedBox(width: 16),
+                    Expanded(child: _cta(l10n, v, expand: true)),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+        return Column(
+          key: const ValueKey<String>('checkout-footer-stacked'),
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            note,
+            SizedBox(height: context.space.s3),
+            _cta(l10n, v, expand: true),
+            SizedBox(height: context.space.s2),
+            cancelButton(expand: true),
+            SizedBox(height: context.space.s3),
+          ],
+        );
+      },
     );
   }
 

@@ -7,12 +7,16 @@ final class SessionProfile {
   const SessionProfile({
     required this.kind,
     required this.roles,
+    this.userId,
     this.status,
     this.pinSet,
     this.biometricsEnabled,
     this.displayName,
     this.pinLength,
   });
+
+  /// `Me.id` — UUID пользователя (не ПДн; кэш профиля для холодного старта, 02 §0.4 ред. 1.30; 09 BIO-034).
+  final String? userId;
 
   /// `staff` / `customer`; `null` — неизвестно (нет кэша).
   final UserKind? kind;

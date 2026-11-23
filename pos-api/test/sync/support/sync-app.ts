@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Global, Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
@@ -45,6 +44,7 @@ import { seedSubject, type SeededSubject } from '../../foundation/support/founda
 import { pemPair, publicSet, testSecret } from '../../foundation/support/keys.js';
 import { type CatalogFixture, startCatalogFixture } from '../../support/catalog-fixture.js';
 import { EmbeddedPg } from '../../support/embedded-pg.js';
+import { createSecretsDir, removeSecretsDir } from '../../support/secrets-dir.js';
 import { LogCapture } from '../../support/test-app.js';
 import { capturedLogger, type CapturedLogger } from '../../worker/helpers.js';
 
@@ -54,6 +54,11 @@ export const NEVER = '0 0 1 1 *';
 export interface Actor extends SeededSubject {
   readonly role: RoleCode;
   token: string;
+}
+
+export interface SyncTestAppOptions {
+  readonly handlers?: Partial<Record<SyncEntity, SyncEntityHandler>>;
+  readonly api?: Partial<SyncApiOptions>;
 }
 
 /**
@@ -67,7 +72,9 @@ export class SyncTestApp {
   readonly server = new EmbeddedPg();
   readonly logs = new LogCapture();
   readonly worker: CapturedLogger = capturedLogger();
-  private readonly secretsDir = mkdtempSync(join(tmpdir(), 'pos-sync-secrets-'));
+  /** Каталог файлов секретов (`secrets-dir.ts`): создаётся в start(), удаляется в stop(). */
+  private secretsDir: string | undefined;
+  private stopping: Promise<void> | undefined;
   fixture!: CatalogFixture;
   pool!: pg.Pool;
   db!: PosDatabase;
@@ -78,12 +85,20 @@ export class SyncTestApp {
   runtime!: WorkerRuntime;
   wiring!: SyncWorkerWiring;
 
-  async start(
-    opts: {
-      readonly handlers?: Partial<Record<SyncEntity, SyncEntityHandler>>;
-      readonly api?: Partial<SyncApiOptions>;
-    } = {},
-  ): Promise<this> {
+  /** Сбой запуска убирает уже поднятое (приложение, worker, пул, кластер, каталог секретов) здесь же. */
+  async start(opts: SyncTestAppOptions = {}): Promise<this> {
+    this.stopping = undefined;
+    const secretsDir = createSecretsDir('pos-sync-secrets-');
+    this.secretsDir = secretsDir;
+    try {
+      return await this.boot(opts, secretsDir);
+    } catch (e) {
+      await this.stop().catch(() => undefined);
+      throw e;
+    }
+  }
+
+  private async boot(opts: SyncTestAppOptions, secretsDir: string): Promise<this> {
     await this.server.start();
     this.fixture = await startCatalogFixture({
       pg: this.server,
@@ -95,7 +110,7 @@ export class SyncTestApp {
     this.db = createDatabase(this.pool);
     const k = pemPair();
     const file = (name: string, content: string) => {
-      const p = join(this.secretsDir, name);
+      const p = join(secretsDir, name);
       writeFileSync(p, content, { mode: 0o600 });
       return p;
     };
@@ -212,13 +227,23 @@ export class SyncTestApp {
     return this;
   }
 
-  async stop(): Promise<void> {
-    await this.app?.close().catch(() => undefined);
-    await this.runtime?.stop().catch(() => undefined);
-    await this.pool?.end().catch(() => undefined);
-    await this.fixture?.stop().catch(() => undefined);
-    await this.server.stop();
-    rmSync(this.secretsDir, { recursive: true, force: true });
+  /** Повторный вызов (в том числе после сбоя start()) ждёт ту же остановку; каталог секретов удаляется всегда. */
+  stop(): Promise<void> {
+    this.stopping ??= this.release();
+    return this.stopping;
+  }
+
+  private async release(): Promise<void> {
+    try {
+      await this.app?.close().catch(() => undefined);
+      await this.runtime?.stop().catch(() => undefined);
+      await this.pool?.end().catch(() => undefined);
+      await this.fixture?.stop().catch(() => undefined);
+      await this.server.stop();
+    } finally {
+      removeSecretsDir(this.secretsDir);
+      this.secretsDir = undefined;
+    }
   }
 
   async actor(role: RoleCode): Promise<Actor> {

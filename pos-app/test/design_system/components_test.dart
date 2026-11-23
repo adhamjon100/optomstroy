@@ -3,29 +3,67 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart' hide SearchBar;
+import 'package:flutter/semantics.dart' show SemanticsNode;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/app_checkbox.dart';
+import 'package:optomstroy/design_system/components/app_dropdown.dart';
 import 'package:optomstroy/design_system/components/app_switch.dart';
+import 'package:optomstroy/design_system/components/app_text_field.dart';
 import 'package:optomstroy/design_system/components/bottom_nav_bar.dart';
 import 'package:optomstroy/design_system/components/confirm_dialog.dart';
+import 'package:optomstroy/design_system/components/discount_input.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/components/navigation_rail_app.dart';
 import 'package:optomstroy/design_system/components/otp_field.dart';
 import 'package:optomstroy/design_system/components/phone_field.dart';
 import 'package:optomstroy/design_system/components/pin_field.dart';
+import 'package:optomstroy/design_system/components/search_bar.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
 import 'package:optomstroy/design_system/formats/ds_phone_format.dart';
 import 'package:optomstroy/design_system/gallery/ds_gallery_screen.dart';
 import 'package:optomstroy/design_system/gallery/ds_showcase.dart';
 import 'package:optomstroy/design_system/layout/adaptive_scaffold.dart';
+import 'package:optomstroy/design_system/motion/ds_animations.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 
 import 'ds_test_support.dart';
+
+/// Точки `PinField`: круги 16×16 (03 §9.6).
+List<BoxDecoration> _pinDots(WidgetTester tester) => tester
+    .widgetList<Container>(
+      find.descendant(
+        of: find.byType(PinField),
+        matching: find.byWidgetPredicate(
+          (Widget w) =>
+              w is Container &&
+              w.constraints == const BoxConstraints.tightFor(width: 16, height: 16) &&
+              w.decoration is BoxDecoration,
+        ),
+      ),
+    )
+    .map((Container c) => c.decoration! as BoxDecoration)
+    .toList();
+
+/// Обводки ячеек `OtpField` (48×56 в окне 1280; 03 §9.5).
+List<BorderSide> _otpCells(WidgetTester tester) => tester
+    .widgetList<Container>(
+      find.descendant(
+        of: find.byType(OtpField),
+        matching: find.byWidgetPredicate(
+          (Widget w) =>
+              w is Container &&
+              w.constraints == const BoxConstraints.tightFor(width: 48, height: 56) &&
+              w.decoration is BoxDecoration,
+        ),
+      ),
+    )
+    .map((Container c) => ((c.decoration! as BoxDecoration).border! as Border).top)
+    .toList();
 
 void main() {
   group('AppButton (03 §9.1)', () {
@@ -168,6 +206,441 @@ void main() {
       expect(find.bySemanticsLabel('PIN, введено 4 из 4'), findsOneWidget);
       await pumpDs(tester, field(CodeFieldStatus.error));
       expect(find.bySemanticsLabel('PIN, введено 0 из 4'), findsOneWidget);
+    });
+
+    testWidgets(
+      'PinField: после ошибки точки красные только 300 мс или до новой цифры — дальше обычные, видно, сколько '
+      'набрано; текст ошибки остаётся (03 §9.6; 02 SCR-08.4 п. 4)',
+      (WidgetTester tester) async {
+        Widget field(CodeFieldStatus status) => PinField(
+          length: 6,
+          autofocus: false,
+          status: status,
+          errorText: status == CodeFieldStatus.error ? 'Неверный PIN. Осталось попыток: 2' : null,
+          semanticLabel: (int n, int l) => 'PIN, введено $n из $l',
+          backspaceLabel: 'Стереть',
+        );
+        // Точки поля: круги 16×16 (03 §9.6).
+        List<BoxDecoration> dots() => tester
+            .widgetList<Container>(
+              find.descendant(
+                of: find.byType(PinField),
+                matching: find.byWidgetPredicate(
+                  (Widget w) =>
+                      w is Container &&
+                      w.constraints == const BoxConstraints.tightFor(width: 16, height: 16) &&
+                      w.decoration is BoxDecoration,
+                ),
+              ),
+            )
+            .map((Container c) => c.decoration! as BoxDecoration)
+            .toList();
+        Color? border(BoxDecoration d) => (d.border! as Border).top.color;
+
+        await pumpDs(tester, field(CodeFieldStatus.idle));
+        final DsColors c = tester.element(find.byType(PinField)).colors;
+        for (final String d in <String>['1', '2', '3']) {
+          await tester.tap(find.text(d).first);
+          await tester.pump();
+        }
+        // Неверный PIN: введённое стёрто, все точки красные (сплошные).
+        await pumpDs(tester, field(CodeFieldStatus.loading));
+        await pumpDs(tester, field(CodeFieldStatus.error));
+        expect(dots(), hasLength(6));
+        expect(dots().every((BoxDecoration d) => d.color == c.error && border(d) == c.error), isTrue);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(dots().every((BoxDecoration d) => d.color == c.error), isTrue, reason: 'ещё идёт 300 мс ошибки');
+
+        // Первая новая цифра — сразу обычные точки: одна заполнена, пять пустых, красных нет.
+        await tester.tap(find.text('5').first);
+        await tester.pump();
+        List<BoxDecoration> now = dots();
+        expect(now.where((BoxDecoration d) => d.color == c.textPrimary), hasLength(1));
+        expect(
+          now.where((BoxDecoration d) => d.color == Colors.transparent && border(d) == c.borderStrong),
+          hasLength(5),
+        );
+        expect(now.any((BoxDecoration d) => d.color == c.error || border(d) == c.error), isFalse);
+        expect(find.text('Неверный PIN. Осталось попыток: 2'), findsOneWidget, reason: 'текст ошибки остаётся');
+        await tester.tap(find.text('6').first);
+        await tester.pump();
+        expect(dots().where((BoxDecoration d) => d.color == c.textPrimary), hasLength(2));
+
+        // Вторая ошибка: снова красные, а через 300 мс без ввода — пустые обычные точки.
+        await pumpDs(tester, field(CodeFieldStatus.loading));
+        await pumpDs(tester, field(CodeFieldStatus.error));
+        expect(dots().every((BoxDecoration d) => d.color == c.error), isTrue);
+        await tester.pump(PinField.errorHold);
+        now = dots();
+        expect(now.any((BoxDecoration d) => d.color == c.error || border(d) == c.error), isFalse);
+        expect(now.every((BoxDecoration d) => d.color == Colors.transparent && border(d) == c.borderStrong), isTrue);
+
+        // Поле, созданное сразу с ошибкой (SCR-42 «Повторите PIN» пересоздаёт его), — то же правило.
+        await tester.pumpWidget(const SizedBox());
+        await pumpDs(tester, field(CodeFieldStatus.error));
+        expect(dots().every((BoxDecoration d) => d.color == c.error), isTrue);
+        await tester.tap(find.text('1').first);
+        await tester.pump();
+        expect(dots().where((BoxDecoration d) => d.color == c.textPrimary), hasLength(1));
+        expect(dots().any((BoxDecoration d) => d.color == c.error), isFalse);
+      },
+    );
+
+    // T-ANIM-012 (12 ред. 1.19): указание владельца 2026-11-18 (15 §5.8) — после ошибки поля кода снова обычные.
+    testWidgets(
+      'T-ANIM-012 PinField: поле, созданное сразу с ошибкой (SCR-04, SCR-42 «PIN-коды не совпадают»), вздрагивает после '
+      'первого кадра; через 300 мс точки пустые обычные, текст ошибки остаётся',
+      (WidgetTester tester) async {
+        expect(PinField.errorHold, DsAnimations.shake.duration, reason: 'момент ошибки = shake ANIM-012');
+        await pumpDs(
+          tester,
+          PinField(
+            length: 6,
+            autofocus: false,
+            status: CodeFieldStatus.error,
+            errorText: 'PIN-коды не совпадают',
+            semanticLabel: (int n, int l) => 'PIN, введено $n из $l',
+            backspaceLabel: 'Стереть',
+          ),
+          disableAnimations: false,
+        );
+        final DsColors c = tester.element(find.byType(PinField)).colors;
+        double shift() => tester
+            .widget<Transform>(find.descendant(of: find.byType(DsShake), matching: find.byType(Transform)).first)
+            .transform
+            .getTranslation()
+            .x;
+        expect(_pinDots(tester).every((BoxDecoration d) => d.color == c.error), isTrue);
+        await tester.pump(); // кадр после первого: shake запущен
+        await tester.pump(const Duration(milliseconds: 75));
+        expect(shift(), isNot(0.0), reason: 'shake ANIM-012 и у поля, созданного с ошибкой');
+        expect(_pinDots(tester).every((BoxDecoration d) => d.color == c.error), isTrue);
+        await tester.pump(PinField.errorHold - const Duration(milliseconds: 75));
+        await tester.pump();
+        expect(shift(), 0.0);
+        expect(
+          _pinDots(
+            tester,
+          ).every((BoxDecoration d) => d.color == Colors.transparent && d.border!.top.color == c.borderStrong),
+          isTrue,
+          reason: 'точки снова пустые обычные',
+        );
+        expect(find.text('PIN-коды не совпадают'), findsOneWidget);
+        await tester.tap(find.text('7').first);
+        await tester.pump();
+        expect(_pinDots(tester).where((BoxDecoration d) => d.color == c.textPrimary), hasLength(1));
+        expect(
+          _pinDots(tester).any((BoxDecoration d) => d.color == c.error || d.border!.top.color == c.error),
+          isFalse,
+        );
+      },
+    );
+
+    // T-ANIM-012, пакет own-server:GAP-APP: точки «краснеют» и при обычном вводе — сообщение владельца 2026-11-18
+    // (дословно, части: «tochki krasneyut i tak ostayutsya», «ya terayus kakuyu  sifru ya vvoju»): обычная точка
+    // была фирменной `primaryText` #C9330C, почти того же тона, что ошибка `error` #D21B1F. Теперь заполненная точка —
+    // нейтральная `textPrimary`; красный — только момент ошибки.
+    testWidgets(
+      'T-ANIM-012 PinField: заполненная точка — нейтральная textPrimary (не-текст ≥ 3 : 1 к surface и background, '
+      'заметно темнее ошибки); оранжево-красных точек при обычном вводе нет',
+      (WidgetTester tester) async {
+        await pumpDs(
+          tester,
+          PinField(
+            length: 6,
+            autofocus: false,
+            semanticLabel: (int n, int l) => 'PIN, введено $n из $l',
+            backspaceLabel: 'Стереть',
+          ),
+        );
+        final DsColors c = tester.element(find.byType(PinField)).colors;
+        for (final String d in <String>['2', '7', '4']) {
+          await tester.tap(find.text(d).first);
+          await tester.pump();
+        }
+        final List<BoxDecoration> dots = _pinDots(tester);
+        expect(dots.where((BoxDecoration d) => d.color == c.textPrimary), hasLength(3));
+        expect(
+          dots.any(
+            (BoxDecoration d) =>
+                d.color == c.primaryText ||
+                d.color == c.error ||
+                d.border!.top.color == c.primaryText ||
+                d.border!.top.color == c.error,
+          ),
+          isFalse,
+          reason: 'обычный ввод — без фирменного оранжево-красного и без красного',
+        );
+        double contrast(Color a, Color b) {
+          final double la = a.computeLuminance();
+          final double lb = b.computeLuminance();
+          return ((la > lb ? la : lb) + 0.05) / ((la > lb ? lb : la) + 0.05);
+        }
+
+        // WCAG 1.4.11 (03 §5.4.3): не-текст ≥ 3 : 1 к фону карточки и страницы.
+        expect(contrast(c.textPrimary, c.surface), greaterThanOrEqualTo(3));
+        expect(contrast(c.textPrimary, c.background), greaterThanOrEqualTo(3));
+        // Обычная точка отличается от точки ошибки не только тоном, но и светлотой (прежняя пара — почти 1 : 1).
+        expect(contrast(c.textPrimary, c.error), greaterThanOrEqualTo(3));
+        expect(contrast(c.primaryText, c.error), lessThan(1.5), reason: 'прежний цвет точки почти совпадал с ошибкой');
+      },
+    );
+
+    testWidgets(
+      'T-ANIM-012 PinField: повторная ошибка без кадра «проверки» (статус остаётся error, новый текст) — введённое стёрто, '
+      'точки снова красные 300 мс, затем обычные; перерисовка без нового ответа — не ошибка',
+      (WidgetTester tester) async {
+        Widget field(String error) => PinField(
+          length: 4,
+          autofocus: false,
+          status: CodeFieldStatus.error,
+          errorText: error,
+          semanticLabel: (int n, int l) => 'PIN, введено $n из $l',
+          backspaceLabel: 'Стереть',
+        );
+        await pumpDs(tester, field('Неверный PIN. Осталось попыток: 3'));
+        final DsColors c = tester.element(find.byType(PinField)).colors;
+        await tester.pump(PinField.errorHold);
+        await tester.pump();
+        for (final String d in <String>['4', '8', '1', '5']) {
+          await tester.tap(find.text(d).first);
+          await tester.pump();
+        }
+        expect(find.bySemanticsLabel('PIN, введено 4 из 4'), findsOneWidget);
+        expect(_pinDots(tester).every((BoxDecoration d) => d.color == c.textPrimary), isTrue);
+
+        await pumpDs(tester, field('Неверный PIN. Осталось попыток: 2'));
+        expect(find.bySemanticsLabel('PIN, введено 0 из 4'), findsOneWidget, reason: 'введённое стёрто');
+        expect(_pinDots(tester).every((BoxDecoration d) => d.color == c.error), isTrue);
+        await tester.pump(PinField.errorHold);
+        await tester.pump();
+        expect(_pinDots(tester).every((BoxDecoration d) => d.color == Colors.transparent), isTrue);
+
+        await tester.tap(find.text('9').first);
+        await tester.pump();
+        await pumpDs(tester, field('Неверный PIN. Осталось попыток: 2'));
+        expect(
+          find.bySemanticsLabel('PIN, введено 1 из 4'),
+          findsOneWidget,
+          reason: 'тот же ответ — ввод не трогается',
+        );
+        expect(_pinDots(tester).any((BoxDecoration d) => d.color == c.error), isFalse);
+      },
+    );
+
+    testWidgets(
+      'T-ANIM-012 PinField: текст ошибки — отдельный узел liveRegion только с текстом (диктор объявляет ошибку один раз); '
+      'точки — свой узел без liveRegion; возврат точек и новые цифры узел ошибки не меняют',
+      (WidgetTester tester) async {
+        final SemanticsHandle handle = tester.ensureSemantics();
+        const String error = 'Неверный PIN. Осталось попыток: 2';
+        Widget field(CodeFieldStatus status) => PinField(
+          length: 6,
+          autofocus: false,
+          status: status,
+          errorText: status == CodeFieldStatus.error ? error : null,
+          semanticLabel: (int n, int l) => 'PIN, введено $n из $l',
+          backspaceLabel: 'Стереть',
+        );
+        SemanticsNode errorNode() => tester.getSemantics(find.text(error));
+        SemanticsNode dotsNode(int n) => tester.getSemantics(find.bySemanticsLabel('PIN, введено $n из 6'));
+        await pumpDs(tester, field(CodeFieldStatus.idle));
+        await pumpDs(tester, field(CodeFieldStatus.loading));
+        await pumpDs(tester, field(CodeFieldStatus.error));
+        final int id = errorNode().id;
+        expect(errorNode().label, error, reason: 'подпись точек в узел ошибки не сливается');
+        expect(errorNode().flagsCollection.isLiveRegion, isTrue);
+        expect(dotsNode(0).flagsCollection.isLiveRegion, isFalse);
+        expect(dotsNode(0).flagsCollection.isObscured, isTrue);
+        await tester.pump(PinField.errorHold);
+        await tester.pump();
+        await tester.tap(find.text('3').first);
+        await tester.pump();
+        expect(errorNode().id, id, reason: 'тот же узел — без повторного объявления');
+        expect(errorNode().label, error);
+        expect(dotsNode(1).flagsCollection.isLiveRegion, isFalse);
+        handle.dispose();
+      },
+    );
+
+    testWidgets(
+      'T-ANIM-012 OtpField: после ошибки первая новая цифра — обычные ячейки с активной, даже если экран держит статус '
+      'error (step-up по SMS); текст ошибки — как передал экран',
+      (WidgetTester tester) async {
+        const String error = 'Неверный код. Осталось попыток: 2';
+        Widget field(CodeFieldStatus status) => OtpField(
+          semanticLabel: 'Код',
+          autofocus: false,
+          status: status,
+          errorText: status == CodeFieldStatus.error ? error : null,
+        );
+        await pumpDs(tester, field(CodeFieldStatus.idle));
+        final DsColors c = tester.element(find.byType(OtpField)).colors;
+        await tester.enterText(find.byType(TextField), '123456');
+        await tester.pump();
+        await pumpDs(tester, field(CodeFieldStatus.loading));
+        await pumpDs(tester, field(CodeFieldStatus.error));
+        expect(_otpCells(tester), hasLength(6));
+        expect(_otpCells(tester).every((BorderSide b) => b.color == c.error), isTrue, reason: 'момент ошибки');
+        expect(find.text('1'), findsNothing, reason: 'ячейки очищены');
+
+        await tester.enterText(find.byType(TextField), '7');
+        await tester.pump();
+        final List<BorderSide> cells = _otpCells(tester);
+        expect(cells.any((BorderSide b) => b.color == c.error), isFalse, reason: 'новая цифра красной не бывает');
+        expect(cells[1].color, c.textPrimary, reason: 'активная ячейка — как при обычном вводе (нейтральная, Q-357)');
+        expect(find.descendant(of: find.byType(DsShake), matching: find.text('7')), findsOneWidget);
+        expect(find.text(error), findsOneWidget);
+        expect(
+          tester.getSemantics(find.text(error)).label,
+          error,
+          reason: 'текст ошибки — отдельный узел liveRegion, без подписи и значения поля',
+        );
+
+        // Новая ошибка — снова красные ячейки.
+        await pumpDs(tester, field(CodeFieldStatus.loading));
+        await pumpDs(tester, field(CodeFieldStatus.error));
+        expect(_otpCells(tester).every((BorderSide b) => b.color == c.error), isTrue);
+      },
+    );
+  });
+
+  // Пакет wave2:APP-POLISH (Q-357): состояние ввода — нейтральное `textPrimary`, не фирменная `primaryText` #C9330C,
+  // которую почти не отличить от `error` #D21B1F (1,01 : 1). Та же причина, что у точек PIN (сообщение владельца
+  // 2026-11-18, дословно, части: «tochki krasneyut i tak ostayutsya», «ya terayus kakuyu  sifru ya vvoju»): после
+  // неверной попытки поле в фокусе, активная ячейка кода или каретка выглядели бы ошибкой. Красный — только ошибка.
+  group('состояние ввода нейтральное (Q-357; T-ANIM-012, T-DS-098)', () {
+    double contrast(Color a, Color b) {
+      final double la = a.computeLuminance();
+      final double lb = b.computeLuminance();
+      return ((la > lb ? la : lb) + 0.05) / ((la > lb ? lb : la) + 0.05);
+    }
+
+    test('textPrimary: не-текст ≥ 3 : 1 к surface, background, surfaceVariant; заметно отличается от error и от '
+        'обводки без фокуса', () {
+      const DsColors c = DsColors.lightB;
+      expect(contrast(c.textPrimary, c.surface), greaterThanOrEqualTo(3));
+      expect(contrast(c.textPrimary, c.background), greaterThanOrEqualTo(3));
+      expect(contrast(c.textPrimary, c.surfaceVariant), greaterThanOrEqualTo(3));
+      expect(contrast(c.textPrimary, c.error), greaterThanOrEqualTo(3));
+      expect(contrast(c.textPrimary, c.borderStrong), greaterThanOrEqualTo(3), reason: 'фокус виден и по светлоте');
+      expect(contrast(c.primaryText, c.error), lessThan(1.5), reason: 'прежний цвет почти совпадал с ошибкой');
+    });
+
+    testWidgets('OtpField: активная ячейка — textPrimary 2 px, без primaryText; после ошибки и новой цифры — так же', (
+      WidgetTester tester,
+    ) async {
+      Widget field(CodeFieldStatus status) => OtpField(
+        semanticLabel: 'Код',
+        status: status,
+        errorText: status == CodeFieldStatus.error ? 'Неверный код' : null,
+      );
+      await pumpDs(tester, field(CodeFieldStatus.idle));
+      final DsColors c = tester.element(find.byType(OtpField)).colors;
+      await tester.enterText(find.byType(TextField), '12');
+      await tester.pump();
+      List<BorderSide> cells = _otpCells(tester);
+      expect(cells[2].color, c.textPrimary);
+      expect(cells[2].width, 2);
+      expect(cells.where((BorderSide b) => b.color == c.borderStrong && b.width == 1), hasLength(5));
+      expect(cells.any((BorderSide b) => b.color == c.primaryText || b.color == c.error), isFalse);
+
+      await pumpDs(tester, field(CodeFieldStatus.loading));
+      await pumpDs(tester, field(CodeFieldStatus.error));
+      expect(_otpCells(tester).every((BorderSide b) => b.color == c.error), isTrue, reason: 'момент ошибки — красный');
+      await tester.enterText(find.byType(TextField), '5');
+      await tester.pump();
+      cells = _otpCells(tester);
+      expect(cells[1].color, c.textPrimary, reason: 'следующая ячейка после ошибки — не «красная»');
+      expect(cells.any((BorderSide b) => b.color == c.primaryText || b.color == c.error), isFalse);
+    });
+
+    testWidgets('AppTextField: фокус — обводка 2 px, подпись и каретка textPrimary; ошибка — error; ошибка снята — '
+        'снова textPrimary', (WidgetTester tester) async {
+      Widget field(String? error) =>
+          AppTextField(label: 'Пароль', autofocus: true, variant: AppTextFieldVariant.password, errorText: error);
+      await pumpDs(tester, field(null));
+      final DsColors c = tester.element(find.byType(AppTextField)).colors;
+      TextField input() => tester.widget<TextField>(find.byType(TextField));
+      OutlineInputBorder outline(InputBorder? b) => b! as OutlineInputBorder;
+      expect(input().focusNode!.hasFocus, isTrue);
+      expect(outline(input().decoration!.focusedBorder).borderSide.color, c.textPrimary);
+      expect(outline(input().decoration!.focusedBorder).borderSide.width, 2);
+      expect(outline(input().decoration!.enabledBorder).borderSide.color, c.textPrimary);
+      expect(input().cursorColor, c.textPrimary);
+      expect(tester.widget<Text>(find.text('Пароль')).style?.color, c.textPrimary);
+
+      await pumpDs(tester, field('Неверный пароль'));
+      expect(outline(input().decoration!.focusedBorder).borderSide.color, c.error);
+      expect(tester.widget<Text>(find.text('Пароль')).style?.color, c.error);
+
+      await pumpDs(tester, field(null));
+      expect(
+        outline(input().decoration!.focusedBorder).borderSide.color,
+        c.textPrimary,
+        reason: 'после ошибки фокус — не «красный»',
+      );
+    });
+
+    testWidgets('SearchBar: фокус — обводка 2 px и каретка textPrimary (все варианты)', (WidgetTester tester) async {
+      for (final SearchBarVariant v in SearchBarVariant.values) {
+        await pumpDs(tester, SearchBar(key: ValueKey<SearchBarVariant>(v), variant: v, autofocus: true));
+        await tester.pump();
+        final DsColors c = tester.element(find.byType(SearchBar)).colors;
+        final BoxDecoration ring = tester
+            .widgetList<AnimatedContainer>(
+              find.descendant(of: find.byType(SearchBar), matching: find.byType(AnimatedContainer)),
+            )
+            .map((AnimatedContainer a) => a.foregroundDecoration)
+            .whereType<BoxDecoration>()
+            .firstWhere((BoxDecoration d) => d.border != null);
+        expect((ring.border! as Border).top.color, c.textPrimary, reason: v.name);
+        expect((ring.border! as Border).top.width, 2, reason: v.name);
+        expect(tester.widget<TextField>(find.byType(TextField)).cursorColor, c.textPrimary, reason: v.name);
+      }
+    });
+
+    testWidgets('DiscountInput: фокус — textPrimary 2 px, отказ по лимиту — error', (WidgetTester tester) async {
+      Widget field(DiscountInputState state) => DiscountInput(label: 'Скидка', state: state);
+      await pumpDs(tester, field(DiscountInputState.normal));
+      final DsColors c = tester.element(find.byType(DiscountInput)).colors;
+      BorderSide focused() =>
+          (tester.widget<TextField>(find.byType(TextField)).decoration!.focusedBorder! as OutlineInputBorder)
+              .borderSide;
+      expect(focused().color, c.textPrimary);
+      expect(focused().width, 2);
+      await pumpDs(tester, field(DiscountInputState.error));
+      expect(focused().color, c.error);
+    });
+
+    testWidgets('AppDropdown: меню открыто — обводка 2 px и подпись textPrimary', (WidgetTester tester) async {
+      await pumpDs(
+        tester,
+        SizedBox(
+          width: 280,
+          child: AppDropdown<String>(
+            label: 'Единица',
+            value: null,
+            onChanged: (String _) {},
+            items: const <AppDropdownItem<String>>[AppDropdownItem<String>(value: 'pc', label: 'шт')],
+          ),
+        ),
+      );
+      final DsColors c = tester.element(find.byType(AppDropdown<String>)).colors;
+      Iterable<Border> borders() => tester
+          .widgetList<Container>(
+            find.descendant(of: find.byType(AppDropdown<String>), matching: find.byType(Container)),
+          )
+          .map((Container w) => w.decoration)
+          .whereType<BoxDecoration>()
+          .map((BoxDecoration d) => d.border)
+          .whereType<Border>();
+      expect(borders().single.top.color, c.borderStrong);
+      await tester.tap(find.byType(AppDropdown<String>));
+      await tester.pumpAndSettle();
+      expect(borders().single.top.color, c.textPrimary);
+      expect(borders().single.top.width, 2);
+      expect(tester.widget<Text>(find.text('Единица')).style?.color, c.textPrimary);
     });
   });
 

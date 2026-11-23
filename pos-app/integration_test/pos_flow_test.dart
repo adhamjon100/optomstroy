@@ -392,7 +392,9 @@ ProviderContainer _container(WidgetTester tester) =>
 Finder _input(Key key) => find.descendant(of: find.byKey(key), matching: find.byType(EditableText));
 
 Future<void> _tap(WidgetTester tester, Finder finder) async {
-  await tester.ensureVisible(finder);
+  // По центру окна, а не по верхнему краю: `tester.ensureVisible` прижимает цель к верху списка, под закреплённую
+  // панель инструментов витрины, и касание уходит в панель (сетка с пределом колонок 03 §7.3 прокручивается).
+  await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5);
   await tester.pump();
   await tester.tap(finder);
   await tester.pump();

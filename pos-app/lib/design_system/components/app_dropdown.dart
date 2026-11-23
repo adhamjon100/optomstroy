@@ -23,8 +23,9 @@ class AppDropdownItem<T> {
 }
 
 /// Выпадающий выбор `AppDropdown` (03 §9.66): поле со стилем `AppTextField` (подпись над полем,
-/// обводка `borderStrong`, высота 48) и меню в стиле `SortMenu` (`surface`, `elevation.2`,
-/// выбранный пункт — `primaryContainer` + галочка `primaryText`).
+/// обводка `borderStrong`, высота 48; меню открыто — обводка 2 px и подпись `textPrimary`, как фокус `AppTextField`,
+/// не фирменная `primaryText`, которую не отличить от `error`; пакет wave2:APP-POLISH) и меню в стиле `SortMenu`
+/// (`surface`, `elevation.2`, выбранный пункт — `primaryContainer` + галочка `primaryText`).
 class AppDropdown<T> extends StatefulWidget {
   /// Создаёт выпадающий список.
   const AppDropdown({
@@ -124,7 +125,7 @@ class _AppDropdownState<T> extends State<AppDropdown<T>> {
               : hasError
               ? (c.error, 2.0)
               : _open
-              ? (c.primaryText, 2.0)
+              ? (c.textPrimary, 2.0)
               : (s.hovered ? c.textSecondary : c.borderStrong, 1.0);
           return DsFocusRing(
             visible: s.focused,
@@ -176,7 +177,7 @@ class _AppDropdownState<T> extends State<AppDropdown<T>> {
               child: Text(
                 widget.label!,
                 style: context.text.label.copyWith(
-                  color: !enabled ? c.textSecondary : (hasError ? c.error : (_open ? c.primaryText : c.textSecondary)),
+                  color: !enabled ? c.textSecondary : (hasError ? c.error : (_open ? c.textPrimary : c.textSecondary)),
                 ),
               ),
             ),

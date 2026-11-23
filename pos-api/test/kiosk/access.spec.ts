@@ -383,7 +383,8 @@ describe('KIOSK_MODE=true: закрытый список планшета, GET /
   let v: SaleableVariant[];
 
   beforeAll(async () => {
-    await t.startKiosk({ kioskMode: true });
+    // AUTH_BIO_ALLOW_WEAK=all (ADR-116): даже при разрешённом уровне W планшет биометрию не получает (T-BIO-033).
+    await t.startKiosk({ kioskMode: true, env: { AUTH_BIO_ALLOW_WEAK: 'all' } });
     tab = await t.tablet({ name: 'Планшет у кассы' });
     seller = await t.actor({ role: 'seller' });
     customer = await t.actor({ role: 'customer' });
@@ -423,6 +424,38 @@ describe('KIOSK_MODE=true: закрытый список планшета, GET /
       expect(r.body).toMatchObject({ id: a.userId, kind: a.kind, roles: [a.role], apiVersion: '1.0' });
       expect(r.body).not.toHaveProperty('tablet');
     }
+  });
+
+  it('T-BIO-033 (сервер), BIO-037: POST /me/biometrics с токеном планшета (class3, class2, выключение) → 403; GET /me без security', async () => {
+    const problems: string[] = [];
+    for (const body of [
+      {
+        enabled: true,
+        biometricClass: 'class3',
+        consent: { kind: 'biometrics_device', version: '2026-10-01', granted: true },
+      },
+      {
+        enabled: true,
+        biometricClass: 'class2',
+        consent: { kind: 'biometrics_device', version: '2026-10-01', granted: true },
+      },
+      { enabled: false },
+    ]) {
+      const r = await call(t, 'post', '/me/biometrics', tab, body);
+      if (r.status !== 403) problems.push(label('post', '/me/biometrics', r));
+    }
+    expect(problems).toEqual([]);
+    const sessions = await t.pool.query(
+      `SELECT count(*)::int AS n FROM sessions WHERE user_id = $1 AND kind = 'biometric'`,
+      [tab.userId],
+    );
+    expect(sessions.rows[0].n).toBe(0);
+    const me = await call(t, 'get', '/me', tab);
+    expect(me.status).toBe(200);
+    expect(me.body).not.toHaveProperty('security'); // biometricWeakAllowed и windowsHelloKeyAllowed — как false
+    // У сотрудника на том же стенде — прежняя форма Me с признаком уровня W (паритет).
+    const sm = await call(t, 'get', '/me', seller);
+    expect(sm.body.security).toMatchObject({ biometricWeakAllowed: expect.any(Boolean) });
   });
 
   it('маршруты закрытого списка — по своему праву (guard планшета и RBAC пропускают); GET /settings/public — storeTablet=true', async () => {

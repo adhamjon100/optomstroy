@@ -34,6 +34,7 @@ export { OtpCircuitBreaker } from './otp/otp-circuit-breaker.js';
 export { OtpSmsDeliveryListener, QueuedSmsOtpProvider } from './otp/queued-sms-otp.provider.js';
 export { AppPinsRepository } from './pin/app-pins.repository.js';
 export { type PinCheck, PinVerifier } from './pin/pin-verifier.service.js';
+export { type HelloKeyRefusal, HelloKeyService, revokeReasonOf } from './sessions/hello-key.service.js';
 export { AUTH_SESSION_ACTIVITY_GUARD, SessionActivityGuard } from './sessions/session-activity.guard.js';
 export { SessionIssuer, sessionTerms } from './sessions/session-issuer.service.js';
 export { SessionStore } from './sessions/session-store.js';

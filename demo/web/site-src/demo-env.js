@@ -308,6 +308,14 @@
     kioskSwitch: 'optomstroy.demo.kioskSwitch',
     kioskSlotKiosk: 'optomstroy.demo.kioskSlot.kiosk',
     kioskSlotNormal: 'optomstroy.demo.kioskSlot.normal',
+    // ADR-116 п. 1, п. 4 (demo-passkey.js; 07 §11.1 п. 4): вход по лицу или отпечатку через passkey. Секретов в открытом
+    // виде нет: user.id passkey браузера; passkey браузера (гейт и ключ входа); блоб biometric_refresh под ключом из PRF;
+    // закрытые ключи входа браузера на Windows под ключом из PRF; признак «PRF нет».
+    passkeyUser: 'optomstroy.demo.passkeyUser', // check-secrets: allow — имя ключа хранилища страницы, не секрет
+    passkeyGate: 'optomstroy.demo.passkeyGate', // check-secrets: allow — имя ключа хранилища страницы, не секрет
+    passkeyBound: 'optomstroy.demo.passkeyBound', // check-secrets: allow — имя ключа хранилища страницы, не секрет
+    passkeyHelloKey: 'optomstroy.demo.passkeyHelloKey', // check-secrets: allow — имя ключа хранилища страницы, не секрет
+    passkeyNoPrf: 'optomstroy.demo.passkeyNoPrf', // check-secrets: allow — имя ключа хранилища страницы, не секрет
   };
 
   PosDemoPage.env = {

@@ -1,0 +1,10 @@
+{
+  "_note": "тестовые данные",
+  "operation": "POST /pos/v1/payments/{externalId}/qr/cancel",
+  "kind": "response",
+  "status": 200,
+  "body": {
+    "externalId": "0192f5a1-2b3c-7d4e-8f50-6a7b8c9d0e1f",
+    "status": "cancelled"
+  }
+}

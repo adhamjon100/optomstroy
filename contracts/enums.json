@@ -1,7 +1,7 @@
 {
   "$schema": "./enums.schema.json",
   "contract": "optomstroy-pos-enums",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "basis": {
     "kernel": "docs/research/R0_DECISION_KERNEL.md v1.9 (§6, §7, §17.3, §17.4, §18.1, §18.2, §22, §23 п.5, §24)",
     "dbEnums": "docs/specification/07_DATA_MODEL.md §6.1 (владелец enum-ов, ядро §18.1)",
@@ -595,9 +595,10 @@
         "device_mismatch",
         "biometric_invalidated",
         "refresh_replay",
-        "kiosk_revoked"
+        "kiosk_revoked",
+        "biometric_weak_disabled"
       ],
-      "source": "D-12, ядро §18.2 п.8; 09 §8.3, миграция 0003 (EQ-AUTH-03, ADR-088); ADR-115 (миграция 0022)"
+      "source": "D-12, ядро §18.2 п.8; 09 §8.3, миграция 0003 (EQ-AUTH-03, ADR-088); ADR-115 (миграция 0022); ADR-116 (миграция 0024)"
     },
     {
       "name": "token_kind",
@@ -694,6 +695,46 @@
         "revoked"
       ],
       "source": "ADR-115 (07 §5.65, миграция 0022)"
+    },
+    {
+      "name": "hello_key_algorithm",
+      "columns": [
+        "hello_keys.algorithm"
+      ],
+      "values": [
+        "RS256"
+      ],
+      "source": "ADR-116 (07 §5.66, миграция 0024)"
+    },
+    {
+      "name": "hello_key_source",
+      "columns": [
+        "hello_keys.source"
+      ],
+      "values": [
+        "windows_hello",
+        "webauthn_prf"
+      ],
+      "source": "ADR-116 (07 §5.66, миграция 0024)"
+    },
+    {
+      "name": "hello_key_revoke_reason",
+      "columns": [
+        "hello_keys.revoke_reason"
+      ],
+      "values": [
+        "disabled",
+        "replaced",
+        "invalidated",
+        "policy_off",
+        "shared_device",
+        "logout_all",
+        "phone_changed",
+        "kiosk_connect",
+        "blocked",
+        "pin_reset"
+      ],
+      "source": "ADR-116; 09 BIO-040 (07 §5.66, миграция 0024)"
     },
     {
       "name": "receivable_document_kind",

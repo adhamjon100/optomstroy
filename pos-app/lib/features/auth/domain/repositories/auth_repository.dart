@@ -43,12 +43,26 @@ abstract interface class AuthRepository {
   Future<Result<VerifyOutcome>> verifyOtp({required String challengeId, required String code});
 
   /// `POST /auth/unlock {method: pin, refreshToken, pin}` (08 §4.1.8). [biometricInvalidated] —
-  /// ключ биометрии недоступен: сервер отзывает биометрическую семью.
-  Future<Result<UnlockSuccess>> unlockWithPin({required String pin, bool biometricInvalidated = false});
+  /// ключ биометрии недоступен: сервер отзывает биометрическую семью. [helloKeyInvalidated] — ключ Windows Hello
+  /// пропал в Windows: после верного PIN сервер отзывает ключ устройства (W2; 09 BIO-039, BIO-040).
+  Future<Result<UnlockSuccess>> unlockWithPin({
+    required String pin,
+    bool biometricInvalidated = false,
+    bool helloKeyInvalidated = false,
+  });
 
   /// `POST /auth/unlock {method: biometric, refreshToken: <biometric_refresh>}`; в ответ —
   /// новый biometric refresh для повторного шифрования ([BiometricUnlockSuccess.nextSecret]).
   Future<Result<BiometricUnlockSuccess>> unlockWithBiometric({required String biometricRefresh});
+
+  /// `POST /auth/unlock/challenge {method: hello_key, refreshToken}` (W2; 08 §4.1.10; 09 BIO-039): challenge для
+  /// подписи ключом Windows Hello (120 с, refresh не ротируется). Отказ — `AuthFailure(unlockRequired)` с
+  /// `unlockReason = hello_key_unavailable`.
+  Future<Result<String>> helloKeyChallenge();
+
+  /// `POST /auth/unlock {method: hello_key, refreshToken, signature}` (W2; 08 §4.1.8): вход без PIN, ротация как у
+  /// PIN. Отказ — `AuthFailure(unlockRequired)` с `unlockReason` `hello_key_invalid` | `hello_key_unavailable`.
+  Future<Result<UnlockSuccess>> unlockWithHelloKey({required String signature});
 
   /// Есть ли сохранённая сессия (refresh в secure storage) — SCR-00/SCR-08.
   Future<bool> hasStoredSession();

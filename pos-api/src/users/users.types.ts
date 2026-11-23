@@ -41,6 +41,9 @@ export const SESSION_REVOKE_REASONS = [
   'refresh_replay',
   // миграция 0022 (планшет магазина, ADR-115): отключение администратором или аварийный выход → 401 KIOSK_REVOKED
   'kiosk_revoked',
+  // миграция 0024 (вход по лицу, ADR-116; 09 BIO-032): уровень W Android запрещён AUTH_BIO_ALLOW_WEAK — семья W
+  // отзывается при следующей разблокировке, ответ 401 UNLOCK_REQUIRED {reason: bio_weak_disabled}
+  'biometric_weak_disabled',
 ] as const;
 export type SessionRevokeReason = (typeof SESSION_REVOKE_REASONS)[number];
 

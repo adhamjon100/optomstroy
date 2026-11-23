@@ -17,6 +17,7 @@ import 'package:optomstroy/core/config/public_settings_provider.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/app_progress.dart';
+import 'package:optomstroy/design_system/components/keep_words_text.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/design_system/tokens/ds_motion.dart';
@@ -182,17 +183,26 @@ class _KioskDoneScreenState extends ConsumerState<KioskDoneScreen> with TickerPr
                         SizedBox(height: context.space.s6),
                         Semantics(
                           liveRegion: true,
-                          child: Text(
+                          // Без предела строк: при масштабе текста 1.3× заголовок переносится целиком (02 UI-53-002,
+                          // AC-UI-53-008; 03 A11Y-005) — экран прокручивается. Номер заявки не разрывается внутри: не
+                          // помещается в строку — начертание на ступень меньше (T-UI-117, пакет own-server:GAP-APP).
+                          child: DsKeepWordsText(
                             l10n.kiosk_order_sent_title(number),
-                            key: KioskDoneScreen.numberKey,
+                            textKey: KioskDoneScreen.numberKey,
                             textAlign: TextAlign.center,
-                            // Без предела строк: при масштабе текста 1.3× заголовок переносится целиком (02 UI-53-002,
-                            // AC-UI-53-008; 03 A11Y-005) — экран прокручивается.
                             style: context.text.display.copyWith(
                               color: c.textPrimary,
                               fontWeight: FontWeight.w700,
                               fontFeatures: DsTypography.numeric,
                             ),
+                            fallback: <TextStyle>[
+                              for (final TextStyle s in <TextStyle>[context.text.h1, context.text.h2, context.text.h3])
+                                s.copyWith(
+                                  color: c.textPrimary,
+                                  fontWeight: FontWeight.w700,
+                                  fontFeatures: DsTypography.numeric,
+                                ),
+                            ],
                           ),
                         ),
                         SizedBox(height: context.space.s4),

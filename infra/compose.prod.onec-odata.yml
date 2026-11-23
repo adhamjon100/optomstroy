@@ -1,0 +1,24 @@
+# Дополнение к infra/compose.prod.yml: OData 1С только на чтение для api и worker (16 §4.3; 05 §6.2, ONEC-052;
+# 16 §12.5 P-4 — отдельный пользователь pos_integration). Нужен основному режиму ONEC_MODE=extension (полная загрузка
+# справочников, срезы цен и остатков, список фото — через OData: 05 §6.2, ONEC-052; «Требования к API 1С» 1.2 §1.1
+# п. 7, §4.2) и запасному odata_only.
+# Подключается обёрткой bin/dc автоматически, когда в secrets/ есть ОБА файла ниже; один из двух — ошибка
+# (install.sh/update.sh остановятся). Независимо от compose.prod.onec.yml (HTTP-сервис расширения).
+#   onec_user, onec_password            — пользователь ИБ pos_integration (только чтение OData).
+# Порядок — docs/ops/RUNBOOK.md §8.4. Значений секретов в этом файле нет.
+
+x-onec-odata-env: &onec-odata-env   # check-secrets: allow (указатели *_FILE, значений нет)
+  ONEC_USER_FILE: /run/secrets/onec_user
+  ONEC_PASSWORD_FILE: /run/secrets/onec_password
+
+services:
+  api:
+    environment: *onec-odata-env
+    secrets: [ onec_user, onec_password ]
+  worker:
+    environment: *onec-odata-env
+    secrets: [ onec_user, onec_password ]
+
+secrets:
+  onec_user:     { file: ./secrets/onec_user }
+  onec_password: { file: ./secrets/onec_password }

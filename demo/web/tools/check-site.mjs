@@ -20,7 +20,11 @@
 //  10. pdf.js (fix:pdfcsp): pdfjs/ — файлы pdfjs-dist с закреплёнными sha256 (tools/pdfjs-files.mjs), загрузчик = исходнику,
 //      demo-boot.js задаёт dartPdfJsBaseUrl, main.dart.js его читает (пакет printing не пойдёт на unpkg.com);
 //  11. планшет магазина (P-002 TAB-3-02): имена ключей хранилища приложения, на которые опирается demo-kiosk.js
-//      (`kiosk.tablet_id`, `device.id`, префикс `FlutterSecureStorage` в localStorage), есть в main.dart.js этой сборки.
+//      (`kiosk.tablet_id`, `device.id`, префикс `FlutterSecureStorage` в localStorage), есть в main.dart.js этой сборки;
+//  12. вход по лицу через passkey (15 ADR-116 п. 1, п. 4; 12 T-DEMO-020): demo-passkey.js на месте и подключён после
+//      demo-env.js и до demo-boot.js; main.dart.js читает globalThis.__posPasskey и сравнивает его protocol с тем же
+//      числом, что объявляет страница; Permissions-Policy сайта не трогает publickey-credentials-* (по умолчанию
+//      `self`: passkey работает на своём origin без явных записей, tools/site-headers.mjs не меняется).
 // Код выхода: 0 — можно выкладывать; 1 — есть ошибки (перечислены).
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -54,7 +58,7 @@ const read = (f) => readFileSync(`${SITE}/${f}`, 'utf8');
 
 // ---------------------------------------------------------------- 1. состав
 const REQUIRED = [
-  'index.html', 'demo-closed.html', 'demo-boot.js', 'demo-bridge.js', 'demo-panel.js', 'demo-lock.js', 'demo-reset.js', 'demo-kiosk.js', 'demo-env.js', 'demo-data.js',
+  'index.html', 'demo-closed.html', 'demo-boot.js', 'demo-bridge.js', 'demo-panel.js', 'demo-lock.js', 'demo-reset.js', 'demo-kiosk.js', 'demo-env.js', 'demo-data.js', 'demo-passkey.js',
   'demo-tokens.css', 'demo-screen.css', 'demo-panel.css', 'api-unavailable.json', 'robots.txt', '_headers', '_redirects',
   'flutter_bootstrap.js', 'main.dart.js', 'manifest.json', 'favicon.png', 'canvaskit/canvaskit.js', 'canvaskit/canvaskit.wasm', 'canvaskit/chromium/canvaskit.js', 'canvaskit/chromium/canvaskit.wasm',
   'assets/NOTICES', 'assets/FontManifest.json', 'assets/AssetManifest.bin', 'assets/fonts/MaterialIcons-Regular.otf',
@@ -263,6 +267,99 @@ if (has('main.dart.js') && has('demo-kiosk.js') && has('index.html')) {
     scriptOrder: at('demo-env.js') >= 0 && at('demo-env.js') < at('demo-kiosk.js') && at('demo-kiosk.js') < at('demo-panel.js') && at('demo-kiosk.js') < at('demo-boot.js'),
   };
   add('планшет магазина (TAB-3-02): main.dart.js содержит kiosk.tablet_id, device.id и префикс FlutterSecureStorage в localStorage — те же имена, что в demo-kiosk.js и панели; demo-kiosk.js подключён до панели и demo-boot.js', Object.values(lit).every(Boolean), lit);
+}
+
+// ---------------------------------------------------------------- 12. вход по лицу через passkey (T-DEMO-020)
+// Страница: `var PROTOCOL = N;` и `__posPasskey = Object.freeze({ protocol: PROTOCOL, … })` (demo-passkey.js).
+// Приложение (WebPasskeyAuthenticator, LF-3-02): main.dart.js читает глобальный объект (`v.G.__posPasskey`), номер
+// протокола приложения — из метки demoPasskeyProtocolTag («__posPasskey.protocol=1» в строке журнала). Метки нет —
+// запасной путь по сравнениям: dart2js сравнивает
+// protocol с константой — либо в той же функции (`A.bo(t)!==1`), либо через геттер (`gl(){var t=v.G.__posPasskey …
+// t.protocol … return t}` и `x.gl()!==1` у вызывающего), либо через геттер самого объекта (`x.gaU8().protocol!==1`).
+// Формы сверены на образцах dart2js -O4 (Flutter 3.38.7). Минифицированное имя геттера dart2js общее у всех геттеров
+// `protocol` (у моста __posDemo — тоже): сравнения, рядом с которыми текст ошибки называет другой глобальный объект
+// (`__posDemo.protocol=`), не считаются. Сравнения не нашлись — ошибка: шаблон dart2js или кода приложения сменился
+// (поправьте passkeyProtocolInApp по main.dart.js, сверив его с pos-app/lib/app/demo/demo_passkey*.dart).
+const CMP_NEAR = /(?:!==|===|!=|==)\s*(\d+)\b/;
+// Первое сравнение с числом не дальше 240 знаков после чтения protocol (дальше — уже другой код).
+const firstCmp = (s) => {
+  const m = CMP_NEAR.exec(s.slice(0, 240));
+  return m ? Number(m[1]) : null;
+};
+function passkeyProtocolInApp(main) {
+  const readRe = /[\w$)\]]\.__posPasskey\b|["']__posPasskey["']/g;
+  const methodStart = /\n[\w$]+\([\w$,]*\)\{/g;
+  const reads = [...main.matchAll(readRe)].map((m) => m.index);
+  const inline = [];
+  const protocolGetters = new Set(); // gl(){var t=v.G.__posPasskey … t.protocol … return t}
+  const objectGetters = new Set(); //   gaU8(){var s=v.G.__posPasskey … return s}, protocol читается у вызывающего
+  for (const at of reads) {
+    const lineStart = main.lastIndexOf('\n', at) + 1;
+    methodStart.lastIndex = at;
+    const next = methodStart.exec(main);
+    const body = main.slice(at, next ? next.index : at + 800);
+    const g = /^([\w$]+)\(\)\{/.exec(main.slice(lineStart, at));
+    const p = body.indexOf('.protocol');
+    if (p < 0) {
+      if (g && /return /.test(body)) objectGetters.add(g[1]);
+      continue;
+    }
+    const n = firstCmp(body.slice(p));
+    if (n !== null) inline.push(n);
+    else if (g && /return /.test(body)) protocolGetters.add(g[1]);
+  }
+  const esc = (name) => name.replace(/\$/g, '\\$');
+  const viaGetter = [];
+  let skipped = 0;
+  for (const g of protocolGetters) {
+    const name = esc(g);
+    const re = new RegExp(`[\\w$)\\]]\\.${name}\\(\\)\\s*(?:!==|===|!=|==)\\s*(\\d+)\\b|\\b(\\d+)\\s*(?:!==|===|!=|==)\\s*[\\w$.]+\\.${name}\\(\\)`, 'g');
+    for (const m of main.matchAll(re)) {
+      // Имя геттера общее у всех геттеров `protocol` (мост __posDemo): сравнение с текстом ошибки про другой объект — не
+      // наше. Текст ищется до конца строки (dart2js пишет оператор с сообщением одной строкой).
+      const eol = main.indexOf('\n', m.index);
+      const tail = main.slice(m.index, Math.min(eol < 0 ? main.length : eol, m.index + 400));
+      if (/__pos(?!Passkey\b)[A-Za-z]+\.protocol/.test(tail) && !/__posPasskey\.protocol/.test(tail)) skipped++;
+      else viaGetter.push(Number(m[1] ?? m[2]));
+    }
+  }
+  for (const g of objectGetters) {
+    const re = new RegExp(`\\.${esc(g)}\\(\\)\\.protocol`, 'g');
+    for (const m of main.matchAll(re)) {
+      const n = firstCmp(main.slice(m.index + m[0].length));
+      if (n !== null) viaGetter.push(n);
+    }
+  }
+  // Метка приложения (pos-app/lib/app/demo/demo_passkey_gateway.dart, demoPasskeyProtocolTag): dart2js сворачивает
+  // константу в строку журнала «…__posPasskey.protocol=1…». Есть метка — номер берётся из неё; разбор сравнений выше —
+  // запасной путь и пояснение в отчёте.
+  const tagged = [...main.matchAll(/__posPasskey\.protocol=(\d+)\b/g)].map((m) => Number(m[1]));
+  return { reads: reads.length, tagged, inline, protocolGetters: [...protocolGetters], objectGetters: [...objectGetters], viaGetter, skippedOtherGlobals: skipped };
+}
+if (has('demo-passkey.js') && has('main.dart.js') && has('index.html')) {
+  const page = read('demo-passkey.js');
+  const html = read('index.html');
+  const at = (f) => html.indexOf(`<script defer src="${f}"></script>`);
+  const pm = /\bvar PROTOCOL = (\d+);/.exec(page);
+  // `[ ]` вместо пробелов: иначе scripts/check_secrets.py видит в шаблоне присваивание «…Passkey = …».
+  const pageProtocol = pm && /__posPasskey[ ]=[ ]Object\.freeze\(\{\s*protocol: PROTOCOL,/.test(page) ? Number(pm[1]) : null;
+  const app = passkeyProtocolInApp(read('main.dart.js'));
+  const appProtocols = [...new Set(app.tagged.length ? app.tagged : [...app.inline, ...app.viaGetter])];
+  const order = at('demo-env.js') >= 0 && at('demo-env.js') < at('demo-passkey.js') && at('demo-passkey.js') < at('demo-boot.js');
+  const permissions = has('_headers') ? headersFor(parseHeaders(read('_headers')), '/index.html')['Permissions-Policy'] ?? '' : null;
+  const ppOk = permissions !== null && !/publickey-credentials/i.test(permissions);
+  const ok = pageProtocol !== null && app.reads > 0 && appProtocols.length > 0 && appProtocols.every((n) => n === pageProtocol) && order && ppOk;
+  add('вход по лицу (T-DEMO-020, ADR-116 п. 1): demo-passkey.js подключён после demo-env.js и до demo-boot.js; main.dart.js читает __posPasskey и ждёт тот же протокол, что объявляет страница; Permissions-Policy не трогает publickey-credentials-*', ok, {
+    pageProtocol,
+    appProtocols,
+    appReads: app.reads,
+    via: { tag: app.tagged.length, inline: app.inline, getter: app.viaGetter, protocolGetters: app.protocolGetters, objectGetters: app.objectGetters, skippedOtherGlobals: app.skippedOtherGlobals },
+    scriptOrder: order,
+    permissionsPolicy: permissions,
+    hint: app.reads === 0
+      ? 'main.dart.js не обращается к globalThis.__posPasskey: сборка Flutter без WebPasskeyAuthenticator (LF-3-02) — пересоберите Flutter (build-web-demo.ps1)'
+      : appProtocols.length === 0 ? 'сравнение protocol не найдено: уточните passkeyProtocolInApp по main.dart.js' : undefined,
+  });
 }
 
 // ---------------------------------------------------------------- 9. размеры

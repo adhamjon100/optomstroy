@@ -1,8 +1,9 @@
 // DTO авторизации — вручную по contracts/openapi/pos-api.v1.yaml (ADR-085):
 // AuthOtpRequestRequest, AuthOtpRequestResponse, OtpVerifyRequest, AuthDeviceInfo,
 // AuthAuthenticated | AuthPendingActivation | AuthRegistrationRequired, AuthOtpChallengeStatus,
-// AuthUnlockRequest, AuthUnlockResponse. Состав ключей сверяет
-// test/features/auth/data/auth_dto_contract_test.dart. toString — без телефона, кода, PIN и токенов.
+// AuthUnlockRequest, AuthUnlockResponse, AuthUnlockChallengeRequest, AuthUnlockChallengeResponse (W2, OpenAPI 1.4.0).
+// Состав ключей сверяет test/features/auth/data/auth_dto_contract_test.dart. toString — без телефона, кода, PIN,
+// токенов, подписи и challenge.
 import 'package:optomstroy/core/network/models/me.dart';
 
 /// Ошибка формы ответа (обязательное поле отсутствует или не того типа).
@@ -332,14 +333,38 @@ final class OtpChallengeStatusDto {
   String toString() => 'OtpChallengeStatusDto($challengeId, $delivery)';
 }
 
-/// `AuthUnlockRequest` — тело `POST /auth/unlock`.
+/// `AuthUnlockRequest` — тело `POST /auth/unlock` (08 §4.1.8; OpenAPI 1.4.0 — метод `hello_key`, 15 ADR-116).
 final class AuthUnlockRequestDto {
-  const AuthUnlockRequestDto({required this.method, required this.refreshToken, this.pin, this.biometricInvalidated});
+  const AuthUnlockRequestDto({
+    required this.method,
+    required this.refreshToken,
+    this.pin,
+    this.biometricInvalidated,
+    this.signature,
+    this.helloKeyInvalidated,
+  });
 
-  static const Set<String> jsonKeys = <String>{'method', 'refreshToken', 'pin', 'biometricInvalidated'};
+  static const String methodPin = 'pin';
+  static const String methodBiometric = 'biometric';
+
+  /// Вход по ключу Windows Hello без PIN приложения (W2; 09 BIO-039): `refreshToken` + [signature] над challenge
+  /// `POST /auth/unlock/challenge` ([AuthUnlockChallengeResponseDto]).
+  static const String methodHelloKey = 'hello_key';
+
+  /// `AuthUnlockRequest.method` (enum контракта).
+  static const Set<String> methods = <String>{methodPin, methodBiometric, methodHelloKey};
+
+  static const Set<String> jsonKeys = <String>{
+    'method',
+    'refreshToken',
+    'pin',
+    'biometricInvalidated',
+    'signature',
+    'helloKeyInvalidated',
+  };
   static const Set<String> requiredKeys = <String>{'refreshToken'};
 
-  /// `pin | biometric`.
+  /// [methods]: `pin | biometric | hello_key`.
   final String method;
 
   /// Refresh (или расшифрованный biometric refresh) — не логируется.
@@ -349,15 +374,76 @@ final class AuthUnlockRequestDto {
   final String? pin;
   final bool? biometricInvalidated;
 
+  /// Только с [methodHelloKey]: RSASSA-PKCS1-v1_5 / SHA-256 над UTF-8 строки challenge, base64url без `=`
+  /// (342…683 знака; 08 §4.1.8). Не логируется.
+  final String? signature;
+
+  /// Только с [methodPin]: ключ Windows Hello пропал на устройстве — после верного PIN сервер отзывает ключ
+  /// (`invalidated`; 09 BIO-039, BIO-040; 02 `unlock_hello_key_lost`).
+  final bool? helloKeyInvalidated;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
     'method': method,
     'refreshToken': refreshToken,
     'pin': ?pin,
     'biometricInvalidated': ?biometricInvalidated,
+    'signature': ?signature,
+    'helloKeyInvalidated': ?helloKeyInvalidated,
   };
 
   @override
   String toString() => 'AuthUnlockRequestDto($method, ***)';
+}
+
+/// `AuthUnlockChallengeRequest` — тело `POST /auth/unlock/challenge` (W2; 08 §4.1.10; 09 BIO-039). Публичный путь:
+/// сервер принимает только текущий refresh живой `standard`-сессии этого `X-Device-Id`; refresh не ротируется,
+/// любой отказ — `401 UNLOCK_REQUIRED {reason: hello_key_unavailable}`.
+final class AuthUnlockChallengeRequestDto {
+  const AuthUnlockChallengeRequestDto({required this.refreshToken});
+
+  static const Set<String> jsonKeys = <String>{'method', 'refreshToken'};
+  static const Set<String> requiredKeys = <String>{'method', 'refreshToken'};
+
+  /// Refresh сессии — не логируется.
+  final String refreshToken;
+
+  /// `method` — единственное значение контракта `hello_key`.
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'method': AuthUnlockRequestDto.methodHelloKey,
+    'refreshToken': refreshToken,
+  };
+
+  @override
+  String toString() => 'AuthUnlockChallengeRequestDto(***)';
+}
+
+/// `AuthUnlockChallengeResponse` — `200 POST /auth/unlock/challenge`: строка для подписи ключом Windows Hello и срок
+/// (120 с, один challenge на ключ; 08 §4.1.10).
+final class AuthUnlockChallengeResponseDto {
+  const AuthUnlockChallengeResponseDto({required this.challenge, required this.expiresAt});
+
+  /// Разбор ответа. Строка вне [challengePattern] → [DtoFormatException]: ключ подписывает только challenge входа
+  /// (`optomstroy-hello-unlock/v1:` + 32 байта base64url), а не произвольную строку из ответа.
+  factory AuthUnlockChallengeResponseDto.fromJson(Map<String, dynamic> json) {
+    final String challenge = _req<String>(json, 'challenge');
+    if (!challengePattern.hasMatch(challenge)) throw const DtoFormatException('challenge');
+    final DateTime? expiresAt = _date(json, 'expiresAt');
+    if (expiresAt == null) throw const DtoFormatException('expiresAt');
+    return AuthUnlockChallengeResponseDto(challenge: challenge, expiresAt: expiresAt);
+  }
+
+  /// `AuthUnlockChallengeResponse.challenge.pattern` (OpenAPI 1.4.0).
+  static final RegExp challengePattern = RegExp(r'^optomstroy-hello-unlock/v1:[A-Za-z0-9_-]{43}$');
+
+  static const Set<String> jsonKeys = <String>{'challenge', 'expiresAt'};
+  static const Set<String> requiredKeys = <String>{'challenge', 'expiresAt'};
+
+  /// Подписывается как есть (UTF-8), не логируется.
+  final String challenge;
+  final DateTime expiresAt;
+
+  @override
+  String toString() => 'AuthUnlockChallengeResponseDto(***)';
 }
 
 /// `AuthUnlockResponse`.

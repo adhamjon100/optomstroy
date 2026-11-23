@@ -86,7 +86,7 @@ PGlite — одно соединение. Как бэкенд с этим жив
 | `alias/work-gate.mjs` | «Единица работы»: запрос моста (`http`), команда панели (`panel`), обработчик задачи pg-boss (`job`), сид (`seed`), перечитывание long-poll (`poll`) — по одной. Очередь с приоритетами `resume` → `app` → `panel` → `job` → `seed` и старением. Окно затихания пула 15 мс (≤ 200 мс). Отмена: не начатая единица снимается из очереди, начатая получает сигнал и через 250 мс отсоединяется. `releaseWhile` отпускает слот на время ожидания; единица с открытой транзакцией слот не отпускает. Сторож: ожидание слота запросом приложения или панели дольше 3 с (задачей pg-boss или сидом — дольше 15 с) и удержание слота дольше 3 с — ERROR; удержание дольше 30 с — слот освобождается. `runTimerUnit` — работа по таймеру pos-api |
 | `alias/pg-shim.mjs` | Шим `pg`: замок сессии и подсадка под SAVEPOINT (правила `scope` / `unit` / `idle`, белый список `piggyback-allow.json`). Чужой BEGIN не подсаживается никогда. Осиротевшая вложенная транзакция получает `ERR_DEMO_TX_ORPHANED`, и «savepoint … does not exist» невозможна. Транзакция drizzle, открытая из колбэка транзакции drizzle держателя (рамка `__posDtx_<id>`, например RL-PIN в `POST /auth/unlock`), сразу становится SAVEPOINT по области. Разбор значений — как у node-postgres: pg-types 2.2.0 или `types` запроса drizzle, таблицей-объектом по всем OID (`rawParsers`). Сторож: ожидание замка дольше 3 с — ERROR, дольше 20 с — оператор отклоняется |
 | `alias/piggyback-allow.json` | Белый список подсадок: ключ «глагол таблица» и режимы. У каждой записи где и почему, по прогону. Сборка проверяет формат |
-| `alias/pgboss-shim.mjs` | pg-boss 12.38 на `fromPglite` под замком; обработчики `work()` — единицы `job`; `afterNextJob(queue, fn)` — один раз после завершения следующей задачи очереди (догоняние ставит receivables после customers) |
+| `alias/pgboss-shim.mjs` | pg-boss 12.38 на `fromPglite` под замком; обработчики `work()` — единицы `job`; `afterNextJob(queue, fn)` — один раз после завершения следующей задачи очереди (догоняние ставит receivables после customers); схему `pgboss` ставит первый экземпляр (`migrate: true, createSchema: true` поверх `migrate: false, createSchema: false` pos-api, 07 DATA-012: demo-init вызывает только SQL-мигратор). Так же — подмена сверки с PostgreSQL `test/realpg/pgboss-real.mjs` (2026-11-19) |
 | `alias/payment-waiter.mjs` | long-poll `GET /payments/{id}?wait=N` отпускает единицу на время ожидания |
 | `alias/onec-gateway.mjs` | шлюз 1С: одна попытка GET (паузы повторов держали бы единицу секундами при «1С недоступна») |
 | `alias/onec-transport.mjs` | транспорт 1С → `PosFakeOnec.handle()` в процессе (отмена, таймаут) |
@@ -272,9 +272,42 @@ Fix round 2 (2026-10-30): сторож browser soak (ожидания замка
 `differential.flaky` в отчёте. Проверка отмены в обходе принимает оба исхода контракта (`cancelled` или
 `cancelRequested`).
 
+Сравнение списков с фоном по расписанию (2026-11-18, LF-4-01): из `/sync/runs` и `/admin/audit-logs` фоновые строки
+убираются до сравнения (`test/lib/normalize.mjs`, `BACKGROUND_FILTERS`). Если страница полная (`limit` строк или курсор),
+фоновые строки вытесняют с её конца строки сценария, и их число зависит от темпа прогона: «аудит за период»
+`limit=200` давал 189 на бандле и 188 на PostgreSQL. Теперь две полные страницы, у которых разница длин равна разнице
+убранных фоновых строк, сравниваются по общей части (`alignBackgroundPages`); пропавшая или лишняя строка сценария внутри
+неё остаётся расхождением. Выровненные шаги — `differential.alignedAB` и `realpg` `alignedAR` (строка «фон на полной
+странице» в `realpg.md`).
+
+Темп фоновых задач на настоящем pg-boss (2026-11-19, wave2:FIX-demo). В демо (шим) задача pg-boss просыпается сразу,
+на PostgreSQL её забирает опрос очереди раз в 2 с. Сверка с PostgreSQL относила этот темп к «слою БД» в 1 из 2
+повторов шага: «аудит за период», `related` строки `/transactions`, `intervalSec` у customers в `/sync/status`.
+- `BACKGROUND_FILTERS` для `/admin/audit-logs`: кроме `sync.*` по расписанию, убираются системные записи заказов и
+  outbox — actor null, requestId null, действия `order.submitted`, `order.status_changed`, `outbox.*`,
+  `customer.updated`.
+- Обход «заказы»: перед `GET /transactions` набор ждёт без записи, пока оба QR-заказа выйдут из `submitting`. Отправка
+  в «1С» идёт фоном, и документа «1С» к этому шагу могло ещё не быть — и на бандле тоже.
+- Обход «синхронизация»: перед `GET /sync/status` набор ждёт без записи (не дольше 65 с), пока у всех сущностей плана
+  обмена `intervalSec` не станет как у categories. Строки `sync_state`, созданные по ходу набора, получают умолчания
+  реестра (1800). Расписание цикла `onec.changes` (300) им ставит пересчёт планировщика раз в 60 с от старта worker,
+  а шаг приходится на 57–62 с.
+- `retryAfter` в теле — время, маскируется, как и заголовок `Retry-After`.
+- Фаза 5-минутной сетки cron. Расписания pg-boss срабатывают по часам: order_status, служебные задачи outbox, цикл
+  `onec.changes` — каждые 5 мин. order_status применяет проекцию заказа и поднимает его `rowVersion`. При прогоне
+  ≈ 150 с (машина под нагрузкой) A и C попадали в одну фазу этой сетки, R и R2 — в другую. Гонка повторялась в обоих
+  прогонах PostgreSQL: `GET /orders` `$.items[0].audit.rowVersion` 7 ≠ 8. Теперь `realpg-diff.mjs` запускает C со
+  сдвигом фазы от A, а R2 — от R: разница 100–200 с из 300. Если её нет — пауза до середины периода, не дольше 300 с
+  (`shiftPhase`; `report.json` `phaseShift`; `--no-phase-shift` — без пауз). При прогоне ≈ 80 с пауз нет.
+- Каждый шаг набора пишет `at` — мс от начала набора. `realpg-diff.mjs` к каждому отличию слоя БД и к каждой гонке
+  пишет доказательства: нормализованное поддерево у пути расхождения (у элемента списка — и соседей ±2) и время шага
+  (от начала набора и по часам, UTC) в прогонах A, R, C, R2. В `report.json` это поле `evidence`, в `realpg.md` — строки «поддерево …». Гонки теперь тоже
+  печатаются в `realpg.md`.
+
 | Файл | Что проверяет |
 |---|---|
 | `test/shims.test.mjs` | http-шим (заголовки, chunked, отмена, express через шим = через `node:http`), vfs = файлы репозитория, timers, util/path/url/qs/events/stream/string_decoder/zlib |
+| `test/crypto-shim.test.mjs` | шим `crypto` на @noble = `node:crypto` (хэши, HMAC, hkdf, aes-256-gcm, base64url); с пакетом LF-3-06 (09 BIO-041) — `createPublicKey` (SPKI RSA) и `verify` (RSASSA-PKCS1-v1_5) на BigInt и `common/auth/hello-key.ts` pos-api в сборке с шимами = в Node (ключ входа браузера на Windows, путь `hello_key`); прочие асимметричные функции — `ERR_DEMO_UNSUPPORTED` |
 | `test/pg-shim.test.mjs` | WP-B2 + типы и параметры как у node-postgres, многооператорные, LISTEN/NOTIFY, SQLSTATE, транзакции |
 | `test/gate.test.mjs` | единица работы с настоящим pg-boss на PGlite, шаблон long-poll, хук конца единицы, `afterRelease` (сброс после освобождения слота) |
 | `test/storage-idb.test.mjs` | том IndexedDB (`demo-storage.mjs`): медленный commit не держит замок, очередь сбросов объединяется, запись в ту же мс после снимка, укорочение файла (ftruncate VACUUM), сбой commit и дозапись, «падение» в любой момент под нагрузкой → PostgreSQL восстанавливается, подтверждённое на месте |

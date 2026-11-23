@@ -815,6 +815,11 @@ class ProductCardCompact extends StatelessWidget {
     this.variant = ProductCardCompactVariant.table,
   });
 
+  /// Высота плитки «Недавние товары» ([ProductCardCompactVariant.strip]): 64 при обычном размере текста, крупный текст —
+  /// выше на прирост двух строк названия `caption` (16 + 16), зазора 2 и строки цены (≈ 17) — 51 lp при 1 (как лента
+  /// кабинета `96 + scale(72) − 72`): 1,3 → ≈ 79. Строка цены не срезается.
+  static double stripHeight(BuildContext context) => 64 + MediaQuery.textScalerOf(context).scale(51) - 51;
+
   /// Данные.
   final ProductCardData data;
 
@@ -843,7 +848,7 @@ class ProductCardCompact extends StatelessWidget {
       bordered: false,
       background: c.surface,
       builder: (BuildContext context, DsInteractionState s) => SizedBox(
-        height: 64,
+        height: stripHeight(context),
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: context.space.s2),
           child: Row(
@@ -879,30 +884,40 @@ class ProductCardCompact extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Row(
-                      children: <Widget>[
-                        Flexible(
-                          child: PriceText(
-                            amount: data.price,
-                            prefix: data.pricePrefix,
-                            missingLabel: data.priceMissingLabel,
-                            variant: PriceTextVariant.compact,
-                            disabled: data.dimmed,
-                            semanticLabel: data.semanticLabel,
-                          ),
-                        ),
-                        if (data.stockLevel != null) ...<Widget>[
-                          SizedBox(width: context.space.s2),
-                          Flexible(
-                            child: StockBadge(
-                              level: data.stockLevel!,
-                              label: _bareNumber(data.stockLabel),
-                              variant: StockBadgeVariant.inline,
-                              semanticLabel: data.stockLabel,
+                    // Цена — раньше наличия и целиком (не делит строку с наличием поровну): своя ширина, уменьшение
+                    // `FittedBox` — только защита, если цена шире всей строки; наличие — в остатке, с многоточием
+                    // (02 UI-50-004…009 «Недавние товары»; указание владельца 2026-11-18 — [ВЫВОД исполнителя]).
+                    LayoutBuilder(
+                      builder: (BuildContext context, BoxConstraints box) => Row(
+                        children: <Widget>[
+                          ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: box.maxWidth),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: AlignmentDirectional.centerStart,
+                              child: PriceText(
+                                amount: data.price,
+                                prefix: data.pricePrefix,
+                                missingLabel: data.priceMissingLabel,
+                                variant: PriceTextVariant.compact,
+                                disabled: data.dimmed,
+                                semanticLabel: data.semanticLabel,
+                              ),
                             ),
                           ),
+                          if (data.stockLevel != null) ...<Widget>[
+                            SizedBox(width: context.space.s2),
+                            Flexible(
+                              child: StockBadge(
+                                level: data.stockLevel!,
+                                label: _bareNumber(data.stockLabel),
+                                variant: StockBadgeVariant.inline,
+                                semanticLabel: data.stockLabel,
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ],
                 ),

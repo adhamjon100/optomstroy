@@ -88,9 +88,10 @@ abstract class Problem with _$Problem {
       code == ProblemCode.unlockRequired.value ? UnlockRequiredReason.parse(reason) : null;
 }
 
-/// `Problem.reason` у `401 UNLOCK_REQUIRED` (08 §2.4; OpenAPI 1.1.0 `x-unlock-required-reasons`).
-/// Поле в контракте — строка: неизвестное или отсутствующее значение — [unknown], клиент ведёт себя как при
-/// любой разблокировке — overlay SCR-08 (08 §2.11).
+/// `Problem.reason` у `401 UNLOCK_REQUIRED` (08 §2.4; OpenAPI 1.1.0 `x-unlock-required-reasons`, 1.4.0 — вход по
+/// лицу). Поле в контракте — строка: неизвестное или отсутствующее значение — [unknown], клиент ведёт себя как при
+/// любой разблокировке — overlay SCR-08 (08 §2.11). Перечень сверяет test/features/auth/data/auth_dto_contract_test.dart
+/// (12 T-BIO-025 (5)).
 enum UnlockRequiredReason {
   /// Простой сессии (Windows без `unlocked_until`, 09 §8.8).
   idleLock('idle_lock'),
@@ -100,6 +101,23 @@ enum UnlockRequiredReason {
 
   /// Вход по аварийному коду администратора — нужен PIN (09 §6.13).
   emergencyCode('emergency_code'),
+
+  /// Уровень W Android: срок PIN (`AUTH_BIO_WEAK_REAUTH_HOURS`) прошёл, PIN заблокирован или не задан — нужен PIN;
+  /// секрет уровня W сохраняется (09 BIO-031, §9.3; 08 §4.1.8). Только в ответе `POST /auth/unlock`, без ротации.
+  bioWeakPinDue('bio_weak_pin_due'),
+
+  /// Уровень W запрещён `AUTH_BIO_ALLOW_WEAK`, семья W отозвана сервером — секрет удалить, нужен PIN
+  /// (09 BIO-032, §9.3; 08 §4.1.8).
+  bioWeakDisabled('bio_weak_disabled'),
+
+  /// Ключ Windows Hello (W2) не принимается: нет, отозван, `AUTH_WINDOWS_HELLO_KEY=off`, правило `personal`,
+  /// не Windows, планшет, не текущий refresh — признак ключа удалить, нужен PIN (09 BIO-039; 08 §4.1.8, §4.1.10).
+  /// В ответах `POST /auth/unlock` и `POST /auth/unlock/challenge`.
+  helloKeyUnavailable('hello_key_unavailable'),
+
+  /// Challenge W2 нет, истёк, другой сессии или подпись неверна — ключ не трогать, `unlock_hello_failed`, нужен PIN
+  /// (09 BIO-039; 08 §4.1.8).
+  helloKeyInvalid('hello_key_invalid'),
 
   /// Значение, неизвестное этой сборке.
   unknown('unknown');

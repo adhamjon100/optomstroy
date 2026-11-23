@@ -13,6 +13,7 @@ import { TokenDenylistRepository } from '../../users/token-denylist.repository.j
 import type { DeviceRow, SessionRow } from '../../users/users.types.js';
 import { maskIp } from '../common/request.js';
 import type { VerifiedStepUp } from '../step-up/step-up.service.js';
+import { HelloKeyService } from './hello-key.service.js';
 import { SessionStore } from './session-store.js';
 
 /** DTO `Session` (OpenAPI `components.schemas.Session`; 08 §4.1.6). */
@@ -48,7 +49,9 @@ function toDto(s: SessionRow, d: DeviceRow, currentSid: string): SessionDto {
 /**
  * Выход и управление своими сессиями (RM-D-003; 09 §8.4, §8.6; 08 §4.1.4–§4.1.6): отзыв `sid`, `jti` access —
  * в `token_denylist` до `exp` и в локальный denylist AuthStateCache (действует сразу в процессе; другие реплики —
- * ≤ 60 с через кэш снимков); `logout-all` — все сессии, включая биометрические, без `permissionsVersion++`.
+ * ≤ 60 с через кэш снимков); `logout-all` — все сессии, включая биометрические, без `permissionsVersion++`, и живые
+ * ключи Windows Hello пользователя на всех устройствах (`logout_all`, ADR-116). Обычный выход ключ не трогает: ключ
+ * переживает выход (09 §8.6, §9.5 п. 7).
  */
 @Injectable()
 export class SessionsService {
@@ -60,6 +63,7 @@ export class SessionsService {
     private readonly denylist: TokenDenylistRepository,
     private readonly cache: AuthStateCache,
     private readonly audit: AuditService,
+    private readonly helloKeys: HelloKeyService,
   ) {}
 
   /** `POST /auth/logout`: текущая сессия и биометрическая семья этого устройства; повтор → 204. */
@@ -98,6 +102,8 @@ export class SessionsService {
     await this.db.transaction(async (tx) => {
       await applyAuditGucs(tx, audit);
       const ids = await this.sessions.revokeAllForUser(p.userId, 'logout_all', {}, tx);
+      // Ключи Windows Hello пользователя — в той же транзакции (08 §4.1.5; 09 BIO-040), аудит — на каждый ключ.
+      const keys = await this.helloKeys.revoke({ userId: p.userId }, 'logout_all', audit, tx);
       await this.denyAccess(p, 'logout_all', tx);
       await this.denylist.add(
         {
@@ -116,7 +122,7 @@ export class SessionsService {
           entityType: 'user',
           entityId: p.userId,
           stepUpMethod: stepUp.method,
-          after: { revokedSessions: ids.length },
+          after: { revokedSessions: ids.length, revokedHelloKeys: keys.length },
         },
         tx,
       );

@@ -109,8 +109,23 @@ enum BiometricSupport {
   /// Android Class 3 / iOS: вход с криптопривязкой `biometric_refresh` (09 §9.4).
   cryptoLogin,
 
-  /// Windows Hello — только UX-гейт перед PIN, без секретов (D-13, D-48).
+  /// Android, только уровень W «лицо или отпечаток» (Class 2; 15 ADR-116 п. 2; 09 BIO-030): сервер разрешает
+  /// (`security.biometricWeakAllowed`), устройство допускает уровень W, уровня S нет. Выбора нет — сразу пояснение
+  /// UI-42-028; без PIN тумблер неактивен (`settings_bio_weak_needs_pin`).
+  weakLogin,
+
+  /// Android, доступны оба уровня (S и W) и сервер разрешает W: выбор «Способ входа» UI-42-027, по умолчанию «Только
+  /// отпечаток (надёжнее)» (Q-354); вариант W без PIN неактивен.
+  strongOrWeak,
+
+  /// Windows Hello — только UX-гейт перед PIN, без секретов (D-13, D-48; режим W1).
   windowsHelloGate,
+
+  /// Windows — ключ Windows Hello, вход без PIN приложения (режим W2; 15 ADR-116 п. 3; 09 BIO-038): сервер разрешает
+  /// (`security.windowsHelloKeyAllowed`), Windows Hello настроен и поддерживает ключи. Тумблер «Вход через Windows
+  /// Hello» — согласие, step-up, создание ключа, `POST /me/biometrics` с `helloKey`; PIN приложения нужен (запасной
+  /// способ и step-up).
+  windowsHelloKey,
 
   /// Датчик есть, биометрия в ОС не настроена — «Настроить в системе».
   notEnrolled,
@@ -119,8 +134,34 @@ enum BiometricSupport {
   unavailable,
 }
 
+/// Почему Windows Hello недоступен — пояснение UI-42-029 цветом `warning`, тумблер disabled (02 SCR-42.4 «Windows Hello
+/// недоступен»; `availability` канала `kg.optomstroy/windows_hello`, бывший пакет плана LF-1-04).
+enum WindowsHelloIssue {
+  /// `not_configured` — `settings_hello_not_configured`.
+  notConfigured,
+
+  /// `device_not_present` — `settings_hello_no_device`.
+  noDevice,
+
+  /// `disabled_by_policy` — `settings_hello_disabled_by_policy`.
+  disabledByPolicy,
+
+  /// `device_busy` — `settings_hello_busy`.
+  busy,
+}
+
 /// Платформа подписи тумблера (`settings_bio_android` / `_ios` / `_windows`).
 enum BiometricPlatformLabel { android, ios, windows }
+
+/// Способ входа по биометрии на Android (UI-42-027; 15 ADR-116 п. 2): уровень S — «Только отпечаток (надёжнее)»,
+/// уровень W — «Лицо или отпечаток (проще, защита ниже)».
+enum BiometricLoginTier {
+  /// Уровень S: Class 3 с криптопривязкой (`biometricClass` `class3`).
+  strong,
+
+  /// Уровень W: Class 2 без криптопривязки, PIN раз в сутки (`biometricClass` `class2`; 11 RR-9).
+  weak,
+}
 
 /// Состояние «Защиты входа» (UI-42-009…UI-42-026).
 final class LoginProtectionState {
@@ -137,6 +178,9 @@ final class LoginProtectionState {
     this.scanAddsToCart,
     this.printerFormat,
     this.printerAutoPrint,
+    this.helloIssue,
+    this.enabledTier,
+    this.upgradeAvailable = false,
   });
 
   final UserKind? userKind;
@@ -170,32 +214,54 @@ final class LoginProtectionState {
   /// `Settings.printer.autoPrint` (UI-42-022, PRINT-009); `null` — сервер не прислал.
   final bool? printerAutoPrint;
 
+  /// Windows: причина недоступности Windows Hello (UI-42-029); `null` — доступен, причина неизвестна или не Windows.
+  final WindowsHelloIssue? helloIssue;
+
+  /// Android: уровень включённой биометрии (по сохранённому секрету); `null` — выключена или платформа без уровней.
+  final BiometricLoginTier? enabledTier;
+
+  /// Включён уровень W, а устройство теперь даёт уровень S — подсказка UI-42-028 `settings_bio_upgrade_hint` (переход
+  /// W → S — выключением и новым включением; 09 BIO-033).
+  final bool upgradeAvailable;
+
+  /// Включён уровень W (Android): PIN удалить нельзя (UI-42-024 `settings_pin_delete_weak_active`; 09 BIO-031).
+  bool get weakEnabled => biometricsEnabled && enabledTier == BiometricLoginTier.weak;
+
   bool get isStaff => userKind != UserKind.customer;
 
   /// Длина PIN по политике роли (09 §9.6): staff — 6, customer — 4.
   int get pinLength => isStaff ? 6 : 4;
 
+  /// [enabledTier] — уровень после включения (выключение его снимает: `biometricsEnabled: false`).
   LoginProtectionState copyWith({
     bool? pinSet,
     bool? biometricsEnabled,
+    BiometricLoginTier? enabledTier,
     int? idleLockMinutes,
     bool clearIdleLock = false,
     String? scannerMode,
     bool? scanAddsToCart,
-  }) => LoginProtectionState(
-    userKind: userKind,
-    pinSet: pinSet ?? this.pinSet,
-    biometricsEnabled: biometricsEnabled ?? this.biometricsEnabled,
-    support: support,
-    platformLabel: platformLabel,
-    idleLockMinutes: clearIdleLock ? null : (idleLockMinutes ?? this.idleLockMinutes),
-    birthYear: birthYear,
-    settingsAsOf: settingsAsOf,
-    scannerMode: scannerMode ?? this.scannerMode,
-    scanAddsToCart: scanAddsToCart ?? this.scanAddsToCart,
-    printerFormat: printerFormat,
-    printerAutoPrint: printerAutoPrint,
-  );
+  }) {
+    final bool enabled = biometricsEnabled ?? this.biometricsEnabled;
+    final BiometricLoginTier? tier = enabled ? (enabledTier ?? this.enabledTier) : null;
+    return LoginProtectionState(
+      userKind: userKind,
+      pinSet: pinSet ?? this.pinSet,
+      biometricsEnabled: enabled,
+      support: support,
+      platformLabel: platformLabel,
+      idleLockMinutes: clearIdleLock ? null : (idleLockMinutes ?? this.idleLockMinutes),
+      birthYear: birthYear,
+      settingsAsOf: settingsAsOf,
+      scannerMode: scannerMode ?? this.scannerMode,
+      scanAddsToCart: scanAddsToCart ?? this.scanAddsToCart,
+      printerFormat: printerFormat,
+      printerAutoPrint: printerAutoPrint,
+      helloIssue: helloIssue,
+      enabledTier: tier,
+      upgradeAvailable: tier == BiometricLoginTier.weak && upgradeAvailable,
+    );
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -211,7 +277,10 @@ final class LoginProtectionState {
       other.scannerMode == scannerMode &&
       other.scanAddsToCart == scanAddsToCart &&
       other.printerFormat == printerFormat &&
-      other.printerAutoPrint == printerAutoPrint;
+      other.printerAutoPrint == printerAutoPrint &&
+      other.helloIssue == helloIssue &&
+      other.enabledTier == enabledTier &&
+      other.upgradeAvailable == upgradeAvailable;
 
   @override
   int get hashCode => Object.hash(
@@ -252,6 +321,23 @@ enum BiometricToggleOutcome {
 
   /// Прочая ошибка (ОС / сервер) — `settings_save_error`.
   failed,
+
+  /// Ключ Windows Hello: `200 {enabled:false, reason:"hello_key_disabled"}` — созданный ключ удалён, снекбар
+  /// `settings_hello_key_disabled`, `GET /me` перечитывается — секция в режиме гейта (02 SCR-42.4, AC-UI-42-022).
+  helloKeyDisabled,
+
+  /// Ключ Windows Hello: `reason:"hello_key_shared_device"` (правило `personal`, 09 BIO-040) — как [helloKeyDisabled],
+  /// снекбар `settings_hello_key_shared_device`.
+  helloKeySharedDevice,
+
+  /// Веб-демо, браузер на Windows (09 BIO-041; 02 SCR-42.4 «UI-42-010 веб-демо»): браузер или Windows Hello не дали PRF
+  /// — ключ входа не создан, passkey браузера остался ключом гейта, включён гейт перед PIN; снекбар
+  /// `settings_hello_key_no_prf`, `GET /me` перечитывается — секция в режиме гейта.
+  helloKeyNoPrf,
+
+  /// Уровень W: `200 {enabled:false, reason:"weak_biometrics_disabled"}` — сервер не разрешает уровень W этому
+  /// пользователю; тумблер «выкл», `GET /me` перечитывается — выбор UI-42-027 скрывается (02 SCR-42.4).
+  weakDisabled,
 }
 
 /// Тексты системного диалога биометрии (из ARB экрана).

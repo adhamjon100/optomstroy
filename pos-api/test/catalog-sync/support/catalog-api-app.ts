@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Controller, Get, Global, Module, Param, type Type } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
@@ -44,6 +43,7 @@ import { UsersRepository } from '../../../src/users/users.repository.js';
 import type { RoleCode, UserKind } from '../../../src/users/users.types.js';
 import { pemPair, publicSet, testSecret } from '../../foundation/support/keys.js';
 import { type CatalogFixture, type CatalogFixtureOptions, startCatalogFixture } from '../../support/catalog-fixture.js';
+import { createSecretsDir, removeSecretsDir } from '../../support/secrets-dir.js';
 import { LogCapture } from '../../support/test-app.js';
 
 export interface Actor {
@@ -96,7 +96,7 @@ export class CatalogApiTestApp {
     env: Record<string, string> = {},
     extraControllers: Type[] = [],
   ): Promise<this> {
-    this.secretsDir = mkdtempSync(join(tmpdir(), 'pos-catalog-secrets-'));
+    this.secretsDir = createSecretsDir('pos-catalog-secrets-');
     this.f = await startCatalogFixture({ database, ...fixture });
     this.db = createDatabase(this.f.pool);
     const k = pemPair();
@@ -174,7 +174,8 @@ export class CatalogApiTestApp {
   }
 
   async stop(): Promise<void> {
-    if (this.secretsDir) rmSync(this.secretsDir, { recursive: true, force: true });
+    if (this.secretsDir) removeSecretsDir(this.secretsDir);
+    this.secretsDir = '';
     try {
       await this.app?.close();
     } finally {

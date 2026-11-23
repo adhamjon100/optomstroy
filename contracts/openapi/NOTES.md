@@ -350,3 +350,36 @@ CHANGELOG [1.3.0]. Изменение аддитивное: путь `v1`, су�
     (`test:catalog`) — до WP-S1A-KIOSK. `OPENAPI_INFO_VERSION` (`pos-api/src/health/openapi.document.ts`) поднят до 1.3.0
     вместе с контрактом, тег `kiosk` добавлен в `OPENAPI_TAGS`. DTO-тесты `pos-app`, которые читают схемы контракта, красные
     до пакета приложения WP-A01.
+
+## 10. Вход по лицу на всех платформах (1.4.0, 2026-11-08; ADR-116)
+
+Источник — 08 v1.21 (§2.2, §2.4, §2.9, §3.14, §4.1.2, §4.1.5, §4.1.8, §4.1.10, §4.3.3, §4.3.5–§4.3.7, §4.18.3, §4.18.11,
+§4.18.15, §9), 07 v1.18 (§5.9, §5.66, §6.1.1), 09 v1.13 (§9.2 «Вход по ключу Windows Hello», BIO-030…BIO-041), 11 v1.5
+(SEC-013, SEC-144…SEC-146). Решение — 15 ADR-116 по ответам владельца 2026-11-07 и 2026-11-08 (Q-353 — «Всем
+(Рекоменд.)», Q-355 — «Лицо без PIN (Рекоменд.)»). Решения части `10_auth.yaml` — A10–A14 в её шапке. Изменение
+аддитивное: путь `v1`, существующие поля и их обязательность не менялись, `oneOf` не вводился.
+
+1. **Новый путь.** `POST /auth/unlock/challenge` (`auth_unlock_challenge`, тег `auth`) — публичный, как `/auth/unlock`:
+   `security: []`, `x-permissions: []`, `x-roles: []`, `x-rate-limit-group: RL-PIN`. Путь добавлен в `PUBLIC_PATHS`
+   `scripts/check_api_permissions.py` (по 11 §4.3.1 и SEC-013); `check_api_paths.py` находит его по карточке 08 §4.1.10.
+2. **Нового кода ошибки нет.** Отказы входа по лицу — `401 UNLOCK_REQUIRED` с `reason` (`x-unlock-required-reasons` +
+   `bio_weak_pin_due`, `bio_weak_disabled`, `hello_key_unavailable`, `hello_key_invalid`); `ProblemCode` и
+   `contracts/enums.json` `problemCodes` не менялись.
+3. **Тела без `oneOf`.** `AuthUnlockRequest` — `method` + `hello_key`, необязательные `signature` и `helloKeyInvalidated`
+   (сочетания проверяет сервер, rule `method`); `MeBiometricsRequest` — `biometricClass` + `class2`, необязательный
+   `helloKey` (`MeBiometricsHelloKey`); `MeBiometricsResponse.reason` + три значения. Новые значения перечней — в конце.
+4. **CHECK-перечни в корне.** `HelloKeyAlgorithm` (`RS256`) и `HelloKeySource` (`windows_hello`, `webauthn_prf`) — по
+   образцу `StoreTabletStatus` (§9 п. 2): значения — 07 §6.1.1, `contracts/enums.json` 1.4.0 (`hello_key_algorithm`,
+   `hello_key_source`); причину отзыва (`hello_key_revoke_reason`) API не отдаёт — схемы нет. Скрипты эти схемы не
+   сверяют (как и `StoreTabletStatus`).
+5. **`Me.security`.** `biometricsPlatform` + `android_class2`, `windows_hello_key`; новые `biometricWeakAllowed`,
+   `windowsHelloKeyAllowed` (необязательные; отсутствие — `false`, в том числе у формы планшета `MeKiosk`).
+6. **Форматы строк (A12).** `challenge` — шаблон `^optomstroy-hello-unlock/v1:[A-Za-z0-9_-]{43}$`; `signature` —
+   base64url 342…683 знака (RSA 2048…4096); `helloKey.publicKey` — base64url 342…1366 знаков (SPKI 256…1024 байта = CHECK
+   `hello_keys_public_key_len_chk` 07 §5.66). Модуль и экспоненту ключа проверяет сервер (rule `hello_key_format`).
+7. **Окна до реализации.** Сервер путь и поля пока не отдаёт — их вносит пакет сервера. До него ожидаемо красные:
+   `pos-api/test/e2e/smoke.e2e-spec.ts` «контракт ⊆ экспорт» (нет `POST /auth/unlock/challenge`); DTO-тесты `pos-app`,
+   которые читают схемы контракта: `test/features/auth/data/auth_dto_contract_test.dart` (`AuthUnlockRequest` —
+   `signature`, `helloKeyInvalidated`) и `test/core/network/models/dto_schema_test.dart` (`Me.security` — два новых
+   признака) — до пакета приложения. `OPENAPI_INFO_VERSION` (`pos-api/src/health/openapi.document.ts`) поднят до 1.4.0
+   вместе с контрактом (`src/health/openapi.document.spec.ts` зелёный).

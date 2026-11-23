@@ -61,7 +61,8 @@ python -I -X utf8 scripts/check_enums.py --enums <другой.json> --no-gen   
    | `orders.cancel_reason_code` | `cancel_reason_code` | `print_jobs.paper` | `print_paper` |
    | `orders.refund_intent` | `refund_intent` | `sms_outbox.template_key` | `sms_template_key` |
    | `store_tablets.status` (1.3.0, ADR-115) | `store_tablet_status` | `sms_outbox.provider` | `sms_provider` |
-   | `orders.kiosk_customer_match` (1.3.0, ADR-115) | `kiosk_customer_match` |  |  |
+   | `orders.kiosk_customer_match` (1.3.0, ADR-115) | `kiosk_customer_match` | `hello_keys.algorithm` (1.4.0, ADR-116) | `hello_key_algorithm` |
+   | `hello_keys.source` (1.4.0, ADR-116) | `hello_key_source` | `hello_keys.revoke_reason` (1.4.0, ADR-116) | `hello_key_revoke_reason` |
 
 3. **`payments.qr_provider` → `qr_provider_mode`.** В OpenAPI имя `QrProvider` уже занято DTO `QrInfo.provider`. Его значения — `onec | bakai | elqr_static | none` (08 §3.10), и 08 прямо говорит, что это не значение переменной. Значения поля БД и env `QR_PROVIDER` (`none | onec | bakai`, ядро §24.4) в OpenAPI названы `QrProviderMode`. Чтобы в TS не появилось двух разных типов `QrProvider`, перечень назван `qr_provider_mode`. Порядок значений взят по 07 §6.1.1: `none, onec, bakai`.
 4. **Исключены из `checkLists` 4 строки 07 §6.1.1 без перечня значений:** `devices.device_key` (регэксп), `integration_tokens.expires_at` (срок), `orders.onec_sync_state` × `onec_ref`/`status` (CHECK согласованности; значения enum — `dbEnums.onec_sync_state`), `sms_outbox.provider_message_id`/`dev_outbox.transaction_id` (регэксп). Каждое исключение записано с причиной в `checkListExclusions`, и сверка требует, чтобы строка документа была либо покрыта, либо исключена явно.

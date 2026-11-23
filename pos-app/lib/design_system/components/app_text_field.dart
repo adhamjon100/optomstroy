@@ -35,8 +35,10 @@ enum AppTextFieldSize {
 ///
 /// Подпись `label 13/500 textSecondary` над полем → контейнер `surface`, обводка 1 px
 /// `borderStrong`, радиус `sm` → текст `bodyLg` → суффикс (очистка / спиннер / иконка ошибки /
-/// счётчик) → подсказка или ошибка `caption`. Фокус — обводка 2 px `primaryText` без внешнего
-/// кольца; ошибка — 2 px `error` + текст из ARB (передаёт вызывающий код).
+/// счётчик) → подсказка или ошибка `caption`. Фокус — обводка 2 px `textPrimary`, подпись и каретка `textPrimary`, без
+/// внешнего кольца; ошибка — 2 px `error` + текст из ARB (передаёт вызывающий код). Состояние ввода — нейтральное, не
+/// фирменная `primaryText`: #C9330C почти не отличить от `error` #D21B1F (1,01 : 1), и поле в фокусе после неверной
+/// попытки выглядело бы ошибкой (как точки PIN, Q-357; пакет wave2:APP-POLISH).
 ///
 /// В области «общее устройство» `PrivateInputScope` (03 §9.74, редакция 1.19; DS-099) поле само выключает подсказки,
 /// автоисправление, обучение клавиатуры, `autofillHints`, выделение, контекстное меню и вставку; системная клавиатура
@@ -235,7 +237,7 @@ class _AppTextFieldState extends State<AppTextField> {
         : _hasError
         ? c.error
         : focused
-        ? c.primaryText
+        ? c.textPrimary
         : c.textSecondary;
 
     TextStyle textStyle = widget.textStyle ?? t.bodyLg;
@@ -289,7 +291,7 @@ class _AppTextFieldState extends State<AppTextField> {
           textInputAction: widget.textInputAction,
           autofillHints: private ? null : widget.autofillHints,
           style: textStyle,
-          cursorColor: c.primaryText,
+          cursorColor: c.textPrimary,
           onChanged: widget.onChanged,
           onSubmitted: widget.onSubmitted,
           decoration: InputDecoration(
@@ -308,9 +310,9 @@ class _AppTextFieldState extends State<AppTextField> {
             enabledBorder: _hasError
                 ? border(c.error, 2)
                 : focused
-                ? border(c.primaryText, 2)
+                ? border(c.textPrimary, 2)
                 : border(hovered ? c.textSecondary : c.borderStrong, 1),
-            focusedBorder: border(_hasError ? c.error : c.primaryText, 2),
+            focusedBorder: border(_hasError ? c.error : c.textPrimary, 2),
             disabledBorder: border(c.disabledText, 1),
           ),
         ),

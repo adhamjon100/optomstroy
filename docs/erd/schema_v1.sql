@@ -1,4 +1,4 @@
--- docs/erd/schema_v1.sql — DDL схемы БД «Оптомстрой POS» после migrations/0001+0002+0003+0005+0006+0007+0009+0011+0012+0013+0017+0018+0019+0020+0021+0022+0023
+-- docs/erd/schema_v1.sql — DDL схемы БД «Оптомстрой POS» после migrations/0001+0002+0003+0005+0006+0007+0009+0011+0012+0013+0017+0018+0019+0020+0021+0022+0023+0024
 -- (RM-C-006 п. 5). Аналог `pg_dump --schema-only`: в embedded-postgres нет клиента pg_dump, Docker на машине
 -- нет — DDL выгружен из каталога (pg_get_functiondef/pg_get_constraintdef/pg_get_indexdef/pg_get_triggerdef)
 -- скриптом pos-api/test/db/support/schema-dump.ts; проверка — повторное применение к пустой БД даёт тот же
@@ -1071,6 +1071,23 @@ CREATE TABLE public.favorites_products (
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+CREATE TABLE public.hello_keys (
+    id uuid DEFAULT uuid_generate_v7() NOT NULL,
+    user_id uuid NOT NULL,
+    device_id uuid NOT NULL,
+    public_key bytea NOT NULL,
+    algorithm text NOT NULL,
+    source text NOT NULL,
+    last_used_at timestamp with time zone,
+    challenge bytea,
+    challenge_session_id uuid,
+    challenge_expires_at timestamp with time zone,
+    revoked_at timestamp with time zone,
+    revoke_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE public.idempotency_keys (
     key text NOT NULL,
     subject_key text NOT NULL,
@@ -1700,7 +1717,8 @@ CREATE TABLE public.sessions (
     ip_last inet,
     user_agent text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    weak_reauth_due_at timestamp with time zone
 );
 
 CREATE TABLE public.shipment_items (
@@ -2138,6 +2156,13 @@ ALTER TABLE ONLY public.discount_rules ADD CONSTRAINT discount_rules_pkey PRIMAR
 ALTER TABLE ONLY public.discount_rules ADD CONSTRAINT discount_rules_value_chk CHECK (((value >= (0)::numeric) AND ((kind <> 'percent'::discount_kind) OR (value <= (100)::numeric))));
 ALTER TABLE ONLY public.favorites_customers ADD CONSTRAINT favorites_customers_pkey PRIMARY KEY (user_id, customer_id);
 ALTER TABLE ONLY public.favorites_products ADD CONSTRAINT favorites_products_pkey PRIMARY KEY (user_id, product_id);
+ALTER TABLE ONLY public.hello_keys ADD CONSTRAINT hello_keys_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.hello_keys ADD CONSTRAINT hello_keys_algorithm_chk CHECK ((algorithm = 'RS256'::text));
+ALTER TABLE ONLY public.hello_keys ADD CONSTRAINT hello_keys_challenge_chk CHECK ((((challenge IS NULL) AND (challenge_session_id IS NULL) AND (challenge_expires_at IS NULL)) OR ((octet_length(challenge) = 32) AND (challenge_session_id IS NOT NULL) AND (challenge_expires_at IS NOT NULL) AND (revoked_at IS NULL))));
+ALTER TABLE ONLY public.hello_keys ADD CONSTRAINT hello_keys_public_key_len_chk CHECK (((octet_length(public_key) >= 256) AND (octet_length(public_key) <= 1024)));
+ALTER TABLE ONLY public.hello_keys ADD CONSTRAINT hello_keys_revoke_reason_chk CHECK ((revoke_reason = ANY (ARRAY['disabled'::text, 'replaced'::text, 'invalidated'::text, 'policy_off'::text, 'shared_device'::text, 'logout_all'::text, 'phone_changed'::text, 'kiosk_connect'::text, 'blocked'::text, 'pin_reset'::text])));
+ALTER TABLE ONLY public.hello_keys ADD CONSTRAINT hello_keys_revoked_chk CHECK (((revoked_at IS NULL) = (revoke_reason IS NULL)));
+ALTER TABLE ONLY public.hello_keys ADD CONSTRAINT hello_keys_source_chk CHECK ((source = ANY (ARRAY['windows_hello'::text, 'webauthn_prf'::text])));
 ALTER TABLE ONLY public.idempotency_keys ADD CONSTRAINT idempotency_keys_pkey PRIMARY KEY (key, subject_key, route);
 ALTER TABLE ONLY public.idempotency_keys ADD CONSTRAINT idempotency_keys_key_chk CHECK (((length(key) >= 16) AND (length(key) <= 128)));
 ALTER TABLE ONLY public.idempotency_keys ADD CONSTRAINT idempotency_keys_subject_key_chk CHECK ((subject_key ~ '^(user:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|reg:[0-9a-f]{64})$'::text));
@@ -2284,7 +2309,8 @@ ALTER TABLE ONLY public.role_permissions ADD CONSTRAINT role_permissions_pkey PR
 ALTER TABLE ONLY public.roles ADD CONSTRAINT roles_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.sessions ADD CONSTRAINT sessions_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.sessions ADD CONSTRAINT sessions_amr_chk CHECK ((amr <@ ARRAY['sms'::text, 'pin'::text, 'bio'::text, 'admin_code'::text]));
-ALTER TABLE ONLY public.sessions ADD CONSTRAINT sessions_revoke_reason_chk CHECK ((revoke_reason = ANY (ARRAY['logout'::text, 'logout_all'::text, 'reuse_detected'::text, 'admin'::text, 'phone_changed'::text, 'role_changed'::text, 'expired'::text, 'device_revoked'::text, 'blocked'::text, 'session_limit'::text, 'device_mismatch'::text, 'biometric_invalidated'::text, 'refresh_replay'::text, 'kiosk_revoked'::text])));
+ALTER TABLE ONLY public.sessions ADD CONSTRAINT sessions_revoke_reason_chk CHECK ((revoke_reason = ANY (ARRAY['logout'::text, 'logout_all'::text, 'reuse_detected'::text, 'admin'::text, 'phone_changed'::text, 'role_changed'::text, 'expired'::text, 'device_revoked'::text, 'blocked'::text, 'session_limit'::text, 'device_mismatch'::text, 'biometric_invalidated'::text, 'refresh_replay'::text, 'kiosk_revoked'::text, 'biometric_weak_disabled'::text])));
+ALTER TABLE ONLY public.sessions ADD CONSTRAINT sessions_weak_reauth_chk CHECK (((weak_reauth_due_at IS NULL) OR (kind = 'biometric'::session_kind)));
 ALTER TABLE ONLY public.shipment_items ADD CONSTRAINT shipment_items_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.shipment_items ADD CONSTRAINT shipment_items_line_uq UNIQUE (shipment_id, onec_line_no);
 ALTER TABLE ONLY public.shipments ADD CONSTRAINT shipments_pkey PRIMARY KEY (id);
@@ -2393,6 +2419,7 @@ CREATE INDEX dev_outbox_created_idx ON public.dev_outbox USING btree (created_at
 CREATE INDEX dev_outbox_phone_created_idx ON public.dev_outbox USING btree (phone_e164, created_at DESC);
 CREATE INDEX dev_outbox_sms_outbox_idx ON public.dev_outbox USING btree (sms_outbox_id);
 CREATE UNIQUE INDEX dev_outbox_transaction_id_uq ON public.dev_outbox USING btree (transaction_id);
+CREATE INDEX devices_device_key_idx ON public.devices USING btree (device_key);
 CREATE INDEX devices_user_active_idx ON public.devices USING btree (user_id) WHERE (revoked_at IS NULL);
 CREATE INDEX discount_rules_active_period_idx ON public.discount_rules USING btree (is_active, valid_from, valid_to);
 CREATE INDEX discount_rules_conditions_gin ON public.discount_rules USING gin (conditions jsonb_path_ops);
@@ -2401,6 +2428,8 @@ CREATE INDEX favorites_customers_customer_idx ON public.favorites_customers USIN
 CREATE INDEX favorites_customers_user_created_idx ON public.favorites_customers USING btree (user_id, created_at DESC);
 CREATE INDEX favorites_products_product_idx ON public.favorites_products USING btree (product_id);
 CREATE INDEX favorites_products_user_created_idx ON public.favorites_products USING btree (user_id, created_at DESC);
+CREATE UNIQUE INDEX hello_keys_device_live_uq ON public.hello_keys USING btree (device_id) WHERE (revoked_at IS NULL);
+CREATE INDEX hello_keys_user_live_idx ON public.hello_keys USING btree (user_id) WHERE (revoked_at IS NULL);
 CREATE INDEX idempotency_keys_expires_idx ON public.idempotency_keys USING btree (expires_at);
 CREATE INDEX idempotency_keys_user_idx ON public.idempotency_keys USING btree (user_id) WHERE (user_id IS NOT NULL);
 CREATE INDEX integration_tokens_expires_active_idx ON public.integration_tokens USING btree (expires_at) WHERE (revoked_at IS NULL);
@@ -2634,6 +2663,9 @@ ALTER TABLE ONLY public.favorites_customers ADD CONSTRAINT favorites_customers_c
 ALTER TABLE ONLY public.favorites_customers ADD CONSTRAINT favorites_customers_user_id_fk FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.favorites_products ADD CONSTRAINT favorites_products_product_id_fk FOREIGN KEY (product_id) REFERENCES products(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.favorites_products ADD CONSTRAINT favorites_products_user_id_fk FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+ALTER TABLE ONLY public.hello_keys ADD CONSTRAINT hello_keys_challenge_session_id_fk FOREIGN KEY (challenge_session_id) REFERENCES sessions(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+ALTER TABLE ONLY public.hello_keys ADD CONSTRAINT hello_keys_device_id_fk FOREIGN KEY (device_id) REFERENCES devices(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+ALTER TABLE ONLY public.hello_keys ADD CONSTRAINT hello_keys_user_id_fk FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.idempotency_keys ADD CONSTRAINT idempotency_keys_user_id_fk FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.integration_tokens ADD CONSTRAINT integration_tokens_created_by_user_id_fk FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 ALTER TABLE ONLY public.integration_tokens ADD CONSTRAINT integration_tokens_revoked_by_user_id_fk FOREIGN KEY (revoked_by_user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
@@ -2774,6 +2806,7 @@ CREATE TRIGGER trg_discount_rules_row_version BEFORE UPDATE ON public.discount_r
 CREATE TRIGGER trg_discount_rules_set_updated_at BEFORE UPDATE ON public.discount_rules FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_favorites_customers_set_updated_at BEFORE UPDATE ON public.favorites_customers FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_favorites_products_set_updated_at BEFORE UPDATE ON public.favorites_products FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE TRIGGER trg_hello_keys_set_updated_at BEFORE UPDATE ON public.hello_keys FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_idempotency_keys_set_updated_at BEFORE UPDATE ON public.idempotency_keys FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_integration_tokens_max_active AFTER INSERT OR UPDATE OF revoked_at, expires_at ON public.integration_tokens FOR EACH ROW EXECUTE FUNCTION integration_tokens_max_active();
 CREATE TRIGGER trg_integration_tokens_set_updated_at BEFORE UPDATE ON public.integration_tokens FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -2921,6 +2954,9 @@ GRANT SELECT ON TABLE public.favorites_customers TO pos_readonly;
 GRANT DELETE, INSERT, SELECT, UPDATE ON TABLE public.favorites_products TO pos_app;
 GRANT SELECT ON TABLE public.favorites_products TO pos_backup;
 GRANT SELECT ON TABLE public.favorites_products TO pos_readonly;
+GRANT DELETE, INSERT, SELECT, UPDATE ON TABLE public.hello_keys TO pos_app;
+GRANT SELECT ON TABLE public.hello_keys TO pos_backup;
+GRANT SELECT ON TABLE public.hello_keys TO pos_readonly;
 GRANT DELETE, INSERT, SELECT, UPDATE ON TABLE public.idempotency_keys TO pos_app;
 GRANT SELECT ON TABLE public.idempotency_keys TO pos_backup;
 GRANT SELECT ON TABLE public.idempotency_keys TO pos_readonly;

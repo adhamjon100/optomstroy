@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:optomstroy/app/router/app_router.dart';
 import 'package:optomstroy/app/router/kiosk_routes.dart';
 import 'package:optomstroy/app/router/shells/app_mode.dart';
+import 'package:optomstroy/core/biometrics/biometric_authenticator.dart';
 import 'package:optomstroy/core/config/public_settings_provider.dart';
 import 'package:optomstroy/core/di/core_providers.dart';
 import 'package:optomstroy/core/hardware/kiosk_lock.dart';
@@ -102,7 +103,8 @@ List<Override> kioskOverrides(FakeKioskLock lock, {bool autoRefreshSettings = fa
   publicSettingsAutoRefreshProvider.overrideWithValue(autoRefreshSettings),
 ];
 
-/// Обвязка сессии планшета: признак в хранилище ([marked]), refresh ([refresh]), access ([access]).
+/// Обвязка сессии планшета: признак в хранилище ([marked]), refresh ([refresh]), access ([access]); [biometrics] —
+/// порт биометрии core (T-BIO-033: подменный со счётчиком вызовов).
 SessionHarness kioskHarness(
   FakeHandler handler, {
   required FakeKioskLock lock,
@@ -111,11 +113,13 @@ SessionHarness kioskHarness(
   String? access,
   List<Override> overrides = const <Override>[],
   bool autoRefreshSettings = false,
+  BiometricAuthenticator biometrics = const NoBiometricAuthenticator(),
 }) {
   final SessionHarness h = SessionHarness(
     handler,
     refresh: refresh,
     access: access,
+    biometrics: biometrics,
     overrides: <Override>[
       ...kioskOverrides(lock, autoRefreshSettings: autoRefreshSettings),
       ...overrides,

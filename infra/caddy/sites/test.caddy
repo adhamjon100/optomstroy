@@ -1,0 +1,6 @@
+# Сайт тестовой копии на общем caddy (infra/compose.edge.test.yml; 16 §11): api-test.<домен> → optomstroy-test-api-1
+# (сеть optomstroy_test_edge), фото — /srv/media/test. Свой сертификат (то же ACME, e-mail CADDY_TLS).
+{$CADDY_TEST_SITE_ADDRESS} {
+	tls {$CADDY_TLS}
+	import api_site optomstroy-test-api-1:3000 /srv/media/test
+}

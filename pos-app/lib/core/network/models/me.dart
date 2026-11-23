@@ -134,10 +134,26 @@ abstract class PrinterSettings with _$PrinterSettings {
   factory PrinterSettings.fromJson(Map<String, dynamic> json) => _$PrinterSettingsFromJson(json);
 }
 
-/// `Me.security`.
+/// `Me.security` (08 §4.3.1; OpenAPI 1.4.0 — вход по лицу, 15 ADR-116). У `kind=kiosk` объекта нет (08 §3.14).
 @freezed
 abstract class MeSecurity with _$MeSecurity {
-  const factory MeSecurity({bool? pinSet, bool? biometricsEnabled, String? biometricsPlatform}) = _MeSecurity;
+  const factory MeSecurity({
+    bool? pinSet,
+    bool? biometricsEnabled,
+
+    /// Строкой контракта: `android_class3 | ios | windows_hello_gate | none | android_class2 | windows_hello_key`
+    /// (`android_class2` — живая семья уровня W этого устройства, `windows_hello_key` — живой ключ Windows Hello W2;
+    /// 08 §4.3.1). Неизвестное значение не ломает разбор (08 §2.11).
+    String? biometricsPlatform,
+
+    /// Уровень W Android («лицо или отпечаток», Class 2) разрешён этому пользователю на этом устройстве:
+    /// `AUTH_BIO_ALLOW_WEAK` × вид пользователя × `platform=android` (09 BIO-030; 08 §4.3.1). Нет поля — `false`.
+    bool? biometricWeakAllowed,
+
+    /// Вход по ключу Windows Hello без PIN приложения (W2) разрешён на этом устройстве: `AUTH_WINDOWS_HELLO_KEY`
+    /// и правило `personal` (09 BIO-038; 08 §4.3.1). `false` — SCR-42 предлагает только гейт W1. Нет поля — `false`.
+    bool? windowsHelloKeyAllowed,
+  }) = _MeSecurity;
 
   factory MeSecurity.fromJson(Map<String, dynamic> json) => _$MeSecurityFromJson(json);
 }

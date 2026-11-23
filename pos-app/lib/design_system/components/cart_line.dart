@@ -8,6 +8,7 @@ import 'package:optomstroy/design_system/components/ds_hairline.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
 import 'package:optomstroy/design_system/components/price_text.dart';
 import 'package:optomstroy/design_system/components/product_image.dart';
+import 'package:optomstroy/design_system/layout/title_trailing_bar.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 
@@ -179,7 +180,9 @@ class CartLine extends StatelessWidget {
         };
     final Money? total = lineTotal;
     // Сумма строки — одним кеглем во всех строках (`body 700` в drawer — прототип 15/800 по шкале 03 §7.1, иначе
-    // `bodyLg 700`): поле не уже 88 для выравнивания столбца, уменьшается только если строке не хватает места.
+    // `bodyLg 700`): поле не уже 88 для выравнивания столбца. Не помещается рядом со степпером (телефон, крупный
+    // текст) — строкой ниже у конца строки целиком, а не уменьшается (T-UI-117, пакет own-server:GAP-APP;
+    // `TitleTrailingBar`); `FittedBox` — только защита, если сумма шире всей строки.
     final Color totalColor = preliminary || unavailable ? c.textSecondary : c.textPrimary;
     // Drawer (прототип): `lineSum` 15/800 без `tnum` (ADR-114 п. 6); иначе — `bodyLg 700 tnum`.
     final TextStyle totalStyle = emphasized
@@ -290,10 +293,13 @@ class CartLine extends StatelessWidget {
             builder: (BuildContext context, BoxConstraints box) => Row(
               children: <Widget>[
                 if (box.maxWidth >= 320) SizedBox(width: 48 + context.space.s3),
-                quantity,
-                SizedBox(width: context.space.s2),
                 Expanded(
-                  child: Align(alignment: AlignmentDirectional.centerEnd, child: sum),
+                  child: TitleTrailingBar(
+                    spacing: context.space.s2,
+                    overflowSpacing: context.space.s1,
+                    title: quantity,
+                    trailing: sum,
+                  ),
                 ),
               ],
             ),
@@ -415,15 +421,8 @@ class CartLine extends StatelessWidget {
       children: <Widget>[
         nameBlock,
         const SizedBox(height: _drawerStepperGap),
-        Row(
-          children: <Widget>[
-            quantity,
-            SizedBox(width: context.space.s2),
-            Expanded(
-              child: Align(alignment: AlignmentDirectional.centerEnd, child: sum),
-            ),
-          ],
-        ),
+        // Сумма не помещается рядом со степпером — строкой ниже у конца, целиком (см. `sum` в [build]).
+        TitleTrailingBar(spacing: context.space.s2, overflowSpacing: context.space.s1, title: quantity, trailing: sum),
         if (message != null) ...<Widget>[
           SizedBox(height: context.space.s1),
           Padding(

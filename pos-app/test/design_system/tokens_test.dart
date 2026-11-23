@@ -4,6 +4,7 @@
 // эквивалент check_contrast.py) и сопоставление AppTheme → ColorScheme/TextTheme (03 §17.3, §17.7).
 // T-DS-104 (ADR-114, tokens.json 1.2.0): компонентные цвета, стили Inter 800, радиусы, тени и геометрия
 // каталога прототипа = tokens.json; пары CP-091…; исключения — только 4 пары ADR-114, AA-оттенки их закрывают.
+// tokens.json 1.3.0 (ADR-114, уточнение 2026-11-18): пределы сетки товаров — productColumnsMax, gridCardMaxWidth.
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -504,6 +505,7 @@ void main() {
       'catalogCardMinWidth': DsBreakpoints.catalogCardMinWidth,
       'gridMinColumns': DsBreakpoints.gridMinColumns,
       'gridMaxColumns': DsBreakpoints.gridMaxColumns,
+      'gridCardMaxWidth': DsBreakpoints.gridCardMaxWidth,
     };
     expect(dart.keys.toSet(), lay.keys.toSet());
     for (final MapEntry<String, num> e in dart.entries) {
@@ -520,22 +522,73 @@ void main() {
       ],
       <double>[68, 320, 420, 132, 176],
     );
+    // T-DS-104 (tokens.json 1.3.0; ADR-114, уточнение 2026-11-18): предел колонок сетки товаров по классу окна —
+    // ds.breakpoint.*.productColumnsMax; наибольшая ширина карточки — layout.gridCardMaxWidth. С 1.4.0 (пакет
+    // own-server:GAP-APP; просьба владельца, дословно: «3 ili 4  5», «no postav ogranicheniya»): 3 / 4 / 5 / 6.
+    for (final WindowClass w in WindowClass.values) {
+      expect(DsBreakpoints.gridMaxColumnsFor(w), _num(_obj(bp[w.name])['productColumnsMax']), reason: w.name);
+    }
+    expect(
+      <int>[for (final WindowClass w in WindowClass.values) DsBreakpoints.gridMaxColumnsFor(w)],
+      <int>[3, 4, 5, 6],
+    );
+    expect(WindowClass.values.map(DsBreakpoints.gridMaxColumnsFor).reduce(math.max), 6, reason: 'не больше 6');
+    expect(DsBreakpoints.gridCardMaxWidth, 280);
+    expect(DsBreakpoints.gridColumnsCap(WindowClass.large, maxColumns: DsBreakpoints.gridMaxColumns), 6);
+    expect(DsBreakpoints.gridColumnsCap(WindowClass.compact, maxColumns: DsBreakpoints.gridMaxColumns), 3);
+    expect(DsBreakpoints.gridMaxContentWidth(6, 14), 6 * 280 + 5 * 14);
     // gridColumns: по умолчанию cardMinWidth (160), каталог передаёт catalogCardMinWidth (176).
-    expect(DsBreakpoints.gridColumns(700, 16), 4);
-    expect(DsBreakpoints.gridColumns(700, 16, minCardWidth: DsBreakpoints.catalogCardMinWidth), 3);
-    expect(DsBreakpoints.gridColumns(1200, 16, minCardWidth: DsBreakpoints.catalogCardMinWidth), 6);
-    expect(DsBreakpoints.gridColumns(100, 16, minCardWidth: DsBreakpoints.catalogCardMinWidth), 2);
-    // T-DS-104 (ADR-114): auto-fill 176 с зазором 14 без предела колонок — 9/6/5/4 при W 1744/1264/1104/848
-    // (vw 1920/1440/1280/1024 минус колонка 144 и поля 8 + 24); остальные экраны — по-прежнему не больше 6.
-    int uncapped(double w) => DsBreakpoints.gridColumns(
+    expect(DsBreakpoints.gridColumns(700, 16, windowClass: WindowClass.medium), 4);
+    expect(
+      DsBreakpoints.gridColumns(
+        700,
+        16,
+        windowClass: WindowClass.medium,
+        minCardWidth: DsBreakpoints.catalogCardMinWidth,
+      ),
+      3,
+    );
+    expect(
+      DsBreakpoints.gridColumns(
+        1200,
+        16,
+        windowClass: WindowClass.large,
+        minCardWidth: DsBreakpoints.catalogCardMinWidth,
+      ),
+      6,
+    );
+    expect(
+      DsBreakpoints.gridColumns(
+        100,
+        16,
+        windowClass: WindowClass.compact,
+        minCardWidth: DsBreakpoints.catalogCardMinWidth,
+      ),
+      2,
+    );
+    // T-DS-104 (ADR-114): auto-fill 176 с зазором 14 — 9/6/5/4 при W 1744/1264/1104/848 (vw 1920/1440/1280/1024 минус
+    // колонка 144 и поля 8 + 24); с уточнения 2026-11-18 — не больше предела класса окна; с токенов 1.4.0 — 6/5/5/4
+    // (large 6, expanded 5; шире 1920 — те же 6).
+    int staff(double w) => DsBreakpoints.gridColumns(
       w,
       DsCatalogMetrics.gridGap,
+      windowClass: DsBreakpoints.forWidth(w + 144 + 32),
       minCardWidth: DsCatalogMetrics.gridMinCard,
-      maxColumns: null,
     );
-    expect(<int>[uncapped(1744), uncapped(1264), uncapped(1104), uncapped(848)], <int>[9, 6, 5, 4]);
-    expect(DsBreakpoints.gridColumns(1744, 14, minCardWidth: DsBreakpoints.catalogCardMinWidth), 6);
-    expect(uncapped(100), DsBreakpoints.gridMinColumns, reason: 'нижний предел остаётся');
+    expect(<int>[staff(1744), staff(1264), staff(1104), staff(848)], <int>[6, 5, 5, 4]);
+    expect(staff(2384), 6, reason: '2560: предел large');
+    expect(staff(100), DsBreakpoints.gridMinColumns, reason: 'нижний предел остаётся');
+    // SCR-50: свой предел 6 поверх предела класса окна.
+    expect(
+      DsBreakpoints.gridColumns(
+        1744,
+        14,
+        windowClass: WindowClass.large,
+        minCardWidth: DsBreakpoints.catalogCardMinWidth,
+        maxColumns: DsBreakpoints.gridMaxColumns,
+      ),
+      6,
+    );
     // DsCatalogMetrics = tokens.json catalog.
     final Map<String, Object?> cat = _obj(t['catalog']);
     EdgeInsets insets(String k) {
@@ -737,7 +790,12 @@ void main() {
     expect(s.onInverseSurface, c.onInverseSurface);
     // DS-098: текстовые акценты Material — primaryText, не primary.
     expect(s.secondary, c.primaryText);
-    expect(theme.textSelectionTheme.cursorColor, c.primaryText);
+    // Состояние ввода — нейтральное `textPrimary` (Q-357, пакет wave2:APP-POLISH): каретка, ручки выделения и обводка
+    // поля в фокусе не фирменные — `primaryText` почти не отличить от `error`.
+    expect(theme.textSelectionTheme.cursorColor, c.textPrimary);
+    expect(theme.textSelectionTheme.selectionHandleColor, c.textPrimary);
+    expect((theme.inputDecorationTheme.focusedBorder! as OutlineInputBorder).borderSide.color, c.textPrimary);
+    expect((theme.inputDecorationTheme.focusedErrorBorder! as OutlineInputBorder).borderSide.color, c.error);
     expect(contrastRatio(s.onPrimary, s.primary), greaterThanOrEqualTo(4.5));
     final TextTheme tt = theme.textTheme;
     const DsTypography d = DsTypography.inter;

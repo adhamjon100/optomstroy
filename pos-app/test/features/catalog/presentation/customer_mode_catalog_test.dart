@@ -18,6 +18,7 @@ import 'package:optomstroy/design_system/layout/shell_scope.dart';
 import 'package:optomstroy/design_system/theme/app_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/features/catalog/domain/entities/catalog_query.dart';
+import 'package:optomstroy/features/catalog/domain/entities/category.dart';
 import 'package:optomstroy/features/catalog/domain/entities/product.dart';
 import 'package:optomstroy/features/catalog/presentation/providers/catalog_ports.dart';
 import 'package:optomstroy/features/catalog/presentation/providers/customer_mode_ports.dart';
@@ -30,6 +31,7 @@ import 'package:optomstroy/features/catalog/presentation/widgets/catalog_logo.da
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_sidebar.dart';
 
 import 'support/catalog_fakes.dart';
+import 'support/demo_category_tree.dart';
 
 GoRouter _router(String initial) => GoRouter(
   initialLocation: initial,
@@ -152,6 +154,46 @@ void main() {
     await settle(tester);
     expect(tester.getSize(sidebar).width, closeTo(DsBreakpoints.sidebarCollapsed - 1, 0.5));
     expect(await prefs.sidebarCollapsed(), isTrue);
+  });
+
+  testWidgets('T-CAT-042 customer expanded: список SB — у корней и подкатегорий без картинки иконка по названию, у '
+      'подкатегории без совпадения — корня; запасного `category` нет', (tester) async {
+    final CategoryTree tree = demoCategoryTree();
+    await _pump(
+      tester,
+      CatalogHarness(
+        role: RoleCode.customer,
+        catalog: FakeCatalogRepository(items: products(2), tree: tree),
+      ),
+      initial: '/catalog/c/breakers',
+    );
+    expect(tester.widget<CatalogSidebar>(find.byType(CatalogSidebar)).layout, CatalogSidebarLayout.list);
+    Icon itemIcon(String id) => tester.widget<Icon>(
+      find.descendant(
+        of: find.descendant(
+          of: find.byKey(ValueKey<String>('sidebar-category-$id')),
+          matching: find.byKey(const ValueKey<String>('category-image-icon')),
+        ),
+        matching: find.byType(Icon),
+      ),
+    );
+    // Раскрыт корень пути «Электрика»: «Автоматы» (выбрана) — иконка корня, остальные — по своему названию.
+    expect(itemIcon('electric').icon, Icons.electrical_services_rounded);
+    expect(itemIcon('cable').icon, Icons.cable_rounded);
+    expect(itemIcon('breakers').icon, Icons.electrical_services_rounded, reason: 'иконка корня «Электрика»');
+    expect(itemIcon('sockets').icon, Icons.outlet_rounded);
+    expect(itemIcon('light').icon, Icons.lightbulb_rounded);
+    for (final Category root in tree.roots) {
+      final Finder item = find.byKey(ValueKey<String>('sidebar-category-${root.id}'));
+      if (item.evaluate().isNotEmpty) {
+        expect(itemIcon(root.id).icon, CategoryIcons.resolve(name: root.name), reason: root.name);
+      }
+    }
+    expect(
+      find.descendant(of: find.byType(CatalogSidebar), matching: find.byIcon(Icons.category_rounded)),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('T-CAT-039 customer medium (820): колонка плиток без «★ Избранное» и «Недавних» (ADR-114); избранное — '

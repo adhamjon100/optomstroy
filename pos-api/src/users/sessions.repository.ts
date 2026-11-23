@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, gt, isNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../common/audit/db-executor.js';
 import { DRIZZLE } from '../common/db/database.module.js';
 import { newId } from '../common/ids/uuid.js';
@@ -22,6 +22,11 @@ export interface CreateSessionInput {
   readonly ipLast?: string | null;
   readonly userAgent?: string | null;
   readonly unlockedUntil?: Date | null;
+  /**
+   * Уровень W Android (ADR-116; 07 §5.9 `weak_reauth_due_at`): срок разблокировки лицом без PIN; задан только у
+   * `kind=biometric` (CHECK `sessions_weak_reauth_chk`). `null`/не задан — семья уровня S или стандартная сессия.
+   */
+  readonly weakReauthDueAt?: Date | null;
 }
 
 export interface RotateSessionInput {
@@ -58,6 +63,7 @@ export class SessionsRepository {
         ipLast: input.ipLast ?? null,
         userAgent: input.userAgent ?? null,
         unlockedUntil: input.unlockedUntil ?? null,
+        weakReauthDueAt: input.weakReauthDueAt ?? null,
       })
       .returning();
     const row = rows[0];
@@ -173,6 +179,51 @@ export class SessionsRepository {
       .where(and(...conds))
       .returning({ id: sessions.id });
     return rows.map((r) => r.id);
+  }
+
+  /**
+   * Неотозванные семьи уровня W пользователя (ADR-116; `weak_reauth_due_at IS NOT NULL`), при `deviceId` — только этого
+   * устройства (`devices.id`). Сроки (`expires_at`, `idle_expires_at`) сравнивает вызывающий по своим часам (`CLOCK`).
+   */
+  async listWeakFamilies(
+    userId: string,
+    opts: { readonly deviceId?: string } = {},
+    ex: DbExecutor = this.db,
+  ): Promise<SessionRow[]> {
+    const conds = [
+      eq(sessions.userId, userId),
+      eq(sessions.kind, 'biometric'),
+      isNotNull(sessions.weakReauthDueAt),
+      isNull(sessions.revokedAt),
+    ];
+    if (opts.deviceId) conds.push(eq(sessions.deviceId, opts.deviceId));
+    return ex
+      .select()
+      .from(sessions)
+      .where(and(...conds))
+      .orderBy(desc(sessions.issuedAt));
+  }
+
+  /**
+   * Продление срока уровня W (ADR-116; 08 §4.1.2, §4.1.8; 09 BIO-031): успешная разблокировка PIN и вход по SMS этого
+   * пользователя на этом устройстве ставят `weak_reauth_due_at = until` его живым семьям W. Ротацией refresh срок не
+   * меняется. Возвращает число продлённых семей.
+   */
+  async extendWeakReauth(userId: string, deviceId: string, until: Date, ex: DbExecutor = this.db): Promise<number> {
+    const rows = await ex
+      .update(sessions)
+      .set({ weakReauthDueAt: until, updatedAt: sql`now()` })
+      .where(
+        and(
+          eq(sessions.userId, userId),
+          eq(sessions.deviceId, deviceId),
+          eq(sessions.kind, 'biometric'),
+          isNotNull(sessions.weakReauthDueAt),
+          isNull(sessions.revokedAt),
+        ),
+      )
+      .returning({ id: sessions.id });
+    return rows.length;
   }
 
   /** Активные (не отозванные и не истёкшие на `now`) сессии пользователя, новые первыми. */

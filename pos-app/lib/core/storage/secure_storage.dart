@@ -1,9 +1,9 @@
 // Защищённое хранилище секретов (06 §6.6, 07 §11.1 п.4, 09 §8.5; ядро §18.2 п.1–3).
 //
-// Здесь (и только здесь): refresh-токен, `deviceId` (UUID v4), флаг биометрии,
-// черновые ФИО и год рождения регистрации, кэш профиля для SCR-08 (без телефона), признак планшета магазина и хэш его
-// аварийного кода (ADR-115). Access-токен и stepUpToken — только в памяти процесса (core/network/auth/token_store.dart),
-// на диск не пишутся.
+// Здесь (и только здесь): refresh-токен, `deviceId` (UUID v4), флаг биометрии, секрет уровня W Android и признаки
+// Windows Hello по `userId` — «перед PIN» (W1) и «ключ» (W2; ADR-116), черновые ФИО и год рождения регистрации, кэш профиля для SCR-08 (без телефона), признак планшета
+// магазина и хэш его аварийного кода (ADR-115). Access-токен и stepUpToken — только в памяти процесса
+// (core/network/auth/token_store.dart), на диск не пишутся.
 // Не хранятся нигде: OTP, PIN и его хэш, телефон пользователя, ключи платежей.
 // Android: `allowBackup=false` (RM-C-013, 06 §6.16).
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -13,7 +13,32 @@ import 'package:uuid/uuid.dart';
 enum SecureKey {
   refreshToken('auth.refresh_token'),
   deviceId('device.id'),
+
+  /// Признак «биометрия включена на этом устройстве»: `true` — `biometric_refresh` под ключом с криптопривязкой
+  /// (Android/iOS). Прежнее значение `windows_hello` (гейт Windows Hello до 15 ADR-116) переносится в [helloGateUsers]
+  /// при первой разблокировке, при входе удаляется (core/biometrics/hello_gate_users.dart).
   biometricsEnabled('auth.biometrics_enabled'),
+
+  /// Секрет уровня W Android — `biometric_refresh` семьи с `weak_reauth_due_at` (09 BIO-030, §8.5; 07 §11.1; 11 §8.1,
+  /// RR-9; 15 ADR-116 п. 2): ключ Keystore `flutter_secure_storage` без привязки к аутентификации; читается и
+  /// перезаписывается только композитом `AndroidBiometricAuthenticator` (после успеха диалога `local_auth`). Входит в
+  /// [session]: удаляется при выходе, `SESSION_REVOKED`, `DEVICE_MISMATCH`, а также `clear()` порта биометрии и
+  /// подключением планшета магазина. Секрет уровня S здесь не хранится (ключ AndroidKeyStore канала ADR-087).
+  biometricRefreshWeak('auth.biometric_refresh_weak'),
+
+  /// Признак «Windows Hello перед PIN» (режим W1; 09 BIO-034, §8.5; 11 SEC-145; 07 DATA-307; 15 ADR-116 п. 3) —
+  /// JSON-массив `userId` пользователей, включивших гейт на этом устройстве (core/biometrics/hello_gate_users.dart).
+  /// Вне [session]: токенов не содержит и сессию не открывает — переживает выход, `SESSION_REVOKED` и конец срока;
+  /// снимается выключением в SCR-42 (только свой `userId`) и подключением планшета магазина (`becomeKiosk` удаляет все
+  /// ключи, кроме `device.id`). ПДн нет (UUID сервера).
+  helloGateUsers('auth.hello_gate_users'),
+
+  /// Признак «ключ Windows Hello» (режим W2 — вход без PIN приложения; 09 BIO-038…BIO-040, §8.5; 11 SEC-145;
+  /// 07 DATA-307; 15 ADR-116 п. 3) — JSON-массив `userId` пользователей, включивших ключ на этом устройстве
+  /// (core/biometrics/hello_key_users.dart). Сам ключ — в хранилище ключей Windows, не здесь. Вне [session], как
+  /// [helloGateUsers]: снимается выключением в SCR-42, отказом сервера `hello_key_unavailable`, пропажей ключа в
+  /// Windows и подключением планшета магазина. ПДн нет.
+  helloKeyUsers('auth.hello_key_users'),
   registrationFullName('registration.full_name'),
   registrationBirthYear('registration.birth_year'),
 
@@ -66,7 +91,14 @@ enum SecureKey {
 
   /// Ключи сессии — удаляются при выходе / `SESSION_REVOKED` / `DEVICE_MISMATCH` (кроме `deviceId`, 07 §11.4;
   /// кэш профиля — 02 §0.4 «очистка: logout, смена пользователя, `SESSION_REVOKED`, `DEVICE_MISMATCH`»).
-  static const List<SecureKey> session = [refreshToken, biometricsEnabled, profileCache, profileDisplayName];
+  /// [helloGateUsers] и [helloKeyUsers] сюда не входят (11 SEC-092, SEC-145).
+  static const List<SecureKey> session = [
+    refreshToken,
+    biometricsEnabled,
+    biometricRefreshWeak,
+    profileCache,
+    profileDisplayName,
+  ];
 
   /// Ключи режима «Планшет магазина» — признак, хэш, соль, счётчик и пауза аварийного кода (09 §8.9 п. 7). В [session]
   /// не входят: `SESSION_REVOKED` их не удаляет; удаляются вместе только при `KIOSK_REVOKED` и аварийном выходе.

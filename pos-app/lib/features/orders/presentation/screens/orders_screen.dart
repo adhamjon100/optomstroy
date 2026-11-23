@@ -34,6 +34,7 @@ import 'package:optomstroy/design_system/components/search_bar.dart' as ds;
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/sort_menu.dart';
 import 'package:optomstroy/design_system/components/status_count_chips.dart';
+import 'package:optomstroy/design_system/layout/large_content.dart';
 import 'package:optomstroy/design_system/layout/route_activity.dart';
 import 'package:optomstroy/design_system/layout/window_class.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
@@ -603,30 +604,35 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                 now: now,
               ),
               Expanded(
-                child: wide && _panelOpen
-                    ? Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Expanded(child: content),
-                          Container(
-                            key: const ValueKey<String>('orders-filter-panel'),
-                            width: 280,
-                            decoration: BoxDecoration(
-                              color: c.surface,
-                              border: Border(left: BorderSide(color: c.border)),
-                            ),
-                            child: SingleChildScrollView(
-                              padding: EdgeInsets.all(context.space.s4),
-                              child: OrdersFilterForm(
-                                filters: _filters,
-                                showCustomer: viewer.isStaff,
-                                onChanged: _setFilters,
+                // Окно ≥ 1600: таблица с панелью фильтров — не шире 1200 + 280 по центру (03 §8.8; указание
+                // владельца 2026-11-18, 15 §5.8 (3); прежде строки тянулись на всю ширину окна 1920–2560).
+                child: DsLargeContent(
+                  sidePanel: wide && _panelOpen ? 280 : 0,
+                  child: wide && _panelOpen
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Expanded(child: content),
+                            Container(
+                              key: const ValueKey<String>('orders-filter-panel'),
+                              width: 280,
+                              decoration: BoxDecoration(
+                                color: c.surface,
+                                border: Border(left: BorderSide(color: c.border)),
+                              ),
+                              child: SingleChildScrollView(
+                                padding: EdgeInsets.all(context.space.s4),
+                                child: OrdersFilterForm(
+                                  filters: _filters,
+                                  showCustomer: viewer.isStaff,
+                                  onChanged: _setFilters,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      )
-                    : content,
+                          ],
+                        )
+                      : content,
+                ),
               ),
             ],
           ),

@@ -16,12 +16,14 @@ import {
 } from '../../src/db/schema/index.js';
 import type { RoleCode } from '../../src/users/users.types.js';
 import { seedSubject } from '../foundation/support/foundation-db.js';
+import { validateAgainst } from '../settings/support/openapi-check.js';
 import {
   cleanupSecrets,
   list,
   completeBody,
   CONSENT_VERSION,
   createHarness,
+  harnessConfig,
   OTP_TEST_CODE,
   OTP_TEST_PHONES,
   FoundationDb,
@@ -777,6 +779,281 @@ describe('модуль profile: /me, /me/profile, /me/settings, /me/pin, /me/bio
       const sameAsCurrent = await call('post', '/me/phone/change/request', c, su).send({ newPhone: c.phone });
       expect(sameAsCurrent.status).toBe(400);
       expect(sameAsCurrent.body.errors[0].rule).toBe('phone_same');
+    });
+  });
+
+  /**
+   * Уровень W Android — «лицо или отпечаток» (Class 2) без криптопривязки (15 ADR-116 п. 2; 08 §4.3.1, §4.3.5,
+   * §4.3.6, API-200, API-201; 09 BIO-030, BIO-031; 11 SEC-144; 07 DATA-306; 12 §3.24 T-BIO-022, T-BIO-025 (2)–(4),
+   * T-BIO-034; пакет LF-2-01). Три приложения на одной БД — три значения `AUTH_BIO_ALLOW_WEAK`: `h` — `off` (по
+   * умолчанию), `hAll` — `all`, `hCustomer` — `customer`. Разблокировка семьи W (срок 24 ч, PIN, запрет) —
+   * test/e2e/auth/sessions.e2e-spec.ts (T-BIO-023, T-BIO-024).
+   */
+  describe('уровень W Android: POST /me/biometrics class2, GET /me, DELETE /me/pin (ADR-116)', () => {
+    const DAY = 24 * 3600_000;
+    let hAll: Harness;
+    let hCustomer: Harness;
+
+    beforeAll(async () => {
+      hAll = await createHarness(fdb, { config: harnessConfig({ AUTH_BIO_ALLOW_WEAK: 'all' }), logs });
+      hCustomer = await createHarness(fdb, { config: harnessConfig({ AUTH_BIO_ALLOW_WEAK: 'customer' }), logs });
+    });
+
+    afterAll(async () => {
+      await hAll?.app.close();
+      await hCustomer?.app.close();
+    });
+
+    const on = (
+      hx: Harness,
+      method: 'get' | 'post' | 'delete',
+      path: string,
+      s: Subject,
+      stepUp?: string,
+    ): ReturnType<typeof call> => {
+      let r = hx
+        .http()
+        [method](`/api/v1${path}`)
+        .set('Authorization', `Bearer ${s.access}`)
+        .set('X-Device-Id', s.deviceKey);
+      if (stepUp) r = r.set('X-Step-Up-Token', stepUp);
+      return r;
+    };
+
+    async function customerOn(
+      hx: Harness,
+      o: Parameters<typeof completeBody>[1] & { platform?: 'android' | 'ios' | 'windows' } = {},
+    ): Promise<Subject> {
+      const s = await seedRegistration(fdb.db, hx.jwt);
+      const r = await postComplete(hx, completeBody(s.token, o), s.deviceKey);
+      expect(r.status).toBe(201);
+      return { userId: r.body.user.id, sid: r.body.sid, deviceKey: s.deviceKey, access: r.body.accessToken };
+    }
+
+    /** Сотрудник (`seller`, Android) с PIN — первый PIN в окне 15 мин после входа без step-up (08 §4.3.5). */
+    async function staffOn(hx: Harness): Promise<Subject> {
+      const s = await seedSubject(fdb.db, { role: 'seller' });
+      await fdb.db.insert(userProfiles).values({ userId: s.userId, fullName: 'Продавцов Пётр' });
+      const access = await hx.jwt.signAccess({
+        sub: s.userId,
+        kind: 'staff',
+        roles: ['seller'],
+        permissionsVersion: 1,
+        deviceId: s.deviceKey,
+        sid: s.session.id,
+      });
+      const subject = { userId: s.userId, sid: s.session.id, deviceKey: s.deviceKey, access: access.token };
+      expect((await on(hx, 'post', '/me/pin', subject).send({ newPin: '730518' })).status).toBe(204);
+      return subject;
+    }
+
+    const enable = (hx: Harness, s: Subject, biometricClass: 'class2' | 'class3', stepUp?: string) =>
+      on(hx, 'post', '/me/biometrics', s, stepUp).send({
+        enabled: true,
+        biometricClass,
+        consent: { kind: 'biometrics_device', version: CONSENT_VERSION, granted: true },
+      });
+
+    const bioFamilies = (userId: string) =>
+      fdb.db
+        .select()
+        .from(sessions)
+        .where(and(eq(sessions.userId, userId), eq(sessions.kind, 'biometric')));
+
+    it('T-BIO-022 (1)–(3): off → enabled=false weak_biometrics_disabled; customer — только покупателю; all → токен семьи W с weak_reauth_due_at = now + 24 ч, аудит biometricClass=class2', async () => {
+      // (1) off (приложение h): токена нет, семья и согласие не создаются
+      const offC = await customerOn(h);
+      const off = await enable(h, offC, 'class2');
+      expect(off.status).toBe(200);
+      expect(off.body).toEqual({ enabled: false, reason: 'weak_biometrics_disabled' });
+      expect(await bioFamilies(offC.userId)).toHaveLength(0);
+      const offConsent = await fdb.db
+        .select()
+        .from(consents)
+        .where(and(eq(consents.userId, offC.userId), eq(consents.kind, 'biometrics_device')));
+      expect(offConsent).toHaveLength(0);
+
+      // (2) customer: сотруднику — тот же отказ, покупателю — токен
+      const staffC = await staffOn(hCustomer);
+      expect((await enable(hCustomer, staffC, 'class2')).body).toEqual({
+        enabled: false,
+        reason: 'weak_biometrics_disabled',
+      });
+      expect(await bioFamilies(staffC.userId)).toHaveLength(0);
+      const custC = await customerOn(hCustomer);
+      const custOk = await enable(hCustomer, custC, 'class2');
+      expect(custOk.status).toBe(200);
+      expect(custOk.body).toMatchObject({ enabled: true, biometricRefreshToken: expect.any(String) });
+
+      // (3) all: покупатель и сотрудник — семья kind=biometric уровня W
+      for (const s of [await customerOn(hAll), await staffOn(hAll)]) {
+        const en = await enable(hAll, s, 'class2');
+        expect(en.status).toBe(200);
+        expect(en.body).toMatchObject({
+          enabled: true,
+          biometricRefreshToken: expect.any(String),
+          expiresAt: expect.any(String),
+        });
+        const fam = (await bioFamilies(s.userId)).filter((x) => x.revokedAt === null);
+        expect(fam).toHaveLength(1);
+        expect(fam[0]?.weakReauthDueAt?.getTime()).toBe(hAll.clock.now().getTime() + DAY);
+        expect(fam[0]?.amr).toEqual(['sms', 'bio']);
+        const [std] = await fdb.db.select().from(sessions).where(eq(sessions.id, s.sid));
+        expect(std?.weakReauthDueAt).toBeNull(); // CHECK sessions_weak_reauth_chk: срок — только у kind=biometric
+        const audit = await auditOf(s.userId, 'auth.biometrics.enabled');
+        expect(audit.map((a) => a.after)).toEqual([
+          expect.objectContaining({ biometricClass: 'class2', platform: 'android' }),
+        ]);
+      }
+    });
+
+    it('T-BIO-022 (4)–(7): без PIN → 400 pin_required; class2 на iOS/Windows → 400 biometric_class; позже 15 мин без step-up → STEP_UP_REQUIRED; W поверх S отзывает семью S', async () => {
+      // (4) покупатель без PIN (вход только по биометрии S при регистрации)
+      const bioOnly = await customerOn(hAll, {
+        pin: null,
+        biometricsEnabled: true,
+        biometricClass: 'class3',
+        consents: [PD, BIO],
+      });
+      const noPin = await enable(hAll, bioOnly, 'class2');
+      expect(noPin.status).toBe(400);
+      expect(noPin.body.errors).toEqual([expect.objectContaining({ field: 'biometricClass', rule: 'pin_required' })]);
+
+      // (5) class2 — только Android
+      for (const platform of ['ios', 'windows'] as const) {
+        const s = await customerOn(hAll, { platform });
+        const r = await enable(hAll, s, 'class2');
+        expect(r.status).toBe(400);
+        expect(r.body.errors).toEqual([expect.objectContaining({ field: 'biometricClass', rule: 'biometric_class' })]);
+      }
+
+      // (6) окно OTP истекло (сессия выдана 16 мин назад по часам сервиса): step-up обязателен, как для class3
+      const late = await customerOn(hAll);
+      await fdb.pool.query('UPDATE sessions SET issued_at = $2 WHERE id = $1', [
+        late.sid,
+        new Date(hAll.clock.now().getTime() - 16 * 60_000),
+      ]);
+      const lateR = await enable(hAll, late, 'class2');
+      expect(lateR.status).toBe(403);
+      expect(lateR.body).toMatchObject({
+        code: 'STEP_UP_REQUIRED',
+        stepUp: { operation: 'profile.biometrics.toggle' },
+      });
+      expect(await bioFamilies(late.userId)).toHaveLength(0);
+      const lateSu = await stepUpToken(hAll.jwt, late, 'profile.biometrics.toggle', 'pin');
+      expect((await enable(hAll, late, 'class2', lateSu)).status).toBe(200);
+
+      // (7) семья S устройства → включение W отзывает её (как повтор включения, 08 §4.3.6)
+      const sw = await customerOn(hAll);
+      const strong = await enable(hAll, sw, 'class3');
+      expect(strong.status).toBe(200);
+      const weak = await enable(hAll, sw, 'class2');
+      expect(weak.status).toBe(200);
+      const fams = await bioFamilies(sw.userId);
+      expect(fams.filter((x) => x.revokedAt === null).map((x) => x.weakReauthDueAt !== null)).toEqual([true]);
+      expect(fams.find((x) => x.weakReauthDueAt === null)?.revokeReason).toBe('session_limit');
+    });
+
+    it('T-BIO-025 (2)–(4): GET /me — biometricWeakAllowed по переменной, виду и платформе; android_class2 после включения W; /registration/complete с class2 уровень W не включает', async () => {
+      // (2) customer: покупатель на Android — true; сотрудник на Android и покупатель на Windows — false; off — false
+      const cases: [Harness, Subject, boolean][] = [
+        [hCustomer, await customerOn(hCustomer), true],
+        [hCustomer, await staffOn(hCustomer), false],
+        [hCustomer, await customerOn(hCustomer, { platform: 'windows' }), false],
+        [hAll, await staffOn(hAll), true],
+        [hAll, await customerOn(hAll, { platform: 'ios' }), false],
+        [h, await customerOn(h), false],
+      ];
+      for (const [hx, s, allowed] of cases) {
+        const me = await on(hx, 'get', '/me', s);
+        expect(me.status).toBe(200);
+        expect(me.body.security.biometricWeakAllowed).toBe(allowed);
+        expect(validateAgainst('Me', me.body)).toEqual([]);
+      }
+
+      // (3) после включения W — biometricsPlatform = android_class2
+      const c = await customerOn(hAll);
+      expect((await on(hAll, 'get', '/me', c)).body.security).toMatchObject({
+        biometricsEnabled: false,
+        biometricsPlatform: 'none',
+        biometricWeakAllowed: true,
+      });
+      expect((await enable(hAll, c, 'class2')).status).toBe(200);
+      const me = await on(hAll, 'get', '/me', c);
+      expect(me.body.security).toEqual({
+        pinSet: true,
+        biometricsEnabled: true,
+        biometricsPlatform: 'android_class2',
+        biometricWeakAllowed: true,
+        windowsHelloKeyAllowed: false, // ключ Windows Hello (W2, ADR-116) — только platform=windows
+      });
+      expect(validateAgainst('Me', me.body)).toEqual([]);
+
+      // (4) регистрация с class2: биометрия без криптопривязки не включается и не предлагается
+      const withPin = await seedRegistration(fdb.db, hAll.jwt);
+      const reg = await postComplete(
+        hAll,
+        completeBody(withPin.token, { biometricsEnabled: true, biometricClass: 'class2', consents: [PD, BIO] }),
+        withPin.deviceKey,
+      );
+      expect(reg.status).toBe(201);
+      expect(reg.body.biometricRefreshOffered).toBe(false);
+      expect(await bioFamilies(reg.body.user.id)).toHaveLength(0);
+      const noPin = await seedRegistration(fdb.db, hAll.jwt);
+      const refused = await postComplete(
+        hAll,
+        completeBody(noPin.token, {
+          pin: null,
+          biometricsEnabled: true,
+          biometricClass: 'class2',
+          consents: [PD, BIO],
+        }),
+        noPin.deviceKey,
+      );
+      expect(refused.status).toBe(400);
+      expect(refused.body.errors[0].rule).toBe('login_protection_required');
+    });
+
+    it('T-BIO-034: DELETE /me/pin при живой семье W → 400 weak_biometrics_active (PIN цел); после выключения W — прежние правила (422 / 204); сотрудник — 403 pin_required_for_staff', async () => {
+      // (1) покупатель с семьёй W
+      const c = await customerOn(hAll);
+      expect((await enable(hAll, c, 'class2')).status).toBe(200);
+      const su = await stepUpToken(hAll.jwt, c, 'profile.pin.set');
+      const del = await on(hAll, 'delete', '/me/pin', c, su);
+      expect(del.status).toBe(400);
+      expect(del.body).toMatchObject({ code: 'VALIDATION_FAILED' });
+      expect(del.body.errors).toEqual([expect.objectContaining({ field: 'pin', rule: 'weak_biometrics_active' })]);
+      expect(await fdb.db.select().from(appPins).where(eq(appPins.userId, c.userId))).toHaveLength(1);
+      expect(await auditOf(c.userId, 'auth.pin.removed')).toHaveLength(0);
+
+      // (2) выключить W → биометрии S на устройстве нет → 422; включить S → 204
+      expect((await on(hAll, 'post', '/me/biometrics', c).send({ enabled: false })).body).toEqual({ enabled: false });
+      const noProtection = await on(hAll, 'delete', '/me/pin', c, su);
+      expect(noProtection.status).toBe(422);
+      expect(noProtection.body.errors[0].rule).toBe('login_protection_required');
+      expect((await enable(hAll, c, 'class3')).status).toBe(200);
+      expect((await on(hAll, 'delete', '/me/pin', c, su)).status).toBe(204);
+
+      // семья W истекла, но не отозвана: «живой» нет, устройство уровня S не имеет → 422, PIN цел
+      const expired = await customerOn(hAll);
+      expect((await enable(hAll, expired, 'class2')).status).toBe(200);
+      const past = new Date(hAll.clock.now().getTime() - 60_000); // сроки — по часам сервиса (CLOCK)
+      await fdb.pool.query(
+        `UPDATE sessions SET expires_at = $2, idle_expires_at = $2 WHERE user_id = $1 AND kind = 'biometric'`,
+        [expired.userId, past],
+      );
+      const suE = await stepUpToken(hAll.jwt, expired, 'profile.pin.set');
+      const expiredDel = await on(hAll, 'delete', '/me/pin', expired, suE);
+      expect(expiredDel.status).toBe(422);
+      expect(expiredDel.body.errors[0].rule).toBe('login_protection_required');
+
+      // (3) сотрудник с семьёй W — как прежде 403 (D-48)
+      const s = await staffOn(hAll);
+      expect((await enable(hAll, s, 'class2')).status).toBe(200);
+      const suS = await stepUpToken(hAll.jwt, s, 'profile.pin.set');
+      const staffDel = await on(hAll, 'delete', '/me/pin', s, suS);
+      expect(staffDel.status).toBe(403);
+      expect(staffDel.body).toMatchObject({ code: 'FORBIDDEN', reason: 'pin_required_for_staff' });
     });
   });
 

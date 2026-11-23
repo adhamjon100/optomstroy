@@ -1,0 +1,54 @@
+# Общий reverse-proxy серверных контуров «Оптомстрой POS» — проект optomstroy-edge (16 §4.4 прим. 4, §11 «один общий
+# Caddy в отдельном проекте optomstroy-edge, подключённый к edge-сетям обоих проектов (один набор 80/443)»).
+# Единственный владелец портов хоста 80/443: рабочий контур (api.<домен>) и тестовая копия (api-test.<домен>) своих
+# портов не публикуют. На роутере заказчика наружу — TCP 80 и 443 (SERVER_REQUIREMENTS §3): 80 — вызов HTTP-01 и
+# перенаправление на HTTPS; при одном 443 сертификат выпускается вызовом TLS-ALPN-01.
+#   compose.edge.yml       — caddy и сайт рабочего контура (caddy/sites/prod.caddy);
+#   compose.edge.test.yml  — сайт тестовой копии (caddy/sites/test.caddy, сеть optomstroy_test_edge, фото теста);
+#                            подключает bin/dc-edge, когда в .env рабочего контура задан CADDY_TEST_SITE_ADDRESS.
+# Файлы лежат в каталоге рабочего контура (/opt/optomstroy/prod); переменные подстановки — из его .env
+# (CADDY_SITE_ADDRESS, CADDY_TLS, CADDY_TEST_SITE_ADDRESS). Команды — /opt/optomstroy/prod/bin/dc-edge (RUNBOOK §0).
+# Правила Caddy: не аутентифицирует и не авторизует (DEPLOY-049); сайт — сниппет api_site в caddy/Caddyfile.edge
+# (те же правила, что infra/caddy/Caddyfile CI-контура; совпадение проверяет check_compose_prod.py).
+# Том caddy_data (сертификаты ACME) не пересоздавать (лимиты Let's Encrypt, 16 §4.2); копию делает
+# bin/backup-caddy.sh (таймер systemd, RUNBOOK §4.1).
+# Проверка без Docker: python -I -X utf8 infra/docker/scripts/check_compose_prod.py infra/compose.prod.yml
+name: optomstroy-edge
+
+services:
+  caddy:
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+    security_opt: [ "no-new-privileges:true" ]
+    image: caddy:2.11.6-alpine     # тот же точный тег, что в тестовом контуре CI (проверен CI)
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:?задайте CADDY_SITE_ADDRESS в .env рабочего контура (api.<домен>)}
+      CADDY_TLS: ${CADDY_TLS:?задайте CADDY_TLS в .env рабочего контура (e-mail для ACME)}
+    volumes:
+      - ./caddy/Caddyfile.edge:/etc/caddy/Caddyfile:ro
+      - ./caddy/sites/prod.caddy:/etc/caddy/sites/prod.caddy:ro
+      - caddy_data:/data             # сертификаты ACME — не пересоздавать (лимиты Let's Encrypt, 16 §4.2)
+      - caddy_config:/config
+      - prod_media:/srv/media/prod:ro
+    cap_drop: [ "ALL" ]
+    cap_add: [ "NET_BIND_SERVICE" ]
+    networks: [ prod_edge ]
+    # Намеренно без depends_on и без healthcheck через /health (16 §4.1, §4.4 прим. 7): proxy поднимается независимо
+    # от api (ACME-валидация, перевыпуск сертификата при упавшем api); доступность — внешний монитор.
+    deploy: { resources: { limits: { memory: 256M, cpus: "0.5" } } }
+
+networks:
+  prod_edge:
+    name: optomstroy_prod_edge       # внешняя: создают скрипты комплекта (docker network create)
+    external: true
+
+volumes:
+  caddy_data: {}                     # optomstroy-edge_caddy_data
+  caddy_config: {}
+  prod_media:
+    driver_opts: { type: none, o: bind, device: /srv/optomstroy/prod/media }

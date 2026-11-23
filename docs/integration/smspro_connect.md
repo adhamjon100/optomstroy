@@ -52,7 +52,7 @@ pos-worker ──`sms.balance_poll` (каждые SMSPRO_BALANCE_POLL_MINUTES)�
 
 | Что | Куда | Как передать |
 |---|---|---|
-| Логин аккаунта SMSPro | секрет `smspro_login` → `SMSPRO_LOGIN_FILE=/run/secrets/smspro_login` | заказчик сам вносит файл на сервере (права 600); не в чат и не в e-mail |
+| Логин аккаунта SMSPro | секрет `smspro_login` → `SMSPRO_LOGIN_FILE=/run/secrets/smspro_login` | заказчик сам вносит файл на сервере (права и группу ставит `install.sh`: `640`, `optomstroy-secrets` — 16 §4.2); не в чат и не в e-mail |
 | Пароль (это пароль от личного кабинета с деньгами) | секрет `smspro_password` → `SMSPRO_PASSWORD_FILE=/run/secrets/smspro_password` | только секрет-хранилище; разработчики пароль не запрашивают (SRC-B-122) |
 | Согласованное имя отправителя (латиница, до 11 символов) | `SMSPRO_SENDER` в `.env` | обычный канал; согласование с операторами — 7–10 рабочих дней (`names@nikita.kg`) |
 | Публичный IP сервера | вносится в ЛК SMSPro, если включён IP-whitelist (код `3`) | заказчик (Q-030) |

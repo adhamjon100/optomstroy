@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Global, Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
@@ -41,6 +40,7 @@ import { UsersRepository } from '../../../src/users/users.repository.js';
 import type { RoleCode, UserKind, UserStatusValue } from '../../../src/users/users.types.js';
 import { FoundationDb } from '../../foundation/support/foundation-db.js';
 import { pemPair, publicSet, testSecret } from '../../foundation/support/keys.js';
+import { createSecretsDir, removeSecretsDir } from '../../support/secrets-dir.js';
 import { LogCapture } from '../../support/test-app.js';
 
 /** Переключаемый флаг CUSTOMER_SELF_SERVICE (по умолчанию true — ядро §24.2). */
@@ -88,7 +88,9 @@ export class LinksTestApp {
   readonly logs = new LogCapture();
   readonly flag = new MutableFlag();
   readonly onec = new FakeOnecGateway();
-  readonly secretsDir = mkdtempSync(join(tmpdir(), 'pos-links-secrets-'));
+  /** Каталог файлов секретов (`secrets-dir.ts`): создаётся в start(), удаляется в stop(). */
+  private secretsDir: string | undefined;
+  private stopping: Promise<void> | undefined;
   app!: NestExpressApplication;
   jwt!: JwtService;
   config!: AppConfig;
@@ -97,11 +99,24 @@ export class LinksTestApp {
     return this.fdb.db;
   }
 
+  /** Сбой запуска убирает уже поднятое (приложение, кластер, каталог секретов) здесь же. */
   async start(dbName: string, env: Record<string, string> = {}): Promise<this> {
+    this.stopping = undefined;
+    const secretsDir = createSecretsDir('pos-links-secrets-');
+    this.secretsDir = secretsDir;
+    try {
+      return await this.boot(dbName, env, secretsDir);
+    } catch (e) {
+      await this.stop().catch(() => undefined);
+      throw e;
+    }
+  }
+
+  private async boot(dbName: string, env: Record<string, string>, secretsDir: string): Promise<this> {
     await this.fdb.start(dbName);
     const k = pemPair();
     const file = (name: string, content: string) => {
-      const p = join(this.secretsDir, name);
+      const p = join(secretsDir, name);
       writeFileSync(p, content, { mode: 0o600 });
       return p;
     };
@@ -171,10 +186,20 @@ export class LinksTestApp {
     return this;
   }
 
-  async stop(): Promise<void> {
-    await this.app?.close();
-    await this.fdb.stop();
-    rmSync(this.secretsDir, { recursive: true, force: true });
+  /** Повторный вызов (в том числе после сбоя start()) ждёт ту же остановку; каталог секретов удаляется всегда. */
+  stop(): Promise<void> {
+    this.stopping ??= this.release();
+    return this.stopping;
+  }
+
+  private async release(): Promise<void> {
+    try {
+      await this.app?.close();
+      await this.fdb.stop();
+    } finally {
+      removeSecretsDir(this.secretsDir);
+      this.secretsDir = undefined;
+    }
   }
 
   /** Пользователь с ролью (или без — pending_activation), устройством, сессией и access-токеном. */

@@ -308,116 +308,126 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     final TextAlign align = expanded ? TextAlign.start : TextAlign.center;
     final String phone = DsPhoneFormat.display(challenge.phoneE164);
 
+    // Ландшафт малой высоты (AuthLayout.isShortLandscape; 02 SCR-02.12): слева — заголовок и «Отправили на …», справа —
+    // ячейки кода, строка срока/ошибки и кнопки; при высоте < 420 — ячейки 44×52 (персонаж там уже скрыт).
+    final bool dense = MediaQuery.sizeOf(context).height < 420;
+    final List<Widget> aside = <Widget>[
+      Text(
+        l10n.auth_otp_title,
+        textAlign: align,
+        style: (compact ? context.text.h2 : context.text.h1).copyWith(color: c.textPrimary),
+      ),
+      SizedBox(height: context.space.s2),
+      Wrap(
+        alignment: expanded ? WrapAlignment.start : WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          Text(l10n.auth_otp_sent_to(phone), style: context.text.body.copyWith(color: c.textSecondary)),
+          AppButton(
+            label: l10n.auth_otp_change_phone,
+            variant: AppButtonVariant.text,
+            size: AppButtonSize.s,
+            onPressed: verifying ? null : _back,
+          ),
+        ],
+      ),
+    ];
+    final List<Widget> input = <Widget>[
+      Center(
+        child: OtpField(
+          key: ValueKey<String>('otp-${challenge.challengeId}'),
+          dense: dense,
+          semanticLabel: l10n.auth_otp_code_a11y,
+          length: challenge.codeLength,
+          status: fieldStatus,
+          errorText: error,
+          focusNode: _focus,
+          onChanged: (String v) {
+            final bool grew = v.length > _code.length;
+            _code = v;
+            if (grew) {
+              _mascot
+                ..onInput()
+                ..onCaret(v.length / challenge.codeLength * 2 - 1);
+            }
+            ref.read(authFlowProvider.notifier).codeEdited();
+            setState(() {});
+          },
+          onCompleted: (String v) {
+            if (!offline) {
+              unawaited(ref.read(authFlowProvider.notifier).verify(v));
+            }
+          },
+        ),
+      ),
+      SizedBox(height: context.space.s2),
+      if (error == null && s.otpPhase != OtpPhase.locked)
+        Text(
+          verifying
+              ? l10n.auth_otp_checking
+              : s.otpPhase == OtpPhase.success
+              ? l10n.auth_otp_verified
+              : l10n.auth_otp_ttl_timer(AuthMessages.mmssPadded(challenge.ttlLeft(now))),
+          key: OtpScreen.ttlKey,
+          textAlign: TextAlign.center,
+          style: context.text.caption.copyWith(
+            color: s.otpPhase == OtpPhase.success
+                ? c.success
+                : challenge.ttlLeft(now) <= const Duration(minutes: 1)
+                ? c.warning
+                : c.textSecondary,
+          ),
+        ),
+      if (s.delivery != null) ...<Widget>[
+        SizedBox(height: context.space.s4),
+        _Delivery(state: s.delivery!, l10n: l10n),
+      ],
+      if (showSubmit) ...<Widget>[
+        SizedBox(height: context.space.s6),
+        AppButton(
+          key: OtpScreen.submitKey,
+          label: retryCode ? l10n.ds_button_retry : l10n.auth_otp_submit,
+          size: AppButtonSize.l,
+          expand: true,
+          loading: verifying,
+          onPressed: canSubmit
+              ? () => unawaited(
+                  retryCode
+                      ? ref.read(authFlowProvider.notifier).retryVerify()
+                      : ref.read(authFlowProvider.notifier).verify(_code),
+                )
+              : null,
+        ),
+      ],
+      SizedBox(height: context.space.s4),
+      Center(child: resend),
+      SizedBox(height: context.space.s2),
+      Center(
+        child: AppButton(
+          key: OtpScreen.noSmsKey,
+          label: l10n.auth_otp_no_sms,
+          variant: AppButtonVariant.text,
+          size: AppButtonSize.s,
+          onPressed: () => unawaited(_showNoSms(l10n)),
+        ),
+      ),
+      // UI-02-017: подсказка тестового режима — только не-release сборка и не prod (AU-03, AC-UI-02-018).
+      if (ref.watch(authDevCodeHintProvider) && challenge.devCode != null) ...<Widget>[
+        SizedBox(height: context.space.s2),
+        Text(
+          l10n.auth_otp_dev_code(challenge.devCode!),
+          key: OtpScreen.devCodeKey,
+          textAlign: TextAlign.center,
+          style: context.text.caption.copyWith(color: c.info, fontFeatures: DsTypography.numeric),
+        ),
+      ],
+    ];
     final Widget body = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Text(
-          l10n.auth_otp_title,
-          textAlign: align,
-          style: (compact ? context.text.h2 : context.text.h1).copyWith(color: c.textPrimary),
-        ),
-        SizedBox(height: context.space.s2),
-        Wrap(
-          alignment: expanded ? WrapAlignment.start : WrapAlignment.center,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: <Widget>[
-            Text(l10n.auth_otp_sent_to(phone), style: context.text.body.copyWith(color: c.textSecondary)),
-            AppButton(
-              label: l10n.auth_otp_change_phone,
-              variant: AppButtonVariant.text,
-              size: AppButtonSize.s,
-              onPressed: verifying ? null : _back,
-            ),
-          ],
-        ),
+        ...aside,
         SizedBox(height: context.space.s6),
-        Center(
-          child: OtpField(
-            key: ValueKey<String>('otp-${challenge.challengeId}'),
-            semanticLabel: l10n.auth_otp_code_a11y,
-            length: challenge.codeLength,
-            status: fieldStatus,
-            errorText: error,
-            focusNode: _focus,
-            onChanged: (String v) {
-              final bool grew = v.length > _code.length;
-              _code = v;
-              if (grew) {
-                _mascot
-                  ..onInput()
-                  ..onCaret(v.length / challenge.codeLength * 2 - 1);
-              }
-              ref.read(authFlowProvider.notifier).codeEdited();
-              setState(() {});
-            },
-            onCompleted: (String v) {
-              if (!offline) {
-                unawaited(ref.read(authFlowProvider.notifier).verify(v));
-              }
-            },
-          ),
-        ),
-        SizedBox(height: context.space.s2),
-        if (error == null && s.otpPhase != OtpPhase.locked)
-          Text(
-            verifying
-                ? l10n.auth_otp_checking
-                : s.otpPhase == OtpPhase.success
-                ? l10n.auth_otp_verified
-                : l10n.auth_otp_ttl_timer(AuthMessages.mmssPadded(challenge.ttlLeft(now))),
-            key: OtpScreen.ttlKey,
-            textAlign: TextAlign.center,
-            style: context.text.caption.copyWith(
-              color: s.otpPhase == OtpPhase.success
-                  ? c.success
-                  : challenge.ttlLeft(now) <= const Duration(minutes: 1)
-                  ? c.warning
-                  : c.textSecondary,
-            ),
-          ),
-        if (s.delivery != null) ...<Widget>[
-          SizedBox(height: context.space.s4),
-          _Delivery(state: s.delivery!, l10n: l10n),
-        ],
-        if (showSubmit) ...<Widget>[
-          SizedBox(height: context.space.s6),
-          AppButton(
-            key: OtpScreen.submitKey,
-            label: retryCode ? l10n.ds_button_retry : l10n.auth_otp_submit,
-            size: AppButtonSize.l,
-            expand: true,
-            loading: verifying,
-            onPressed: canSubmit
-                ? () => unawaited(
-                    retryCode
-                        ? ref.read(authFlowProvider.notifier).retryVerify()
-                        : ref.read(authFlowProvider.notifier).verify(_code),
-                  )
-                : null,
-          ),
-        ],
-        SizedBox(height: context.space.s4),
-        Center(child: resend),
-        SizedBox(height: context.space.s2),
-        Center(
-          child: AppButton(
-            key: OtpScreen.noSmsKey,
-            label: l10n.auth_otp_no_sms,
-            variant: AppButtonVariant.text,
-            size: AppButtonSize.s,
-            onPressed: () => unawaited(_showNoSms(l10n)),
-          ),
-        ),
-        // UI-02-017: подсказка тестового режима — только не-release сборка и не prod (AU-03, AC-UI-02-018).
-        if (ref.watch(authDevCodeHintProvider) && challenge.devCode != null) ...<Widget>[
-          SizedBox(height: context.space.s2),
-          Text(
-            l10n.auth_otp_dev_code(challenge.devCode!),
-            key: OtpScreen.devCodeKey,
-            textAlign: TextAlign.center,
-            style: context.text.caption.copyWith(color: c.info, fontFeatures: DsTypography.numeric),
-          ),
-        ],
+        ...input,
       ],
     );
 
@@ -450,6 +460,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
           renderer: widget.mascotRenderer ?? const PlaceholderMascotRenderer(),
         ),
         body: body,
+        aside: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: aside),
+        input: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: input),
       ),
     );
     return _last = CallbackShortcuts(

@@ -1,5 +1,6 @@
 import request from 'supertest';
 import { deepKeys, validateAgainst } from '../settings/support/openapi-check.js';
+import { tamperChar } from '../support/tamper.js';
 import { type Actor, CatalogTestApp } from './support/catalog-app.js';
 
 /**
@@ -512,7 +513,9 @@ describe('Catalog API и остатки (RM-E-004, RM-E-014, RM-E-017; embedded 
     expect((await get(cashier, '/catalog/products?sort=weight:asc')).body.errors[0].rule).toBe('sort_field');
     const first = await get(cashier, '/catalog/products?limit=5&sort=price:asc');
     const cursor = first.body.nextCursor as string;
-    const forged = `${cursor.slice(0, -2)}xx`;
+    // Подделка зашифрованной части (первый символ — байт IV AES-GCM), версия ключа прежняя: отказ даёт проверка
+    // целостности, а не формат версии (прежняя запись «xx» вместо «.<версия>» проверяла только формат).
+    const forged = tamperChar(cursor);
     const bad = await get(cashier, `/catalog/products?limit=5&sort=price:asc&cursor=${encodeURIComponent(forged)}`);
     expect(bad.status).toBe(400);
     expect(bad.body.errors[0].rule).toBe('cursor');

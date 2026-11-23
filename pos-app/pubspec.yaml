@@ -41,6 +41,10 @@ dependencies:
   # Безопасное хранение и биометрия (R3 §5–§6; D-13, D-48)
   flutter_secure_storage: ^11.2.0
   local_auth: ^3.0.2
+  # Android-реализация `local_auth` (федеративный плагин): русские тексты BiometricPrompt — только экземпляр
+  # `AndroidAuthMessages`, а `local_auth` его не реэкспортирует (core/biometrics/windows_hello_gate.dart). Была в
+  # pubspec.lock транзитивно (2.0.8) — прямая зависимость той же версии, `flutter pub get --offline`.
+  local_auth_android: ^2.0.8
 
   # Сеть и данные (R3 §8)
   dio: ^5.11.1

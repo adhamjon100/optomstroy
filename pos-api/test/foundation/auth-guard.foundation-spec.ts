@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Controller, Get, Global, Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
@@ -36,6 +35,7 @@ import { UserRolesRepository } from '../../src/users/user-roles.repository.js';
 import { UsersModule } from '../../src/users/users.module.js';
 import { UsersRepository } from '../../src/users/users.repository.js';
 import type { RoleCode } from '../../src/users/users.types.js';
+import { createSecretsDir, removeSecretsDir } from '../support/secrets-dir.js';
 import { LogCapture } from '../support/test-app.js';
 import { FoundationDb, seedSubject, type SeededSubject } from './support/foundation-db.js';
 import { pemPair, publicSet, testSecret } from './support/keys.js';
@@ -67,7 +67,8 @@ describe('common/auth AuthGuard + RbacGuard на embedded PostgreSQL 17 (08 §2.
   const fdb = new FoundationDb();
   const clock = new FixedClock(new Date());
   const logs = new LogCapture();
-  const secretsDir = mkdtempSync(join(tmpdir(), 'pos-foundation-secrets-'));
+  // Каталог секретов — в beforeAll (`secrets-dir.ts`), не при сборе файла: при `-t` без совпадений хуки не идут.
+  let secretsDir: string | undefined;
   const k1 = pemPair();
   let app: NestExpressApplication;
   let jwt: JwtService;
@@ -94,9 +95,11 @@ describe('common/auth AuthGuard + RbacGuard на embedded PostgreSQL 17 (08 §2.
   };
 
   beforeAll(async () => {
+    const dir = createSecretsDir('pos-foundation-secrets-');
+    secretsDir = dir;
     await fdb.start('foundation_guard');
     const file = (name: string, content: string) => {
-      const p = join(secretsDir, name);
+      const p = join(dir, name);
       writeFileSync(p, content, { mode: 0o600 });
       return p;
     };
@@ -161,9 +164,13 @@ describe('common/auth AuthGuard + RbacGuard на embedded PostgreSQL 17 (08 §2.
   });
 
   afterAll(async () => {
-    await app?.close();
-    await fdb.stop();
-    rmSync(secretsDir, { recursive: true, force: true });
+    try {
+      await app?.close();
+      await fdb.stop();
+    } finally {
+      removeSecretsDir(secretsDir);
+      secretsDir = undefined;
+    }
   });
 
   it('ключи из JWT_*_FILE (staging): текущий kid из JWT_KEY_ID; CryptoModule поднят из *_FILE', async () => {

@@ -1,0 +1,54 @@
+# Тестовая копия «Оптомстрой POS» на сервере заказчика (16 §11; RM-I-002; SERVER_REQUIREMENTS §1 «рабочая система и
+# тестовая копия»). Дополнение к infra/compose.prod.yml: тот же состав и те же меры защиты (non-root, read_only,
+# cap_drop, секреты файлами, postgres только во internal-сети), но свой проект, свои сети, тома и секреты.
+#   bin/dc тестового контура = compose.prod.yml [+ дополнения 1С/Healthchecks по секретам] + ЭТОТ ФАЙЛ ПОСЛЕДНИМ
+#   (имя проекта, сети, тома и APP_ENV=staging берутся отсюда). Каталог — /opt/optomstroy/test, данные —
+#   /srv/optomstroy/test; устанавливает `install.sh --contour test` (RUNBOOK §10) после рабочего контура.
+# Отличия от рабочего контура (16 §11):
+#   - APP_ENV=staging закреплён в environment; .env — из prod.env.example + infra/env/test.env.example;
+#   - SMS не отправляются: SMS_PROVIDER=fake, вход — тестовым кодом для номеров AUTH_OTP_TEST_PHONES (09 §5.8);
+#     учётные данные SMSPro рабочего контура в тестовую копию не копируются — указатели SMSPRO_*_FILE пустые
+#     (файлы secrets/smspro_* существуют пустыми только потому, что их монтирует базовый файл);
+#   - 1С — только тестовая копия базы (своя ONEC_BASE_URL и свои секреты onec_*) или не подключена; рабочая 1С —
+#     никогда (validate_env сверяет ONEC_BASE_URL с рабочим контуром);
+#   - память — меньшие лимиты из .env (PG_MEM_LIMIT, API_MEM_LIMIT, WORKER_MEM_LIMIT, PG_SHARED_BUFFERS);
+#   - копии — только локальные (BACKUP_REMOTE пуст, BACKUP_KEEP_DAYS=7); непрерывная копия WAL выключена
+#     (BACKUP_PITR=off; включается так же, как в рабочем контуре, RUNBOOK §4.8).
+# Порт наружу не публикуется: сайт api-test.<домен> обслуживает общий caddy (compose.edge.test.yml), обращаясь к
+# контейнеру optomstroy-test-api-1 в сети optomstroy_test_edge.
+# Проверка без Docker: python -I -X utf8 infra/docker/scripts/check_compose_prod.py infra/compose.prod.yml
+name: optomstroy-test
+
+services:
+  migrate:
+    environment:
+      APP_ENV: staging
+  api:
+    environment:
+      APP_ENV: staging
+      SMSPRO_LOGIN_FILE: ""          # пусто = «не задано» (env-file.loader.ts): SMSPro в тестовой копии не используется
+      SMSPRO_PASSWORD_FILE: ""
+  worker:
+    environment:
+      APP_ENV: staging
+      SMSPRO_LOGIN_FILE: ""
+      SMSPRO_PASSWORD_FILE: ""
+
+# Свойства сетей повторены полностью: результат не зависит от того, сливает Compose карту сети или заменяет её.
+networks:
+  edge:
+    name: optomstroy_test_edge       # к ней подключён общий caddy, если сайт теста включён (compose.edge.test.yml)
+    external: true                   # создают install.sh/update.sh/dc тестового контура
+  backend:
+    name: optomstroy_test_backend
+    internal: true
+
+volumes:
+  pgdata:
+    driver_opts: { type: none, o: bind, device: /srv/optomstroy/test/pgdata }
+  media:
+    driver_opts: { type: none, o: bind, device: /srv/optomstroy/test/media }
+  backups:
+    driver_opts: { type: none, o: bind, device: /srv/optomstroy/test/backups }
+  walspool:
+    driver_opts: { type: none, o: bind, device: /srv/optomstroy/test/walspool }

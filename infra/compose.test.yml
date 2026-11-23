@@ -2,7 +2,7 @@
 # Сервисы: caddy, api, worker, migrate, postgres, backup. Сети: optomstroy_test_edge и optomstroy_test_backend
 # (internal: true). Порты публикует ТОЛЬКО caddy (80/443); api, worker, postgres, migrate, backup — без ports:.
 #
-# Запуск (из корня репозитория; нужны Docker Engine + Compose v2):
+# Запуск (из корня репозитория; нужны Docker Engine и плагин Docker Compose 2.x или новее, включая 5.x):
 #   make test-up      # секреты → сборка образов → migrate (DDL RM-B-005 + seed RM-B-008/RM-C-006) → up -d → ожидание
 #   make test-smoke   # smoke e2e через Caddy (pos-api/test/e2e/smoke.e2e-spec.ts)
 #   make test-down    # остановка и удаление контейнеров, сетей и томов контура
@@ -145,9 +145,9 @@ services:
                -c log_min_duration_statement=500ms
                -c shared_preload_libraries=pg_stat_statements
                -c timezone=UTC
-    # pg_password — суперпользователь образа; db_migrator_password и database_url читает только initdb-скрипт
-    # (пароли ролей pos_migrate и pos_app, infra/docker/postgres/initdb/10-roles.sh).
-    secrets: [ pg_password, db_migrator_password, database_url ]
+    # pg_password — суперпользователь образа; db_migrator_password, db_backup_password и database_url читает только
+    # initdb-скрипт (пароли ролей pos_migrate, pos_backup и pos_app, infra/docker/postgres/initdb/10-roles.sh).
+    secrets: [ pg_password, db_migrator_password, db_backup_password, database_url ]
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
@@ -168,15 +168,15 @@ services:
       context: ./docker/backup
     environment:
       PGHOST: postgres
-      PGUSER: ${POSTGRES_USER:-optomstroy_test}
+      PGUSER: pos_backup                                        # pg_read_all_data, не суперпользователь (как в prod)
       PGDATABASE: ${POSTGRES_DB:-optomstroy_test}
-      PGPASSWORD_FILE: /run/secrets/pg_password
+      PGPASSWORD_FILE: /run/secrets/db_backup_password
       TZ: Asia/Bishkek
       BACKUP_SCHEDULE: ${BACKUP_SCHEDULE:-0 3 * * *}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
       BACKUP_REMOTE: ""                                         # тестовый контур не выгружает дампы наружу
       BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}           # публичный ключ age; make test-up создаёт тестовую пару
-    secrets: [ pg_password ]
+    secrets: [ db_backup_password ]
     user: "10002:10002"
     read_only: true
     tmpfs: [ "/tmp" ]
@@ -206,6 +206,7 @@ secrets:
   pg_password:          { file: ./secrets/pg_password }
   database_url:         { file: ./secrets/database_url }
   db_migrator_password: { file: ./secrets/db_migrator_password }
+  db_backup_password:   { file: ./secrets/db_backup_password }
   jwt_private.pem:      { file: ./secrets/jwt_private.pem }
   jwt_public.json:      { file: ./secrets/jwt_public.json }
   otp_pepper:           { file: ./secrets/otp_pepper }

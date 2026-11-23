@@ -67,6 +67,7 @@ import 'package:optomstroy/features/catalog/presentation/widgets/catalog_profile
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_search_parts.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_sidebar.dart';
 import 'package:optomstroy/features/catalog/presentation/widgets/catalog_toolbar.dart';
+import 'package:optomstroy/features/catalog/presentation/widgets/category_icon.dart';
 
 /// Позиция прокрутки списка выборки [key]: смещение в логических пикселях, не деньги.
 typedef _ScrollMark = ({CatalogListKey? key, double offset}); // money-double: allow — смещение прокрутки в lp
@@ -1190,6 +1191,8 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
             padding: hPad,
             setId: ribbonParent.id,
             items: ribbonParent.children,
+            // Предки карточек ленты (иконка подкатегории без своей — по родителю, затем выше): путь до родителя ленты.
+            ancestors: tree.tree?.pathTo(ribbonParent.id) ?? const <Category>[],
             selectedId: _isSearch || widget.categoryId == ribbonParent.id ? null : widget.categoryId,
             allCount: ribbonParent.productCount,
             allName: ribbonParent.name,
@@ -1379,11 +1382,11 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
         padding: listPadding,
         headerSlivers: headerSlivers,
         inert: switching,
-        // Сетка SCR-10/11/12 по прототипу (ADR-114): карточка от 176, зазор 14, колонок без предела (9 при 1920);
-        // телефон — зазор 16 (SCR-50 — прежние 160).
+        // Сетка SCR-10/11/12 по прототипу (ADR-114): карточка от 176, зазор 14; телефон — зазор 16 (SCR-50 — прежние
+        // 160). Колонок не больше предела класса окна (уточнение 2026-11-18, 03 §7.3; токены 1.4.0 — 6 при 1920,
+        // прототип давал 9).
         minCardWidth: DsBreakpoints.catalogCardMinWidth,
         gridGap: compact ? context.space.s4 : DsCatalogMetrics.gridGap,
-        uncappedColumns: !compact,
         callbacks: CatalogProductCallbacks(
           onOpen: _openProduct,
           onFavorite: (ProductSummary p, bool v) => unawaited(_toggleFavorite(p, v)),
@@ -1632,18 +1635,20 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
   /// Набор ленты «весь каталог» (корневые категории) — для сброса прокрутки при смене набора.
   static const String _wholeRibbonId = '\u0000catalog-all';
 
-  /// Лента подкатегорий (прототип, ADR-114): «Все товары» (нейтральная иконка-сетка — не картинка родителя) +
+  /// Лента подкатегорий (прототип, ADR-114): «Все товары» (нейтральный глиф «четыре квадрата» — не картинка родителя) +
   /// непустые [items] (подкатегории родителя или, для всего каталога, корневые категории); карточки 118×148 (шире при
-  /// длинном слове — без многоточия) с картинкой категории из данных, без неё — нейтральная заглушка DS; число товаров —
-  /// в подсказке и `Semantics`. [selectedId] `null` — выбрана «Все товары» (категория-родитель, поиск, весь каталог).
-  /// [allName] — название родителя для доступного имени «Все товары» (`null` — весь каталог). Смена подкатегории —
-  /// `go` на expanded (тот же экран, меняется только список), `push` на medium; в поиске нажатие карточки открывает
-  /// категорию (выход из поиска).
+  /// длинном слове — без многоточия) с картинкой категории из данных, без неё — иконка категории в круге, как у плиток
+  /// колонки (своя по `iconKey`/названию, иначе предка из [ancestors] — путь от корня до родителя ленты; указание
+  /// владельца 2026-11-07); число товаров — в подсказке и `Semantics`. [selectedId] `null` — выбрана «Все товары»
+  /// (категория-родитель, поиск, весь каталог). [allName] — название родителя для доступного имени «Все товары» (`null`
+  /// — весь каталог). Смена подкатегории — `go` на expanded (тот же экран, меняется только список), `push` на medium; в
+  /// поиске нажатие карточки открывает категорию (выход из поиска).
   Widget _subcategoryRibbon(
     AppLocalizations l10n, {
     required EdgeInsets padding,
     required String setId,
     required List<Category> items,
+    List<Category> ancestors = const <Category>[],
     required String? selectedId,
     required int allCount,
     required String? allName,
@@ -1678,6 +1683,7 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
             semanticLabel: allName == null
                 ? l10n.category_tile_a11y(allCount, l10n.catalog_title_all)
                 : l10n.category_ribbon_all_a11y(allCount, allName),
+            placeholderGlyph: DsGlyphKind.gridOutline,
             onTap: onAll,
           );
         }
@@ -1688,6 +1694,7 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
           label: ch.name,
           imageUrl: ch.imageUrl,
           iconKey: ch.iconKey,
+          icon: categoryIcon(ch, path: ancestors),
           selected: index == i,
           // Число товаров подкатегории — в подсказке и `Semantics` (паритет функций ADR-114: прежние пилюли).
           countLabel: '${ch.productCount}',
@@ -1814,11 +1821,15 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
         ),
       );
       if (!_isCategory) {
+        // Иконка 18 у каждой категории и подкатегории полосы (указание владельца 2026-11-07, 15 §5.6; 03 §9.9,
+        // §14.4): то же правило, что у плиток, — `iconKey` → название → предок → `category`; картинка в чип 18 не
+        // ставится. Выбранный чип вместо иконки показывает `check` (A11Y-004), как прежде.
         for (final Category root in tree.tree?.roots ?? const <Category>[]) {
           chips.add(
             CatalogStripChip(
               key: 'cat-${root.id}',
               label: root.name,
+              icon: categoryIcon(root),
               count: root.productCount,
               onTap: () => _openCategory(root),
             ),
@@ -1836,9 +1847,18 @@ class _CatalogWorkspaceState extends ConsumerState<CatalogWorkspace> {
           onTap: () {},
         ),
       );
+      // Путь от корня до текущей категории (родителя чипов) — один раз на полосу.
+      final List<Category> path = tree.tree?.pathTo(category.id) ?? const <Category>[];
+      final List<Category> ancestors = path.isEmpty ? <Category>[category] : path;
       for (final Category ch in category.children.where((Category ch) => ch.productCount > 0)) {
         chips.add(
-          CatalogStripChip(key: 'sub-${ch.id}', label: ch.name, count: ch.productCount, onTap: () => _openCategory(ch)),
+          CatalogStripChip(
+            key: 'sub-${ch.id}',
+            label: ch.name,
+            icon: categoryIcon(ch, path: ancestors),
+            count: ch.productCount,
+            onTap: () => _openCategory(ch),
+          ),
         );
       }
     }

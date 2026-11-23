@@ -7,7 +7,7 @@
 // ViewModeSegmented/SortMenu, CategoryTile sidebar/ribbon 118×148, ProductCardActionKind.inCart,
 // kProductCardGridExtent (340/360), таблица «Компакт» 120·flex·150·150·132. Тест-кейсы: T-DS-103, T-CAT-037.
 import 'package:flutter/material.dart' hide SearchBar;
-import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/rendering.dart' show RenderFittedBox, RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:optomstroy/core/utils/money.dart';
@@ -363,7 +363,8 @@ void main() {
     expect(picked, <String>['sku:asc']);
   });
 
-  testWidgets('CategorySidebarItem: выбранный не реагирует; «0» серым; иконка по iconKey', (tester) async {
+  testWidgets('CategorySidebarItem: выбранный не реагирует; «0» серым; иконка по iconKey, иначе по названию, иначе '
+      'переданная вызывающим (предок, T-CAT-042)', (tester) async {
     int taps = 0;
     await pumpDs(
       tester,
@@ -371,6 +372,14 @@ void main() {
         children: <Widget>[
           CategorySidebarItem(label: 'Смесители', count: 124, iconKey: 'plumbing', selected: true, onTap: () => taps++),
           CategorySidebarItem(key: const ValueKey<String>('empty'), label: 'Трубы', count: 0, onTap: () => taps++),
+          CategorySidebarItem(
+            key: const ValueKey<String>('child'),
+            label: 'Для кухни',
+            count: 3,
+            variant: CategorySidebarItemVariant.child,
+            icon: Icons.plumbing_rounded,
+            onTap: () {},
+          ),
         ],
       ),
     );
@@ -379,8 +388,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('empty')));
     expect(taps, 1);
     expect(find.text('0'), findsOneWidget);
-    expect(find.byIcon(Icons.plumbing_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.category_rounded), findsOneWidget);
+    expect(
+      find.byIcon(Icons.plumbing_rounded),
+      findsNWidgets(3),
+      reason: 'ключ; «Трубы» без ключа — по названию; подкатегория — иконка предка от вызывающего',
+    );
+    expect(find.byIcon(Icons.category_rounded), findsNothing, reason: 'без запасного глифа');
     expect(CategoryIcons.of('нет такого'), Icons.category_rounded);
   });
 
@@ -629,6 +642,52 @@ void main() {
     expect(tester.widget<StockBadge>(find.byType(StockBadge)).label, '24 шт');
   });
 
+  // 02 UI-50-004…009 «Недавние товары» (прогон адаптивности 2026-11-18, 12 T-UI-117): при тексте 1,3 плитка выше
+  // (`stripHeight`), цена — целиком, раньше наличия (прежде «2 100,00 со» таяла под «В наличии» и срезалась снизу).
+  testWidgets('ProductCardCompact.strip × 1,3: выше на прирост текста, цена «2 100,00 сом» целиком', (tester) async {
+    await tester.runAsync(loadInterFont);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    const ProductCardData data = ProductCardData(
+      id: 'p2',
+      name: 'Смеситель для ванной Frap F3252 с длинным названием',
+      skuLabel: 'Арт. F3252',
+      price: Money(210000),
+      priceUnit: '/ шт',
+      unitLabel: 'шт',
+      stockLevel: StockBadgeLevel.inStock,
+      stockLabel: 'В наличии · 24 шт',
+      favoriteLabel: 'Избранное',
+      action: ProductCardActionKind.add,
+      actionLabel: '+ Добавить',
+    );
+    await pumpDs(
+      tester,
+      const SizedBox(
+        width: 278,
+        child: ProductCardCompact(data: data, variant: ProductCardCompactVariant.strip),
+      ),
+      size: const Size(360, 400),
+    );
+    expect(tester.takeException(), isNull);
+    final BuildContext ctx = tester.element(find.byType(ProductCardCompact));
+    expect(ProductCardCompact.stripHeight(ctx), closeTo(64 + 51 * 0.3, 0.01));
+    expect(tester.getSize(find.byType(ProductCardCompact)).height, closeTo(ProductCardCompact.stripHeight(ctx), 0.01));
+    final Finder price = find.byType(PriceText);
+    expect(price, findsOneWidget);
+    // Цена не уменьшена и не срезана: FittedBox над ней — в натуральную величину, абзацы без обрезки.
+    for (final RenderParagraph p in tester.renderObjectList<RenderParagraph>(
+      find.descendant(of: price, matching: find.byType(RichText)),
+    )) {
+      expect(p.didExceedMaxLines, isFalse);
+      expect(p.getMaxIntrinsicWidth(double.infinity), lessThanOrEqualTo(p.size.width + 0.5), reason: 'цена целиком');
+    }
+    final Finder fit = find.ancestor(of: price, matching: find.byType(FittedBox)).first;
+    final RenderFittedBox box = tester.renderObject<RenderFittedBox>(fit);
+    expect(box.size.width, closeTo(box.child!.size.width, 0.5), reason: 'цена в натуральную величину');
+    expect(tester.getRect(price).right, lessThanOrEqualTo(tester.getRect(find.byType(StockBadge)).left));
+  });
+
   testWidgets('ProductCardGrid 160 lp: «Выбрать вариант» без шеврона и без многоточия (FIX-EF-13)', (tester) async {
     const ProductCardData variants = ProductCardData(
       id: 'p4',
@@ -810,9 +869,8 @@ void main() {
       expect(tester.widget<Text>(find.text('По названию А–Я')).style?.fontSize, 14);
     });
 
-    testWidgets('CategoryTile.ribbon 118×148: без картинки — нейтральная заглушка; выбранная — тинт и 700', (
-      tester,
-    ) async {
+    testWidgets('CategoryTile.ribbon 118×148: без картинки — иконка категории цвета плитки колонки (T-CAT-042), у '
+        '«Все товары» — «четыре квадрата»; выбранная — тинт и 700', (tester) async {
       await pumpDs(
         tester,
         Row(
@@ -824,15 +882,37 @@ void main() {
                 variant: CategoryTileVariant.ribbon,
                 label: 'Все товары',
                 selected: true,
+                placeholderGlyph: DsGlyphKind.gridOutline,
                 onTap: () {},
               ),
             ),
             SizedBox.fromSize(
               size: CategoryTile.ribbonSize,
               child: CategoryTile(
+                key: const ValueKey<String>('sewer'),
                 variant: CategoryTileVariant.ribbon,
                 label: 'Канализационные трубы и фитинги',
                 onTap: () {},
+              ),
+            ),
+            SizedBox.fromSize(
+              size: CategoryTile.ribbonSize,
+              child: CategoryTile(
+                key: const ValueKey<String>('kitchen'),
+                variant: CategoryTileVariant.ribbon,
+                label: 'Для кухни',
+                icon: Icons.plumbing_rounded,
+                selected: true,
+                onTap: () {},
+              ),
+            ),
+            SizedBox.fromSize(
+              size: CategoryTile.ribbonSize,
+              child: const CategoryTile(
+                key: ValueKey<String>('off'),
+                variant: CategoryTileVariant.ribbon,
+                label: 'Котлы',
+                onTap: null,
               ),
             ),
           ],
@@ -840,12 +920,41 @@ void main() {
       );
       expect(tester.takeException(), isNull);
       expect(tester.getSize(find.byKey(const ValueKey<String>('all'))), const Size(118, 148));
-      expect(find.byKey(const ValueKey<String>('category-tile-placeholder')), findsNWidgets(2));
+      expect(find.byKey(const ValueKey<String>('category-tile-placeholder')), findsNWidgets(4));
       expect(
         find.byWidgetPredicate((Widget w) => w is DsGlyph && w.kind == DsGlyphKind.gridOutline),
-        findsNWidgets(2),
-        reason: 'контурная «сетка» прототипа',
+        findsOneWidget,
+        reason: 'контурная «сетка» прототипа — только у «Все товары»',
       );
+      final DsGlyph allGlyph = tester.widget<DsGlyph>(
+        find.descendant(of: find.byKey(const ValueKey<String>('all')), matching: find.byType(DsGlyph)),
+      );
+      expect(allGlyph.color, DsColors.lightB.ribbonGlyph, reason: '«Все товары» — как в прототипе');
+      Icon ribbonIcon(String key) => tester.widget<Icon>(
+        find.descendant(
+          of: find.byKey(ValueKey<String>(key)),
+          matching: find.byKey(const ValueKey<String>('category-tile-ribbon-icon')),
+        ),
+      );
+      expect(ribbonIcon('sewer').icon, Icons.water_damage_rounded, reason: 'по названию');
+      expect(ribbonIcon('sewer').size, 26, reason: 'размер прототипа в круге 56');
+      expect(ribbonIcon('sewer').color, DsColors.lightB.textPrimary, reason: 'цвет плитки колонки');
+      expect(ribbonIcon('kitchen').icon, Icons.plumbing_rounded, reason: 'иконка от вызывающего (предок)');
+      expect(ribbonIcon('kitchen').color, DsColors.lightB.primaryText, reason: 'выбранная');
+      expect(ribbonIcon('off').icon, Icons.local_fire_department_rounded);
+      expect(ribbonIcon('off').color, DsColors.lightB.disabledText, reason: 'недоступная');
+      final BoxDecoration circle =
+          tester
+                  .widget<Container>(
+                    find.descendant(
+                      of: find.byKey(const ValueKey<String>('kitchen')),
+                      matching: find.byKey(const ValueKey<String>('category-tile-placeholder')),
+                    ),
+                  )
+                  .decoration!
+              as BoxDecoration;
+      expect(circle.color, DsColors.lightB.ribbonPlaceholderBg, reason: 'круг и на выбранной — как в прототипе');
+      expect(find.byIcon(Icons.category_rounded), findsNothing);
       final Text label = tester.widget<Text>(
         find.descendant(
           of: find.byKey(const ValueKey<String>('all')),

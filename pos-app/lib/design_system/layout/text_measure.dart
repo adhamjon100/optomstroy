@@ -46,6 +46,23 @@ double dsTextWidthWith(
   return width;
 }
 
+/// Ширина самого длинного «слова» [text] в lp — части между обычными пробелами (U+0020, табуляция, перевод строки).
+/// Неразрывный пробел U+00A0 слово не делит: сумма «16 007,50 сом» (разряды и «сом» — NBSP) — одно слово, номер заказа
+/// «POS-2026-000123» — тоже (дефис перед цифрами строку не переносит). Шире строки такое слово `Text` разорвал бы
+/// между буквами или цифрами (находка `midword` T-UI-117; пакет own-server:GAP-APP) — экран выбирает раскладку или
+/// начертание, при которых слово помещается (`DsKeepWordsText`).
+double dsLongestWordWidth(BuildContext context, String text, TextStyle style) {
+  double widest = 0;
+  for (final String word in text.split(_plainSpaces)) {
+    if (word.isEmpty) continue;
+    final double w = dsTextWidth(context, word, style);
+    if (w > widest) widest = w;
+  }
+  return widest;
+}
+
+final RegExp _plainSpaces = RegExp(r'[ \t\n\r]+');
+
 /// Номер набора шрифтов измерений [dsTextWidth]: растёт при смене шрифтов (`PaintingBinding.systemFonts`). Экран,
 /// который считает ширины в `build` (колонка и лента каталога, строка управления), подписывается и перестраивается —
 /// иначе после поздней загрузки шрифта ширины оставались бы прежними до случайной перестройки (ревью R2C-14).

@@ -10,15 +10,48 @@
  *
  * Эпоха: demo/build.json `epochKey` — отпечаток снимка данных и набора миграций (critic: не buildId). Если он сменился,
  * страница предупреждает и только потом стирает данные (checkEpoch).
+ *
+ * Passkey сайта (15 ADR-116 п. 1; demo-passkey.js): ключ гейта и ключи входа принадлежат браузеру и переживают выход,
+ * удаляет их только полная очистка. Перед очисткой localStorage (там credId) страница сообщает ОС и менеджеру паролей,
+ * что passkey этого сайта больше не нужны (PublicKeyCredential.signalUnknownCredential, best effort; не дольше
+ * PASSKEY_FORGET_MS), и удаляет записи passkey. Только при успешной очистке: при остатках (другая вкладка держит базу)
+ * passkey и данные приложения остаются вместе — «Повторить» доделает. Так же при смене эпохи и чужих данных
+ * (demo-boot.js wipe): после P.store.clear() записи passkey пропали бы, а сами ключи остались бы в ОС без хозяина.
+ * В отчёт — только число сообщённых ключей (report.passkeys), без credId.
  */
 (function (global) {
   'use strict';
 
   var P = global.PosDemoPage = global.PosDemoPage || {};
   var K = P.KEYS;
+  // signalUnknownCredential не открывает диалогов и обычно отвечает сразу; дольше сброс его не ждёт.
+  var PASSKEY_FORGET_MS = 2000;
 
   function sleep(ms) {
     return new Promise(function (r) { setTimeout(r, ms); });
+  }
+
+  // ---------------------------------------------------------------- passkey сайта (ADR-116 п. 1)
+  // PosDemoPage.passkey.forgetAll() (demo-passkey.js) сразу удаляет записи passkey и сообщает ОС о каждом credId.
+  // Результат: null — шлюза нет; {signalled} — сколько ключей сообщено (браузер без Signal API — 0); timeout/error —
+  // ОС не ответила вовремя или вызов упал (записи всё равно удалены очисткой localStorage).
+  function forgetPasskeys() {
+    var pk = P.passkey;
+    if (!pk || typeof pk.forgetAll !== 'function') return Promise.resolve(null);
+    var run;
+    try {
+      run = Promise.resolve(pk.forgetAll());
+    } catch (e) {
+      return Promise.resolve({ signalled: 0, error: true });
+    }
+    return Promise.race([
+      run.then(function (r) {
+        return { signalled: r && typeof r.signalled === 'number' ? r.signalled : 0 };
+      }, function () {
+        return { signalled: 0, error: true };
+      }),
+      sleep(PASSKEY_FORGET_MS).then(function () { return { signalled: 0, timeout: true }; }),
+    ]);
   }
 
   function request(reason) {
@@ -139,12 +172,13 @@
   }
 
   // ---------------------------------------------------------------- всё хранилище origin
-  // onStatus(text) — строка для экрана загрузки. Результат: {ok, idb: [...], opfs: [...], caches, serviceWorkers, ms}.
+  // onStatus(text) — строка для экрана загрузки. Результат: {ok, idb: [...], opfs: [...], caches, serviceWorkers,
+  // passkeys, ms}; passkeys — итог forgetPasskeys() (null — не вызывался: очистка неполная или шлюза нет).
   function wipeAll(opts) {
     opts = opts || {};
     var onStatus = opts.onStatus || function () {};
     var t0 = Date.now();
-    var report = { ok: true, idb: [], opfs: [], caches: 0, serviceWorkers: 0, leftovers: [] };
+    var report = { ok: true, idb: [], opfs: [], caches: 0, serviceWorkers: 0, leftovers: [], passkeys: null };
     var keepEnvAck = P.store.get(K.envAck);
     // Поколение тома переживает сброс (review fixes): иначе следующая вкладка снова начала бы с 1 и совпала бы
     // с поколением замороженной старой вкладки (fencing).
@@ -201,6 +235,10 @@
         });
       }
       report.ok = report.leftovers.length === 0 && report.opfs.every(function (r) { return r.ok; });
+      if (!report.ok) return null;
+      // До P.store.clear(): credId passkey лежат в localStorage (ADR-116 п. 1, «Сбросить демо» с signalUnknownCredential).
+      return forgetPasskeys().then(function (r) { report.passkeys = r; });
+    }).then(function () {
       if (report.ok) {
         P.store.clear();
         P.session.clear();

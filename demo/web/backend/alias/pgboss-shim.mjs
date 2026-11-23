@@ -88,7 +88,10 @@ export class PgBoss extends real.PgBoss {
     delete opts.max;
     delete opts.application_name;
     if (!shared) throw new Error('pgboss-shim: attachPgliteToBoss(db) не вызван до создания PgBoss');
-    super({ ...opts, db: shared, backend: 'pglite' });
+    // pos-api запускает pg-boss с migrate: false, createSchema: false (07 DATA-012: схему ставит migrate.ts под
+    // pos_migrate). В демо один PGlite без ролей, а demo-init.mjs вызывает только SQL-мигратор, поэтому схему
+    // pgboss по-прежнему ставит первый экземпляр pg-boss — как до 2026-11-19.
+    super({ ...opts, migrate: true, createSchema: true, db: shared, backend: 'pglite' });
   }
   work(name, ...args) {
     let i = -1;

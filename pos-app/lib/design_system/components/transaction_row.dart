@@ -4,9 +4,14 @@
 // `bodyLg 700 tnum` со знаком в тексте (поступление «+» — `success`, расход «−» и заказ без знака — `textPrimary`) +
 // `StatusChip` → шеврон. Высота 64; на compact — не ниже 72, статус переносится под дату, заголовок — до 2 строк. Статус не передаётся только цветом (A11Y-004):
 // знак суммы — в тексте, статус — чип с иконкой. Заголовки дней — [TransactionDayHeader].
+// Сумма не уменьшается как обычный вид (03 §8.8, §9.38; указание владельца 2026-11-18, 15 §5.8 (3) — [ВЫВОД
+// исполнителя]): если сумма со знаком (`bodyLg 700 tnum` с масштабом текста окна) шире своей доли 2/5 строки, строка
+// переходит в раскладку «сумма под заголовком» ([TransactionRow.amountBelowKey]): колонка текста во всю ширину —
+// заголовок (2 строки), подзаголовок, ряд «сумма · подпись · статус» у правого края; «›» — у правого края строки.
 import 'package:flutter/material.dart';
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/design_system/components/ds_interactive.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/design_system/tokens/ds_typography.dart';
@@ -135,23 +140,75 @@ class TransactionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints box) =>
-          _row(context, stacked: compactWindow || box.maxWidth < TransactionRow.stackBelow),
+      builder: (BuildContext context, BoxConstraints box) {
+        final bool chevron = showChevron && onTap != null;
+        // Постоянная часть строки: граница 3, поля s4 + s3, иконка 40 и два зазора s3, шеврон (s1 + 20).
+        final double fixed = // money-double: allow — геометрия UI (lp)
+            3 +
+            context.space.s4 +
+            context.space.s3 +
+            40 +
+            context.space.s3 +
+            context.space.s3 +
+            (chevron ? context.space.s1 + 20 : 0);
+        final double share = (box.maxWidth - fixed) * 2 / 5; // money-double: allow — геометрия UI (lp)
+        final double textWidth = dsTextWidth(
+          context,
+          signed(amountText, tone),
+          _amountStyle(context),
+        ); // money-double: allow — ширина текста (lp)
+        return _row(
+          context,
+          stacked: compactWindow || box.maxWidth < TransactionRow.stackBelow,
+          amountBelow: textWidth > share,
+        );
+      },
     );
   }
 
   /// Ширина, ниже которой статус переносится под дату (как на compact).
   static const double stackBelow = 480;
 
-  Widget _row(BuildContext context, {required bool stacked}) {
+  /// Раскладка «сумма под заголовком» (сумма шире своей доли строки).
+  static const Key amountBelowKey = ValueKey<String>('transaction-row-amount-below');
+
+  TextStyle _amountStyle(BuildContext context) {
     final DsColors c = context.colors;
-    final Color amountColor = !enabled
-        ? c.disabledText
-        : (tone == TransactionRowAmountTone.incoming ? c.success : c.textPrimary);
-    final TextStyle amountStyle = context.text.bodyLg.copyWith(
-      color: amountColor,
+    return context.text.bodyLg.copyWith(
+      color: !enabled ? c.disabledText : (tone == TransactionRowAmountTone.incoming ? c.success : c.textPrimary),
       fontWeight: FontWeight.w700,
       fontFeatures: DsTypography.numeric,
+    );
+  }
+
+  Widget _row(BuildContext context, {required bool stacked, required bool amountBelow}) {
+    final DsColors c = context.colors;
+    final TextStyle amountStyle = _amountStyle(context);
+    // «Сумма под заголовком»: сумма в натуральную величину, подпись и статус — в том же ряду у правого края.
+    final Widget belowRow = Wrap(
+      key: amountBelowKey,
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: context.space.s2,
+      runSpacing: context.space.s1,
+      children: <Widget>[
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: AlignmentDirectional.centerEnd,
+          child: Text(signed(amountText, tone), maxLines: 1, style: amountStyle),
+        ),
+        if (note != null)
+          Text(
+            note!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.text.caption.copyWith(
+              color: enabled ? c.textSecondary : c.disabledText,
+              fontFeatures: DsTypography.numeric,
+            ),
+          ),
+        ?status,
+      ],
     );
     final Widget amount = Column(
       mainAxisSize: MainAxisSize.min,
@@ -193,7 +250,7 @@ class TransactionRow extends StatelessWidget {
                 : (s.pressed ? c.surfacePressed : (s.hovered || s.focused ? c.surfaceHover : c.surface));
             return AnimatedContainer(
               duration: context.motion.of(context.motion.fast),
-              constraints: BoxConstraints(minHeight: stacked ? 72 : 64),
+              constraints: BoxConstraints(minHeight: stacked || amountBelow ? 72 : 64),
               padding: EdgeInsetsDirectional.only(
                 start: context.space.s4,
                 end: context.space.s3,
@@ -222,38 +279,73 @@ class TransactionRow extends StatelessWidget {
                   SizedBox(width: context.space.s3),
                   Expanded(
                     flex: 3,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        // Номер операции — главный идентификатор: в узкой строке заголовок переносится на 2 строки,
-                        // а не обрезается после «№ 1…» (03 §9.38, compact — 72).
-                        Text(
-                          title,
-                          maxLines: stacked ? 2 : 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: context.text.bodyMedium.copyWith(
-                            color: enabled ? c.textPrimary : c.disabledText,
-                            fontFeatures: DsTypography.numeric,
+                    child: amountBelow
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              Text(
+                                title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: context.text.bodyMedium.copyWith(
+                                  color: enabled ? c.textPrimary : c.disabledText,
+                                  fontFeatures: DsTypography.numeric,
+                                ),
+                              ),
+                              if (subtitle != null && subtitle!.isNotEmpty)
+                                Text(
+                                  subtitle!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: context.text.caption.copyWith(
+                                    color: enabled ? c.textSecondary : c.disabledText,
+                                    fontFeatures: DsTypography.numeric,
+                                  ),
+                                ),
+                              SizedBox(height: context.space.s1),
+                              belowRow,
+                            ],
+                          )
+                        : Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              // Номер операции — главный идентификатор: в узкой строке заголовок переносится на 2 строки,
+                              // а не обрезается после «№ 1…» (03 §9.38, compact — 72).
+                              Text(
+                                title,
+                                maxLines: stacked ? 2 : 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: context.text.bodyMedium.copyWith(
+                                  color: enabled ? c.textPrimary : c.disabledText,
+                                  fontFeatures: DsTypography.numeric,
+                                ),
+                              ),
+                              if (subtitle != null && subtitle!.isNotEmpty)
+                                Text(
+                                  subtitle!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: context.text.caption.copyWith(
+                                    color: enabled ? c.textSecondary : c.disabledText,
+                                    fontFeatures: DsTypography.numeric,
+                                  ),
+                                ),
+                              if (stacked && status != null) ...<Widget>[SizedBox(height: context.space.s1), status!],
+                            ],
                           ),
-                        ),
-                        if (subtitle != null && subtitle!.isNotEmpty)
-                          Text(
-                            subtitle!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: context.text.caption.copyWith(
-                              color: enabled ? c.textSecondary : c.disabledText,
-                              fontFeatures: DsTypography.numeric,
-                            ),
-                          ),
-                        if (stacked && status != null) ...<Widget>[SizedBox(height: context.space.s1), status!],
-                      ],
-                    ),
                   ),
-                  SizedBox(width: context.space.s3),
-                  // Сумма и статус — не шире 2/5 строки: длинный чип переносится, строка не переполняется.
-                  Flexible(flex: 2, child: amount),
+                  // Сумма и статус — не шире 2/5 строки: длинный чип переносится, строка не переполняется. Блок
+                  // прижат к правому краю своей доли: суммы и «›» всех строк — на одной вертикали (прогон
+                  // адаптивности 2026-11-18, 03 §8.8, 12 T-UI-117: прежде «›» стоял сразу за суммой и «гулял»).
+                  if (!amountBelow) ...<Widget>[
+                    SizedBox(width: context.space.s3),
+                    Expanded(
+                      flex: 2,
+                      child: Align(alignment: AlignmentDirectional.centerEnd, child: amount),
+                    ),
+                  ],
                   if (showChevron && onTap != null) ...<Widget>[
                     SizedBox(width: context.space.s1),
                     Icon(Icons.chevron_right_rounded, size: 20, color: c.textTertiary),

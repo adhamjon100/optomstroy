@@ -66,29 +66,39 @@ IDE-кеш `.idea/` (игнорируется git) перенесён в `pos-ap
 │   ├── start-demo.ps1              # ADR-109 — запуск стека и приложения, режим -Smoke
 │   └── web/                        # ADR-113 — веб-демо на Netlify: backend/, site-src/; tools/, build-web-demo.ps1, netlify.toml, README.md — создают WP-N1/WP-T2 (site/, .build/, .smoke/ — вне git; §3.4)
 ├── docs/                           # документация (ARCH; владельцы подкаталогов — 13 §5.2)
-│   ├── customer/                   # документы для заказчика: Voprosy_zakazchiku.md/.docx — сводные вопросы заказчику (ARCH; 2026-10-28); WEB_DEMO_INSTRUCTION.md — инструкция к веб-демо (ADR-113); P-002_OWNER_DECISIONS.md — запись ответов владельца по планшету магазина, P-002_LAWYER_PACKAGE.md, P-002_TABLET_INSTRUCTIONS.md, P-002_PILOT_CHECKLIST.md — черновики для заказчика (ADR-115)
+│   ├── customer/                   # документы для заказчика: Voprosy_zakazchiku.md/.docx — сводные вопросы заказчику (ARCH; 2026-10-28); WEB_DEMO_INSTRUCTION.md — инструкция к веб-демо (ADR-113); P-002_OWNER_DECISIONS.md — запись ответов владельца по планшету магазина, P-002_LAWYER_PACKAGE.md, P-002_TABLET_INSTRUCTIONS.md, P-002_PILOT_CHECKLIST.md — черновики для заказчика (ADR-115); WINDOWS_HELLO_CHECKLIST.md — чек-лист проверки входа через Windows Hello на ПК владельца (12 T-BIO-031, ADR-116; редакция 2 от 2026-11-19); SERVER_REQUIREMENTS.md (+ Optomstroy_Trebovaniya_k_serveru.docx) — что нужно от заказчика для подключения к его серверу (версия 1.5 от 2026-11-20: 1С онлайн; раздел «Ваш сервер» — сервер во Франкфурте); STATUS_GOTOVNOSTI.md (+ Optomstroy_Status_gotovnosti.docx) — состояние готовности для заказчика (2026-11-20); P-003_OWNER_DECISIONS.md — запись ответов и сведений владельца по P-003 (P-003 отменён заказчиком 20.11.2026 — раздел 5; история; раздел 4 — сведения о сервере 2026-11-19); Word-копии — scripts/md2docx.py
 │   ├── discovery/                  # этап A — аудит сервера, сведения 1С, SMSPro, устройства
 │   ├── erd/                        # RM-B-005, RM-C-006 — ER-диаграммы, schema_v1.sql
-│   ├── integration/                # RM-B-014 и др. — журнал версий расширения 1С, подключения
-│   ├── ops/                        # этап D (INT-02/DQ-27, EQ-AUTH-07) — эксплуатационные инструкции: first_admin.md (OPS)
+│   ├── integration/                # RM-B-014 и др. — журнал версий расширения 1С, подключения; ТЗ программисту 1С: 1C_API_requirements.md (+ Optomstroy_TZ_API_1C.docx), 1C_NIGHTLY_EXCHANGE_TZ.md (+ Optomstroy_TZ_1C_nightly_v2.docx; отозвано 20.11.2026 — P-003 отменён, история) — Word-копии выпускает scripts/md2docx.py
+│   ├── ops/                        # этап D (INT-02/DQ-27, EQ-AUTH-07) — эксплуатационные инструкции: first_admin.md; RUNBOOK.md — рабочий контур на сервере заказчика: установка, обновление, копии, секреты, 1С (OPS, 2026-11-18); §11 — сервер вне магазина (2026-11-19)
 │   ├── pilot/                      # этап I — пилот, инструкции, откат (POS)
 │   ├── deploy/                     # этап I — установка, runbook, передача (OPS)
 │   ├── release/                    # RM-C-015, RM-H-007 — чек-листы релизов
 │   ├── research/                   # этап 1 — R0 (ядро решений), R1…R8
 │   ├── reviews/                    # отчёты независимой проверки (QA)
 │   ├── perf/                       # этапы E, H — бенчмарки
-│   ├── specification/              # ТЗ 00…18 + visual/ (в т. ч. visual/prototype/ — утверждённый прототип экрана выбора товаров 2026-10-29, эталон ADR-111/ADR-112), proposals/ (предложения изменения ТЗ P-001, P-002), source/ (ARCH; только через ADR)
-│   ├── stages/                     # ворота и отчёты этапов: B_approval.md, B_changes.md, <X>_<name>_report.md
+│   ├── specification/              # ТЗ 00…18 + visual/ (в т. ч. visual/prototype/ — утверждённый прототип экрана выбора товаров 2026-10-29, эталон ADR-111/ADR-112), proposals/ (предложения изменения ТЗ P-001, P-002; P-003 — отменён заказчиком 20.11.2026, история), source/ (ARCH; только через ADR)
+│   ├── stages/                     # ворота и отчёты этапов: B_approval.md, B_changes.md, <X>_<name>_report.md (в т. ч. LF_face_login_report.md — сквозная проверка дорожки LF, 13 §3.14)
 │   ├── templates/                  # RM-B-012 — stage_report.md, adr.md
 │   ├── PROGRESS_LOG.md
 │   └── repo_layout.md              # этот файл
 ├── infra/                          # OPS — развёртывание и тестовый контур (16)
 │   ├── NOTES.md                    # RM-B-011, RM-B-012 — заметки исполнителя
 │   ├── README.md                   # RM-B-011 — целевая схема
-│   ├── caddy/                      # RM-C-010 — Caddyfile
+│   ├── caddy/                      # RM-C-010 — Caddyfile (CI-контур); Caddyfile.edge и sites/*.caddy — общий caddy серверных контуров (optomstroy-edge)
+│   ├── compose.edge.test.yml       # общий caddy: сайт тестовой копии api-test.<домен> (подключает scripts/dc-edge)
+│   ├── compose.edge.yml            # RM-I-001 — общий caddy optomstroy-edge: единственный владелец портов 80/443 (16 §4.4 прим. 4, §11)
+│   ├── compose.prod.healthchecks.yml # дополнение рабочего контура: ping-URL Healthchecks (подключает scripts/dc по наличию секрета)
+│   ├── compose.prod.onec-ca.yml    # дополнение рабочего контура: CA веб-сервера 1С
+│   ├── compose.prod.onec-odata.yml # дополнение рабочего контура: пара OData 1С (только режим odata_only)
+│   ├── compose.prod.onec.yml       # дополнение рабочего контура: HTTP-сервис 1С (три секрета pos_hs)
+│   ├── compose.prod.yml            # RM-I-001 — рабочий контур на сервере заказчика (16 §4.4; комплект 2026-11-18, docs/ops/RUNBOOK.md)
+│   ├── compose.staging.yml         # RM-I-002 — тестовая копия на сервере заказчика (compose.prod.yml + это дополнение, 16 §11)
 │   ├── compose.test.yml            # RM-C-012 — тестовый контур
-│   ├── docker/                     # RM-C-005, RM-C-012 — Dockerfile api (стадии runtime / test-fixtures — фикстуры 1С контура, FQ-INT-08 / release) и backup, initdb postgres, скрипты контура
-│   └── env/                        # RM-C-009 — README.md (конвенция *_FILE, ротация)
+│   ├── docker/                     # RM-C-005, RM-C-012 — Dockerfile api (стадии runtime / test-fixtures — фикстуры 1С контура, FQ-INT-08 / release) и backup, initdb postgres, скрипты контура; scripts/check_compose_prod.py — проверка серверных контуров без Docker, scripts/test_lib.sh — самопроверка функций скриптов; postgres/scripts/wal-archive.sh — archive_command непрерывной копии WAL (16 §8.2, 2026-11-19)
+│   ├── env/                        # RM-C-009 — README.md (конвенция *_FILE, ротация); prod.env.example — шаблон .env рабочего контура, test.env.example — замены тестовой копии
+│   ├── host/                       # OPS — настройки хоста вне compose: wireguard/ — шаблоны туннеля к 1С для сервера вне магазина (16 §12.2, RUNBOOK §11; 2026-11-19)
+│   └── scripts/                    # RM-I-001, RM-I-002, RM-I-006 — install.sh, update.sh, backup-restore-test.sh, restore-db.sh, backup-caddy.sh, rotate-secret.sh, metrics_check.sh (метрики хоста по таймеру systemd, 16 §8.4; 2026-11-19), host-net-check.sh (проверка сети хоста, только чтение; 2026-11-19), dc, dc-edge, lib.sh (серверные контуры; docs/ops/RUNBOOK.md)
 ├── onec-extension/                 # ONEC — контракт, журнал и копии версий расширения «OptomstroyPOS» от специалиста 1С
 ├── pos-api/                        # BE — NestJS 12 / Node 24, модульный монолит (api + worker)
 │   ├── .dockerignore               # RM-C-005 — контекст сборки pos-api/Dockerfile
@@ -134,7 +144,7 @@ IDE-кеш `.idea/` (игнорируется git) перенесён в `pos-ap
 │   ├── web/                        # RM-C-001 — шаблон web: index.html, flutter_bootstrap.js (загрузчик и экран загрузки), manifest.json, иконки; используется только веб-демо для показа (ADR-113), не платформа R1 (ADR-039)
 │   └── windows/
 ├── resursi/                        # материалы заказчика — не изменяются
-├── scripts/                        # проверочные и генерирующие скрипты контрактов и CI (ARCH)
+├── scripts/                        # проверочные и генерирующие скрипты контрактов и CI, выпуск Word-копий документов и упаковка релиза (ARCH)
 └── tools/                          # служебные инструменты разработки (ARCH)
     └── pg/                         # раннер PostgreSQL 17 без Docker (локальные проверки DDL)
 ```
@@ -212,6 +222,8 @@ pos-api/src/
 | `validate_samples.py` | RM-A-005 (пишется в C) |
 | `new_feature.sh` | 13 §5.4 п. 2 |
 | `check_no_double_money.sh` | 13 §6.1 п. 7 (12 C-08, T-MNY-030); CI — job app-analyze-test, Makefile check-contracts |
+| `package_windows.ps1` | RM-H-007 (2026-11-19): упаковка Windows-сборки — предусловия и кэш сторонних архивов без сети, `flutter build windows --release`, проверка пакета (нет `kernel_blob.bin` и `*.lib/.pdb`, 3 DLL Visual C++, импорты PE, версия exe), zip, `SHA256SUMS`; 12 T-BUILD-005, 16 §10.7 |
+| `md2docx.py` | вне задач 13 (2026-11-19): Word-копии документов заказчику и программисту 1С из .md (`docs/customer/`, `docs/integration/`); `--verify` сверяет текст .docx с .md; запуск и список выпусков — в шапке скрипта; только python-docx |
 
 ### 3.4. Веб-демо: `demo/web/`, `demo/catalog/` и `pos-app/lib/app/demo/` (ADR-113, ADR-114)
 

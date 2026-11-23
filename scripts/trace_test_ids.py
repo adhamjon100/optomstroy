@@ -2,7 +2,9 @@
 """Матрица «ID 12_TEST_PLAN → тест/файл или not_done с причиной» по этапам дорожной карты 13.
 
 Этап D (RM-D-011 п. 1, ревью D-MJ-02): все T-AUTH, T-REG, T-SESS, T-SMS, T-BIO и T-SEC класса A (колонка «Авто?»
-содержит A), плюс T-ADMIN-010 (аварийный код, RM-D-016).
+содержит A), плюс T-ADMIN-010 (аварийный код, RM-D-016). С 12 ред. 1.18 (вход по лицу, ADR-116, §3.24) сюда же
+входят T-BIO-019…T-BIO-037 и T-SEC-076 (класс A); пока тест не написан пакетом дорожки LF (13 §3.14) — причина
+в NOT_DONE_D с номером пакета.
 
 Этап E (RM-E-012 п. 1, 13 §7 строка 7.10; ревью E-trace-1): охват по 12 §2.15, строка «E — Catalog» —
 T-CAT, T-INV, T-FAV (все), T-SYNC-001…030, T-SYNC-043…046, T-ONEC-001…019, T-PERF-001, T-PERF-002;
@@ -59,6 +61,9 @@ APP_TEST_ROOTS = ('pos-app/test', 'pos-app/integration_test')
 D_GROUPS = ('AUTH', 'REG', 'SESS', 'SMS', 'BIO')
 D_EXTRA = ('T-ADMIN-010',)
 
+# Дорожка LF «Вход по лицу» (15 ADR-116; 12 §3.24; 13 §3.14): тест ещё не написан пакетом кода дорожки.
+_LF = 'не реализовано (дорожка LF, 13 §3.14): пакет '
+
 # Причины «не выполнено на этапе D» (ID без автотеста). Ключ — ID; значение — категория и пояснение.
 NOT_DONE_D: dict[str, str] = {
     # --- устройства / вручную (ревью D-MJ-03; эмулятор не стартовал — D_test_run.log) ---
@@ -104,6 +109,40 @@ NOT_DONE_D: dict[str, str] = {
     'T-SEC-054': 'CI: зависимости и образы — CI-раннер (Q-233), не локальный прогон',
     'T-SEC-055': 'часть D — customer-links.e2e; остальное (integration/orders/sync) — этапы E–G',
     'T-SEC-067': 'этап E/F: ответы с суммами долга не реализованы',
+    # --- дорожка LF «Вход по лицу на всех платформах» (15 ADR-116; 12 §3.24; 13 §3.14; пакет ТЗ LF-0-04) ---
+    # T-BIO-019…T-BIO-037 входят в этап D (группа BIO), T-SEC-076 — класс A. Тесты пишут пакеты кода дорожки LF;
+    # пакет, который пишет тест (имя теста начинается с T-ID), удаляет свою строку. Ручные — до прогона на устройстве.
+    # T-BIO-019 — тест пакета LF-2-03 (pos-app/test/core/biometrics/android_biometric_authenticator_test.dart).
+    # T-BIO-020 — тест пакета LF-2-05 (pos-app/test/features/auth/data/biometric_unlock_adapter_test.dart,
+    # test/features/auth/domain/auth_usecases_test.dart, test/features/auth/presentation/unlock_screen_test.dart:
+    # weakBound, PinDue/WeakDisabled, SCR-08 без цикла автодиалога).
+    # T-BIO-021 — тест пакета LF-2-05 (pos-app/test/features/settings/data/settings_repositories_test.dart,
+    # test/features/settings/presentation/weak_security_section_test.dart: UI-42-027, UI-42-028, UI-42-024).
+    # T-BIO-022…T-BIO-024, T-BIO-034 — тесты пакета LF-2-01 (pos-api); T-BIO-025 — шаги (1)–(4) pos-api (LF-2-01),
+    # шаг (5) — пакет LF-2-02 (pos-app/test/features/auth/data/auth_dto_contract_test.dart: Me.security, причины
+    # UNLOCK_REQUIRED, метод hello_key и challenge W2).
+    'T-BIO-026': 'manual (класс B): матрица телефонов O-37 (Samsung, только слабое лицо, Pixel 8+, Xiaomi, API 28–29) — '
+    'нет устройств и онлайн-сборки APK; пакет LF-4-02; до прогона AUTH_BIO_ALLOW_WEAK=off в prod (16 DEPLOY-055)',
+    # T-BIO-027 — тест пакета LF-2-03 (pos-app/test/build/android_build_config_test.dart: git diff и путь S).
+    # T-BIO-029 — тест пакета LF-1-02 (pos-app/test/features/auth/presentation/unlock_screen_test.dart: строка
+    # результата UI-08-018 Windows Hello, фокус в PIN, без автовызова и без /auth/unlock до PIN).
+    'T-BIO-030': 'условно: только при необязательном пакете LF-1-03 (UI-02-018 после входа по SMS) — вне объёма '
+    'дорожки (13 §3.14)',
+    'T-BIO-031': 'manual: ПК с Windows Hello Face и ИК-камерой (O-36) — на этой машине Windows Hello не настроен '
+    '(DeviceNotPresent); пакет LF-4-02; до прогона AUTH_WINDOWS_HELLO_KEY=off в prod (16 DEPLOY-055)',
+    # T-BIO-032 — тест пакетов LF-1-06/LF-1-07 (сборка W2): pos-app/integration_test/windows_hello_channel_test.dart
+    # (шаг (2): availability канала kg.optomstroy/windows_hello в собранном приложении — device_not_present на машине
+    # исполнителя) и статическая сверка протокола Dart с windows/runner/hello_channel.{h,cpp}
+    # (pos-app/test/core/biometrics/windows_hello_key_test.dart); шаг (1) — flutter build windows --release.
+    # T-BIO-033 — клиент: тест пакета LF-2-05 (pos-app/test/core/session/kiosk_biometrics_test.dart: becomeKiosk
+    # удаляет секрет W, признаки Windows Hello и кэш профиля; в режиме планшета порт биометрии не вызывается); сервер —
+    # pos-api: POST /me/biometrics планшета → 403 и GET /me без security (LF-2-01, test/kiosk/access.spec.ts),
+    # challenge и hello_key по refresh планшета, отзыв ключей kiosk_connect (LF-2-06, test/kiosk/lifecycle-reconnect).
+    # T-BIO-035, T-BIO-037, T-SEC-076 — тесты пакета LF-2-06 (pos-api/test/e2e/auth/hello-key.e2e-spec.ts).
+    # T-BIO-036 — тесты пакетов LF-1-06/LF-1-07 (клиент W2, подменный канал kg.optomstroy/windows_hello):
+    # pos-app/test/core/biometrics/windows_hello_key_test.dart, test/features/auth/data/hello_key_unlock_test.dart,
+    # test/features/auth/presentation/unlock_hello_key_test.dart, test/features/settings/data/
+    # hello_key_protection_test.dart, test/features/settings/presentation/hello_key_security_section_test.dart.
 }
 
 # ======================================================================================== этап E

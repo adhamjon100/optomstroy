@@ -16,6 +16,7 @@ import 'package:optomstroy/design_system/components/date_range_picker.dart';
 import 'package:optomstroy/features/transactions/domain/entities/transactions_query.dart';
 import 'package:optomstroy/features/transactions/presentation/screens/transactions_screen.dart';
 
+import '../../../design_system/ds_test_support.dart' show loadInterFont;
 import '../../cashier/support/cashier_harness.dart';
 
 const Size _compact = Size(390, 844);
@@ -62,6 +63,10 @@ Widget _screen(GoRouterState s) => TransactionsScreen(
 );
 
 void main() {
+  // Настоящий Inter: таблица на expanded выбирается по измеренной ширине даты и суммы (02 SCR-36.2; прогон
+  // адаптивности 2026-11-18) — у тестового шрифта Ahem глиф квадратный, и «+16 007,50 сом» в колонку не помещалась бы.
+  setUpAll(loadInterFont);
+
   testWidgets('по умолчанию — «Сегодня» Бишкека, строки с заголовками дней, итог `summary` (AC-UI-36-001, -014)', (
     WidgetTester t,
   ) async {

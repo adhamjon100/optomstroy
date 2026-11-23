@@ -61,13 +61,13 @@ describe('RM-C-006 п. 7: check_ddl_behavior.sql и check_tables.sql на схе
     }
   };
 
-  it('check_tables.sql: 65 таблиц и 45 enum-типов 07 §5/§6.1 (dev/test-схема; store_tablets — 0022, ADR-115)', async () => {
+  it('check_tables.sql: 66 таблиц и 45 enum-типов 07 §5/§6.1 (dev/test-схема; store_tablets — 0022, ADR-115; hello_keys — 0024, ADR-116)', async () => {
     const notices: string[] = [];
     await withSession(async (c) => {
       c.on('notice', (n) => notices.push(n.message ?? ''));
       await execFile(c, CHECK_TABLES_SQL);
     });
-    expect(notices.join('\n')).toMatch(/OK — 65 из 65 таблиц/);
+    expect(notices.join('\n')).toMatch(/OK — 66 из 66 таблиц/);
     expect(notices.join('\n')).toMatch(/OK — 45 из 45 enum-типов/);
   });
 

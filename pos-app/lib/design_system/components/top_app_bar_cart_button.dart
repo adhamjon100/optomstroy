@@ -157,43 +157,50 @@ class TopAppBarCartButton extends StatelessWidget {
                   icon,
                   if (showText) ...<Widget>[
                     const SizedBox(width: gap),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        if (labelShown)
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: labelMaxWidth),
-                            child: Text(
-                              label,
-                              key: const ValueKey<String>('top-app-bar-cart-label'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              // 12/400 #5B6478, строка 1,1 (прототип).
-                              style: context.text.caption.copyWith(color: c.textSecondary, height: 1.1),
-                            ),
-                          ),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            if (warning) ...<Widget>[
-                              Icon(Icons.warning_amber_rounded, size: 14, color: c.warning),
-                              SizedBox(width: context.space.s1),
-                            ],
-                            Text(
-                              totalText,
-                              maxLines: 1,
-                              // 14/700 #0E1456, строка 1,1, без `tnum` (прототип, ADR-114 п. 6).
-                              style: context.text.body.copyWith(
-                                color: c.textPrimary,
-                                fontWeight: FontWeight.w700,
-                                height: 1.1,
+                    // Подпись и сумма — в высоте кнопки и при крупном тексте (1,5 на compact/medium: прежде переполнение
+                    // на 1 lp снизу; прогон адаптивности 2026-11-18, 12 T-UI-117): уменьшение — только если не
+                    // помещаются.
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          if (labelShown)
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: labelMaxWidth),
+                              child: Text(
+                                label,
+                                key: const ValueKey<String>('top-app-bar-cart-label'),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                // 12/400 #5B6478, строка 1,1 (прототип).
+                                style: context.text.caption.copyWith(color: c.textSecondary, height: 1.1),
                               ),
                             ),
-                          ],
-                        ),
-                      ],
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              if (warning) ...<Widget>[
+                                Icon(Icons.warning_amber_rounded, size: 14, color: c.warning),
+                                SizedBox(width: context.space.s1),
+                              ],
+                              Text(
+                                totalText,
+                                maxLines: 1,
+                                // 14/700 #0E1456, строка 1,1, без `tnum` (прототип, ADR-114 п. 6).
+                                style: context.text.body.copyWith(
+                                  color: c.textPrimary,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.1,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ] else if (warning) ...<Widget>[
                     SizedBox(width: context.space.s2),

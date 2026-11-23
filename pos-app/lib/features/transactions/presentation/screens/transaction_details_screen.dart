@@ -31,6 +31,7 @@ import 'package:optomstroy/design_system/components/app_snackbar.dart';
 import 'package:optomstroy/design_system/components/date_range_picker.dart' show DsBishkekTime;
 import 'package:optomstroy/design_system/components/empty_state.dart';
 import 'package:optomstroy/design_system/components/error_state.dart';
+import 'package:optomstroy/design_system/components/keep_words_text.dart';
 import 'package:optomstroy/design_system/components/offline_banner.dart';
 import 'package:optomstroy/design_system/components/order_status_chip.dart';
 import 'package:optomstroy/design_system/components/payment_action_dialogs.dart';
@@ -301,17 +302,26 @@ class _TransactionDetailsScreenState extends ConsumerState<TransactionDetailsScr
           ),
         ],
       ),
-      // UI-37-002 сумма.
+      // UI-37-002 сумма. Сумма не разрывается внутри «сом» (телефон, крупный текст): не помещается в строку `display` —
+      // начертание на ступень меньше (T-UI-117, пакет own-server:GAP-APP).
       Semantics(
         label: TransactionsTexts.semantic(l10n, t, locale),
-        child: Text(
+        child: DsKeepWordsText(
           TransactionRow.signed(TransactionsTexts.money(t.amount), tone),
-          key: const ValueKey<String>('tx-details-amount'),
+          textKey: const ValueKey<String>('tx-details-amount'),
           style: context.text.display.copyWith(
             fontWeight: FontWeight.w700,
             fontFeatures: DsTypography.numeric,
             color: tone == TransactionRowAmountTone.incoming ? c.success : c.textPrimary,
           ),
+          fallback: <TextStyle>[
+            for (final TextStyle s in <TextStyle>[context.text.h1, context.text.h2, context.text.h3])
+              s.copyWith(
+                fontWeight: FontWeight.w700,
+                fontFeatures: DsTypography.numeric,
+                color: tone == TransactionRowAmountTone.incoming ? c.success : c.textPrimary,
+              ),
+          ],
         ),
       ),
       if (p != null && p.status == PaymentStatus.manualConfirm)

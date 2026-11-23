@@ -1,0 +1,14 @@
+{
+  "name": "optomstroy-proverka-api-1c",
+  "private": true,
+  "version": "1.1.0",
+  "type": "module",
+  "description": "Программа проверки HTTP-сервиса расширения 1С «OptomstroyPOS» по контракту onec-http-service 1.2.0 и «Требованиям к API 1С» 1.2.1",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "build": "node build.mjs",
+    "build:no-runtime": "node build.mjs --no-runtime",
+    "demo": "node src/main.mjs --demo --no-manual",
+    "test": "node --test --test-concurrency=2 \"test/*.test.mjs\""
+  }
+}

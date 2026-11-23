@@ -22,6 +22,7 @@ import 'package:optomstroy/design_system/components/app_icon_button.dart';
 import 'package:optomstroy/design_system/components/app_progress.dart';
 import 'package:optomstroy/design_system/components/app_text_field.dart';
 import 'package:optomstroy/design_system/components/error_state.dart';
+import 'package:optomstroy/design_system/components/keep_words_text.dart';
 import 'package:optomstroy/design_system/components/offline_banner.dart';
 import 'package:optomstroy/design_system/components/qr_panel.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
@@ -410,10 +411,20 @@ class _OrderCreatedScreenState extends ConsumerState<OrderCreatedScreen> with Wi
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text(
+                  // Номер заказа «POS-2026-000123» не разрывается внутри (телефон, крупный текст): не помещается
+                  // в строку `h2` — начертание на ступень меньше (T-UI-117, пакет own-server:GAP-APP).
+                  DsKeepWordsText(
                     l10n.order_created_number(order.publicNumber),
-                    key: const ValueKey<String>('order-created-number'),
+                    textKey: const ValueKey<String>('order-created-number'),
                     style: context.text.h2.copyWith(color: c.textPrimary, fontFeatures: DsTypography.numeric),
+                    fallback: <TextStyle>[
+                      for (final TextStyle s in <TextStyle>[context.text.h3, context.text.title, context.text.bodyLg])
+                        s.copyWith(
+                          color: c.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontFeatures: DsTypography.numeric,
+                        ),
+                    ],
                   ),
                   Text(
                     onecNumber == null

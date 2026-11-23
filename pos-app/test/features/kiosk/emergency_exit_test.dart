@@ -26,6 +26,8 @@ import 'package:optomstroy/core/utils/clock.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/kiosk_keypad.dart';
 import 'package:optomstroy/design_system/theme/app_theme.dart';
+import 'package:optomstroy/design_system/theme/ds_theme.dart';
+import 'package:optomstroy/design_system/tokens/ds_colors.dart';
 import 'package:optomstroy/features/kiosk/data/dio_kiosk_lifecycle_repository.dart';
 import 'package:optomstroy/features/kiosk/kiosk_providers.dart';
 import 'package:optomstroy/features/kiosk/presentation/emergency_exit_screen.dart';
@@ -446,6 +448,51 @@ void main() {
         expect(_errorShown(tester), _l10n.error_kiosk_exit_code_invalid);
         expect(find.textContaining('Осталось попыток'), findsNothing);
         expect(h.adapter.countPath('/kiosk/exit'), 1);
+      },
+    );
+
+    testWidgets(
+      'UI-51-017, T-ANIM-012 (указание владельца 2026-11-18): после неверного кода первая цифра — поле обычное: обводка '
+      '`border`, точки цифр `textPrimary`, текст ошибки снят (как точки `PinField`, 03 §9.6 ред. 1.24)',
+      (WidgetTester tester) async {
+        final SessionHarness h = kioskHarness(
+          _server((RequestOptions o) => json(422, problem('KIOSK_EXIT_CODE_INVALID', 422))),
+          lock: FakeKioskLock(),
+          overrides: <Override>[
+            kioskLifecycleRepositoryProvider.overrideWith((ref) => DioKioskLifecycleRepository(ref.watch(dioProvider))),
+          ],
+        );
+        addTearDown(h.dispose);
+        h.start();
+        await tester.runAsync(() async {
+          await h.container.read(sessionStatusProvider.future);
+          await rememberExitCode(h);
+        });
+        await _pumpDialog(tester, h);
+        final DsColors c = tester.element(find.byKey(KioskEmergencyExitDialog.dialogKey)).colors;
+        final Finder slots = find.byWidgetPredicate(
+          (Widget w) => w is Semantics && (w.properties.value ?? '').endsWith('/ ${KioskEmergencyExit.codeLength}'),
+        );
+        Color border() =>
+            ((tester.widget<Container>(find.descendant(of: slots, matching: find.byType(Container)).first).decoration!
+                            as BoxDecoration)
+                        .border!
+                    as Border)
+                .top
+                .color;
+        Text slotText() => tester.widget<Text>(find.descendant(of: slots, matching: find.byType(Text)));
+
+        await _typeAndSubmit(tester, wrongExitCode);
+        expect(_errorShown(tester), _l10n.error_kiosk_exit_code_invalid);
+        expect(border(), c.error, reason: 'момент ошибки');
+        expect(slotText().data, isNot(contains('•')), reason: 'поле очищено');
+
+        await tester.tap(find.byKey(KioskEmergencyExitDialog.keyFor('1')));
+        await tester.pump();
+        expect(border(), c.border, reason: 'новая цифра — обычное поле');
+        expect(slotText().data, startsWith('•'));
+        expect(slotText().style!.color, c.textPrimary);
+        expect(find.byKey(KioskEmergencyExitDialog.errorKey), findsNothing);
       },
     );
 

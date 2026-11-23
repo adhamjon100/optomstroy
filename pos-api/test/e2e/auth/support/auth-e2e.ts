@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { Writable } from 'node:stream';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,6 +48,7 @@ import { UsersRepository } from '../../../../src/users/users.repository.js';
 import type { RoleCode, UserKind, UserStatusValue } from '../../../../src/users/users.types.js';
 import { FoundationDb } from '../../../foundation/support/foundation-db.js';
 import { testSecret } from '../../../foundation/support/keys.js';
+import { createSecretsDir, removeSecretsDir } from '../../../support/secrets-dir.js';
 
 export type Agent = ReturnType<typeof request>;
 
@@ -145,7 +145,11 @@ export class AuthE2e {
   readonly logs = new LogCapture();
   app!: NestExpressApplication;
   config!: AppConfig;
-  private readonly secretsDir = mkdtempSync(join(tmpdir(), 'pos-auth-e2e-'));
+  /**
+   * Каталог файлов секретов (`secrets-dir.ts`; до 2026-11-19 — `pos-auth-e2e-*` в поле класса, при сборе файла):
+   * создаётся в start(), удаляется в stop() даже после сбоя остановки.
+   */
+  private secretsDir: string | undefined;
 
   /** Записанные задания SMS (вариант `AuthModule.withQueuedSms()` с подменённым SMS_JOB_PUBLISHER). */
   readonly publishedJobs: { queue: string; data: Record<string, unknown>; inTx: boolean }[] = [];
@@ -159,6 +163,8 @@ export class AuthE2e {
     variant: 'in_process' | 'queued' = 'in_process',
     opts: { readonly admin?: boolean } = {},
   ): Promise<this> {
+    const secretsDir = createSecretsDir('pos-auth-secrets-');
+    this.secretsDir = secretsDir;
     await this.fdb.start(dbName);
     const c = await this.fdb.client();
     try {
@@ -175,7 +181,7 @@ export class AuthE2e {
     // Секреты — файлами *_FILE (строки ≥ 32 байт), как на контуре; эфемерный бинарный pepper dev не используется
     // (D_spec_questions A-12: PinHasher с эфемерным PIN_PEPPER не проверяет собственные хэши).
     const file = (name: string, content: string): string => {
-      const p = join(this.secretsDir, name);
+      const p = join(secretsDir, name);
       writeFileSync(p, content, { mode: 0o600 });
       return p;
     };
@@ -285,9 +291,13 @@ export class AuthE2e {
   }
 
   async stop(): Promise<void> {
-    await this.app?.close();
-    await this.fdb.stop();
-    rmSync(this.secretsDir, { recursive: true, force: true });
+    try {
+      await this.app?.close();
+      await this.fdb.stop();
+    } finally {
+      removeSecretsDir(this.secretsDir);
+      this.secretsDir = undefined;
+    }
   }
 
   get http(): ReturnType<typeof request> {

@@ -7,7 +7,7 @@
 openapi: 3.0.3
 info:
   title: Optomstroy POS API
-  version: 1.3.0
+  version: 1.4.0
   description: |
     REST/JSON API pos-api (NestJS) для pos-app (Flutter: Android, Windows, iOS) — сотрудники и (R1, ядро §24.2) клиенты-покупатели, общий планшет магазина в торговом зале (технический пользователь kind=kiosk, флаг KIOSK_MODE, по умолчанию false — 08 §4.25, ADR-115), а также входящий обмен 1С (вариант C-2) и вебхук банка (только QR_PROVIDER=bakai, R2). Ошибки — RFC 9457 application/problem+json с машинным полем code (закрытый перечень 08 §2.4). Деньги — строки с 2 знаками + currency KGS; количества — строки с точностью единицы (≤ 3 знаков); время — UTC ISO-8601 с суффиксом Z; идентификаторы — UUID в нижнем регистре. Клиент никогда не передаёт цены, суммы и итоги (08 §2.14). Права проверяются сервером (deny by default).
   contact:
@@ -867,7 +867,7 @@ paths:
       operationId: kiosk_tablets_enroll
       summary: Подключить это устройство как планшет магазина
       description: |
-        08 §4.18.11; ADR-115; FLOW-043, SCR-54 «Сделать это устройство планшетом магазина». Администратор, вошедший на самом планшете (тот же X-Device-Id), подключает устройство. Одна транзакция: технический пользователь kind=kiosk (phone_e164 = NULL, status=active) с профилем (имя планшета, склад) и ролью kiosk; строка devices с тем же device_key; одна сессия планшета (amr ["pin"], сроки AUTH_REFRESH_IDLE_KIOSK_DAYS и AUTH_REFRESH_TTL_KIOSK_DAYS — 08 §2.2, 09 §8.9); строка store_tablets (status=active, хэш аварийного кода Argon2id(pepper ∥ код ∥ tablet_id) с версией pepper — 11 SEC-140; lock_task_enabled = NULL); сессии администратора на этом устройстве отзываются, его access jti — в token_denylist. Технический пользователь kind=kiosk создаётся только здесь (11 SEC-136). Ответ — токены планшета и аварийный код выхода exitCode (8 цифр CSPRNG): показывается один раз и не пишется в логи, аудит, уведомления и хранилище идемпотентности. Ширину экрана сервер не проверяет — подключение на compact отклоняет приложение. kiosk.manage — только admin, step-up (operation kiosk.manage, область admin_users); owner и прочие → 403 FORBIDDEN. Идемпотентность (08 §2.7 «Подключение и подключение заново планшета»): в idempotency_keys — только идентификаторы; повтор с тем же ключом и телом допускается один раз и только пока сессия планшета не использовалась — тот же статус, новые токены и новый аварийный код (прежний перестаёт действовать); иначе 422 IDEMPOTENCY_KEY_REUSED reason replay_used. Ошибки: 400 VALIDATION_FAILED (name 2…150, warehouseId, forbidden_field, idempotency_key_required); 401; 403 KIOSK_DISABLED (KIOSK_MODE=false), STEP_UP_REQUIRED, FORBIDDEN; 404 NOT_FOUND (склад не существует или неактивен); 409 IDEMPOTENCY_IN_PROGRESS (Retry-After); 422 IDEMPOTENCY_KEY_REUSED; 429 RATE_LIMITED. Rate limit: RL-ADMIN. Аудит: kiosk.enrolled (актор, tabletId, имя, склад; без токенов и кода). Кэширование: no-store.
+        08 §4.18.11; ADR-115; FLOW-043, SCR-54 «Сделать это устройство планшетом магазина». Администратор, вошедший на самом планшете (тот же X-Device-Id), подключает устройство. Одна транзакция: технический пользователь kind=kiosk (phone_e164 = NULL, status=active) с профилем (имя планшета, склад) и ролью kiosk; строка devices с тем же device_key; одна сессия планшета (amr ["pin"], сроки AUTH_REFRESH_IDLE_KIOSK_DAYS и AUTH_REFRESH_TTL_KIOSK_DAYS — 08 §2.2, 09 §8.9); строка store_tablets (status=active, хэш аварийного кода Argon2id(pepper ∥ код ∥ tablet_id) с версией pepper — 11 SEC-140; lock_task_enabled = NULL); сессии администратора на этом устройстве отзываются, его access jti — в token_denylist; с 1.4.0 — и ключи Windows Hello всех пользователей с этим device_key (kiosk_connect; 08 §4.18.11, ADR-116). Технический пользователь kind=kiosk создаётся только здесь (11 SEC-136). Ответ — токены планшета и аварийный код выхода exitCode (8 цифр CSPRNG): показывается один раз и не пишется в логи, аудит, уведомления и хранилище идемпотентности. Ширину экрана сервер не проверяет — подключение на compact отклоняет приложение. kiosk.manage — только admin, step-up (operation kiosk.manage, область admin_users); owner и прочие → 403 FORBIDDEN. Идемпотентность (08 §2.7 «Подключение и подключение заново планшета»): в idempotency_keys — только идентификаторы; повтор с тем же ключом и телом допускается один раз и только пока сессия планшета не использовалась — тот же статус, новые токены и новый аварийный код (прежний перестаёт действовать); иначе 422 IDEMPOTENCY_KEY_REUSED reason replay_used. Ошибки: 400 VALIDATION_FAILED (name 2…150, warehouseId, forbidden_field, idempotency_key_required); 401; 403 KIOSK_DISABLED (KIOSK_MODE=false), STEP_UP_REQUIRED, FORBIDDEN; 404 NOT_FOUND (склад не существует или неактивен); 409 IDEMPOTENCY_IN_PROGRESS (Retry-After); 422 IDEMPOTENCY_KEY_REUSED; 429 RATE_LIMITED. Rate limit: RL-ADMIN. Аудит: kiosk.enrolled (актор, tabletId, имя, склад; без токенов и кода). Кэширование: no-store.
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -995,7 +995,7 @@ paths:
       operationId: kiosk_tablets_reconnect
       summary: Подключить заново тот же планшет
       description: |
-        08 §4.18.15; ADR-115; SCR-54 «Подключить заново этот планшет» на самом планшете (FLOW-043 A2): срок сессии вышел, планшет отключён для обновления, приложение переустановлено или устройство заменено. Тот же технический пользователь и та же строка store_tablets — имя, склад, история заявок и код автора в 1С (createdByUserCode) не меняются. Одна транзакция: status=active, reconnected_at, reconnected_by_user_id, поля отключения очищаются; прежние сессии технического пользователя отзываются с revoke_reason=kiosk_revoked (копия на заменённом устройстве получает 401 KIOSK_REVOKED); строка devices для текущего device_key и store_tablets.device_id на неё; новая сессия планшета; новый аварийный код (прежний перестаёт действовать, счётчик и пауза неверных кодов обнуляются); коды kiosk_order планшета гасятся; lock_task_enabled = NULL; сессии администратора на устройстве отзываются, его access jti — в token_denylist. Тело — пустой объект. kiosk.manage — только admin, step-up (operation kiosk.manage). Новый пользователь kind=kiosk этой операцией не создаётся. Идемпотентность — как у POST /admin/store-tablets (08 §2.7). Ошибки: 400 VALIDATION_FAILED (forbidden_field, idempotency_key_required); 401; 403 KIOSK_DISABLED (KIOSK_MODE=false), STEP_UP_REQUIRED, FORBIDDEN; 404 NOT_FOUND; 409 IDEMPOTENCY_IN_PROGRESS (Retry-After); 422 IDEMPOTENCY_KEY_REUSED (reason replay_used); 429 RATE_LIMITED. Rate limit: RL-ADMIN. Аудит: kiosk.reconnected (актор, tabletId; без токенов и кода). Кэширование: no-store.
+        08 §4.18.15; ADR-115; SCR-54 «Подключить заново этот планшет» на самом планшете (FLOW-043 A2): срок сессии вышел, планшет отключён для обновления, приложение переустановлено или устройство заменено. Тот же технический пользователь и та же строка store_tablets — имя, склад, история заявок и код автора в 1С (createdByUserCode) не меняются. Одна транзакция: status=active, reconnected_at, reconnected_by_user_id, поля отключения очищаются; прежние сессии технического пользователя отзываются с revoke_reason=kiosk_revoked (копия на заменённом устройстве получает 401 KIOSK_REVOKED); строка devices для текущего device_key и store_tablets.device_id на неё; новая сессия планшета; новый аварийный код (прежний перестаёт действовать, счётчик и пауза неверных кодов обнуляются); коды kiosk_order планшета гасятся; lock_task_enabled = NULL; сессии администратора на устройстве отзываются, его access jti — в token_denylist; с 1.4.0 — и ключи Windows Hello пользователей с этим device_key (kiosk_connect; ADR-116). Тело — пустой объект. kiosk.manage — только admin, step-up (operation kiosk.manage). Новый пользователь kind=kiosk этой операцией не создаётся. Идемпотентность — как у POST /admin/store-tablets (08 §2.7). Ошибки: 400 VALIDATION_FAILED (forbidden_field, idempotency_key_required); 401; 403 KIOSK_DISABLED (KIOSK_MODE=false), STEP_UP_REQUIRED, FORBIDDEN; 404 NOT_FOUND; 409 IDEMPOTENCY_IN_PROGRESS (Retry-After); 422 IDEMPOTENCY_KEY_REUSED (reason replay_used); 429 RATE_LIMITED. Rate limit: RL-ADMIN. Аудит: kiosk.reconnected (актор, tabletId; без токенов и кода). Кэширование: no-store.
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -1502,7 +1502,7 @@ paths:
       - admin
       operationId: admin_users_logout_all
       summary: Отозвать все сессии пользователя
-      description: '08 §4.18.3; ядро §17.4, §21 п.3; 11 SEC-043. session.revoke.any, step-up (operation session.revoke.any): admin — любые цели, кроме owner; owner — только цели с ролью admin/owner. Тела запроса нет. Повтор → 204. Ошибки: 401; 403 FORBIDDEN (цель — сам субъект; цель owner при субъекте admin; owner над целью без ролей admin/owner; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND. Аудит session.revoked (actor, reason, число отозванных сессий в after). Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store. Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9; ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
+      description: '08 §4.18.3; ядро §17.4, §21 п.3; 11 SEC-043. session.revoke.any, step-up (operation session.revoke.any): admin — любые цели, кроме owner; owner — только цели с ролью admin/owner. Тела запроса нет. Повтор → 204. Ошибки: 401; 403 FORBIDDEN (цель — сам субъект; цель owner при субъекте admin; owner над целью без ролей admin/owner; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND. Аудит session.revoked (actor, reason, число отозванных сессий в after); с 1.4.0 (08 §4.18.3; ADR-116) отзываются и живые ключи Windows Hello пользователя (hello_keys.revoke_reason = logout_all). Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after (08 §4.18). Cache-Control: no-store. Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9; ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -1733,7 +1733,7 @@ paths:
       operationId: auth_logout_all
       summary: Завершить все сессии пользователя (step-up)
       description: |
-        08 §4.1.5. Отзывает все sid и refresh-семьи (стандартные и биометрические), включая текущую, без увеличения permissionsVersion; access-токены других устройств перестают приниматься не позже чем через 60 с. Повтор → 204. Step-up обязателен (operation session.logout_all, 08 §2.12). Ошибки: 401; 403 STEP_UP_REQUIRED, FORBIDDEN. Rate limit: RL-AUTH. Аудит: auth.logout_all (stepUpMethod). Кэширование: no-store.
+        08 §4.1.5. Отзывает все sid и refresh-семьи (стандартные и биометрические), включая текущую, без увеличения permissionsVersion; access-токены других устройств перестают приниматься не позже чем через 60 с. Повтор → 204. С 1.4.0 (ADR-116): отзывает и все живые ключи Windows Hello пользователя (hello_keys.revoke_reason = logout_all). Step-up обязателен (operation session.logout_all, 08 §2.12). Ошибки: 401; 403 STEP_UP_REQUIRED, FORBIDDEN. Rate limit: RL-AUTH. Аудит: auth.logout_all (stepUpMethod). Кэширование: no-store.
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -1889,7 +1889,7 @@ paths:
       operationId: auth_otp_verify
       summary: Проверить код; ветвление «вход / сотрудник по приглашению / регистрация клиента / ожидание активации»
       description: |
-        08 §4.1.2; ядро §24.2. Проверка кода (constant-time), атомарное потребление, регистрация устройства, затем ветвление: аккаунт active → authenticated; номер с действующим приглашением → учётная запись сотрудника и authenticated с roleSource=invitation, nextStep=set_pin (без регистрационной формы); нет аккаунта и приглашения → registration_required (регистрация клиента); pending_activation — только при CUSTOMER_SELF_SERVICE=false; blocked → 403 FORBIDDEN. До установки PIN сессия сотрудника по приглашению ограничена (/me*, /auth/*, GET /settings/public; прочее → 403 FORBIDDEN reason pin_not_set). Повторный verify того же кода → 422 OTP_EXPIRED. Ошибки: 400 VALIDATION_FAILED; 403 FORBIDDEN (blocked); 409 DEVICE_MISMATCH (X-Device-Id ≠ устройству челленджа); 422 OTP_INVALID (attemptsLeft), OTP_EXPIRED; 423 OTP_LOCKED (retryAfter); 429 RATE_LIMITED. Rate limit: RL-OTP-VERIFY, RL-PUBLIC-IP. Аудит: auth.otp.verified / auth.otp.failed / auth.login; user.created (вход по приглашению). Кэширование: no-store. Код заявки с планшета магазина (purpose=kiosk_order) сессию не выдаёт: челлендж другого назначения → 404 NOT_FOUND (08 §4.1.2; ADR-115; 12 T-KIOSK-015).
+        08 §4.1.2; ядро §24.2. Проверка кода (constant-time), атомарное потребление, регистрация устройства, затем ветвление: аккаунт active → authenticated; номер с действующим приглашением → учётная запись сотрудника и authenticated с roleSource=invitation, nextStep=set_pin (без регистрационной формы); нет аккаунта и приглашения → registration_required (регистрация клиента); pending_activation — только при CUSTOMER_SELF_SERVICE=false; blocked → 403 FORBIDDEN. До установки PIN сессия сотрудника по приглашению ограничена (/me*, /auth/*, GET /settings/public; прочее → 403 FORBIDDEN reason pin_not_set). Повторный verify того же кода → 422 OTP_EXPIRED. Ошибки: 400 VALIDATION_FAILED; 403 FORBIDDEN (blocked); 409 DEVICE_MISMATCH (X-Device-Id ≠ устройству челленджа); 422 OTP_INVALID (attemptsLeft), OTP_EXPIRED; 423 OTP_LOCKED (retryAfter); 429 RATE_LIMITED. Rate limit: RL-OTP-VERIFY, RL-PUBLIC-IP. Аудит: auth.otp.verified / auth.otp.failed / auth.login; user.created (вход по приглашению). Кэширование: no-store. Код заявки с планшета магазина (purpose=kiosk_order) сессию не выдаёт: челлендж другого назначения → 404 NOT_FOUND (08 §4.1.2; ADR-115; 12 T-KIOSK-015). Вход по лицу (с 1.4.0; 08 §4.1.2 «Вход по лицу», ADR-116): успешный вход продлевает weak_reauth_due_at семей уровня W этого пользователя на устройстве; при AUTH_WINDOWS_HELLO_KEY=personal выдача сессии отзывает ключи Windows Hello других пользователей с тем же device_key (shared_device); user.security — с biometricWeakAllowed и windowsHelloKeyAllowed.
       security: []
       x-permissions: []
       x-roles: []
@@ -2255,9 +2255,9 @@ paths:
       tags:
       - auth
       operationId: auth_unlock
-      summary: Разблокировать сессию по PIN или биометрии с криптопривязкой (с ротацией refresh)
+      summary: Разблокировать сессию по PIN, биометрии или ключу Windows Hello (с ротацией refresh)
       description: |
-        08 §4.1.8; ядро §18.2 п.5, §19.3; D-48. Без access JWT: субъект — refreshToken + X-Device-Id, второй фактор — PIN (серверная проверка) или method=biometric (biometric_refresh после системной биометрии; не Windows). Без method — pin. biometricInvalidated=true (с method=pin) отзывает биометрическую семью устройства и выключает Me.security.biometricsEnabled. Сервер устанавливает sessions.unlocked_until = now() + SESSION_IDLE_LOCK_MINUTES. Ротация refresh — по правилам /auth/refresh (окно грации 30 с, reuse-detection). Ошибки: 400 VALIDATION_FAILED; 401 PIN_INVALID (attemptsLeft; клиент не вызывает /auth/refresh), SESSION_REVOKED; 403 FORBIDDEN (reason pin_not_set); 423 PIN_LOCKED; 429 RATE_LIMITED. Rate limit: RL-PIN, RL-AUTH. Аудит: auth.unlock (метод, result, deviceId; без PIN); auth.pin.locked. Кэширование: no-store.
+        08 §4.1.8; ядро §18.2 п.5, §19.3; D-48; ADR-116. Без access JWT: субъект — refreshToken + X-Device-Id, второй фактор — PIN (серверная проверка), method=biometric (biometric_refresh после системной биометрии; не Windows; уровень S — Class 3 с криптопривязкой, уровень W Android — Class 2 без неё, с 1.4.0) или method=hello_key (с 1.4.0: подпись signature ключа Windows Hello над challenge из POST /auth/unlock/challenge, только Windows). Без method — pin. biometricInvalidated=true (с method=pin) отзывает биометрическую семью устройства и выключает Me.security.biometricsEnabled; helloKeyInvalidated=true (с method=pin, с 1.4.0) после верного PIN отзывает ключ Windows Hello устройства (invalidated). Сервер устанавливает sessions.unlocked_until = now() + SESSION_IDLE_LOCK_MINUTES (pin и hello_key). Ротация refresh — по правилам /auth/refresh (окно грации 30 с, reuse-detection). Успешный PIN продлевает weak_reauth_due_at семей уровня W устройства. Порядок hello_key: refresh (как у pin) → субъект и ключ (hello_key_unavailable) → challenge (гасится при любом исходе) → подпись RSASSA-PKCS1-v1_5 SHA-256 (hello_key_invalid) → ротация. Уровень W: refresh → AUTH_BIO_ALLOW_WEAK (bio_weak_disabled, семья отзывается) → срок и PIN (bio_weak_pin_due) → ротация. Отказы входа по лицу — без ротации. Ошибки: 400 VALIDATION_FAILED (rule method — signature не с hello_key, helloKeyInvalidated не с pin); 401 PIN_INVALID (attemptsLeft; клиент не вызывает /auth/refresh), SESSION_REVOKED, UNLOCK_REQUIRED (reason bio_weak_pin_due | bio_weak_disabled | hello_key_unavailable | hello_key_invalid — с 1.4.0); 403 FORBIDDEN (reason pin_not_set); 423 PIN_LOCKED; 429 RATE_LIMITED. Rate limit: RL-PIN, RL-AUTH (неверная подпись — общий лимит RL-PIN, не счётчик PIN). Аудит: auth.unlock (метод, bioStrength для biometric, keySource для hello_key, result, deviceId; без PIN, подписи и challenge); auth.pin.locked; auth.biometrics.disabled (системный отзыв). Кэширование: no-store.
       security: []
       x-permissions: []
       x-roles: []
@@ -2300,6 +2300,58 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '423':
           $ref: '#/components/responses/Locked'
+        '426':
+          $ref: '#/components/responses/UpgradeRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /auth/unlock/challenge:
+    post:
+      tags:
+      - auth
+      operationId: auth_unlock_challenge
+      summary: Получить одноразовый challenge для разблокировки ключом Windows Hello
+      description: |
+        08 §4.1.10; ADR-116 (ответ владельца 2026-11-08 на Q-355); 09 §9.2 «Вход по ключу Windows Hello», BIO-039; 11 SEC-013, SEC-146. С 1.4.0. Без access JWT: субъект — стандартная сессия по refreshToken + X-Device-Id. Challenge — 'optomstroy-hello-unlock/v1:' + 32 байта CSPRNG (base64url), срок 120 с, хранится у ключа (07 §5.66), не больше одного на ключ (новый заменяет прежний); приложение подписывает байты UTF-8 строки challenge ключом Windows Hello (KeyCredential.RequestSignAsync, по нажатию кнопки) и вызывает POST /auth/unlock {method: hello_key}. Браузер на Windows в веб-демо с PRF — тот же путь (ключ WebCrypto, source webauthn_prf; 09 BIO-041). Refresh не ротируется. Refresh проверяется как в POST /auth/unlock (уточнено 2026-11-18): текущий refresh живой сессии этого X-Device-Id; прежний refresh в окне грации или при позднем повторе — challenge той же сессии (POST /auth/unlock {hello_key} принимает тот же refresh «вбок»). Затем: kind=standard; пользователь active, kind ≠ kiosk; platform=windows; AUTH_WINDOWS_HELLO_KEY ≠ off (иначе ключ отзывается — policy_off); при personal с этим device_key за 30 дней не входил другой пользователь (иначе — shared_device); живой ключ пользователя и устройства. Ошибки: 400 VALIDATION_FAILED; 401 SESSION_REVOKED (как у POST /auth/unlock: неизвестный или отозванный refresh; reason expired — сроки вышли, сессия отзывается; device_mismatch — чужой X-Device-Id, сессия отзывается; blocked — пользователь заблокирован; reuse_detected — вытесненный refresh, семья отзывается) или KIOSK_REVOKED; 401 UNLOCK_REQUIRED (reason hello_key_unavailable — любое невыполненное условие по ключу, субъекту или переменной, одинаковое тело, без ротации и без отзыва сессии; только на этот ответ приложение снимает признак ключа); 426; 429 RATE_LIMITED. Rate limit: RL-PIN (userId + deviceId сессии), RL-PUBLIC-IP. Аудит: выдача не пишется; отзыв ключа — auth.biometrics.disabled; отзыв сессии — session.revoked (device_mismatch), session.reuse_detected (mode unlock_challenge). Кэширование: no-store.
+      security: []
+      x-permissions: []
+      x-roles: []
+      x-step-up: false
+      x-idempotent: false
+      x-rate-limit-group: RL-PIN
+      parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/AppVersion'
+      - $ref: '#/components/parameters/Platform'
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/AcceptLanguage'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthUnlockChallengeRequest'
+      responses:
+        '200':
+          description: Выдан одноразовый challenge (120 с).
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            X-Min-App-Version:
+              $ref: '#/components/headers/XMinAppVersion'
+            X-Recommended-App-Version:
+              $ref: '#/components/headers/XRecommendedAppVersion'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUnlockChallengeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '426':
           $ref: '#/components/responses/UpgradeRequired'
         '429':
@@ -6174,7 +6226,7 @@ paths:
       operationId: me_biometrics_toggle
       summary: Включить или выключить биометрический вход на текущем устройстве (step-up)
       description: |
-        08 §4.3.6; D-13, D-14. Выдаёт / отзывает biometric_refresh (отдельная familyId, kind=biometric) только для текущего устройства; биометрических данных сервер не получает. Step-up обязателен (operation profile.biometrics.toggle). На Windows включение → 200 {enabled false, reason no_crypto_binding_on_platform}. Повтор enabled=false → 200 без изменений; повтор enabled=true выдаёт новый токен и отзывает прежнюю биометрическую семью устройства (поэтому Idempotency-Key не применяется — решение A4). Ошибки: 400 VALIDATION_FAILED; 401; 403 STEP_UP_REQUIRED, FORBIDDEN; 422 CONSENT_REQUIRED (нет согласия biometrics_device). Rate limit: RL-AUTH. Аудит: auth.biometrics.enabled / auth.biometrics.disabled; consent.granted / consent.revoked. Кэширование: no-store (токен).
+        08 §4.3.6; D-13, D-14; ADR-116. Выдаёт / отзывает biometric_refresh (отдельная familyId, kind=biometric) только для текущего устройства; биометрических данных сервер не получает. Step-up обязателен (operation profile.biometrics.toggle). На Windows включение без helloKey → 200 {enabled false, reason no_crypto_binding_on_platform}. С 1.4.0 (ADR-116): class2 (уровень W Android) — только platform=android, при AUTH_BIO_ALLOW_WEAK, разрешающей субъекта (иначе 200 {enabled false, reason weak_biometrics_disabled}), и заданном PIN (иначе 400 rule pin_required); семья получает weak_reauth_due_at. windows_hello + helloKey (W2) — только platform=windows: AUTH_WINDOWS_HELLO_KEY=off → 200 {enabled false, reason hello_key_disabled}; personal и другой пользователь на этом device_key за 30 дней → reason hello_key_shared_device; без PIN → rule pin_required; иначе открытый ключ сохраняется (прежний ключ устройства отзывается — replaced), ответ {enabled true} без токена. enabled=false отзывает и ключ Windows Hello устройства (disabled). Повтор enabled=false → 200 без изменений; повтор enabled=true выдаёт новый токен (или новый ключ) и отзывает прежнюю биометрическую семью (ключ) устройства (поэтому Idempotency-Key не применяется — решение A4). Ошибки: 400 VALIDATION_FAILED (biometric_class, pin_required, hello_key, hello_key_format); 401; 403 STEP_UP_REQUIRED, FORBIDDEN; 422 CONSENT_REQUIRED (нет согласия biometrics_device). Rate limit: RL-AUTH. Аудит: auth.biometrics.enabled / auth.biometrics.disabled (biometricClass, keySource); consent.granted / consent.revoked. Кэширование: no-store (токен).
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -6289,7 +6341,7 @@ paths:
       operationId: me_consents_update
       summary: Выдать или отозвать согласие (отзыв personal_data — со step-up)
       description: |
-        08 §4.3.7, §2.12. Отзыв biometrics_device автоматически отзывает биометрическую семью; отзыв personal_data переводит аккаунт в blocked с подтверждением (step-up, operation profile.consent.revoke) и уведомлением администратора. Повтор с тем же {kind, version, granted} → 200 без новой записи. Ошибки: 400 VALIDATION_FAILED (неизвестный kind / version); 401; 403 STEP_UP_REQUIRED (отзыв personal_data), FORBIDDEN. Rate limit: RL-READ (группа /me*). Аудит: consent.granted / consent.revoked. Кэширование: no-store.
+        08 §4.3.7, §2.12. Отзыв biometrics_device автоматически отзывает биометрическую семью (с 1.4.0 — и живой ключ Windows Hello устройства, disabled; ADR-116); отзыв personal_data переводит аккаунт в blocked с подтверждением (step-up, operation profile.consent.revoke) и уведомлением администратора. Повтор с тем же {kind, version, granted} → 200 без новой записи. Ошибки: 400 VALIDATION_FAILED (неизвестный kind / version); 401; 403 STEP_UP_REQUIRED (отзыв personal_data), FORBIDDEN. Rate limit: RL-READ (группа /me*). Аудит: consent.granted / consent.revoked. Кэширование: no-store.
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -6357,7 +6409,7 @@ paths:
       operationId: me_phone_change_confirm
       summary: Подтвердить смену номера кодом с нового номера
       description: |
-        08 §4.3.3. Код одноразовый: повтор → 422 OTP_EXPIRED. Все другие сессии отзываются, текущая продолжает жить. Step-up проверяется на request (решение A6 заголовка файла). Ошибки: 400 VALIDATION_FAILED (otp_format); 401; 403; 409 PHONE_ALREADY_REGISTERED; 422 OTP_INVALID (attemptsLeft), OTP_EXPIRED; 423 OTP_LOCKED; 429 RATE_LIMITED. Rate limit: RL-OTP-VERIFY. Аудит: user.phone_changed (phoneMasked old/new). Кэширование: no-store.
+        08 §4.3.3. Код одноразовый: повтор → 422 OTP_EXPIRED. Все другие сессии отзываются, текущая продолжает жить. С 1.4.0 (ADR-116): отзываются и все живые ключи Windows Hello пользователя, включая текущее устройство (phone_changed). Step-up проверяется на request (решение A6 заголовка файла). Ошибки: 400 VALIDATION_FAILED (otp_format); 401; 403; 409 PHONE_ALREADY_REGISTERED; 422 OTP_INVALID (attemptsLeft), OTP_EXPIRED; 423 OTP_LOCKED; 429 RATE_LIMITED. Rate limit: RL-OTP-VERIFY. Аудит: user.phone_changed (phoneMasked old/new). Кэширование: no-store.
       x-permissions:
       - profile.manage.own
       x-roles:
@@ -6552,7 +6604,7 @@ paths:
       operationId: me_pin_delete
       summary: Удалить PIN приложения (только customer при биометрии с криптопривязкой; step-up)
       description: |
-        08 §4.3.5; D-48. Только роль customer при включённой биометрии с криптопривязкой; для staff PIN обязателен на всех платформах → 403 FORBIDDEN (reason pin_required_for_staff). Step-up обязателен (operation profile.pin.set). Повтор → 204. Ошибки: 401; 403 STEP_UP_REQUIRED, FORBIDDEN; 429 RATE_LIMITED. Rate limit: RL-PIN. Аудит: auth.pin.removed. Кэширование: no-store.
+        08 §4.3.5; D-48. Только роль customer при включённой биометрии с криптопривязкой; для staff PIN обязателен на всех платформах → 403 FORBIDDEN (reason pin_required_for_staff). Step-up обязателен (operation profile.pin.set). С 1.4.0 (ADR-116): при живой семье уровня W пользователя → 400 VALIDATION_FAILED (field pin, rule weak_biometrics_active), при живом ключе Windows Hello пользователя → rule hello_key_active (без PIN они не работают); без биометрии с криптопривязкой уровня S на текущем устройстве → 422 VALIDATION_FAILED (login_protection_required). Повтор → 204. Ошибки: 400 VALIDATION_FAILED; 401; 403 STEP_UP_REQUIRED, FORBIDDEN; 422 VALIDATION_FAILED; 429 RATE_LIMITED. Rate limit: RL-PIN. Аудит: auth.pin.removed. Кэширование: no-store.
       security:
       - bearerAuth: []
         stepUpToken: []
@@ -6584,10 +6636,14 @@ paths:
               $ref: '#/components/headers/XRecommendedAppVersion'
             Cache-Control:
               $ref: '#/components/headers/CacheControl'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         default:
@@ -11409,20 +11465,59 @@ components:
           type: integer
           minimum: 0
           example: 8
+    AuthUnlockChallengeRequest:
+      type: object
+      required:
+      - method
+      - refreshToken
+      additionalProperties: false
+      description: Тело POST /auth/unlock/challenge (08 §4.1.10; ADR-116). С 1.4.0.
+      properties:
+        method:
+          type: string
+          enum:
+          - hello_key
+        refreshToken:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Стандартный refresh текущей сессии устройства.
+      example:
+        method: hello_key
+        refreshToken: b64url…
+    AuthUnlockChallengeResponse:
+      type: object
+      required:
+      - challenge
+      - expiresAt
+      additionalProperties: false
+      description: 200 POST /auth/unlock/challenge (08 §4.1.10; ADR-116). С 1.4.0.
+      properties:
+        challenge:
+          type: string
+          pattern: ^optomstroy-hello-unlock/v1:[A-Za-z0-9_-]{43}$
+          description: Префикс назначения и 32 байта CSPRNG (base64url без '='); подписываются байты UTF-8 всей строки.
+          example: optomstroy-hello-unlock/v1:q3Xh0bQ7rJm2Wc9sLk1Zp8Vt4Ny6Ue5Ra0Go7Df3Hi2
+        expiresAt:
+          type: string
+          format: date-time
+          description: now + 120 с; после — hello_key_invalid.
     AuthUnlockRequest:
       type: object
       required:
       - refreshToken
       additionalProperties: false
-      description: Тело POST /auth/unlock (08 §4.1.8). Без method — pin.
+      description: Тело POST /auth/unlock (08 §4.1.8). Без method — pin. Сочетания полей проверяет сервер (решение A11).
       properties:
         method:
           type: string
           enum:
           - pin
           - biometric
+          - hello_key
           default: pin
-          description: biometric — только Android/iOS (не Windows), refreshToken = расшифрованный biometric_refresh.
+          description: |
+            biometric — только Android/iOS (не Windows), refreshToken = расшифрованный biometric_refresh (уровень S) или biometric_refresh уровня W Android из защищённого хранилища (с 1.4.0). hello_key (с 1.4.0, ADR-116) — только Windows: refreshToken = стандартный refresh, signature — подпись challenge (08 §4.1.10).
         refreshToken:
           type: string
           minLength: 1
@@ -11435,6 +11530,17 @@ components:
         biometricInvalidated:
           type: boolean
           description: 'true — ключ биометрии недоступен: сервер отзывает биометрическую семью устройства и выключает biometricsEnabled (только с method=pin).'
+        signature:
+          type: string
+          pattern: ^[A-Za-z0-9_-]+$
+          minLength: 342
+          maxLength: 683
+          description: |
+            С 1.4.0 (ADR-116; 08 §4.1.8): только с method=hello_key, обязательна для него. RSASSA-PKCS1-v1_5 / SHA-256 закрытым ключом Windows Hello над байтами UTF-8 строки challenge из POST /auth/unlock/challenge; base64url без '='.
+        helloKeyInvalidated:
+          type: boolean
+          description: |
+            С 1.4.0 (ADR-116): true — ключ Windows Hello пропал в Windows (KeyCredentialStatus.NotFound); после верного PIN сервер отзывает живой ключ устройства (hello_keys.revoke_reason = invalidated). Только с method=pin.
       example:
         method: pin
         refreshToken: b64url…
@@ -13609,6 +13715,17 @@ components:
           type: string
           enum:
           - failed
+    HelloKeyAlgorithm:
+      type: string
+      enum:
+      - RS256
+      description: 'hello_keys.algorithm (07 §5.66, §6.1.1 hello_key_algorithm): RSASSA-PKCS1-v1_5 с SHA-256, ключ RSA 2048…4096 бит.'
+    HelloKeySource:
+      type: string
+      enum:
+      - windows_hello
+      - webauthn_prf
+      description: 'hello_keys.source (07 §5.66, §6.1.1 hello_key_source): windows_hello — KeyCredentialManager приложения Windows; webauthn_prf — браузер на Windows в веб-демо (ключ WebCrypto под PRF).'
     IdempotencyKeyValue:
       type: string
       format: uuid
@@ -14475,6 +14592,18 @@ components:
               - ios
               - windows_hello_gate
               - none
+              - android_class2
+              - windows_hello_key
+              description: |
+                Биометрия устройства запроса (08 §3.14). android_class2 — живая семья уровня W (Class 2, без криптопривязки); windows_hello_key — живой ключ Windows Hello устройства (W2); windows_hello_gate — Windows без ключа (гейт W1 сервер не хранит). android_class2 и windows_hello_key — с 1.4.0 (ADR-116), в конце перечня.
+            biometricWeakAllowed:
+              type: boolean
+              description: |
+                С 1.4.0 (08 §3.14; ADR-116, 09 BIO-030): AUTH_BIO_ALLOW_WEAK разрешает уровень W этому субъекту (all; customer — только kind=customer) и устройство запроса platform=android. PIN — отдельно (pinSet). Отсутствие поля — false.
+            windowsHelloKeyAllowed:
+              type: boolean
+              description: |
+                С 1.4.0 (08 §3.14; ADR-116, 09 BIO-038): AUTH_WINDOWS_HELLO_KEY ≠ off, устройство запроса platform=windows и, при personal, с этим device_key за 30 дней не входил другой пользователь. Отсутствие поля — false.
         consents:
           type: array
           items:
@@ -14541,6 +14670,28 @@ components:
           example: '2026-10-01'
         granted:
           type: boolean
+    MeBiometricsHelloKey:
+      type: object
+      required:
+      - publicKey
+      - algorithm
+      - source
+      additionalProperties: false
+      description: |
+        Открытый ключ Windows Hello устройства (08 §4.3.6; 07 §5.66; ADR-116). С 1.4.0. Только с biometricClass=windows_hello (иначе 400 rule hello_key). Сервер хранит только открытый ключ — не биометрические данные (11 SEC-146).
+      properties:
+        publicKey:
+          type: string
+          pattern: ^[A-Za-z0-9_-]+$
+          minLength: 342
+          maxLength: 1366
+          description: X509SubjectPublicKeyInfo (DER, base64url без '=') ключа RSA 2048…4096 бит, экспонента 65537; иначе rule hello_key_format.
+        algorithm:
+          $ref: '#/components/schemas/HelloKeyAlgorithm'
+        source:
+          allOf:
+          - $ref: '#/components/schemas/HelloKeySource'
+          description: Сервер источник только записывает (аудит keySource).
     MeBiometricsRequest:
       type: object
       required:
@@ -14556,6 +14707,11 @@ components:
           - class3
           - ios
           - windows_hello
+          - class2
+          description: |
+            class2 — уровень W Android (Class 2, без криптопривязки; с 1.4.0, ADR-116): только platform=android (иначе 400 rule biometric_class). windows_hello с helloKey — ключ Windows Hello (W2), без helloKey — прежний ответ no_crypto_binding_on_platform.
+        helloKey:
+          $ref: '#/components/schemas/MeBiometricsHelloKey'
         consent:
           $ref: '#/components/schemas/MeBiometricsConsent'
       example:
@@ -14570,7 +14726,7 @@ components:
       required:
       - enabled
       description: |
-        200 POST /me/biometrics (08 §4.3.6): включено — biometricRefreshToken и expiresAt (клиент шифрует токен ключом Keystore/Keychain с привязкой к биометрии); Windows — enabled false и reason; выключено — enabled false.
+        200 POST /me/biometrics (08 §4.3.6): включено — biometricRefreshToken и expiresAt (клиент шифрует токен ключом Keystore/Keychain с привязкой к биометрии; уровень W — хранит в защищённом хранилище); ключ Windows Hello — enabled true без токена (с 1.4.0); Windows без helloKey — enabled false и reason; отказ входа по лицу — enabled false и reason (с 1.4.0); выключено — enabled false.
       properties:
         enabled:
           type: boolean
@@ -14583,6 +14739,11 @@ components:
           type: string
           enum:
           - no_crypto_binding_on_platform
+          - weak_biometrics_disabled
+          - hello_key_disabled
+          - hello_key_shared_device
+          description: |
+            no_crypto_binding_on_platform — Windows без helloKey (гейт W1 — только на устройстве); с 1.4.0 (ADR-116): weak_biometrics_disabled — AUTH_BIO_ALLOW_WEAK не разрешает уровень W субъекту; hello_key_disabled — AUTH_WINDOWS_HELLO_KEY=off; hello_key_shared_device — правило personal: с этим device_key за 30 дней входил другой пользователь.
     MeConsentList:
       type: object
       required:
@@ -16496,11 +16657,15 @@ components:
         reason:
           type: string
           description: |
-            Машинная причина (cancel_already_requested, possible_duplicate, open_payment_exists, owner_role_reserved, cursor_expired, …). Для 422 PRICE_CHANGED по previewToken — preview_token_invalid, preview_cart_changed, preview_payment_method_changed, preview_total_changed (08 §2.4 «Уточнения … этапа F» п. 1); для 503 ONEC_UNAVAILABLE корзины — catalog_not_loaded (08 §4.7.1 «Уточнения» п. 2). Значения перечислены справочно (с 1.2.0); поле остаётся строкой. Планшет магазина (08 §2.4 «Коды и отказы планшета магазина», §2.7; с 1.3.0): 403 FORBIDDEN — kiosk_closed_list (маршрут вне закрытого списка 08 §4.25), kiosk_warehouse_unavailable (склад планшета не задан или неактивен), kiosk_target (операция /admin/users/* над пользователем kind=kiosk); 422 IDEMPOTENCY_KEY_REUSED подключения и подключения заново планшета — replay_used (повтор после использования сессии планшета). Для 401 UNLOCK_REQUIRED (08 §2.4, «Расширения Problem по реализации»; 09 §8.3, §8.8, §6.13): idle_lock — idle-блокировка staff на Windows; refresh_replay — поздний повтор refresh у пользователя с PIN (standard-сессия; пользователю без PIN приходит 401 SESSION_REVOKED с reason refresh_replay и сессия отзывается, 09 §8.3); emergency_code — сессия аварийного кода (первый запрос до разблокировки PIN). Клиент на любое значение показывает SCR-08 и вызывает POST /auth/unlock; неизвестное значение обрабатывается так же (совместимость вперёд). Список — x-unlock-required-reasons.
+            Машинная причина (cancel_already_requested, possible_duplicate, open_payment_exists, owner_role_reserved, cursor_expired, …). Для 422 PRICE_CHANGED по previewToken — preview_token_invalid, preview_cart_changed, preview_payment_method_changed, preview_total_changed (08 §2.4 «Уточнения … этапа F» п. 1); для 503 ONEC_UNAVAILABLE корзины — catalog_not_loaded (08 §4.7.1 «Уточнения» п. 2). Значения перечислены справочно (с 1.2.0); поле остаётся строкой. Планшет магазина (08 §2.4 «Коды и отказы планшета магазина», §2.7; с 1.3.0): 403 FORBIDDEN — kiosk_closed_list (маршрут вне закрытого списка 08 §4.25), kiosk_warehouse_unavailable (склад планшета не задан или неактивен), kiosk_target (операция /admin/users/* над пользователем kind=kiosk); 422 IDEMPOTENCY_KEY_REUSED подключения и подключения заново планшета — replay_used (повтор после использования сессии планшета). Для 401 UNLOCK_REQUIRED (08 §2.4, «Расширения Problem по реализации»; 09 §8.3, §8.8, §6.13): idle_lock — idle-блокировка staff на Windows; refresh_replay — поздний повтор refresh у пользователя с PIN (standard-сессия; пользователю без PIN приходит 401 SESSION_REVOKED с reason refresh_replay и сессия отзывается, 09 §8.3); emergency_code — сессия аварийного кода (первый запрос до разблокировки PIN). Клиент на любое значение показывает SCR-08 и вызывает POST /auth/unlock; неизвестное значение обрабатывается так же (совместимость вперёд). Список — x-unlock-required-reasons. Вход по лицу (с 1.4.0; 08 §2.4 «Причины UNLOCK_REQUIRED входа по лицу», ADR-116) — только в ответах POST /auth/unlock и POST /auth/unlock/challenge, без ротации refresh и без отзыва стандартной сессии: bio_weak_pin_due — уровень W Android: срок PIN (AUTH_BIO_WEAK_REAUTH_HOURS) прошёл, PIN заблокирован или не задан; bio_weak_disabled — уровень W запрещён AUTH_BIO_ALLOW_WEAK, семья W отозвана; hello_key_unavailable — ключ Windows Hello не принимается (нет, отозван, AUTH_WINDOWS_HELLO_KEY=off, правило personal, не Windows, планшет, refresh не стандартной сессии); отказ по самой сессии и у challenge — SESSION_REVOKED или KIOSK_REVOKED, как у POST /auth/unlock (уточнено 2026-11-18); hello_key_invalid — challenge нет, истёк, другой сессии или подпись неверна. Клиент показывает поле PIN на SCR-08 (09 §9.3).
           x-unlock-required-reasons:
           - idle_lock
           - refresh_replay
           - emergency_code
+          - bio_weak_pin_due
+          - bio_weak_disabled
+          - hello_key_unavailable
+          - hello_key_invalid
         until:
           type: string
           format: date-time
@@ -18606,7 +18771,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Unauthorized:
-      description: '401 — UNAUTHENTICATED, TOKEN_STALE, SESSION_REVOKED, REGISTRATION_TOKEN_INVALID, PIN_INVALID, UNLOCK_REQUIRED (reason: idle_lock | refresh_replay | emergency_code — 08 §2.4), WEBHOOK_SIGNATURE_INVALID, KIOSK_REVOKED (сессия планшета магазина отозвана администратором или аварийным выходом — 08 §2.2).'
+      description: '401 — UNAUTHENTICATED, TOKEN_STALE, SESSION_REVOKED, REGISTRATION_TOKEN_INVALID, PIN_INVALID, UNLOCK_REQUIRED (reason: idle_lock | refresh_replay | emergency_code | bio_weak_pin_due | bio_weak_disabled | hello_key_unavailable | hello_key_invalid — 08 §2.4), WEBHOOK_SIGNATURE_INVALID, KIOSK_REVOKED (сессия планшета магазина отозвана администратором или аварийным выходом — 08 §2.2).'
       headers:
         X-Request-Id:
           $ref: '#/components/headers/XRequestId'

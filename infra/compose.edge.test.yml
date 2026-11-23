@@ -1,0 +1,22 @@
+# Дополнение к infra/compose.edge.yml: сайт тестовой копии api-test.<домен> на общем caddy (16 §11). Подключает
+# bin/dc-edge, когда в .env рабочего контура задан CADDY_TEST_SITE_ADDRESS (его пишет `install.sh --contour test`).
+# caddy подключается к сети optomstroy_test_edge и проксирует на контейнер optomstroy-test-api-1; фото тестовой копии —
+# только чтение в /srv/media/test. Сеть рабочего контура перечислена снова: список сетей сервиса задаётся целиком.
+
+services:
+  caddy:
+    environment:
+      CADDY_TEST_SITE_ADDRESS: ${CADDY_TEST_SITE_ADDRESS:?задайте CADDY_TEST_SITE_ADDRESS в .env рабочего контура (api-test.<домен>)}
+    volumes:
+      - ./caddy/sites/test.caddy:/etc/caddy/sites/test.caddy:ro
+      - test_media:/srv/media/test:ro
+    networks: [ prod_edge, test_edge ]
+
+networks:
+  test_edge:
+    name: optomstroy_test_edge
+    external: true
+
+volumes:
+  test_media:
+    driver_opts: { type: none, o: bind, device: /srv/optomstroy/test/media }

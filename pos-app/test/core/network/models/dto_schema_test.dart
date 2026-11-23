@@ -6,10 +6,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:optomstroy/core/biometrics/biometric_authenticator.dart';
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/network/models/api_page.dart';
 import 'package:optomstroy/core/network/models/auth_token_pair.dart';
 import 'package:optomstroy/core/network/models/me.dart';
+import 'package:optomstroy/core/network/models/me_biometrics_dtos.dart';
 import 'package:optomstroy/core/network/models/money_dto.dart';
 import 'package:optomstroy/core/network/models/problem.dart';
 import 'package:optomstroy/core/network/models/public_settings.dart';
@@ -127,6 +129,83 @@ void main() {
       required: {'id', 'name', 'warehouseId'},
     );
   }, skip: skip);
+
+  test(
+    'POST /me/biometrics: MeBiometricsRequest, MeBiometricsHelloKey, MeBiometricsConsent, MeBiometricsResponse',
+    () {
+      // OpenAPI 1.4.0 (15 ADR-116): уровень W `class2`, ключ Windows Hello W2 `helloKey`, причины отказа.
+      const helloKey = MeBiometricsHelloKeyDto(publicKey: 'k', source: HelloKeySource.windowsHello);
+      const consent = MeBiometricsConsentDto(version: '2026-10-01');
+      matches(
+        'MeBiometricsRequest',
+        MeBiometricsRequestDto.toJson(
+          enabled: true,
+          biometricClass: 'windows_hello',
+          helloKey: helloKey,
+          consent: consent,
+        ),
+        required: MeBiometricsRequestDto.requiredKeys,
+      );
+      expect(
+        MeBiometricsRequestDto.jsonKeys,
+        (schema('MeBiometricsRequest')['properties']! as Map<String, Object?>).keys.toSet(),
+      );
+      // Выключение — только `enabled` (как SCR-04 и SCR-42 сегодня).
+      expect(MeBiometricsRequestDto.toJson(enabled: false), {'enabled': false});
+      final response = MeBiometricsResponseDto.fromJson({
+        'enabled': false,
+        'reason': 'hello_key_shared_device',
+        'futureField': 1,
+      });
+      expect(
+        (response.enabled, response.reason, response.biometricRefreshToken),
+        (false, MeBiometricsRefusal.helloKeySharedDevice, null),
+      );
+      expect(
+        MeBiometricsResponseDto.fromJson({'enabled': false, 'reason': 'new_reason'}).reason,
+        MeBiometricsRefusal.unknown,
+      );
+      final issued = MeBiometricsResponseDto.fromJson({
+        'enabled': true,
+        'biometricRefreshToken': 'secret-bio-refresh', // check-secrets: allow — фиктивный токен
+        'expiresAt': '2027-01-01T00:00:00Z',
+      });
+      expect((issued.enabled, issued.expiresAt, issued.reason), (true, DateTime.utc(2027), null));
+      expect(issued.toString(), isNot(contains('secret')));
+      matches('MeBiometricsHelloKey', helloKey.toJson(), required: MeBiometricsHelloKeyDto.requiredKeys);
+      expect(MeBiometricsHelloKeyDto.jsonKeys, MeBiometricsHelloKeyDto.requiredKeys);
+      matches('MeBiometricsConsent', consent.toJson(), required: MeBiometricsConsentDto.requiredKeys);
+      expect(
+        (schema('MeBiometricsResponse')['properties']! as Map<String, Object?>).keys.toSet(),
+        MeBiometricsResponseDto.jsonKeys,
+      );
+      expect(
+        ((schema('MeBiometricsResponse')['required'] as List<Object?>?) ?? const []).cast<String>().toSet(),
+        MeBiometricsResponseDto.requiredKeys,
+      );
+
+      Set<String> enumOf(String name, String property) =>
+          (((schema(name)['properties']! as Map<String, Object?>)[property]! as Map<String, Object?>)['enum']!
+                  as List<Object?>)
+              .cast<String>()
+              .toSet();
+      Set<String> rootEnum(String name) => (schema(name)['enum']! as List<Object?>).cast<String>().toSet();
+
+      expect(MeBiometricsRequestDto.biometricClasses, enumOf('MeBiometricsRequest', 'biometricClass'));
+      expect(
+        {for (final k in BiometricKind.values) ?k.apiClass},
+        MeBiometricsRequestDto.biometricClasses,
+        reason: 'BiometricKind.apiClass — значения MeBiometricsRequest.biometricClass',
+      );
+      expect({
+        for (final r in MeBiometricsRefusal.values)
+          if (r != MeBiometricsRefusal.unknown) r.value,
+      }, enumOf('MeBiometricsResponse', 'reason'));
+      expect({for (final a in HelloKeyAlgorithm.values) a.value}, rootEnum('HelloKeyAlgorithm'));
+      expect({for (final s in HelloKeySource.values) s.value}, rootEnum('HelloKeySource'));
+    },
+    skip: skip,
+  );
 
   test('PublicSettings и вложенные схемы', () {
     matches('PublicSettings', const PublicSettings().toJson());

@@ -79,6 +79,11 @@ final unlockWithBiometricProvider = Provider<UnlockWithBiometric>(
   (ref) => UnlockWithBiometric(ref.watch(authRepositoryProvider), ref.watch(biometricUnlockProvider)),
 );
 
+/// Вход по ключу Windows Hello без PIN (W2; 15 ADR-116 п. 3; 09 BIO-039).
+final unlockWithHelloKeyProvider = Provider<UnlockWithHelloKey>(
+  (ref) => UnlockWithHelloKey(ref.watch(authRepositoryProvider), ref.watch(biometricUnlockProvider)),
+);
+
 /// Состояние сессии, известное фиче auth (мост к `core/session` — RM-D-009).
 enum AuthSessionStatus {
   /// Нет сессии (или вышли).
@@ -163,12 +168,22 @@ final class UnboundAuthRepository implements AuthRepository {
       const FailureResult<VerifyOutcome>(_unbound);
 
   @override
-  Future<Result<UnlockSuccess>> unlockWithPin({required String pin, bool biometricInvalidated = false}) async =>
-      const FailureResult<UnlockSuccess>(_unbound);
+  Future<Result<UnlockSuccess>> unlockWithPin({
+    required String pin,
+    bool biometricInvalidated = false,
+    bool helloKeyInvalidated = false,
+  }) async => const FailureResult<UnlockSuccess>(_unbound);
 
   @override
   Future<Result<BiometricUnlockSuccess>> unlockWithBiometric({required String biometricRefresh}) async =>
       const FailureResult<BiometricUnlockSuccess>(_unbound);
+
+  @override
+  Future<Result<String>> helloKeyChallenge() async => const FailureResult<String>(_unbound);
+
+  @override
+  Future<Result<UnlockSuccess>> unlockWithHelloKey({required String signature}) async =>
+      const FailureResult<UnlockSuccess>(_unbound);
 
   @override
   Future<bool> hasStoredSession() async => false;

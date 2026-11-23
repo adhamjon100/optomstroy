@@ -6,6 +6,7 @@ import 'package:optomstroy/core/error/failure.dart';
 import 'package:optomstroy/core/error/result.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/pin_field.dart';
+import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/features/registration/domain/entities/registration_entities.dart';
 import 'package:optomstroy/features/registration/presentation/controllers/registration_flow_controller.dart';
 import 'package:optomstroy/features/registration/presentation/screens/registration_security_screen.dart';
@@ -80,6 +81,44 @@ void main() {
       await _pin(tester, '483921');
       expect(find.text('PIN-коды не совпадают'), findsOneWidget);
       expect(find.text('Придумайте PIN-код'), findsOneWidget, reason: 'очистка обоих, фокус в первое поле');
+      await _finish(tester);
+    });
+
+    testWidgets('AC-UI-04-003 (ред. 1.31), T-ANIM-012: «PIN-коды не совпадают» — точки красные 300 мс, затем пустые '
+        'обычные, текст остаётся; первая новая цифра — обычная точка (указание владельца 2026-11-18)', (tester) async {
+      final h = RegistrationHarness(withTicket: false);
+      await h.pump(tester, const RegistrationSecurityScreen(audience: RegistrationAudience.staffFirstLogin));
+      await _pin(tester, '483920');
+      await _pin(tester, '483921');
+      expect(find.text('PIN-коды не совпадают'), findsOneWidget);
+      final c = tester.element(find.byType(PinField).first).colors;
+      List<BoxDecoration> dots() => tester
+          .widgetList<Container>(
+            find.descendant(
+              of: find.byType(PinField).first,
+              matching: find.byWidgetPredicate(
+                (w) =>
+                    w is Container &&
+                    w.constraints == const BoxConstraints.tightFor(width: 16, height: 16) &&
+                    w.decoration is BoxDecoration,
+              ),
+            ),
+          )
+          .map((w) => w.decoration! as BoxDecoration)
+          .toList();
+      expect(dots(), hasLength(6));
+      expect(dots().every((d) => d.color == c.error), isTrue, reason: 'момент ошибки');
+      await tester.pump(PinField.errorHold);
+      await tester.pump();
+      expect(
+        dots().every((d) => d.color == Colors.transparent && d.border!.top.color == c.borderStrong),
+        isTrue,
+        reason: 'точки снова пустые обычные',
+      );
+      expect(find.text('PIN-коды не совпадают'), findsOneWidget);
+      await _pin(tester, '4');
+      expect(dots().where((d) => d.color == c.textPrimary), hasLength(1));
+      expect(dots().any((d) => d.color == c.error || d.border!.top.color == c.error), isFalse);
       await _finish(tester);
     });
 
@@ -394,5 +433,25 @@ void main() {
       expect(h2.navigator.events, <String>['customerLink'], reason: 'тап — немедленный переход');
       await _finish(tester);
     });
+
+    // UI-04-006 (02 ред. 1.30; 09 BIO-036; 03 §7.7): Windows Hello — `face_unlock`, уровень S — `fingerprint`;
+    // прежние `key`/`passkey` не используются.
+    for (final (BiometricOption option, String title, IconData icon, IconData other)
+        in <(BiometricOption, String, IconData, IconData)>[
+          (BiometricOption.windowsHelloGate, 'Windows Hello', Icons.face_unlock_outlined, Icons.fingerprint_rounded),
+          (BiometricOption.cryptoLogin, 'Биометрия устройства', Icons.fingerprint_rounded, Icons.face_unlock_outlined),
+        ]) {
+      testWidgets('BIO-036: плитка UI-04-006 «$title» — свой глиф, без key', (tester) async {
+        final h = RegistrationHarness(biometrics: FakeDeviceBiometrics(availableOption: option));
+        await h.pump(tester, const RegistrationSecurityScreen());
+        _fillDraft(h);
+        await tester.pump();
+        expect(find.text(title), findsOneWidget);
+        expect(find.byIcon(icon), findsOneWidget);
+        expect(find.byIcon(other), findsNothing);
+        expect(find.byIcon(Icons.key_rounded), findsNothing);
+        await _finish(tester);
+      });
+    }
   });
 }

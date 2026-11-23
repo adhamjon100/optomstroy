@@ -6,9 +6,12 @@
 | Что | Где |
 |---|---|
 | Перечень несекретных переменных (без значений секретов) | `/.env.example` (в git) |
+| Шаблон `.env` рабочего контура (те же имена + параметры уровня compose: Caddyfile общего caddy `CADDY_SITE_ADDRESS`, `CADDY_TLS`, `CADDY_TEST_SITE_ADDRESS` и память `PG_SHARED_BUFFERS`, `PG_MEM_LIMIT`, `API_MEM_LIMIT`, `WORKER_MEM_LIMIT`, непрерывная копия WAL `BACKUP_PITR` (on — рабочий контур, off — тестовая копия; RUNBOOK §4.8); безопасные значения первого запуска) | `infra/env/prod.env.example`; сверка — `python -I -X utf8 infra/docker/scripts/check_compose_prod.py infra/compose.prod.yml` |
+| Замены для тестовой копии на сервере (`APP_ENV=staging`, 16 §11) | `infra/env/test.env.example` |
+| Формат: у пустой переменной комментарий — строкой выше. Docker Compose (compose-go) читает `ИМЯ=   # текст` как значение «# текст», а не пусто | проверяют `check_compose_prod.py` и install.sh/update.sh |
 | Сверка `.env.example` с 16 §4.3 и ключей схемы pos-api с 16 §4.3 | `python -I -X utf8 scripts/check_env_example.py` (код 0 — 0 лишних, 0 недостающих) |
 | Схема и значения по умолчанию в коде | `pos-api/src/common/config/env.schema.ts` (zod), загрузчик `*_FILE` — `env-file.loader.ts` |
-| Секреты | только файлы `secrets/*` на хосте, права `600`, вне git (`.gitignore`: `**/secrets/`, `.env`, `.env.*`) |
+| Секреты | только файлы `secrets/*` на хосте, права `640` (группа `optomstroy-secrets` без людей; 16 §4.2), вне git (`.gitignore`: `**/secrets/`, `.env`, `.env.*`) |
 
 ## 1. Профили окружения
 
@@ -38,23 +41,27 @@ Flutter (`pos-app`) получает конфигурацию только че�
 |---|---|---|
 | `DATABASE_URL_FILE` | `database_url` | api, worker |
 | `DB_MIGRATOR_PASSWORD_FILE` | `db_migrator_password` | только migrate |
-| `POSTGRES_PASSWORD_FILE`, `PGPASSWORD_FILE` | `pg_password` | postgres, backup |
+| `POSTGRES_PASSWORD_FILE` | `pg_password` | postgres (суперпользователь; restore-db.sh, ротации) |
+| `PGPASSWORD_FILE` | `db_backup_password` | backup (роль `pos_backup`: `pg_read_all_data` и REPLICATION для базовой копии PITR, RUNBOOK §4.8); postgres — только initdb |
 | `JWT_PRIVATE_KEY_FILE` / `JWT_PUBLIC_KEY_FILE` | `jwt_private.pem` / `jwt_public.json` | api |
 | `OTP_HMAC_SECRET_FILE` | `otp_pepper` | api, worker (одно значение: текст задания `sms.send` и возврат квоты номера — 16 §4.4, EQ-AUTH-08) |
 | `PIN_PEPPER_FILE` | `pin_pepper` | api |
 | `SMSPRO_LOGIN_FILE`, `SMSPRO_PASSWORD_FILE` | `smspro_login`, `smspro_password` | api, worker |
-| `ONEC_USER_FILE`, `ONEC_PASSWORD_FILE`, `ONEC_HS_USER_FILE`, `ONEC_HS_PASSWORD_FILE`, `ONEC_HS_TOKEN_FILE`, `ONEC_CA_CERT_FILE` | `onec_*` | api, worker |
+| `ONEC_HS_USER_FILE`, `ONEC_HS_PASSWORD_FILE`, `ONEC_HS_TOKEN_FILE` | `onec_hs_*` (три файла — целиком или ничего) | api, worker |
+| `ONEC_USER_FILE`, `ONEC_PASSWORD_FILE` | `onec_user`, `onec_password` (пара; режим `extension` — полная загрузка, срезы цен и остатков, список фото; `odata_only` — всё чтение) | api, worker |
+| `ONEC_CA_CERT_FILE` | `onec_ca.pem` | api, worker |
 | `HEALTHCHECKS_PING_URL_FILE` | `healthchecks_url` | api, worker |
 | `RCLONE_CONFIG_FILE` | `rclone.conf` | backup |
+| — (файл читает скрипт хоста) | `healthchecks_metrics_url` | `bin/metrics_check.sh` (таймер `optomstroy-metrics`, RUNBOOK §6.4); необязателен |
 | R2/условные: `SMSPRO_OTP_API_KEY_FILE`, `ONEC_ODATA_WRITE_*_FILE`, `QR_WEBHOOK_SECRET_FILE`, `QR_WEBHOOK_PUBLIC_KEY_FILE` | — | монтируются только при включённом флаге-родителе |
 
 `BACKUP_AGE_IDENTITY_FILE` на сервере **не хранится** (машина восстановления, офлайн у заказчика; OPS-004).
 
 ## 3. Хранение секретов
 
-- Каталог `secrets/` рядом с compose-файлом, владелец — пользователь `optomstroy`, права каталога `700`, файлов — `600`.
+- Каталог `secrets/` рядом с compose-файлом, владелец — пользователь `optomstroy`, права каталога `700`, файлов — `640`, группа `optomstroy-secrets` (GID 10100, без людей; сервисы получают её через `group_add` — 16 §4.2).
 - Секреты не попадают в образы, логи, `environment:`, git и приложение Flutter (16 §4.3 «Запрещено»). Проверка git — `python scripts/check_secrets.py` и `gitleaks detect` (CI, RM-C-011).
-- Файл создаётся без вывода значения в историю shell: `umask 077; openssl rand -base64 48 > secrets/otp_pepper`.
+- Файл создаётся без вывода значения в историю shell: `umask 077; openssl rand -base64 48 > secrets/otp_pepper`, затем — группа и права: `chgrp optomstroy-secrets secrets/otp_pepper && chmod 640 secrets/otp_pepper` (комплект `infra/scripts/` делает это сам — `write_secret`, `fix_secret_perms` в `lib.sh`).
 
 ## 4. Ротация секретов
 

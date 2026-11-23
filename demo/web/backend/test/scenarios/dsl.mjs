@@ -69,6 +69,8 @@ export function createCtx(be, { log = () => {}, label = 'be' } = {}) {
         size: r.size ?? 0,
         magic: r.magic,
         ms: r.ms,
+        // мс от начала набора (ответ получен): время шага для разбора гонок с фоном (realpg-diff.mjs, доказательства)
+        at: Date.now() - ctx.t0,
         expect: expect === undefined ? undefined : typeof expect === 'function' ? 'fn' : expect,
         ok: statusOk(r.status, expect, r),
         ...extra,

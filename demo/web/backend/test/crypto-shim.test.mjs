@@ -1,7 +1,9 @@
 // WP-B1, приёмка: шим `crypto` (shims/node-crypto.cjs на @noble) и `buffer` (base64url) совпадают с node:crypto на
 // векторах — sha256, sha1, sha512/384/224, md5, HMAC, hkdf, aes-256-gcm шифрование и расшифровка в обе стороны,
 // base64url; плюс модули pos-api, которые ими пользуются (cursor-seal, sms-text-sealer), в сборке с шимами дают
-// те же шифртексты, что и в Node.
+// те же шифртексты, что и в Node. Пакет LF-3-06 (09 BIO-041; 12 T-DEMO-024): createPublicKey (SPKI RSA) и verify
+// (RSASSA-PKCS1-v1_5) шима = node:crypto, и common/auth/hello-key.ts pos-api (parseHelloPublicKey,
+// verifyHelloSignature) в сборке с шимами решает так же, как в Node.
 //   node --test "demo/web/backend/test/*.test.mjs"
 import assert from 'node:assert/strict';
 import * as nodeCrypto from 'node:crypto';
@@ -10,7 +12,7 @@ import { pathToFileURL } from 'node:url';
 import { DIST } from '../lib/paths.mjs';
 import { bundleForTest } from './support/bundle-for-test.mjs';
 
-let shim; // { crypto, Buffer, seal, SmsTextSealer }
+let shim; // { crypto, Buffer, seal, SmsTextSealer, helloKey }
 before(async () => {
   shim = await bundleForTest(
     'crypto-shim',
@@ -18,7 +20,8 @@ before(async () => {
      import { Buffer } from 'node:buffer';
      import * as seal from '@pos-api-dist/catalog/common/cursor-seal.js';
      import { SmsTextSealer } from '@pos-api-dist/notifications/sms/sms-text-sealer.js';
-     export { crypto, Buffer, seal, SmsTextSealer };`,
+     import * as helloKey from '@pos-api-dist/common/auth/hello-key.js';
+     export { crypto, Buffer, seal, SmsTextSealer, helloKey };`,
   );
 });
 
@@ -231,6 +234,86 @@ describe('случайные числа и сравнение', () => {
   });
   test('асимметричные функции — явная ошибка (ключ JWT подменён alias/jwt-keys.mjs)', () => {
     assert.throws(() => shim.crypto.generateKeyPairSync('ed25519'), (e) => e.code === 'ERR_DEMO_UNSUPPORTED');
+    assert.throws(() => shim.crypto.createPrivateKey({ key: rnd(64), format: 'der', type: 'pkcs8' }), (e) => e.code === 'ERR_DEMO_UNSUPPORTED');
+    assert.throws(() => shim.crypto.sign('sha256', NB.from('x'), null), (e) => e.code === 'ERR_DEMO_UNSUPPORTED');
+  });
+});
+
+describe('RSA: createPublicKey (SPKI) и verify (RSASSA-PKCS1-v1_5) — ключ входа браузера на Windows (LF-3-06)', () => {
+  const pair = (bits, publicExponent = 65537) => nodeCrypto.generateKeyPairSync('rsa', { modulusLength: bits, publicExponent });
+  const spkiOf = (k) => k.publicKey.export({ format: 'der', type: 'spki' });
+  const keys = [pair(2048), pair(3072), pair(4096), pair(2048, 3)];
+  const PKCS1 = nodeCrypto.constants.RSA_PKCS1_PADDING;
+
+  test('createPublicKey: тип, длина модуля и экспонента = Node; export der/spki — те же байты', () => {
+    for (const k of keys) {
+      const spki = spkiOf(k);
+      const want = nodeCrypto.createPublicKey({ key: spki, format: 'der', type: 'spki' });
+      const got = shim.crypto.createPublicKey({ key: SB(spki), format: 'der', type: 'spki' });
+      assert.equal(got.type, 'public');
+      assert.equal(got.asymmetricKeyType, want.asymmetricKeyType);
+      assert.equal(got.asymmetricKeyDetails.modulusLength, want.asymmetricKeyDetails.modulusLength);
+      assert.equal(got.asymmetricKeyDetails.publicExponent, want.asymmetricKeyDetails.publicExponent);
+      assert.equal(hex(got.export({ format: 'der', type: 'spki' })), hex(spki));
+      assert.equal(shim.crypto.createPublicKey(got), got);
+    }
+  });
+
+  test('verify: подпись Node sha256/sha384/sha512/sha1 → true; чужие данные, подпись, длина и ключ → false, как в Node', () => {
+    const data = NB.from(`optomstroy-hello-unlock/v1:${rnd(32).toString('base64url')}`, 'utf8');
+    for (const k of keys) {
+      const spki = spkiOf(k);
+      const nodePub = nodeCrypto.createPublicKey({ key: spki, format: 'der', type: 'spki' });
+      const pub = shim.crypto.createPublicKey({ key: SB(spki), format: 'der', type: 'spki' });
+      const padding = shim.crypto.constants.RSA_PKCS1_PADDING;
+      assert.equal(padding, PKCS1);
+      for (const alg of ['sha256', 'sha384', 'sha512', 'sha1']) {
+        const sig = nodeCrypto.sign(alg, data, { key: k.privateKey, padding: PKCS1 });
+        const tag = `${alg} ${pub.asymmetricKeyDetails.modulusLength}`;
+        assert.equal(shim.crypto.verify(alg, SB(data), { key: pub, padding }, SB(sig)), true, tag);
+        assert.equal(shim.crypto.verify(alg, SB(data), pub, SB(sig)), true, tag);
+        const other = NB.from(data);
+        other[other.length - 1] ^= 1;
+        const bad = NB.from(sig);
+        bad[10] ^= 1;
+        const variants = [
+          [other, sig, 'данные'],
+          [data, bad, 'подпись'],
+          [data, sig.subarray(1), 'длина'],
+          [data, NB.concat([sig, NB.alloc(1)]), 'длина+'],
+        ];
+        for (const [d, s, why] of variants) {
+          assert.equal(nodeCrypto.verify(alg, d, { key: nodePub, padding: PKCS1 }, s), false, why);
+          assert.equal(shim.crypto.verify(alg, SB(d), { key: pub, padding }, SB(s)), false, `${tag} ${why}`);
+        }
+      }
+      const foreign = nodeCrypto.sign('sha256', data, k === keys[0] ? keys[3].privateKey : keys[0].privateKey);
+      if (foreign.length === Math.ceil(pub.asymmetricKeyDetails.modulusLength / 8)) {
+        assert.equal(shim.crypto.verify('sha256', SB(data), pub, SB(foreign)), false, 'чужой ключ');
+      }
+    }
+  });
+
+  test('не RSA, RSA-PSS, мусор и другие форматы — ошибка шима (в Node — другой тип ключа или ошибка)', () => {
+    const ec = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey.export({ format: 'der', type: 'spki' });
+    const pss = nodeCrypto.generateKeyPairSync('rsa-pss', { modulusLength: 2048 }).publicKey.export({ format: 'der', type: 'spki' });
+    for (const [name, bytes] of [['ec', ec], ['rsa-pss', pss]]) {
+      assert.notEqual(nodeCrypto.createPublicKey({ key: bytes, format: 'der', type: 'spki' }).asymmetricKeyType, 'rsa', name);
+      assert.throws(() => shim.crypto.createPublicKey({ key: SB(bytes), format: 'der', type: 'spki' }), (e) => e.code === 'ERR_DEMO_UNSUPPORTED', name);
+    }
+    const spki = spkiOf(keys[0]);
+    for (const broken of [rnd(300), spki.subarray(0, spki.length - 1)]) {
+      assert.throws(() => nodeCrypto.createPublicKey({ key: broken, format: 'der', type: 'spki' }));
+      assert.throws(() => shim.crypto.createPublicKey({ key: SB(broken), format: 'der', type: 'spki' }));
+    }
+    // Байты после SPKI OpenSSL в Node пропускает — шим так же; ключ — без них.
+    const trailing = NB.concat([spki, NB.alloc(1)]);
+    const nodeKey = nodeCrypto.createPublicKey({ key: trailing, format: 'der', type: 'spki' });
+    const shimKey = shim.crypto.createPublicKey({ key: SB(trailing), format: 'der', type: 'spki' });
+    assert.equal(hex(shimKey.export({ format: 'der', type: 'spki' })), hex(nodeKey.export({ format: 'der', type: 'spki' })));
+    assert.throws(() => shim.crypto.createPublicKey('-----BEGIN PUBLIC KEY-----'), (e) => e.code === 'ERR_DEMO_UNSUPPORTED');
+    const pub = shim.crypto.createPublicKey({ key: SB(spki), format: 'der', type: 'spki' });
+    assert.throws(() => shim.crypto.verify('sha256', SB(rnd(8)), { key: pub, padding: 6 }, SB(rnd(256))), (e) => e.code === 'ERR_DEMO_UNSUPPORTED');
   });
 });
 
@@ -247,6 +330,41 @@ describe('модули pos-api с шимами = в Node', () => {
       assert.equal(shim.seal.openCursor(SB(key), aad, want), plain);
       assert.equal(shim.seal.openCursor(SB(key), aad + 'x', want), undefined);
       assert.equal(shim.seal.openCursor(SB(key), aad, want + 'A'), undefined);
+    }
+  });
+  test('hello-key (LF-3-06): parseHelloPublicKey и verifyHelloSignature в сборке с шимами = в Node', async () => {
+    const native = await import(pathToFileURL(`${DIST}/common/auth/hello-key.js`).href);
+    const raw = rnd(32);
+    const challenge = native.helloChallengeString(raw);
+    assert.equal(shim.helloKey.helloChallengeString(SB(raw)), challenge);
+    const cases = [];
+    for (const [bits, e] of [[2048, 65537], [3072, 65537], [4096, 65537], [2048, 3], [1024, 65537]]) {
+      const k = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: bits, publicExponent: e });
+      cases.push({ name: `rsa ${bits}/${e}`, k, spki: k.publicKey.export({ format: 'der', type: 'spki' }) });
+    }
+    let checked = 0;
+    for (const c of cases) {
+      const pk = c.spki.toString('base64url');
+      const want = native.parseHelloPublicKey(pk);
+      const got = shim.helloKey.parseHelloPublicKey(pk);
+      assert.equal(got === null, want === null, c.name);
+      if (want === null) continue;
+      checked++;
+      assert.equal(hex(got), hex(want), c.name);
+      const sig = nodeCrypto.sign('sha256', NB.from(challenge, 'utf8'), { key: c.k.privateKey, padding: nodeCrypto.constants.RSA_PKCS1_PADDING }).toString('base64url');
+      assert.equal(native.verifyHelloSignature(want, challenge, sig), true);
+      assert.equal(shim.helloKey.verifyHelloSignature(got, challenge, sig), true, c.name);
+      const flipped = sig.slice(0, 10) + (sig[10] === 'A' ? 'B' : 'A') + sig.slice(11);
+      for (const [ch, s, why] of [[`${challenge}A`, sig, 'другой challenge'], [challenge, flipped, 'подпись'], [challenge, `${sig}=`, 'не base64url'], [challenge, '', 'пусто']]) {
+        assert.equal(native.verifyHelloSignature(want, ch, s), false, why);
+        assert.equal(shim.helloKey.verifyHelloSignature(got, ch, s), false, `${c.name}: ${why}`);
+      }
+    }
+    assert.equal(checked, 3, 'приняты только RSA 2048…4096 с экспонентой 65537');
+    const ec = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey.export({ format: 'der', type: 'spki' });
+    for (const pk of [ec.toString('base64url'), 'not base64url!', rnd(300).toString('base64url'), '']) {
+      assert.equal(native.parseHelloPublicKey(pk), null);
+      assert.equal(shim.helloKey.parseHelloPublicKey(pk), null);
     }
   });
   test('SmsTextSealer: hkdf-ключ и aes-gcm — Node открывает шифртекст шима и наоборот', async () => {

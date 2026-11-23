@@ -122,6 +122,7 @@ LAYOUT_DART = [
     ("cartDrawer", "cartDrawer"),
     ("catalogColumn", "catalogColumn"),
     ("catalogCardMinWidth", "catalogCardMinWidth"),
+    ("gridCardMaxWidth", "gridCardMaxWidth"),
 ]
 
 
@@ -231,6 +232,18 @@ def check_invariants(t: dict) -> None:
     lay = t["layout"]
     if lay["gridMinColumns"] > lay["gridMaxColumns"]:
         problems.append("layout.gridMinColumns > layout.gridMaxColumns")
+    # Product grid limits (03 §7.3; ADR-114, clarification 2026-11-18): at least gridMinColumns in every window
+    # class, never fewer in a wider class; the widest card only binds once the class limit is reached - it is not
+    # narrower than an auto-fill card at two columns, (3 * min + gap) / 2 with the widest grid gap.
+    caps = [t["breakpoint"][wc]["productColumnsMax"] for wc in WINDOW_ORDER]
+    if min(caps) < lay["gridMinColumns"]:
+        problems.append("breakpoint.*.productColumnsMax < layout.gridMinColumns")
+    if caps != sorted(caps):
+        problems.append("breakpoint.*.productColumnsMax must not decrease from compact to large")
+    widest_gap = max([t["density"][d]["gridGap"] for d in DENSITY_ORDER] + [t["catalog"]["gridGap"]])
+    two_columns = (3 * max(lay["cardMinWidth"], lay["catalogCardMinWidth"]) + widest_gap) / 2
+    if lay["gridCardMaxWidth"] < two_columns:
+        problems.append(f"layout.gridCardMaxWidth < {two_columns:g} (an auto-fill card at two columns)")
     # Elevation scrim refers to an alpha colour; `baseColor` (ADR-114) - every shadow is that palette colour.
     for lvl in ELEVATION_ORDER + [k for k, _ in COMPONENT_ELEVATION]:
         level = t["elevation"][lvl]
@@ -704,6 +717,13 @@ def gen_breakpoints(t: dict, h: str) -> str:
         out.append(f"  static const double {dart_name} = {num(lay[key])};\n")
     out.append(f"  static const int gridMinColumns = {lay['gridMinColumns']};\n")
     out.append(f"  static const int gridMaxColumns = {lay['gridMaxColumns']};\n\n")
+    caps = [(wc, bp[wc]["productColumnsMax"]) for wc in WINDOW_ORDER]
+    out.append("  /// Most product grid columns in a window class (03 §7.3; ADR-114, clarification 2026-11-18):\n")
+    out.append("  /// `ds.breakpoint.*.productColumnsMax` - " + ", ".join(f"{wc} {n}" for wc, n in caps) + ".\n")
+    out.append("  static int gridMaxColumnsFor(WindowClass windowClass) => switch (windowClass) {\n")
+    for wc, n in caps:
+        out.append(f"    WindowClass.{wc} => {n},\n")
+    out.append("  };\n\n")
     out.append("  /// Window class by `MediaQuery.sizeOf(context).width`.\n")
     out.append("  static WindowClass of(BuildContext context) => forWidth(MediaQuery.sizeOf(context).width);\n\n")
     out.append("  /// Window class for a window width.\n")
@@ -711,19 +731,30 @@ def gen_breakpoints(t: dict, h: str) -> str:
     for wc in reversed(WINDOW_ORDER[1:]):
         out.append(f"    if (width >= {wc}) {{\n      return WindowClass.{wc};\n    }}\n")
     out.append(f"    return WindowClass.{WINDOW_ORDER[0]};\n  }}\n\n")
-    out.append("  /// Card grid columns (03 §7.3): max(2, min(6, floor((W + gap) / (minCardWidth + gap)))).\n")
-    out.append("  /// [contentWidth] is the content zone WITHOUT side margins (on `large` - at most\n")
-    out.append("  /// [contentMaxLarge], applied by the caller). [minCardWidth] defaults to [cardMinWidth];\n")
-    out.append("  /// the catalog grid SCR-10/11/12 passes [catalogCardMinWidth] (ADR-111).\n")
-    out.append("  /// [maxColumns] defaults to [gridMaxColumns]; `null` - no upper limit, as the prototype's\n")
-    out.append("  /// `repeat(auto-fill, minmax(176px, 1fr))` of the staff catalog on medium+ (ADR-114,\n")
-    out.append("  /// [DsCatalogMetrics.gridGap]). The lower limit [gridMinColumns] always applies.\n")
+    out.append("  /// Product grid columns (03 §7.3; ADR-114, clarification 2026-11-18): auto-fill from [minCardWidth],\n")
+    out.append("  /// `floor((W + gap) / (minCardWidth + gap))` as the prototype's `repeat(auto-fill, minmax(176px, 1fr))`,\n")
+    out.append("  /// clamped to [gridMinColumns]...[gridColumnsCap]. [contentWidth] is the content zone WITHOUT side\n")
+    out.append("  /// margins, at most [gridMaxContentWidth] (applied by the caller). [minCardWidth] defaults to\n")
+    out.append("  /// [cardMinWidth] (SCR-50); the product grids of SCR-10/11/12 and SCR-51 pass [catalogCardMinWidth].\n")
     # Positional + named parameters do not fit on one line: `dart format` puts each on its own line and keeps
     # `{` after the last positional one. The signature is fixed, so its split form is written as is.
     out.append("  static int gridColumns(\n    double contentWidth,\n    double gap, {\n"
-               "    double minCardWidth = cardMinWidth,\n    int? maxColumns = gridMaxColumns,\n  }) {\n")
+               "    required WindowClass windowClass,\n    double minCardWidth = cardMinWidth,\n"
+               "    int? maxColumns,\n  }) {\n")
     out.append("    final int n = ((contentWidth + gap) / (minCardWidth + gap)).floor();\n")
-    out.append("    return math.max(gridMinColumns, maxColumns == null ? n : math.min(maxColumns, n));\n  }\n}\n")
+    out.append("    return math.max(gridMinColumns, math.min(gridColumnsCap(windowClass, maxColumns: maxColumns), n));\n"
+               "  }\n\n")
+    out.append("  /// Column limit of a product grid: [gridMaxColumnsFor] the window class and, when given, the screen's\n")
+    out.append("  /// own [maxColumns] (SCR-50 - [gridMaxColumns]).\n")
+    out.append("  static int gridColumnsCap(WindowClass windowClass, {int? maxColumns}) {\n")
+    out.append("    final int cap = gridMaxColumnsFor(windowClass);\n")
+    out.append("    return maxColumns == null ? cap : math.min(cap, maxColumns);\n  }\n\n")
+    out.append("  /// Widest product grid content: [columns] cards of [gridCardMaxWidth] with [gap] between them. A wider\n")
+    # Version from tokens.json `meta.version` (not a literal: the comment must follow the next token release).
+    out.append("  /// area keeps this width centred in it, with equal empty bands at both sides "
+               f"(03 §7.3; tokens {t['meta']['version']}).\n")
+    out.append("  static double gridMaxContentWidth(int columns, double gap) => columns * gridCardMaxWidth + (columns - 1) * gap;\n"
+               "}\n")
     out.append(gen_catalog_metrics(t))
     return "".join(out)
 

@@ -1,0 +1,8 @@
+{
+  "_note": "тестовые данные",
+  "operation": "POST /pos/v1/orders/{uuid}/cancel",
+  "kind": "request",
+  "body": {
+    "reason": "Клиент отказался"
+  }
+}

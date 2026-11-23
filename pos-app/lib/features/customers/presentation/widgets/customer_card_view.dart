@@ -18,11 +18,13 @@ import 'package:optomstroy/design_system/components/app_section_header.dart';
 import 'package:optomstroy/design_system/components/app_snackbar.dart';
 import 'package:optomstroy/design_system/components/app_tabs.dart';
 import 'package:optomstroy/design_system/components/customer_card.dart';
+import 'package:optomstroy/design_system/components/ds_interactive.dart' show DsTapTarget;
 import 'package:optomstroy/design_system/components/error_state.dart';
 import 'package:optomstroy/design_system/components/favorite_toggle.dart';
 import 'package:optomstroy/design_system/components/receivable_badge.dart';
 import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
+import 'package:optomstroy/design_system/layout/large_content.dart';
 import 'package:optomstroy/design_system/layout/window_class.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -263,47 +265,52 @@ class _CustomerCardViewState extends ConsumerState<CustomerCardView> {
             SingleActivator(LogicalKeyboardKey(LogicalKeyboardKey.digit1.keyId + i), alt: true): () =>
                 _openTab(tabs[i], wide: true),
         },
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      context.space.s6,
-                      context.space.s6,
-                      context.space.s6,
-                      context.space.s3,
+        // Окно ≥ 1600: карточка с боковой панелью — не шире 1200 + 320 по центру (03 §8.8; указание владельца
+        // 2026-11-18, 15 §5.8 (3); прежде вкладки и история тянулись на 1600 lp).
+        child: DsLargeContent(
+          sidePanel: 320,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        context.space.s6,
+                        context.space.s6,
+                        context.space.s6,
+                        context.space.s3,
+                      ),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: head),
                     ),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: head),
-                  ),
-                  tabBar,
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: context.space.s2),
-                      child: KeyedSubtree(key: ValueKey<CustomerCardTab?>(active), child: content),
+                    tabBar,
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: context.space.s2),
+                        child: KeyedSubtree(key: ValueKey<CustomerCardTab?>(active), child: content),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Container(
-              width: wc == WindowClass.large ? 320 : 300,
-              decoration: BoxDecoration(
-                border: Border(left: BorderSide(color: context.colors.border)),
+              Container(
+                width: wc == WindowClass.large ? 320 : 300,
+                decoration: BoxDecoration(
+                  border: Border(left: BorderSide(color: context.colors.border)),
+                ),
+                child: ListView(
+                  padding: EdgeInsets.all(context.space.s4),
+                  children: <Widget>[
+                    ...actions,
+                    if (actions.isNotEmpty) SizedBox(height: context.space.s4),
+                    ...side,
+                  ],
+                ),
               ),
-              child: ListView(
-                padding: EdgeInsets.all(context.space.s4),
-                children: <Widget>[
-                  ...actions,
-                  if (actions.isNotEmpty) SizedBox(height: context.space.s4),
-                  ...side,
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     }
@@ -643,9 +650,15 @@ class _Metrics extends StatelessWidget {
     final AppLocalizations l10n = AppLocalizations.of(context);
     final Customer c = customer;
     final List<Widget> chips = <Widget>[];
+    // Цель нажатия: 48 на окнах уже 1024 (касание), 44 — шире (03 §7.4).
+    final WindowClass wc = context.windowClass;
+    final double /* money-double: allow — цель (lp) */ target = wc == WindowClass.compact || wc == WindowClass.medium
+        ? 48
+        : 44;
     if (c.ordersCount != null) {
       chips.add(
         _tap(
+          target,
           viewer.canReadHistory && !c.isRetailDefault ? () => onTab(CustomerCardTab.history) : null,
           StatusChip(label: l10n.customer_card_metric_history(c.ordersCount!), variant: StatusChipVariant.neutral),
         ),
@@ -670,11 +683,12 @@ class _Metrics extends StatelessWidget {
       } else {
         debtChip = StatusChip(label: l10n.customer_card_metric_debt_flag_no, variant: StatusChipVariant.neutral);
       }
-      chips.add(_tap(viewer.canReadReceivables ? () => onTab(CustomerCardTab.receivables) : null, debtChip));
+      chips.add(_tap(target, viewer.canReadReceivables ? () => onTab(CustomerCardTab.receivables) : null, debtChip));
     }
     if (c.discountPercent != null) {
       chips.add(
         _tap(
+          target,
           () => onTab(CustomerCardTab.discounts),
           StatusChip(
             label: l10n.customer_card_metric_discount(CustomersFormat.percent(c.discountPercent!)),
@@ -684,14 +698,34 @@ class _Metrics extends StatelessWidget {
       );
     }
     if (c.priceList != null) chips.add(StatusChip(label: c.priceList!.name, variant: StatusChipVariant.priceList));
-    return Wrap(key: CustomerCardKeys.metrics, spacing: 8, runSpacing: 8, children: chips);
+    return Wrap(
+      key: CustomerCardKeys.metrics,
+      spacing: 8,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: chips,
+    );
   }
 
-  static Widget _tap(VoidCallback? onTap, Widget child) => onTap == null
+  // Цель нажатия чипа-метрики — 48 на окнах уже 1024 и 44 шире (03 §7.4; прогон адаптивности 2026-11-18, 12 T-UI-117:
+  // прежде — высота чипа 24, затем 44 на всех окнах); чип визуально прежний, по центру цели. Подпись и действие — один
+  // узел диктора (`MergeSemantics` поглощает и узел-контейнер `ReceivableBadge`): прежде у чипа долга нажатие висело на
+  // безымянном узле, а узел с подписью нажать было нельзя.
+  static Widget _tap(double /* money-double: allow — цель (lp) */ target, VoidCallback? onTap, Widget child) =>
+      onTap == null
       ? child
-      : MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(onTap: onTap, child: child),
+      : MergeSemantics(
+          child: Semantics(
+            button: true,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onTap,
+                child: DsTapTarget(minWidth: 0, minHeight: target, child: child),
+              ),
+            ),
+          ),
         );
 }
 

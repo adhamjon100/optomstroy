@@ -48,7 +48,11 @@ function asUnit(queue, handler) {
 
 export class PgBoss extends real.PgBoss {
   constructor(value) {
-    super(typeof value === 'string' ? { connectionString: value } : { ...value });
+    // pos-api запускает pg-boss с migrate: false, createSchema: false (07 DATA-012: схему `pgboss` ставит migrate.ts под
+    // pos_migrate). База сверки готовится как в демо — demo-init вызывает только SQL-мигратор под суперпользователем,
+    // поэтому схему здесь, как и в alias/pgboss-shim.mjs, ставит первый экземпляр pg-boss. Без этого прогон падал
+    // «pg-boss is not installed» (run-all 2026-11-19, wave2:DEMO-E2E).
+    super(typeof value === 'string' ? { connectionString: value, migrate: true, createSchema: true } : { ...value, migrate: true, createSchema: true });
   }
   work(name, ...args) {
     let i = -1;

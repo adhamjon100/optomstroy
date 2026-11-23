@@ -1,0 +1,11 @@
+{
+  "_note": "тестовые данные",
+  "operation": "GET /pos/v1/catalog/{ref}",
+  "kind": "response",
+  "status": 404,
+  "body": {
+    "code": "POS_E_NOT_FOUND",
+    "message": "Метод не реализован или товар не найден",
+    "requestId": "0192f5c3-0000-7000-8000-000000000001"
+  }
+}

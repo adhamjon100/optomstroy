@@ -49,10 +49,12 @@ abstract final class AppTheme {
       // Тач-цель 48 lp (03 §7.4, A11Y).
       materialTapTargetSize: MaterialTapTargetSize.padded,
       iconTheme: IconThemeData(color: colors.textSecondary, size: 24),
+      // Каретка и ручки выделения — нейтральная `textPrimary`, как обводка поля в фокусе: фирменную `primaryText` не
+      // отличить от `error` (Q-357; пакет wave2:APP-POLISH). Подсветка выделения — прежняя `primaryContainer`.
       textSelectionTheme: TextSelectionThemeData(
-        cursorColor: colors.primaryText,
+        cursorColor: colors.textPrimary,
         selectionColor: colors.primaryContainer,
-        selectionHandleColor: colors.primaryText,
+        selectionHandleColor: colors.textPrimary,
       ),
       dividerTheme: DividerThemeData(color: colors.border, thickness: 1, space: 1),
       appBarTheme: AppBarTheme(
@@ -110,7 +112,7 @@ abstract final class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.all(DsRadii.defaults.sm),
-          borderSide: BorderSide(color: colors.primaryText, width: 2),
+          borderSide: BorderSide(color: colors.textPrimary, width: 2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.all(DsRadii.defaults.sm),

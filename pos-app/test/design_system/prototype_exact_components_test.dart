@@ -89,21 +89,22 @@ void main() {
       // 1280 (5 × 209,6) и 1024 (4 × 201,5) — без переноса.
       expect(kProductCardGridPriceWraps(one, 209.6, price: longPrice, unit: unit), isFalse);
       expect(kProductCardGridPriceWraps(one, 201.5, price: longPrice, unit: unit), isFalse);
-      // Ширины колонок экрана — как в T-CAT-038: (W − 14·(n − 1)) / n.
+      // Ширины колонок экрана — как в T-CAT-038: (W − 14·(n − 1)) / n. Токены 1.4.0 (пакет own-server:GAP-APP): предел
+      // expanded — 5, large — 6, поэтому 1440 и 1366 — 5 колонок, 1920 — 6 (прототип давал 6 / 6 / 9).
       double card(double content, int cols) => (content - 14 * (cols - 1)) / cols;
-      expect(DsBreakpoints.gridColumns(1264, 14, minCardWidth: 176, maxColumns: null), 6);
-      expect(kProductCardGridPriceWraps(one, card(1264, 6), price: longPrice, unit: unit), isFalse);
-      expect(DsBreakpoints.gridColumns(1190, 14, minCardWidth: 176, maxColumns: null), 6);
+      expect(DsBreakpoints.gridColumns(1264, 14, windowClass: WindowClass.expanded, minCardWidth: 176), 5);
+      expect(kProductCardGridPriceWraps(one, card(1264, 5), price: longPrice, unit: unit), isFalse);
+      expect(DsBreakpoints.gridColumns(1190, 14, windowClass: WindowClass.expanded, minCardWidth: 176), 5);
       expect(
-        kProductCardGridPriceWraps(one, card(1190, 6), price: longPrice, unit: unit),
+        kProductCardGridPriceWraps(one, card(1190, 5), price: longPrice, unit: unit),
         isFalse,
         reason: '1366',
       );
-      expect(DsBreakpoints.gridColumns(1744, 14, minCardWidth: 176, maxColumns: null), 9);
+      expect(DsBreakpoints.gridColumns(1744, 14, windowClass: WindowClass.large, minCardWidth: 176), 6);
       expect(
-        kProductCardGridPriceWraps(one, card(1744, 9), price: longPrice, unit: unit),
-        isTrue,
-        reason: '1920',
+        kProductCardGridPriceWraps(one, card(1744, 6), price: longPrice, unit: unit),
+        isFalse,
+        reason: '1920: карточка ≈ 279 — «10 450,00 сом / шт» в одну строку (при 9 колонках по 181,3 был перенос)',
       );
     });
 

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -28,7 +28,11 @@ import { KioskTestApp } from './support/kiosk-fixture.js';
  *   аудит `kiosk.reconnected`, срок `expiresAt` в списке (напоминание за 30 дней — SCR-54); подключение с другого
  *   устройства — новая строка `devices`, копия на прежнем — `KIOSK_REVOKED`; повтор ключа — один раз;
  * - T-KIOSK-066: аудит `kiosk.exit_code_used` (без кода);
- * - T-KIOSK-033: при `KIOSK_MODE=false` подключение заново и `POST /kiosk/exit` — `403 KIOSK_DISABLED`.
+ * - T-KIOSK-033: при `KIOSK_MODE=false` подключение заново и `POST /kiosk/exit` — `403 KIOSK_DISABLED`;
+ * - T-BIO-033 (сервер), T-BIO-037 (6) — ключи Windows Hello (ADR-116; 08 §4.18.11, §4.18.15; 09 BIO-037): подключение и
+ *   подключение заново отзывают ключи всех пользователей установки (`kiosk_connect`), ключи других установок живы;
+ *   `POST /auth/unlock/challenge` и `POST /auth/unlock {method: hello_key}` с refresh планшета — `401 UNLOCK_REQUIRED
+ *   hello_key_unavailable`, сессия планшета не отзывается. Открытые ключи — тестовые пары RSA-2048 процесса теста.
  * Прикладная часть — `pos-app/test/core/session/kiosk_session_test.dart`, `kiosk_revoked_interceptor_test.dart`,
  * `features/admin/tablets/admin_tablets_screen_test.dart` (WP-A04, WP-A05).
  */
@@ -684,6 +688,92 @@ describe('kiosk: отключение, KIOSK_REVOKED, срок и подключ
     const again = await call(t, 'post', '/kiosk/exit', e.tab, { body: { code: e.exitCode } });
     expect([again.status, again.body.code]).toEqual([401, 'KIOSK_REVOKED']);
     expect(await t.auditRows('kiosk.exit_code_used', e.id)).toHaveLength(1);
+  });
+
+  /** Живой ключ Windows Hello строки `devices` (только SPKI тестовой пары RSA-2048; 07 §5.66). */
+  async function seedHelloKey(userId: string, deviceRowId: string): Promise<string> {
+    const spki = generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey.export({ type: 'spki', format: 'der' });
+    const rows = await t.q<{ id: string }>(
+      `INSERT INTO hello_keys (user_id, device_id, public_key, algorithm, source)
+       VALUES ($1, $2, $3, 'RS256', 'windows_hello') RETURNING id`,
+      [userId, deviceRowId, spki],
+    );
+    return rows[0].id;
+  }
+
+  /** Причина отзыва ключа: `null` — ключ жив. */
+  async function helloKeyState(id: string): Promise<string | null> {
+    const rows = await t.q<{ revoke_reason: string | null }>(`SELECT revoke_reason FROM hello_keys WHERE id = $1`, [
+      id,
+    ]);
+    expect(rows).toHaveLength(1);
+    return rows[0].revoke_reason;
+  }
+
+  it('T-BIO-033 (сервер), T-BIO-037 (6): подключение и подключение заново отзывают ключи Windows Hello всех пользователей установки (kiosk_connect); challenge и hello_key по refresh планшета → hello_key_unavailable', async () => {
+    const admin = await t.actor({ role: 'admin' });
+    const other = await t.actor({ role: 'customer' });
+    // Другой пользователь входил с той же установки (`device_key` администратора); у администратора — ещё установка.
+    await t.q(`UPDATE devices SET device_key = $1 WHERE id = $2`, [admin.deviceKey, other.deviceId]);
+    const elsewhere = await t.q<{ id: string }>(
+      `INSERT INTO devices (user_id, device_key, platform) VALUES ($1, $2, 'windows') RETURNING id`,
+      [admin.userId, randomUUID()],
+    );
+    const kAdmin = await seedHelloKey(admin.userId, admin.deviceId);
+    const kOther = await seedHelloKey(other.userId, other.deviceId);
+    const kElsewhere = await seedHelloKey(admin.userId, elsewhere[0].id);
+    const r = await call(t, 'post', '/admin/store-tablets', admin, {
+      body: { name: 'Планшет с ключами', warehouseId },
+      stepUp: await t.stepUp(admin, 'kiosk.manage'),
+      idem: randomUUID(),
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect([await helloKeyState(kAdmin), await helloKeyState(kOther), await helloKeyState(kElsewhere)]).toEqual([
+      'kiosk_connect',
+      'kiosk_connect',
+      null,
+    ]);
+    const disabled = await t.q<{ after: Record<string, unknown> }>(
+      `SELECT after FROM audit_logs WHERE action = 'auth.biometrics.disabled' AND after->>'reason' = 'kiosk_connect'
+         AND after->>'helloKeyId' = ANY($1::text[])`,
+      [[kAdmin, kOther]],
+    );
+    expect(disabled).toHaveLength(2);
+    expect(JSON.stringify(disabled)).not.toMatch(/publicKey|public_key/);
+
+    // Refresh планшета: ни challenge, ни разблокировки ключом; сессия планшета жива.
+    const refreshToken = String(r.body.refreshToken);
+    const challenge = await call(t, 'post', '/auth/unlock/challenge', undefined, {
+      body: { method: 'hello_key', refreshToken },
+      headers: { 'X-Device-Id': admin.deviceKey },
+    });
+    expect([challenge.status, challenge.body.code, challenge.body.reason]).toEqual([
+      401,
+      'UNLOCK_REQUIRED',
+      'hello_key_unavailable',
+    ]);
+    const unlock = await call(t, 'post', '/auth/unlock', undefined, {
+      body: { method: 'hello_key', refreshToken, signature: 'A'.repeat(342) },
+      headers: { 'X-Device-Id': admin.deviceKey },
+    });
+    expect([unlock.status, unlock.body.code, unlock.body.reason]).toEqual([
+      401,
+      'UNLOCK_REQUIRED',
+      'hello_key_unavailable',
+    ]);
+    const tabletSession = await t.q<{ revoked_at: Date | null }>(`SELECT revoked_at FROM sessions WHERE id = $1`, [
+      String(r.body.sid),
+    ]);
+    expect(tabletSession[0]?.revoked_at).toBeNull();
+    expect((await refresh(t, refreshToken, admin.deviceKey)).status).toBe(200);
+
+    // Подключение заново на той же установке: ключ, появившийся после подключения, тоже отзывается.
+    const admin2 = await adminOnDevice(admin.deviceKey);
+    const kAdmin2 = await seedHelloKey(admin2.userId, admin2.deviceId);
+    const again = await reconnect(admin2, String(r.body.tablet.id));
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
+    expect(await helloKeyState(kAdmin2)).toBe('kiosk_connect');
+    expect(await helloKeyState(kElsewhere)).toBeNull();
   });
 });
 

@@ -78,7 +78,8 @@ final class ProfileSecurity {
   final bool? pinSet;
   final bool? biometricsEnabled;
 
-  /// `android_class3|ios|windows_hello_gate|none` — строкой контракта.
+  /// `android_class3|ios|windows_hello_gate|none|android_class2|windows_hello_key` — строкой контракта
+  /// (OpenAPI 1.4.0, 15 ADR-116).
   final String? biometricsPlatform;
 }
 

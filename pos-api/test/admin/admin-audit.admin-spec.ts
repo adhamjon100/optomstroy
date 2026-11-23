@@ -7,6 +7,7 @@ import { AuditAnchorService } from '../../src/common/audit/audit-anchor.service.
 import { AuditService } from '../../src/common/audit/audit.service.js';
 import { AUDIT_QUERY_PORT, type AuditQueryPort } from '../../src/common/ports/index.js';
 import { validateAgainst } from '../settings/support/openapi-check.js';
+import { tamperChar } from '../support/tamper.js';
 import { type Actor, AdminTestApp } from './support/admin-app.js';
 
 /** Ответ `GET /admin/audit-logs` (OpenAPI admin_audit_logs_list: Page + items AuditRow). */
@@ -203,7 +204,9 @@ describe('admin/audit: журнал аудита, маскирование, це
     expect(new Set(ids).size).toBe(6);
     // Новые сверху: страницы идут по убыванию цепочки (свежие audit.viewed в начале).
     expect(items(first.body)[0]?.action).toBe('audit.viewed');
-    const forged = await list(owner, { cursor: `${String(first.body.nextCursor).slice(0, -2)}00` });
+    // Первый hex-знак MAC — другой hex-знак (запись «00» в конец совпадала с MAC, кончавшимся на «00», — 1 из 256).
+    const [cursorBody, cursorMac] = String(first.body.nextCursor).split('.');
+    const forged = await list(owner, { cursor: `${cursorBody}.${tamperChar(cursorMac)}` });
     expect([forged.status, forged.body.errors[0].rule]).toEqual([400, 'cursor']);
   });
 

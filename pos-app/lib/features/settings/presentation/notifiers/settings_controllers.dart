@@ -149,7 +149,14 @@ final class SessionsController extends Notifier<SessionsViewState> {
 
 /// Состояние «Защиты входа».
 final class SecurityViewState {
-  const SecurityViewState({this.data, this.loading = false, this.failure, this.bioBusy = false, this.idleBusy = false});
+  const SecurityViewState({
+    this.data,
+    this.loading = false,
+    this.failure,
+    this.bioBusy = false,
+    this.idleBusy = false,
+    this.chosenTier = BiometricLoginTier.strong,
+  });
 
   final LoginProtectionState? data;
   final bool loading;
@@ -159,6 +166,17 @@ final class SecurityViewState {
   final bool bioBusy;
   final bool idleBusy;
 
+  /// Выбор «Способ входа» UI-42-027 до включения (Android, оба уровня); по умолчанию «Только отпечаток (надёжнее)» —
+  /// Q-354.
+  final BiometricLoginTier chosenTier;
+
+  /// Уровень, который включит тумблер UI-42-010: только W — W; оба — выбор UI-42-027; иначе — S.
+  BiometricLoginTier get tierToEnable => switch (data?.support) {
+    BiometricSupport.weakLogin => BiometricLoginTier.weak,
+    BiometricSupport.strongOrWeak => chosenTier,
+    _ => BiometricLoginTier.strong,
+  };
+
   SecurityViewState copyWith({
     LoginProtectionState? data,
     bool? loading,
@@ -166,12 +184,14 @@ final class SecurityViewState {
     bool clearFailure = false,
     bool? bioBusy,
     bool? idleBusy,
+    BiometricLoginTier? chosenTier,
   }) => SecurityViewState(
     data: data ?? this.data,
     loading: loading ?? this.loading,
     failure: clearFailure ? null : (failure ?? this.failure),
     bioBusy: bioBusy ?? this.bioBusy,
     idleBusy: idleBusy ?? this.idleBusy,
+    chosenTier: chosenTier ?? this.chosenTier,
   );
 }
 
@@ -225,12 +245,19 @@ final class SecurityController extends Notifier<SecurityViewState> {
   /// Step-up перед сменой PIN (`otpOnly` — «Забыли PIN?»).
   Future<bool> stepUpForPin({required bool otpOnly}) => _repo.stepUpForPin(otpOnly: otpOnly);
 
-  /// Включить/выключить биометрию.
+  /// «Способ входа» UI-42-027 (до включения; при включённой биометрии смена — выключением и новым включением).
+  void chooseTier(BiometricLoginTier tier) {
+    if (state.bioBusy || (state.data?.biometricsEnabled ?? false)) return;
+    state = state.copyWith(chosenTier: tier);
+  }
+
+  /// Включить/выключить биометрию. Android: включается уровень [SecurityViewState.tierToEnable].
   Future<BiometricToggleOutcome?> setBiometrics(bool enable, BiometricPromptCopy prompt) async {
     if (state.bioBusy) return null;
+    final BiometricLoginTier tier = state.tierToEnable;
     state = state.copyWith(bioBusy: true);
     final BiometricToggleOutcome outcome = enable
-        ? await _repo.enableBiometrics(prompt)
+        ? await _repo.enableBiometrics(prompt, tier: tier)
         : await _repo.disableBiometrics();
     if (!ref.mounted) return outcome;
     final LoginProtectionState? data = state.data;
@@ -239,9 +266,12 @@ final class SecurityController extends Notifier<SecurityViewState> {
       BiometricToggleOutcome.disabled => false,
       _ => null,
     };
+    final bool android = data?.platformLabel == BiometricPlatformLabel.android;
     state = state.copyWith(
       bioBusy: false,
-      data: data == null || nowEnabled == null ? data : data.copyWith(biometricsEnabled: nowEnabled),
+      data: data == null || nowEnabled == null
+          ? data
+          : data.copyWith(biometricsEnabled: nowEnabled, enabledTier: nowEnabled && android ? tier : null),
     );
     return outcome;
   }

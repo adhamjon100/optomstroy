@@ -13,6 +13,7 @@
 // `customer_stock_display` (`status` — `StockBadge` без чисел; `quantity` — доступное количество без
 // «остатка» и «резерва»; CUST-022). Таблицы складов, сканера, кассовых/отчётных/админ-разделов нет.
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart' hide SearchBar;
 import 'package:flutter/services.dart';
@@ -25,6 +26,7 @@ import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/error/failure.dart';
 import 'package:optomstroy/core/error/result.dart';
 import 'package:optomstroy/core/l10n/app_localizations.dart';
+import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/design_system/components/app_badge.dart';
 import 'package:optomstroy/design_system/components/app_bottom_sheet.dart';
 import 'package:optomstroy/design_system/components/app_icon_button.dart';
@@ -43,6 +45,8 @@ import 'package:optomstroy/design_system/components/skeleton_box.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
 import 'package:optomstroy/design_system/components/top_app_bar_pos.dart';
 import 'package:optomstroy/design_system/components/view_mode_segmented.dart';
+import 'package:optomstroy/design_system/layout/text_measure.dart';
+import 'package:optomstroy/design_system/layout/title_trailing_bar.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/design_system/tokens/ds_breakpoints.dart';
 import 'package:optomstroy/design_system/tokens/ds_colors.dart';
@@ -80,6 +84,10 @@ abstract final class CustomerHomeKeys {
   static const Key categories = ValueKey<String>('home-categories');
   static const Key sidebar = ValueKey<String>('home-sidebar');
   static const Key recent = ValueKey<String>('home-recent');
+
+  /// «Все товары» и вид/сортировка над лентой товаров.
+  static const Key allTitle = ValueKey<String>('home-all-title');
+  static const Key allControls = ValueKey<String>('home-all-controls');
   static const Key cartFab = ValueKey<String>('home-cart-fab');
   static const Key cartButton = ValueKey<String>('home-cart-button');
   static const Key serviceUnavailable = ValueKey<String>('home-service-unavailable');
@@ -489,31 +497,37 @@ class _CustomerHomeViewState extends ConsumerState<CustomerHomeView> {
       SliverToBoxAdapter(
         child: Padding(
           padding: EdgeInsets.fromLTRB(side, context.space.s4, side, context.space.s2),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  l10n.catalog_title_all,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: (compact ? context.text.title : context.text.h3).copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: c.textPrimary,
-                  ),
-                ),
+          // Заголовок слева, вид и сортировка справа; не помещаются в строку (узкая область: medium 600–680 с
+          // сайдбаром 240, крупный текст) — вид и сортировка строкой ниже у правого края, а не за краем экрана, а
+          // заголовок остаётся у левого края (02 SCR-50.2 «Адаптивность», ред. 1.32; проверка адаптивности по указанию
+          // владельца 2026-11-18, 15 §5.8 (1)). `OverflowBar` не годится: в режиме переноса он выравнивает к краю всех
+          // детей, и заголовок уезжал вправо.
+          child: TitleTrailingBar(
+            spacing: context.space.s3,
+            overflowSpacing: context.space.s2,
+            title: Text(
+              l10n.catalog_title_all,
+              key: CustomerHomeKeys.allTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: (compact ? context.text.title : context.text.h3).copyWith(
+                fontWeight: FontWeight.w700,
+                color: c.textPrimary,
               ),
-              CatalogToolbarControls(
-                view: _effectiveView,
-                onView: _setView,
-                sort: _effectiveSort,
-                onSort: _setSort,
-                searchMode: false,
-                filterCount: 0,
-                onFilters: null,
-                compact: compact,
-                showViewText: wc == WindowClass.large,
-              ),
-            ],
+            ),
+            trailing: CatalogToolbarControls(
+              key: CustomerHomeKeys.allControls,
+              view: _effectiveView,
+              onView: _setView,
+              sort: _effectiveSort,
+              onSort: _setSort,
+              searchMode: false,
+              filterCount: 0,
+              onFilters: null,
+              compact: compact,
+              showViewText: wc == WindowClass.large,
+              runAlignEnd: true,
+            ),
           ),
         ),
       ),
@@ -533,6 +547,8 @@ class _CustomerHomeViewState extends ConsumerState<CustomerHomeView> {
         padding: EdgeInsets.fromLTRB(side, 0, side, compact ? 88 : side),
         scrollController: _scroll,
         headerSlivers: header,
+        // SCR-50 (03 §7.3): карточка от 160, не больше 6 колонок и предела класса окна.
+        maxColumns: DsBreakpoints.gridMaxColumns,
         callbacks: CatalogProductCallbacks(
           onOpen: _openProduct,
           onFavorite: (ProductSummary p, bool v) => unawaited(_toggleFavorite(p, v)),
@@ -590,8 +606,10 @@ class _CustomerHomeViewState extends ConsumerState<CustomerHomeView> {
                   ),
                 ),
                 Expanded(
+                  // large: лента не шире 1200 по центру зоны (03 §8.5 «контент ограничен», как `DsLargeContent`), а не
+                  // у сайдбара с одной широкой пустой полосой справа (ревью; пакет own-server:GAP-APP).
                   child: Align(
-                    alignment: AlignmentDirectional.topStart,
+                    alignment: Alignment.topCenter,
                     child: ConstrainedBox(
                       constraints: BoxConstraints(
                         maxWidth: wc == WindowClass.large
@@ -868,32 +886,59 @@ class _CustomerHomeViewState extends ConsumerState<CustomerHomeView> {
     );
 
     final List<Widget> cards = <Widget>[orders, ?debt, favorites];
-    if (context.windowClass == WindowClass.compact) {
-      return SizedBox(
-        key: CustomerHomeKeys.cabinet,
-        height: 96,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          clipBehavior: Clip.none,
-          itemCount: cards.length,
-          separatorBuilder: (BuildContext context, int i) => SizedBox(width: context.space.s3),
-          itemBuilder: (BuildContext context, int i) => SizedBox(width: 140, child: cards[i]),
-        ),
-      );
-    }
-    return SizedBox(
+    // Высота ленты 96 при обычном размере текста; крупный текст (UI-42-025, системный масштаб) — выше на прирост
+    // строк карточки (72 lp текста при 1), чтобы подпись, значение и сноска не выходили за карточку.
+    final double height = // money-double: allow — геометрия UI (lp)
+        96 + MediaQuery.textScalerOf(context).scale(72) - 72;
+    // «Мой долг» не уже своей суммы (поля 12 + 12, обводка): прежде сумма уменьшалась `FittedBox` до 0,4 своей величины
+    // в узкой плитке (окно 600 с сайдбаром, крупный текст; T-UI-117, пакет own-server:GAP-APP).
+    final Money? debtAmount = debt == null ? null : s?.debt;
+    final double debtWidth = _cabinetValueWidth(debtAmount); // money-double: allow — геометрия UI (lp)
+    double widthOf(int i) => // money-double: allow — геометрия UI (lp)
+        identical(cards[i], debt) ? math.max(140, debtWidth) : 140;
+    Widget ribbon() => SizedBox(
       key: CustomerHomeKeys.cabinet,
-      height: 96,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          for (int i = 0; i < cards.length; i++) ...<Widget>[
-            if (i > 0) SizedBox(width: context.space.s3),
-            Expanded(child: cards[i]),
-          ],
-        ],
+      height: height,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
+        itemCount: cards.length,
+        separatorBuilder: (BuildContext context, int i) => SizedBox(width: context.space.s3),
+        itemBuilder: (BuildContext context, int i) => SizedBox(width: widthOf(i), child: cards[i]),
       ),
     );
+    if (context.windowClass == WindowClass.compact) {
+      return ribbon();
+    }
+    // medium+: плитки поровну во всю ширину; доля уже суммы долга — лента с прокруткой, как на телефоне.
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        final double share = // money-double: allow — геометрия UI (lp)
+            (box.maxWidth - context.space.s3 * (cards.length - 1)) / cards.length;
+        if (box.hasBoundedWidth && share < debtWidth) {
+          return ribbon();
+        }
+        return SizedBox(
+          key: CustomerHomeKeys.cabinet,
+          height: height,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (int i = 0; i < cards.length; i++) ...<Widget>[
+                if (i > 0) SizedBox(width: context.space.s3),
+                Expanded(child: cards[i]),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Ширина плитки ленты «Мой кабинет» под сумму [amount] (`listPrice`): поля 12 + 12 и обводка; `null` — 0.
+  double /* money-double: allow — геометрия UI */ _cabinetValueWidth(Money? amount) {
+    if (amount == null) return 0;
+    return dsTextWidth(context, PriceText.format(amount), context.text.listPrice) + 2 * context.space.s3 + 2;
   }
 
   /// Вид цены клиента (UI-50-007) — из ответа каталога (`price.priceListName`), его выбирает сервер.
@@ -920,20 +965,32 @@ class _CustomerHomeViewState extends ConsumerState<CustomerHomeView> {
       return const <Widget>[];
     }
     final double gap = context.space.s3; // money-double: allow — геометрия UI (lp)
+    final double tileExtent = // money-double: allow — геометрия UI (lp)
+        148 + MediaQuery.textScalerOf(context).scale(56) - 56;
+    // 3 колонки (03 §9.10, compact) — или меньше, если самое длинное слово подписи иначе не поместится в плитку
+    // (лучше 2 колонки, чем «Смесител|и»; указание владельца 2026-11-18, 15 §5.8 — [ВЫВОД исполнителя]).
+    final int cols = CategoryTile.gridColumnsFor(
+      context,
+      <String>[for (final Category cat in roots) cat.name],
+      width: MediaQuery.sizeOf(context).width - 2 * side,
+      gap: gap,
+      maxColumns: 3,
+    );
     return <Widget>[
       SliverPadding(
         key: CustomerHomeKeys.categories,
         padding: EdgeInsets.fromLTRB(side, context.space.s4, side, 0),
         sliver: SliverGrid(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
+            crossAxisCount: cols,
             mainAxisSpacing: gap,
             crossAxisSpacing: gap,
-            mainAxisExtent: 148,
+            // 148 при обычном размере текста; крупный текст — выше на прирост подписи в 2 строки и числа (56 lp при 1).
+            mainAxisExtent: tileExtent,
           ),
           delegate: SliverChildListDelegate(<Widget>[
             if (loading)
-              for (int i = 0; i < 3; i++) const SkeletonBox(height: 148)
+              for (int i = 0; i < 3; i++) SkeletonBox(height: tileExtent)
             else
               for (final Category cat in roots)
                 CategoryTile(
@@ -982,7 +1039,8 @@ class _CustomerHomeViewState extends ConsumerState<CustomerHomeView> {
               ),
               SizedBox(height: context.space.s2),
               SizedBox(
-                height: 66,
+                // Плитка 64 (крупный текст — выше, ProductCardCompact.stripHeight) + обводка 1 + 1.
+                height: ProductCardCompact.stripHeight(context) + 2,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: recent.length,

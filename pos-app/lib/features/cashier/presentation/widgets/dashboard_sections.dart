@@ -278,27 +278,64 @@ class DashboardQuickActions extends StatelessWidget {
             ),
           ),
         SizedBox(height: context.space.s3),
-        Row(
-          children: <Widget>[
-            if (onAcceptPayment != null) ...<Widget>[
-              Expanded(
-                child: online ? accept : Tooltip(message: l10n.cashier_action_offline_hint, child: accept),
-              ),
-              SizedBox(width: context.space.s3),
-            ],
-            Expanded(
-              child: AppButton(
-                key: const ValueKey<String>('cashier-catalog'),
-                label: l10n.cashier_action_catalog,
-                icon: Icons.category_outlined,
-                variant: AppButtonVariant.outlined,
-                size: AppButtonSize.l,
-                expand: true,
-                fitLabel: true,
-                onPressed: onCatalog,
-              ),
-            ),
-          ],
+        // Указание владельца 2026-11-18 (15 §5.8 (3); 02 SCR-30.2 «Адаптивность»): «Принять оплату» и «Каталог» —
+        // в ряд, только если обе подписи помещаются в половину ширины без уменьшения; иначе — друг под другом во
+        // всю ширину (прежде подпись «Принять оплату» уменьшалась до нечитаемой на всех окнах).
+        LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints box) {
+            final Widget acceptSlot = online
+                ? accept
+                : Tooltip(message: l10n.cashier_action_offline_hint, child: accept);
+            final Widget catalog = AppButton(
+              key: const ValueKey<String>('cashier-catalog'),
+              label: l10n.cashier_action_catalog,
+              icon: Icons.category_outlined,
+              variant: AppButtonVariant.outlined,
+              size: AppButtonSize.l,
+              expand: true,
+              fitLabel: true,
+              onPressed: onCatalog,
+            );
+            if (onAcceptPayment == null) {
+              return catalog;
+            }
+            final double gap = context.space.s3; // money-double: allow — зазор кнопок, lp
+            final double half = (box.maxWidth - gap) / 2; // money-double: allow — ширина кнопки, lp
+            final bool fits =
+                AppButton.estimateWidth(
+                      context,
+                      l10n.cashier_action_accept_payment,
+                      size: AppButtonSize.l,
+                      hasIcon: true,
+                    ) <=
+                    half &&
+                AppButton.estimateWidth(
+                      context,
+                      l10n.cashier_action_catalog,
+                      size: AppButtonSize.l,
+                      hasIcon: true,
+                      variant: AppButtonVariant.outlined,
+                    ) <=
+                    half;
+            if (fits) {
+              return Row(
+                children: <Widget>[
+                  Expanded(child: acceptSlot),
+                  SizedBox(width: gap),
+                  Expanded(child: catalog),
+                ],
+              );
+            }
+            return Column(
+              key: const ValueKey<String>('cashier-actions-stacked'),
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                acceptSlot,
+                SizedBox(height: context.space.s2),
+                catalog,
+              ],
+            );
+          },
         ),
         if (chips.isNotEmpty) ...<Widget>[
           SizedBox(height: context.space.s3),
@@ -330,7 +367,7 @@ Widget? debtIndicator(AppLocalizations l10n, Customer c) {
   return null;
 }
 
-/// Z3: избранные клиенты (до 12): compact — лента карточек 160×96, иначе — сетка.
+/// Z3: избранные клиенты (до 12): compact — лента карточек 160×96, иначе — сетка (высота 96 растёт с масштабом текста).
 class DashboardFavorites extends StatelessWidget {
   /// Создаёт зону.
   const DashboardFavorites({
@@ -357,6 +394,10 @@ class DashboardFavorites extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context);
+    // Высота карточки 96 растёт с масштабом текста (имя в 2 строки и пометка долга; указание владельца 2026-11-18,
+    // 02 SCR-30.2 «Адаптивность»): при 1,3 прежние 96 давали переполнение на 2 lp.
+    final double cardHeight = // money-double: allow — высота карточки, lp
+        96 + MediaQuery.textScalerOf(context).scale(72) - 72;
     final Widget body;
     if (loading) {
       body = SingleChildScrollView(
@@ -366,7 +407,7 @@ class DashboardFavorites extends StatelessWidget {
           children: <Widget>[
             for (int i = 0; i < 3; i++) ...<Widget>[
               if (i > 0) SizedBox(width: context.space.s2),
-              const SkeletonBox(width: 160, height: 96),
+              SkeletonBox(width: 160, height: cardHeight),
             ],
           ],
         ),
@@ -379,7 +420,7 @@ class DashboardFavorites extends StatelessWidget {
       );
     } else if (horizontal) {
       body = SizedBox(
-        height: 96,
+        height: cardHeight,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           itemCount: customers.length,
@@ -401,7 +442,7 @@ class DashboardFavorites extends StatelessWidget {
               for (final Customer c in customers)
                 SizedBox(
                   width: w,
-                  height: 96,
+                  height: cardHeight,
                   child: _FavoriteCard(customer: c, onOpen: onOpen, onMenu: onMenu),
                 ),
             ],

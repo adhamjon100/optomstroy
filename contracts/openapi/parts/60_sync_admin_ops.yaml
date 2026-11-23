@@ -853,7 +853,8 @@ paths:
       description: '08 §4.18.3; ядро §17.4, §21 п.3; 11 SEC-043. session.revoke.any, step-up (operation session.revoke.any): admin — любые цели,
         кроме owner; owner — только цели с ролью admin/owner. Тела запроса нет. Повтор → 204. Ошибки: 401; 403 FORBIDDEN (цель — сам субъект;
         цель owner при субъекте admin; owner над целью без ролей admin/owner; аудит authz.denied), STEP_UP_REQUIRED; 404 NOT_FOUND. Аудит session.revoked
-        (actor, reason, число отозванных сессий в after). Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after
+        (actor, reason, число отозванных сессий в after); с 1.4.0 (08 §4.18.3; ADR-116) отзываются и живые ключи Windows Hello
+        пользователя (hello_keys.revoke_reason = logout_all). Все операции модуля admin — permission по 08 §9 / 11 §4.4; изменения — аудит с before/after
         (08 §4.18). Cache-Control: no-store.
         Цель kind=kiosk (технический пользователь планшета магазина) → 403 FORBIDDEN reason kiosk_target (08 §4.18, §9;
         ADR-115 п. 19; 11 SEC-142); планшет управляется только /admin/store-tablets*.'

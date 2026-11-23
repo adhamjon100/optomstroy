@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Обёртка `docker compose` серверного контура (на сервере — /opt/optomstroy/<контур>/bin/dc; docs/ops/RUNBOOK.md §0).
+# Подключает к compose.prod.yml дополнения по наличию секретов (compose.prod.onec.yml — три secrets/onec_hs_*,
+# compose.prod.onec-odata.yml — пара secrets/onec_user и onec_password, compose.prod.onec-ca.yml — secrets/onec_ca.pem,
+# compose.prod.healthchecks.yml — secrets/healthchecks_url), а в тестовой копии (APP_ENV=staging в .env) — последним
+# compose.staging.yml. Перед up/run/create/start/restart создаёт внешнюю сеть edge контура, если её нет.
+# Примеры:  sudo /opt/optomstroy/prod/bin/dc ps
+#           sudo /opt/optomstroy/prod/bin/dc logs --since 1h worker
+#           sudo /opt/optomstroy/test/bin/dc up -d api worker
+# Каталог проекта — над bin/ (или переменная окружения PROD_DIR). Общий caddy — bin/dc-edge.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+. "$HERE/lib.sh"
+resolve_dirs "$HERE"
+[ -f "$PROD_DIR/compose.prod.yml" ] || die "нет $PROD_DIR/compose.prod.yml — комплект не установлен (install.sh)"
+compose_init
+case "${1:-}" in
+  up|run|create|start|restart) ensure_network "$EDGE_NET" ;;
+esac
+exec docker compose "${COMPOSE_ARGS[@]}" "$@"

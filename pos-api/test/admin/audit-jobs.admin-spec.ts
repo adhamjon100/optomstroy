@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -24,7 +24,10 @@ type JobFn = (jobs: { data: unknown }[]) => Promise<unknown>;
 
 describe('AuditJobsBridge (audit.anchor, audit.verify)', () => {
   const t = new AdminTestApp();
-  const media = join(mkdtempSync(join(tmpdir(), 'pos-audit-jobs-')), 'media');
+  // Корень убирается в afterAll: рядом с MEDIA_DIR тест пишет `audit-anchors/`, и без уборки каждый прогон оставлял
+  // во временной папке каталог `pos-audit-jobs-*`.
+  const mediaRoot = mkdtempSync(join(tmpdir(), 'pos-audit-jobs-'));
+  const media = join(mediaRoot, 'media');
 
   beforeAll(async () => {
     await t.start('audit_jobs_e2e', { audit: true });
@@ -35,7 +38,11 @@ describe('AuditJobsBridge (audit.anchor, audit.verify)', () => {
   }, 600_000);
 
   afterAll(async () => {
-    await t.stop();
+    try {
+      await t.stop();
+    } finally {
+      rmSync(mediaRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
   });
 
   function bridge(boss?: unknown, workers = true, start: () => Promise<void> = () => Promise.resolve()) {

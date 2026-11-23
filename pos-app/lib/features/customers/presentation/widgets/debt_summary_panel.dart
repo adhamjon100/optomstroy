@@ -7,6 +7,7 @@ import 'package:optomstroy/core/l10n/app_localizations.dart';
 import 'package:optomstroy/core/utils/money.dart';
 import 'package:optomstroy/design_system/components/app_button.dart';
 import 'package:optomstroy/design_system/components/app_progress.dart';
+import 'package:optomstroy/design_system/components/keep_words_text.dart';
 import 'package:optomstroy/design_system/components/receivable_badge.dart';
 import 'package:optomstroy/design_system/components/status_chip.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
@@ -102,19 +103,23 @@ class DebtSummaryPanel extends StatelessWidget {
       children
         ..add(Text(caption, style: context.text.label.copyWith(color: c.textSecondary)))
         ..add(
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              CustomersFormat.money(balance),
-              key: DebtSummaryKeys.balance,
-              maxLines: 1,
-              style: (large ? context.text.display : context.text.h3).copyWith(
-                color: amountColor,
-                fontWeight: FontWeight.w700,
-                fontFeatures: DsTypography.numeric,
-              ),
+          // Сумма целиком, без сжатия (`FittedBox` делал её мельче подписи на телефоне при крупном тексте): не
+          // помещается в строку — начертание на ступень меньше (T-UI-117, пакет own-server:GAP-APP).
+          DsKeepWordsText(
+            CustomersFormat.money(balance),
+            textKey: DebtSummaryKeys.balance,
+            style: (large ? context.text.display : context.text.h3).copyWith(
+              color: amountColor,
+              fontWeight: FontWeight.w700,
+              fontFeatures: DsTypography.numeric,
             ),
+            fallback: <TextStyle>[
+              for (final TextStyle s
+                  in large
+                      ? <TextStyle>[context.text.h1, context.text.h2, context.text.h3, context.text.title]
+                      : <TextStyle>[context.text.title, context.text.bodyLg])
+                s.copyWith(color: amountColor, fontWeight: FontWeight.w700, fontFeatures: DsTypography.numeric),
+            ],
           ),
         )
         ..add(const SizedBox(height: 4))

@@ -716,46 +716,53 @@ class _CashierDashboardScreenState extends ConsumerState<CashierDashboardScreen>
       if (d != null && d.awaitingPayment.isNotEmpty) z4[0],
       if (d != null && d.manualConfirm.isNotEmpty) z4[1],
     ];
-    final Widget content;
-    switch (wc) {
-      case WindowClass.compact:
-        content = column(<Widget?>[...z1, z2, ...z4Shown, z3, z5, z6, z7, z8]);
-      case WindowClass.medium:
-        content = Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _pageTitle(context, l10n),
+    // Колонки — по измеренной ширине содержимого, а не по классу окна (02 SCR-30.2; указание владельца 2026-11-18,
+    // 15 §5.8 (3) — [ВЫВОД исполнителя]): колонка не уже 360 × масштаб текста (1…1,3) — иначе суммы «Сегодня» и строк
+    // операций пришлось бы уменьшать. Три колонки (Z2–Z4 · Z5 · Z6–Z8) → две (Z2–Z4 · Z5–Z8) → одна в порядке compact.
+    final double k = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.3); // money-double: allow — масштаб
+    Widget layout(double /* money-double: allow — ширина (lp) */ w) {
+      final double minColumn = 360 * k; // money-double: allow — геометрия UI (lp)
+      final double gap2 = context.space.s4; // money-double: allow — геометрия UI (lp)
+      final int columns = (w - 2 * gap) / 3 >= minColumn
+          ? 3
+          : (w - gap2) / 2 >= minColumn
+          ? 2
+          : 1;
+      return Column(
+        key: ValueKey<String>('cashier-columns-$columns'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (!narrow) _pageTitle(context, l10n),
+          if (columns == 1)
+            column(<Widget?>[...z1, z2, ...z4Shown, z3, z5, z6, z7, z8])
+          else ...<Widget>[
             if (z1.isNotEmpty) ...<Widget>[column(z1), SizedBox(height: gap)],
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(child: column(<Widget?>[z2, z3, ...z4Shown])),
-                SizedBox(width: context.space.s4),
-                Expanded(child: column(<Widget?>[z5, z6, z7, z8])),
-              ],
-            ),
+            if (columns == 2)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(child: column(<Widget?>[z2, z3, ...z4Shown])),
+                  SizedBox(width: gap2),
+                  Expanded(child: column(<Widget?>[z5, z6, z7, z8])),
+                ],
+              )
+            else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(child: column(<Widget?>[z2, z3, ...z4Shown])),
+                  SizedBox(width: gap),
+                  Expanded(child: z5),
+                  SizedBox(width: gap),
+                  Expanded(child: column(<Widget?>[z6, z7, z8])),
+                ],
+              ),
           ],
-        );
-      case WindowClass.expanded:
-      case WindowClass.large:
-        content = Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _pageTitle(context, l10n),
-            if (z1.isNotEmpty) ...<Widget>[column(z1), SizedBox(height: gap)],
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(child: column(<Widget?>[z2, z3, ...z4Shown])),
-                SizedBox(width: gap),
-                Expanded(child: z5),
-                SizedBox(width: gap),
-                Expanded(child: column(<Widget?>[z6, z7, z8])),
-              ],
-            ),
-          ],
-        );
+        ],
+      );
     }
+
+    final Widget content = LayoutBuilder(builder: (BuildContext context, BoxConstraints box) => layout(box.maxWidth));
     final EdgeInsets pad = EdgeInsets.all(compact ? context.space.s4 : context.space.s6);
     final Widget scroll = SingleChildScrollView(
       key: const ValueKey<String>('cashier-scroll'),

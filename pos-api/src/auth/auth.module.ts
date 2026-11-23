@@ -24,6 +24,9 @@ import { OtpSmsDeliveryListener, QueuedSmsOtpProvider } from './otp/queued-sms-o
 import { SmsOutboxRepository } from './otp/sms-outbox.repository.js';
 import { AppPinsRepository } from './pin/app-pins.repository.js';
 import { PinVerifier } from './pin/pin-verifier.service.js';
+import { HelloKeyChallengeService } from './sessions/hello-key-challenge.service.js';
+import { HelloKeyService } from './sessions/hello-key.service.js';
+import { RefreshSessionResolver } from './sessions/refresh-session.resolver.js';
 import { RefreshService } from './sessions/refresh.service.js';
 import { SessionActivityGuard } from './sessions/session-activity.guard.js';
 import { SessionIssuer } from './sessions/session-issuer.service.js';
@@ -44,7 +47,8 @@ import { StepUpService } from './step-up/step-up.service.js';
  *
  * Экспорт для модулей registration/profile/admin: StepUpService/StepUpGuard (`@RequireStepUp`),
  * RegistrationTokenService (погашение `registration_token`), SessionIssuer, PinVerifier, AppPinsRepository,
- * OtpService, SessionActivityGuard (`forgetPin`).
+ * OtpService, SessionActivityGuard (`forgetPin`), HelloKeyService (ключ Windows Hello W2: правило переменной и отзыв
+ * ключей — profile, kiosk; ADR-116).
  */
 @Module({
   imports: [CryptoModule, AuditModule, AuthCoreModule, RateLimitModule, UsersModule, SmsGatewayModule],
@@ -63,7 +67,10 @@ import { StepUpService } from './step-up/step-up.service.js';
     AppPinsRepository,
     PinVerifier,
     SessionStore,
+    HelloKeyService,
+    HelloKeyChallengeService,
     SessionIssuer,
+    RefreshSessionResolver,
     RefreshService,
     SessionsService,
     InvitationsReader,
@@ -84,6 +91,7 @@ import { StepUpService } from './step-up/step-up.service.js';
     PinVerifier,
     SessionStore,
     SessionIssuer,
+    HelloKeyService,
     RegistrationTokenService,
     StepUpTokenVerifier,
     StepUpService,

@@ -1,0 +1,17 @@
+# Дополнение к infra/compose.prod.yml: ping-URL Healthchecks (16 §4.3 HEALTHCHECKS_PING_URL_FILE, §9).
+# Healthchecks по умолчанию — self-hosted экземпляр на хосте монитора в КР (16 §1 п. 3, §9). Пока его нет,
+# файл не подключается: backup.sh и worker работают без пингов. Подключается обёрткой bin/dc автоматически,
+# когда secrets/healthchecks_url есть и не пуст. URL содержит секретный uuid проверки — только файл, не .env.
+
+services:
+  worker:
+    environment:
+      HEALTHCHECKS_PING_URL_FILE: /run/secrets/healthchecks_url
+    secrets: [ healthchecks_url ]
+  backup:
+    environment:
+      HEALTHCHECKS_PING_URL_FILE: /run/secrets/healthchecks_url
+    secrets: [ healthchecks_url ]
+
+secrets:
+  healthchecks_url: { file: ./secrets/healthchecks_url }

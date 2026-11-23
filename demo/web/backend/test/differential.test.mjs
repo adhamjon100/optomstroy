@@ -94,7 +94,7 @@ before(async () => {
     at: new Date().toISOString(),
     build: { sha256: build.backend.sha256, gitHead: build.gitHead, epochKey: build.epochKey },
     runs: [brief(A), brief(B), brief(C), brief(B2)].filter(Boolean),
-    differential: { compared: cmpAB.compared, diffsAB: cmpAB.diffs, orderOnlyAB: cmpAB.order, diffsAC: cmpAC.diffs, real: split.real, noise: split.noisy, flaky, recheck: B2 ? B2.label : null },
+    differential: { compared: cmpAB.compared, diffsAB: cmpAB.diffs, orderOnlyAB: cmpAB.order, alignedAB: cmpAB.aligned, diffsAC: cmpAC.diffs, real: split.real, noise: split.noisy, flaky, recheck: B2 ? B2.label : null },
     contract: { groups, onlyBundle: groups.filter((g) => g.bundle > 0 && g.reference === 0).length, both: groups.filter((g) => g.bundle > 0 && g.reference > 0).length },
     coverageByOp: A.coverage.byOp,
   });

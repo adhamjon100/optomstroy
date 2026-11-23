@@ -1,0 +1,6 @@
+# Сайт рабочего контура на общем caddy (infra/compose.edge.yml): api.<домен> → optomstroy-prod-api-1 (сеть
+# optomstroy_prod_edge), фото — /srv/media/prod. Сертификат — ACME (e-mail CADDY_TLS), вызов TLS-ALPN-01 на 443.
+{$CADDY_SITE_ADDRESS} {
+	tls {$CADDY_TLS}
+	import api_site optomstroy-prod-api-1:3000 /srv/media/prod
+}
