@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:optomstroy/app/di/overrides.dart' show viewerDisplayName;
 import 'package:optomstroy/app/router/shells/app_mode.dart';
 import 'package:optomstroy/app/router/shells/app_shell.dart';
 import 'package:optomstroy/app/router/shells/phone_shell_header.dart';
@@ -27,6 +28,8 @@ import 'package:optomstroy/design_system/components/bottom_nav_bar.dart';
 import 'package:optomstroy/design_system/components/phone_top_bar.dart';
 import 'package:optomstroy/design_system/components/sync_indicator.dart';
 import 'package:optomstroy/design_system/theme/app_theme.dart';
+import 'package:optomstroy/features/auth/auth_providers.dart' show authSessionProvider;
+import 'package:optomstroy/features/auth/domain/entities/session_profile.dart';
 import 'package:optomstroy/features/catalog/catalog_providers.dart';
 import 'package:optomstroy/features/catalog/presentation/providers/catalog_ports.dart';
 import 'package:optomstroy/features/catalog/presentation/screens/catalog_screen.dart';
@@ -101,6 +104,7 @@ Future<GoRouter> _pumpShell(
   String initial = '/orders',
   Size size = const Size(390, 844),
   TestSession? session,
+  bool liveName = false,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -112,7 +116,11 @@ Future<GoRouter> _pumpShell(
       overrides: <Override>[
         appModeProvider.overrideWithValue(mode),
         catalogViewerRoleProvider.overrideWithValue(role),
-        catalogViewerNameProvider.overrideWithValue('Айбек Асанов'),
+        // `liveName` — имя шапки как в приложении (`viewerDisplayName`: `GET /me`, пока его нет — профиль входа).
+        if (liveName)
+          catalogViewerNameProvider.overrideWith(viewerDisplayName)
+        else
+          catalogViewerNameProvider.overrideWithValue('Айбек Асанов'),
         catalogUnreadNotificationsProvider.overrideWithValue(3),
         catalogProfileSheetProvider.overrideWithValue(
           (BuildContext context, String name, String role) => showProfileMenuSheet(context, name: name, role: role),
@@ -473,6 +481,43 @@ void main() {
         'logout',
         'logout-all',
       ]);
+    });
+
+    testWidgets('аватар шапки и карточка листа — одно имя: после `GET /me` шапка берёт ФИО из него', (tester) async {
+      await _pumpShell(tester, AppMode.cashier, RoleCode.cashier, liveName: true);
+      // Профиль входа со старым ФИО того же пользователя (`Me.id` = u-1), например до смены ФИО на SCR-41.
+      ProviderScope.containerOf(tester.element(_avatar))
+          .read(authSessionProvider.notifier)
+          .signedIn(
+            const SessionProfile(
+              userId: 'u-1',
+              kind: UserKind.staff,
+              roles: <RoleCode>[RoleCode.cashier],
+              displayName: 'Айбек Асанов',
+            ),
+          );
+      await tester.pumpAndSettle();
+      expect(find.descendant(of: _avatar, matching: find.text('АА')), findsOneWidget);
+      await _openSheet(tester);
+      expect(
+        find.descendant(of: find.byKey(ProfileMenuSheet.cardKey), matching: find.text('Нурлан Руководитель')),
+        findsOneWidget,
+      );
+      expect(find.descendant(of: _avatar, matching: find.text('НР')), findsOneWidget);
+      expect(find.descendant(of: _avatar, matching: find.text('АА')), findsNothing);
+      // Новый профиль входа (вход другого пользователя) — `GET /me` прежнего пользователя шапка не берёт.
+      ProviderScope.containerOf(tester.element(_avatar))
+          .read(authSessionProvider.notifier)
+          .signedIn(
+            const SessionProfile(
+              userId: 'u-2',
+              kind: UserKind.staff,
+              roles: <RoleCode>[RoleCode.cashier],
+              displayName: 'Бакыт Сыдыков',
+            ),
+          );
+      await tester.pumpAndSettle();
+      expect(find.descendant(of: _avatar, matching: find.text('БС')), findsOneWidget);
     });
 
     testWidgets('лист клиента: без транзакций, синхронизации и блокировки', (tester) async {

@@ -115,7 +115,10 @@ Widget _shell(Size size) {
         (BuildContext context, String name, String role) => showProfileMenuSheet(context, name: name, role: role),
       ),
       profileRepositoryProvider.overrideWithValue(
-        FakeProfileRepository(profile: seedMe(roles: <RoleCode>[RoleCode.cashier])),
+        // Тот же пользователь, что в шапке (`catalogViewerNameProvider`): аватар и карточка листа — «АА Айбек Асанов».
+        FakeProfileRepository(
+          profile: seedMe(roles: <RoleCode>[RoleCode.cashier], fullName: 'Айбек Асанов'),
+        ),
       ),
       clockProvider.overrideWithValue(FixedClock(DateTime.utc(2026, 11, 23, 9))),
       onlineStatusProvider.overrideWith((Ref ref) => Stream<OnlineStatus>.value(OnlineStatus.online)),

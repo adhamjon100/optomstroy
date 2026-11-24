@@ -5,7 +5,9 @@
 // (SCR-47 с тем же периодом). Зона B — карточки «Продажи», «Долги» (снимок 1С, без разбивки по срокам), «QR-сверка»;
 // каждая загружается независимо (ошибка одной не скрывает другие, AC-UI-48-008), `FORBIDDEN` — карточка скрыта.
 // Зона C — таблица выбранной карточки: продажи с разрезами `groupBy=day|seller|paymentMethod` (ровно три,
-// AC-UI-48-018), долги — сводка, QR — строки платежей с фильтром «Все · Расхождения · Вручную».
+// AC-UI-48-018), долги — сводка, QR — строки платежей с фильтром «Все · Расхождения · Вручную» и под ними блок
+// «Зачисления по неизвестному референсу» (UI-48-018, 15 ADR-123; только при непустом `unknownOperations`, только
+// просмотр). Карточка «QR-сверка» — строка «Неизвестный референс» при `summary.unknownReference` > 0 (UI-48-017).
 // Compact — тап по карточке раскрывает таблицу под ней; medium — карточки в 2 колонки; expanded — 3 колонки и таблица.
 // Экспорт CSV в R1 нет (Q-217): кнопки нет, `format=csv` не запрашивается (AC-UI-48-007). Отчёты не кэшируются
 // (финансовые данные, ядро §18.2 п. 1): офлайн — EmptyState offlineNoCache.
@@ -77,6 +79,12 @@ class ReportsScreen extends ConsumerStatefulWidget {
   static Key cardKey(ReportKind k) => ValueKey<String>('reports-card-${k.value}');
   static Key groupByKey(SalesGroupBy g) => ValueKey<String>('reports-groupby-${g.value}');
   static Key qrFilterKey(QrReconciliationFilter f) => ValueKey<String>('reports-qr-${f.value}');
+
+  /// Строка «Неизвестный референс» карточки «QR-сверка» (UI-48-017).
+  static const Key qrUnknownCountKey = ValueKey<String>('reports-qr-unknown-count');
+
+  /// Блок «Зачисления по неизвестному референсу» таблицы QR (UI-48-018).
+  static const Key qrUnknownBlockKey = ValueKey<String>('reports-qr-unknown');
 
   @override
   ConsumerState<ReportsScreen> createState() => _ReportsScreenState();
@@ -498,17 +506,29 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
   Widget _metric(BuildContext context, String label, String value, {Color? color}) => Padding(
     padding: EdgeInsets.only(top: context.space.s1),
-    child: Row(
-      children: <Widget>[
-        Expanded(
-          child: Text(label, style: context.text.caption.copyWith(color: context.colors.textSecondary)),
+    child: _labelValueRow(
+      Text(label, style: context.text.caption.copyWith(color: context.colors.textSecondary)),
+      Text(
+        value,
+        style: context.text.body.copyWith(
+          color: color ?? context.colors.textPrimary,
+          fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
         ),
-        Text(
-          value,
-          style: context.text.body.copyWith(
-            color: color ?? context.colors.textPrimary,
-            fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-          ),
+      ),
+    ),
+  );
+
+  /// Строка «подпись — значение» карточки: подпись занимает остаток, значение — не шире 60 % строки и при нехватке
+  /// места уменьшается (`scaleDown`), а не переполняет строку (320 lp при масштабе текста 1,3–1,5; ревью P-004).
+  /// Когда значение помещается, вид прежний.
+  static Widget _labelValueRow(Widget label, Widget value, {List<Widget> leading = const <Widget>[]}) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints box) => Row(
+      children: <Widget>[
+        ...leading,
+        Expanded(child: label),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: box.maxWidth * 0.6),
+          child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerRight, child: value),
         ),
       ],
     ),
@@ -583,72 +603,72 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     },
   );
 
-  Widget _debtsCard(BuildContext context, AppLocalizations l10n) =>
-      _slotBody<ReceivablesReport>(context, l10n, _debts, retry: () => unawaited(_loadDebts()), (ReceivablesReport r) {
-        final String? asOf = r.asOf == null ? null : ReportsFormat.stamp(r.asOf!, _now);
-        final List<Widget> meta = <Widget>[
-          if (asOf != null)
-            Padding(
-              padding: EdgeInsets.only(top: context.space.s2),
-              child: Text(
-                l10n.reports_debt_as_of(asOf),
-                style: context.text.caption.copyWith(color: context.colors.textSecondary),
-              ),
+  Widget _debtsCard(BuildContext context, AppLocalizations l10n) => _slotBody<ReceivablesReport>(
+    context,
+    l10n,
+    _debts,
+    retry: () => unawaited(_loadDebts()),
+    (ReceivablesReport r) {
+      final String? asOf = r.asOf == null ? null : ReportsFormat.stamp(r.asOf!, _now);
+      final List<Widget> meta = <Widget>[
+        if (asOf != null)
+          Padding(
+            padding: EdgeInsets.only(top: context.space.s2),
+            child: Text(
+              l10n.reports_debt_as_of(asOf),
+              style: context.text.caption.copyWith(color: context.colors.textSecondary),
             ),
-          if (r.isStale)
-            Padding(
-              key: ReportsScreen.debtStaleKey,
-              padding: EdgeInsets.only(top: context.space.s2),
-              child: ErrorState.banner(
-                message: l10n.reports_debt_stale(asOf ?? '—'),
-                tone: ErrorStateTone.warning,
-                onRetry: () => unawaited(_loadDebts()),
-              ),
+          ),
+        if (r.isStale)
+          Padding(
+            key: ReportsScreen.debtStaleKey,
+            padding: EdgeInsets.only(top: context.space.s2),
+            child: ErrorState.banner(
+              message: l10n.reports_debt_stale(asOf ?? '—'),
+              tone: ErrorStateTone.warning,
+              onRetry: () => unawaited(_loadDebts()),
             ),
-        ];
-        final Money total = r.totalBalance ?? Money.zero;
-        if (total.isZero && (r.totalOverdue ?? Money.zero).isZero) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Text(l10n.reports_empty_debts, style: context.text.body.copyWith(color: context.colors.textSecondary)),
-              ...meta,
-            ],
-          );
-        }
-        final Money overdue = r.totalOverdue ?? Money.zero;
+          ),
+      ];
+      final Money total = r.totalBalance ?? Money.zero;
+      if (total.isZero && (r.totalOverdue ?? Money.zero).isZero) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Text(l10n.reports_debt_total, style: context.text.caption.copyWith(color: context.colors.textSecondary)),
-            PriceText(amount: total, variant: PriceTextVariant.card, stepDownToFit: true),
-            SizedBox(height: context.space.s2),
-            Row(
-              children: <Widget>[
-                if (!overdue.isZero) ...<Widget>[
-                  Icon(Icons.warning_amber_rounded, size: 16, color: context.colors.error),
-                  SizedBox(width: context.space.s1),
-                ],
-                Expanded(
-                  child: Text(
-                    l10n.reports_debt_overdue,
-                    style: context.text.caption.copyWith(color: context.colors.textSecondary),
-                  ),
-                ),
-                Text(
-                  ReportsFormat.money(overdue),
-                  style: context.text.body.copyWith(
-                    color: overdue.isZero ? context.colors.textPrimary : context.colors.error,
-                    fontWeight: FontWeight.w600,
-                    fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-                  ),
-                ),
-              ],
-            ),
+            Text(l10n.reports_empty_debts, style: context.text.body.copyWith(color: context.colors.textSecondary)),
             ...meta,
           ],
         );
-      });
+      }
+      final Money overdue = r.totalOverdue ?? Money.zero;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Text(l10n.reports_debt_total, style: context.text.caption.copyWith(color: context.colors.textSecondary)),
+          PriceText(amount: total, variant: PriceTextVariant.card, stepDownToFit: true),
+          SizedBox(height: context.space.s2),
+          _labelValueRow(
+            leading: <Widget>[
+              if (!overdue.isZero) ...<Widget>[
+                Icon(Icons.warning_amber_rounded, size: 16, color: context.colors.error),
+                SizedBox(width: context.space.s1),
+              ],
+            ],
+            Text(l10n.reports_debt_overdue, style: context.text.caption.copyWith(color: context.colors.textSecondary)),
+            Text(
+              ReportsFormat.money(overdue),
+              style: context.text.body.copyWith(
+                color: overdue.isZero ? context.colors.textPrimary : context.colors.error,
+                fontWeight: FontWeight.w600,
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          ...meta,
+        ],
+      );
+    },
+  );
 
   Widget _qrCard(BuildContext context, AppLocalizations l10n) => _slotBody<QrReconciliationReport>(
     context,
@@ -657,10 +677,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     retry: () => unawaited(_loadQr()),
     (QrReconciliationReport r) {
       final QrReconciliationSummary s = r.summary;
-      if (s.webhook + s.manual + s.unmatched == 0 && r.rows.isEmpty) {
+      // Зачисления по неизвестному референсу (UI-48-017): число — `summary.unknownReference` (за период, от фильтра
+      // таблицы не зависит); без него (сервер до OpenAPI 1.5.0) — число строк `unknownOperations`.
+      final int unknown = s.unknownReference > 0 ? s.unknownReference : r.unknownOperations.length;
+      if (s.webhook + s.manual + s.unmatched + unknown == 0 && r.rows.isEmpty) {
         return Text(l10n.reports_empty_qr, style: context.text.body.copyWith(color: context.colors.textSecondary));
       }
-      Widget line(String label, int count, StatusChipVariant v) => Padding(
+      Widget line(String label, int count, StatusChipVariant v, {Key? key}) => Padding(
+        key: key,
         padding: EdgeInsets.only(top: context.space.s2),
         child: Row(
           children: <Widget>[
@@ -687,6 +711,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             s.unmatched,
             s.unmatched > 0 ? StatusChipVariant.warning : StatusChipVariant.neutral,
           ),
+          if (unknown > 0)
+            line(
+              l10n.reports_qr_unknown_reference,
+              unknown,
+              StatusChipVariant.warning,
+              key: ReportsScreen.qrUnknownCountKey,
+            ),
         ],
       );
     },
@@ -897,6 +928,62 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               ).toString(),
             ),
           ),
+        if (r != null && r.unknownOperations.isNotEmpty) ...<Widget>[
+          SizedBox(height: context.space.s5),
+          _qrUnknownBlock(context, l10n, r.unknownOperations),
+        ],
+      ],
+    );
+  }
+
+  /// UI-48-018: зачисления банка, для которых платёж POS по референсу не найден (15 ADR-123). Только просмотр:
+  /// заказа нет — строки без перехода; разбор — по выписке банка. Время — `paidAt`, без него — `receivedAt`;
+  /// нет референса, суммы или известного источника — «—».
+  Widget _qrUnknownBlock(BuildContext context, AppLocalizations l10n, List<QrUnknownOperation> ops) {
+    String source(QrUnknownOperationSource? s) => switch (s) {
+      QrUnknownOperationSource.webhook => l10n.reports_qr_unknown_source_webhook,
+      QrUnknownOperationSource.reconciliation => l10n.reports_qr_unknown_source_reconciliation,
+      null => '—',
+    };
+    return Column(
+      key: ReportsScreen.qrUnknownBlockKey,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Icon(Icons.help_outline_rounded, size: 20, color: context.colors.warning),
+            SizedBox(width: context.space.s2),
+            Expanded(
+              child: Semantics(
+                header: true,
+                child: Text(
+                  l10n.reports_qr_unknown_title,
+                  style: context.text.title.copyWith(color: context.colors.textPrimary),
+                ),
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: context.space.s1),
+        Text(l10n.reports_qr_unknown_hint, style: context.text.caption.copyWith(color: context.colors.textSecondary)),
+        SizedBox(height: context.space.s3),
+        ReportTable(
+          columns: <ReportColumn>[
+            ReportColumn(label: l10n.reports_qr_unknown_col_reference, flex: 2, minWidth: 140),
+            ReportColumn(label: l10n.orders_col_total, numeric: true, flex: 2, minWidth: 130),
+            ReportColumn(label: l10n.reports_qr_unknown_col_paid_at, flex: 2, minWidth: 140),
+            ReportColumn(label: l10n.reports_qr_unknown_col_source, flex: 2, minWidth: 150),
+          ],
+          rows: <List<String>>[
+            for (final QrUnknownOperation op in ops)
+              <String>[
+                (op.reference ?? '').trim().isEmpty ? '—' : op.reference!.trim(),
+                ReportsFormat.money(op.amount),
+                ReportsFormat.stamp(op.paidAt ?? op.receivedAt, _now),
+                source(op.source),
+              ],
+          ],
+        ),
       ],
     );
   }

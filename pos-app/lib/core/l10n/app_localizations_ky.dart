@@ -5940,6 +5940,31 @@ class AppLocalizationsKy extends AppLocalizations {
   String get reports_qr_manual => 'Подтверждено вручную';
 
   @override
+  String get reports_qr_unknown_col_paid_at => 'Время оплаты';
+
+  @override
+  String get reports_qr_unknown_col_reference => 'Референс';
+
+  @override
+  String get reports_qr_unknown_col_source => 'Источник';
+
+  @override
+  String get reports_qr_unknown_hint =>
+      'Банк зачислил оплату, но платёж POS с таким референсом не найден. Сверьте с выпиской банка';
+
+  @override
+  String get reports_qr_unknown_reference => 'Неизвестный референс';
+
+  @override
+  String get reports_qr_unknown_source_reconciliation => 'Сверка с банком';
+
+  @override
+  String get reports_qr_unknown_source_webhook => 'Уведомление банка';
+
+  @override
+  String get reports_qr_unknown_title => 'Зачисления по неизвестному референсу';
+
+  @override
   String get reports_qr_unmatched => 'Расхождения';
 
   @override

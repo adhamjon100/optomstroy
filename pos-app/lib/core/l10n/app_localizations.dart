@@ -5235,7 +5235,7 @@ abstract class AppLocalizations {
   /// **'Цены изменились. Подтвердите новые цены'**
   String get error_price_changed;
 
-  /// Экран: SCR-22. ч. C; код `[НОВОЕ ИМЯ]` в 08 §2.4. Источник: 02 §7; текст 02 оставлен вместо 03 §16.5 (код QR_UNAVAILABLE) «Банк недоступен»: ядро v1.9 §24.4: в R1 основной вариант QR_PROVIDER=onec — QR формирует 1С, а не банк; текст 03 §16.5 «Банк недоступен» неверен для этого варианта, нейтральный текст 02 §7 подходит для onec и bakai (B-AR-11, docs/reviews/B_architecture_review.md)
+  /// Экран: SCR-22. ч. C; код `[НОВОЕ ИМЯ]` в 08 §2.4. Источник: 02 §7; текст 02 оставлен вместо 03 §16.5 (код QR_UNAVAILABLE) «Банк недоступен»: 15 ADR-123: основной вариант QR_PROVIDER=bank — QR формирует банк через наш сервер; onec (QR формирует 1С, ADR-081) и none сохранены; текст 03 §16.5 «Банк недоступен» неверен для onec, нейтральный текст 02 §7 подходит для bank, onec и none (B-AR-11, docs/reviews/B_architecture_review.md)
   ///
   /// In ru, this message translates to:
   /// **'QR временно недоступен'**
@@ -10166,6 +10166,54 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Подтверждено вручную'**
   String get reports_qr_manual;
+
+  /// Экран: SCR-48. ч. E; колонка блока «Зачисления по неизвестному референсу» UI-48-018 (P-004, 15 ADR-123); `paidAt`, без него — `receivedAt`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Время оплаты'**
+  String get reports_qr_unknown_col_paid_at;
+
+  /// Экран: SCR-48. ч. E; колонка блока UI-48-018 (P-004, 15 ADR-123); `reference`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Референс'**
+  String get reports_qr_unknown_col_reference;
+
+  /// Экран: SCR-48. ч. E; колонка блока UI-48-018 (P-004, 15 ADR-123); `source`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Источник'**
+  String get reports_qr_unknown_col_source;
+
+  /// Экран: SCR-48. ч. E; подпись блока UI-48-018 (P-004, 15 ADR-123). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Банк зачислил оплату, но платёж POS с таким референсом не найден. Сверьте с выпиской банка'**
+  String get reports_qr_unknown_hint;
+
+  /// Экран: SCR-48. ч. E; QR; строка карточки «QR-сверка» UI-48-017 (P-004, 15 ADR-123); `summary.unknownReference`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Неизвестный референс'**
+  String get reports_qr_unknown_reference;
+
+  /// Экран: SCR-48. ч. E; значение `source=reconciliation` блока UI-48-018 (P-004, 15 ADR-123). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Сверка с банком'**
+  String get reports_qr_unknown_source_reconciliation;
+
+  /// Экран: SCR-48. ч. E; значение `source=webhook` блока UI-48-018 (P-004, 15 ADR-123). Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Уведомление банка'**
+  String get reports_qr_unknown_source_webhook;
+
+  /// Экран: SCR-48. ч. E; заголовок блока UI-48-018 (P-004, 15 ADR-123); `unknownOperations`. Источник: 02 §7
+  ///
+  /// In ru, this message translates to:
+  /// **'Зачисления по неизвестному референсу'**
+  String get reports_qr_unknown_title;
 
   /// Экран: SCR-48. ч. E; QR. Источник: 02 §7
   ///

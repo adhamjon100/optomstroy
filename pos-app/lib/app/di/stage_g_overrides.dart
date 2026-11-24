@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:go_router/go_router.dart';
 import 'package:optomstroy/app/di/customer_orders_tab.dart';
-import 'package:optomstroy/app/di/overrides.dart' show sessionUserIdProvider;
+import 'package:optomstroy/app/di/overrides.dart' show sessionUserIdProvider, viewerDisplayName;
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/error/error_mapper.dart';
 import 'package:optomstroy/core/error/failure.dart';
@@ -22,7 +22,6 @@ import 'package:optomstroy/design_system/layout/window_class.dart';
 import 'package:optomstroy/design_system/theme/ds_theme.dart';
 import 'package:optomstroy/features/admin/admin_providers.dart';
 import 'package:optomstroy/features/admin/domain/users/admin_user.dart';
-import 'package:optomstroy/features/auth/auth_providers.dart' as auth;
 import 'package:optomstroy/features/cart/cart_providers.dart' as cart;
 import 'package:optomstroy/features/cart/domain/entities/cart.dart';
 import 'package:optomstroy/features/cart/domain/repositories/cart_repository.dart';
@@ -57,11 +56,10 @@ List<Override> stageGOverrides(Provider<OrderDocumentPrinter?> printer) => <Over
   ),
   // Роль экранов кассы и журнала — из профиля входа (как каталог); `syncViewerRoleProvider` — та же роль.
   cashierViewerRoleProvider.overrideWith((Ref ref) => ref.watch(catalog.catalogViewerRoleProvider)),
-  // Шапка SCR-30 (UI-30-013): имя из профиля входа (ПДн — только память), логотип и `SyncIndicator` как у SCR-10,
+  // Шапка SCR-30 (UI-30-013): имя — как у шапки SCR-10 ([viewerDisplayName]: ФИО из `GET /me`, пока его нет — из
+  // профиля входа; ПДн — только память), логотип и `SyncIndicator` как у SCR-10,
   // «Выйти» — сценарий SCR-10 (ConfirmDialog, предупреждение о неотправленных изменениях FLOW-009.E1).
-  cashierViewerNameProvider.overrideWith(
-    (Ref ref) => ref.watch(auth.authSessionProvider.select((s) => s.profile.displayName)),
-  ),
+  cashierViewerNameProvider.overrideWith(viewerDisplayName),
   cashierLogoProvider.overrideWithValue((BuildContext context) => const CatalogLogo(markSize: 28, wordmark: false)),
   cashierSyncIndicatorProvider.overrideWithValue((BuildContext context) => const ConnectedSyncIndicator()),
   cashierLogoutProvider.overrideWithValue((BuildContext context, WidgetRef ref) async {

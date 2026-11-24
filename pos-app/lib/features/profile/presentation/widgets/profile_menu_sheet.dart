@@ -89,6 +89,8 @@ class _ProfileMenuSheetState extends ConsumerState<ProfileMenuSheet> {
     final Result<UserProfile> r = await repo.me();
     if (!mounted) return;
     if (r case Success<UserProfile>(:final UserProfile value)) {
+      // Имя из `GET /me` — и в аватар шапки (profileMeNameProvider): лист и шапка показывают одного пользователя.
+      ref.read(profileMeNameProvider.notifier).remember(value);
       setState(() => _me = value);
     }
   }

@@ -99,6 +99,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     });
     final Result<UserProfile> r = await _repo.me();
     if (!mounted) return;
+    // Имя из `GET /me` (в том числе после сохранения ФИО) — и в аватар шапки (profileMeNameProvider, ADR-122).
+    if (r case Success<UserProfile>(:final UserProfile value)) {
+      ref.read(profileMeNameProvider.notifier).remember(value);
+    }
     setState(() {
       _loading = false;
       switch (r) {

@@ -4384,7 +4384,7 @@
   },
   "error_qr_unavailable": "QR временно недоступен",
   "@error_qr_unavailable": {
-    "description": "Экран: SCR-22. ч. C; код `[НОВОЕ ИМЯ]` в 08 §2.4. Источник: 02 §7; текст 02 оставлен вместо 03 §16.5 (код QR_UNAVAILABLE) «Банк недоступен»: ядро v1.9 §24.4: в R1 основной вариант QR_PROVIDER=onec — QR формирует 1С, а не банк; текст 03 §16.5 «Банк недоступен» неверен для этого варианта, нейтральный текст 02 §7 подходит для onec и bakai (B-AR-11, docs/reviews/B_architecture_review.md)"
+    "description": "Экран: SCR-22. ч. C; код `[НОВОЕ ИМЯ]` в 08 §2.4. Источник: 02 §7; текст 02 оставлен вместо 03 §16.5 (код QR_UNAVAILABLE) «Банк недоступен»: 15 ADR-123: основной вариант QR_PROVIDER=bank — QR формирует банк через наш сервер; onec (QR формирует 1С, ADR-081) и none сохранены; текст 03 §16.5 «Банк недоступен» неверен для onec, нейтральный текст 02 §7 подходит для bank, onec и none (B-AR-11, docs/reviews/B_architecture_review.md)"
   },
   "error_qty_below_min": "Минимальная партия — {min} {unit}",
   "@error_qty_below_min": {
@@ -8682,6 +8682,38 @@
   "reports_qr_manual": "Подтверждено вручную",
   "@reports_qr_manual": {
     "description": "Экран: SCR-48. ч. E; QR. Источник: 02 §7"
+  },
+  "reports_qr_unknown_col_paid_at": "Время оплаты",
+  "@reports_qr_unknown_col_paid_at": {
+    "description": "Экран: SCR-48. ч. E; колонка блока «Зачисления по неизвестному референсу» UI-48-018 (P-004, 15 ADR-123); `paidAt`, без него — `receivedAt`. Источник: 02 §7"
+  },
+  "reports_qr_unknown_col_reference": "Референс",
+  "@reports_qr_unknown_col_reference": {
+    "description": "Экран: SCR-48. ч. E; колонка блока UI-48-018 (P-004, 15 ADR-123); `reference`. Источник: 02 §7"
+  },
+  "reports_qr_unknown_col_source": "Источник",
+  "@reports_qr_unknown_col_source": {
+    "description": "Экран: SCR-48. ч. E; колонка блока UI-48-018 (P-004, 15 ADR-123); `source`. Источник: 02 §7"
+  },
+  "reports_qr_unknown_hint": "Банк зачислил оплату, но платёж POS с таким референсом не найден. Сверьте с выпиской банка",
+  "@reports_qr_unknown_hint": {
+    "description": "Экран: SCR-48. ч. E; подпись блока UI-48-018 (P-004, 15 ADR-123). Источник: 02 §7"
+  },
+  "reports_qr_unknown_reference": "Неизвестный референс",
+  "@reports_qr_unknown_reference": {
+    "description": "Экран: SCR-48. ч. E; QR; строка карточки «QR-сверка» UI-48-017 (P-004, 15 ADR-123); `summary.unknownReference`. Источник: 02 §7"
+  },
+  "reports_qr_unknown_source_reconciliation": "Сверка с банком",
+  "@reports_qr_unknown_source_reconciliation": {
+    "description": "Экран: SCR-48. ч. E; значение `source=reconciliation` блока UI-48-018 (P-004, 15 ADR-123). Источник: 02 §7"
+  },
+  "reports_qr_unknown_source_webhook": "Уведомление банка",
+  "@reports_qr_unknown_source_webhook": {
+    "description": "Экран: SCR-48. ч. E; значение `source=webhook` блока UI-48-018 (P-004, 15 ADR-123). Источник: 02 §7"
+  },
+  "reports_qr_unknown_title": "Зачисления по неизвестному референсу",
+  "@reports_qr_unknown_title": {
+    "description": "Экран: SCR-48. ч. E; заголовок блока UI-48-018 (P-004, 15 ADR-123); `unknownOperations`. Источник: 02 §7"
   },
   "reports_qr_unmatched": "Расхождения",
   "@reports_qr_unmatched": {

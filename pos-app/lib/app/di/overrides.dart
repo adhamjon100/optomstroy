@@ -86,6 +86,7 @@ import 'package:optomstroy/features/orders/presentation/providers/printing_docum
 import 'package:optomstroy/features/product_details/presentation/widgets/variant_replace_sheet.dart';
 import 'package:optomstroy/features/profile/data/profile_bindings.dart';
 import 'package:optomstroy/features/profile/presentation/widgets/profile_menu_sheet.dart' show showProfileMenuSheet;
+import 'package:optomstroy/features/profile/profile_providers.dart' show profileMeNameProvider, profileViewerName;
 import 'package:optomstroy/features/registration/data/registration_bindings.dart';
 import 'package:optomstroy/features/registration/registration_providers.dart' as reg;
 import 'package:optomstroy/features/reports/data/reports_bindings.dart';
@@ -180,10 +181,9 @@ final List<Override> appOverrides = <Override>[
   // закрепление сессия администратора при подключении (SCR-54), снимает — сессия планшета при отзыве и аварийном выходе.
   kioskLockProvider.overrideWith((Ref ref) => kioskLockFor(defaultTargetPlatform)),
   catalog.catalogViewerRoleProvider.overrideWith(catalogViewerRole),
-  // Шапка SCR-10: имя пользователя из профиля входа (ПДн — только память) и `SyncIndicator` core/sync (тап → SCR-43).
-  catalog_ports.catalogViewerNameProvider.overrideWith(
-    (Ref ref) => ref.watch(auth.authSessionProvider.select((s) => s.profile.displayName)),
-  ),
+  // Шапка SCR-10 и шапка телефона (аватар): имя пользователя — [viewerDisplayName] (ФИО из `GET /me`, пока его нет —
+  // из профиля входа; ПДн — только память) и `SyncIndicator` core/sync (тап → SCR-43).
+  catalog_ports.catalogViewerNameProvider.overrideWith(viewerDisplayName),
   // История поиска — только текущего пользователя (02 SCR-10.4.A): выход, `SESSION_REVOKED`, смена пользователя
   // меняют пользователя сессии и очищают её.
   catalog_ports.catalogSessionUserProvider.overrideWith((Ref ref) => ref.watch(sessionUserIdProvider)),
@@ -247,13 +247,9 @@ final List<Override> cartUiOverrides = <Override>[
   // Планшет магазина: `426` — баннер «Планшет нужно обновить» под шапкой SCR-51 (02 UI-51-014).
   catalog_ports.catalogKioskUpdateNeededProvider.overrideWith(catalogKioskUpdateNeeded),
   // FQ-CHK-06 / FIX-FE-08: ФИО пользователя сессии для «Подтвердил: {name}» (UI-20-033) и «Разрешено: {name}»
-  // (UI-21-028) — профиль сессии фичи auth (только память).
-  cart.cartViewerNameProvider.overrideWith(
-    (Ref ref) => ref.watch(auth.authSessionProvider.select((auth.AuthSessionState s) => s.profile.displayName)),
-  ),
-  checkout_ports.checkoutViewerNameProvider.overrideWith(
-    (Ref ref) => ref.watch(auth.authSessionProvider.select((auth.AuthSessionState s) => s.profile.displayName)),
-  ),
+  // (UI-21-028) — [viewerDisplayName], как у шапки (только память).
+  cart.cartViewerNameProvider.overrideWith(viewerDisplayName),
+  checkout_ports.checkoutViewerNameProvider.overrideWith(viewerDisplayName),
   // Кнопка-итог в шапке medium+ (drawer корзины 420, ADR-112) и панель-итог `CartFab` (compact, `customer` на medium).
   catalog_ports.catalogCartButtonProvider.overrideWithValue((BuildContext context) => const CartHeaderButtonView()),
   catalog_ports.catalogCartFabProvider.overrideWithValue((BuildContext context) => const CartFabView()),
@@ -530,6 +526,23 @@ final class SessionAdminKioskDevice implements AdminKioskDevice {
   }
 }
 
+/// Имя пользователя сессии для шапок и подписей «Подтвердил: {name}»: ФИО из последнего `GET /me` того же пользователя
+/// (фича profile: SCR-41, лист профиля по аватару), пока ответа нет — из профиля входа (фича auth). Аватар шапки и
+/// карточка листа профиля показывают одно имя и после смены ФИО до нового входа (15 ADR-122).
+String? viewerDisplayName(Ref ref) {
+  final String? sessionName = ref.watch(
+    auth.authSessionProvider.select((auth.AuthSessionState s) => s.profile.displayName),
+  );
+  final String? profileUserId = ref.watch(
+    auth.authSessionProvider.select((auth.AuthSessionState s) => s.profile.userId),
+  );
+  return profileViewerName(
+    me: ref.watch(profileMeNameProvider),
+    sessionUserId: profileUserId ?? ref.watch(sessionUserIdProvider),
+    sessionName: sessionName,
+  );
+}
+
 /// Владелец локальной БД — `sub` access-токена текущей сессии (`SessionState.userId`); копию держит
 /// [featureBridgesProvider], чтобы [userDatabase] не зависел от контроллера сессии.
 final sessionUserIdProvider = NotifierProvider<SessionUserIdNotifier, String?>(SessionUserIdNotifier.new);
@@ -554,6 +567,14 @@ final featureBridgesProvider = Provider<void>((ref) {
     sessionControllerProvider.select((s) => s.userId),
     (_, String? next) => ref.read(sessionUserIdProvider.notifier).set(next),
   );
+  // Новый профиль входа (вход, смена пользователя, выход) свежее прежнего ответа `GET /me`: имя шапки
+  // ([viewerDisplayName]) снова берётся из профиля входа до следующего `GET /me`.
+  ref.listen<auth.AuthSessionState>(auth.authSessionProvider, (
+    auth.AuthSessionState? previous,
+    auth.AuthSessionState next,
+  ) {
+    if (!identical(previous?.profile, next.profile)) ref.invalidate(profileMeNameProvider);
+  });
   // Первый вход сотрудника (PIN ещё не задан, `pinSetupRequired`) и ожидание активации клиента: БД уже открыта,
   // но `GET /catalog/sync/*` отвечает 403 — первичная загрузка кэша повторяется сразу после перехода в `signedIn`,
   // а не через период планировщика (5 мин).

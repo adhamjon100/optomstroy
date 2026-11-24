@@ -30,14 +30,17 @@ import 'package:optomstroy/features/profile/profile_providers.dart';
 final AppLocalizations l10n = lookupAppLocalizations(const Locale('ru'));
 final DateTime p0 = DateTime.utc(2026, 10, 22, 3, 12);
 
-UserProfile seedMe({List<RoleCode> roles = const <RoleCode>[RoleCode.owner]}) => UserProfile(
+UserProfile seedMe({
+  List<RoleCode> roles = const <RoleCode>[RoleCode.owner],
+  String fullName = 'Нурлан Руководитель',
+}) => UserProfile(
   id: 'u-1',
   kind: UserKind.staff,
   status: UserStatus.active,
   roles: roles,
   permissions: const <String>{'transactions.read.all', 'reports.sales.read'},
   permissionsVersion: 1,
-  profile: const ProfileData(fullName: 'Нурлан Руководитель', phoneE164: '+996700000003', rowVersion: 4),
+  profile: ProfileData(fullName: fullName, phoneE164: '+996700000003', rowVersion: 4),
   session: ProfileSession(deviceName: 'Касса-1', createdAt: p0),
 );
 

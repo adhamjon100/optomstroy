@@ -1,8 +1,9 @@
-// Widget-тесты SCR-48 (RM-G-008, RM-G-012 п. 3; 02 AC-UI-48-001/002/003/004/006/007/008/009/015/018):
+// Widget-тесты SCR-48 (RM-G-008, RM-G-012 п. 3; 02 AC-UI-48-001/002/003/004/006/007/008/009/015/018/019):
 // три карточки с периодом «Сегодня», сумма продаж = `totals.ordersTotal`, ровно три разреза
 // `day|seller|paymentMethod` (смена разреза перезапрашивает только продажи), итоговая строка, предупреждение об
 // устаревших долгах, фильтр QR «Расхождения», ошибка одной карточки не скрывает другие, `FORBIDDEN` скрывает
-// карточку, период > 366 дней не применяется, экспорта CSV нет; переходы руководителя (меню шапки).
+// карточку, период > 366 дней не применяется, экспорта CSV нет; переходы руководителя (меню шапки); зачисления
+// по неизвестному референсу (UI-48-017, UI-48-018; 15 ADR-123) — только при непустом списке.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -28,6 +29,7 @@ Future<void> pumpReports(
   FakeReportsRepository repo, {
   Widget screen = const ReportsScreen(),
   Size size = const Size(1440, 900),
+  double textScale = 1.0,
 }) async {
   tester.view.devicePixelRatio = 1.0;
   tester.view.physicalSize = size;
@@ -41,8 +43,10 @@ Future<void> pumpReports(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         debugShowCheckedModeBanner: false,
-        builder: (context, app) =>
-            MediaQuery(data: MediaQuery.of(context).copyWith(disableAnimations: true), child: app!),
+        builder: (context, app) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(disableAnimations: true, textScaler: TextScaler.linear(textScale)),
+          child: app!,
+        ),
         home: screen,
       ),
     ),
@@ -116,6 +120,69 @@ void main() {
     expect(table.highlightedRows, <int>{0});
   });
 
+  testWidgets('QR: зачисления по неизвестному референсу — строка карточки и блок под таблицей (AC-UI-48-019)', (
+    tester,
+  ) async {
+    final FakeReportsRepository repo = FakeReportsRepository(unknownOperations: true);
+    await pumpReports(tester, repo, screen: const ReportsScreen(report: 'qr'));
+    expect(find.byKey(ReportsScreen.qrUnknownCountKey), findsOneWidget);
+    expect(find.text(l10n.reports_qr_unknown_reference), findsOneWidget);
+    expect(find.byKey(ReportsScreen.qrUnknownBlockKey), findsOneWidget);
+    expect(find.text(l10n.reports_qr_unknown_title), findsOneWidget);
+    expect(find.text(l10n.reports_qr_unknown_hint), findsOneWidget);
+    final ReportTable unknown = tester.widget<ReportTable>(
+      find.descendant(of: find.byKey(ReportsScreen.qrUnknownBlockKey), matching: find.byType(ReportTable)),
+    );
+    expect(unknown.rows, hasLength(2));
+    expect(unknown.rows[0][0], 'BNK-77120');
+    expect(unknown.rows[0][1], ReportsFormat.money(const Money(450000)));
+    expect(unknown.rows[0][3], l10n.reports_qr_unknown_source_webhook);
+    expect(unknown.rows[1][0], '—');
+    expect(unknown.rows[1][1], '—');
+    expect(unknown.rows[1][2], ReportsFormat.stamp(r0.subtract(const Duration(minutes: 5)), r0));
+    expect(unknown.rows[1][3], l10n.reports_qr_unknown_source_reconciliation);
+    expect(unknown.onRowTap, isNull);
+    // «Вручную»: сервер отдаёт пустой список — блока нет; число в карточке (за период, без учёта фильтра) остаётся.
+    await tester.tap(find.byKey(ReportsScreen.qrFilterKey(QrReconciliationFilter.manual)));
+    await tester.pumpAndSettle();
+    expect(find.byKey(ReportsScreen.qrUnknownBlockKey), findsNothing);
+    expect(find.byKey(ReportsScreen.qrUnknownCountKey), findsOneWidget);
+  });
+
+  // Узкий телефон и крупный шрифт (responsive-spec §1.1 compact; по образцу T-UI-118): строка карточки UI-48-017 и
+  // блок UI-48-018 без переполнения на 320 lp при масштабе текста 1,0 / 1,3 / 1,5.
+  for (final double scale in <double>[1.0, 1.3, 1.5]) {
+    testWidgets('QR: неизвестный референс на 320×640 при масштабе текста $scale — без переполнения', (tester) async {
+      final FakeReportsRepository repo = FakeReportsRepository(unknownOperations: true);
+      await pumpReports(
+        tester,
+        repo,
+        screen: const ReportsScreen(report: 'qr'),
+        size: const Size(320, 640),
+        textScale: scale,
+      );
+      expect(tester.takeException(), isNull, reason: 'SCR-48 320×640 × $scale');
+      expect(find.byKey(ReportsScreen.qrUnknownCountKey), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.byKey(ReportsScreen.qrUnknownBlockKey),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(ReportsScreen.qrUnknownBlockKey), findsOneWidget);
+      expect(tester.takeException(), isNull, reason: 'SCR-48 блок UI-48-018 320×640 × $scale');
+    });
+  }
+
+  testWidgets('QR: пустой unknownOperations — блока и строки «Неизвестный референс» нет', (tester) async {
+    final FakeReportsRepository repo = FakeReportsRepository();
+    await pumpReports(tester, repo, screen: const ReportsScreen(report: 'qr'));
+    expect(find.byKey(ReportsScreen.tableKey), findsOneWidget);
+    expect(find.byKey(ReportsScreen.qrUnknownBlockKey), findsNothing);
+    expect(find.byKey(ReportsScreen.qrUnknownCountKey), findsNothing);
+    expect(find.text(l10n.reports_qr_unknown_title), findsNothing);
+  });
+
   testWidgets('ошибка продаж не скрывает долги и QR; FORBIDDEN QR — карточка скрыта', (tester) async {
     final FakeReportsRepository repo = FakeReportsRepository(
       salesFailure: const ServerFailure(status: 500, code: 'INTERNAL'),
@@ -126,6 +193,7 @@ void main() {
     expect(find.text(l10n.ds_button_retry), findsWidgets);
     expect(find.textContaining(PriceText.formatAmount(const Money(12500000)), findRichText: true), findsOneWidget);
     expect(find.byKey(ReportsScreen.cardKey(ReportKind.qr)), findsNothing);
+    expect(find.byKey(ReportsScreen.qrUnknownBlockKey), findsNothing);
   });
 
   testWidgets('период > 366 дней из URL не применяется — текст ошибки', (tester) async {

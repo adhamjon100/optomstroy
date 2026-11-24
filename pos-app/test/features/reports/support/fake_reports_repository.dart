@@ -1,5 +1,8 @@
 // Фейк порта отчётов SCR-48 (RM-G-008): сводка продаж (заказ 16 850,00 со скидкой 5 % → 16 007,50 и 842,50 —
-// пример ядра §17.2), долги по снимку 1С, QR-сверка с расхождением. Записывает запросы (разрез, фильтр, период).
+// пример ядра §17.2), долги по снимку 1С, QR-сверка с расхождением; с `unknownOperations: true` — ещё два зачисления
+// по неизвестному референсу (OpenAPI 1.5.0, 15 ADR-123; как у сервера: при фильтре «Вручную» список пуст, а
+// `summary.unknownReference` — число за период без учёта фильтра).
+// Записывает запросы (разрез, фильтр, период).
 import 'package:optomstroy/core/enums.dart';
 import 'package:optomstroy/core/error/failure.dart';
 import 'package:optomstroy/core/error/result.dart';
@@ -21,12 +24,21 @@ const SalesSummaryFigures salesTotals = SalesSummaryFigures(
 );
 
 final class FakeReportsRepository implements ReportsRepository {
-  FakeReportsRepository({this.salesFailure, this.debtsFailure, this.qrFailure, this.stale = false});
+  FakeReportsRepository({
+    this.salesFailure,
+    this.debtsFailure,
+    this.qrFailure,
+    this.stale = false,
+    this.unknownOperations = false,
+  });
 
   Failure? salesFailure;
   Failure? debtsFailure;
   Failure? qrFailure;
   bool stale;
+
+  /// Добавить в QR-сверку зачисления по неизвестному референсу (UI-48-017, UI-48-018).
+  bool unknownOperations;
   final List<SalesGroupBy> groupBys = <SalesGroupBy>[];
   final List<QrReconciliationFilter> qrFilters = <QrReconciliationFilter>[];
   final List<JournalPeriod?> periods = <JournalPeriod?>[];
@@ -140,11 +152,29 @@ final class FakeReportsRepository implements ReportsRepository {
       QrReconciliationFilter.unmatched ||
       QrReconciliationFilter.manual => all.where((r) => r.reviewReason != null).toList(),
     };
+    final List<QrUnknownOperation> unknown = unknownOperations
+        ? <QrUnknownOperation>[
+            QrUnknownOperation(
+              operationId: 'op-1',
+              reference: 'BNK-77120',
+              amount: const Money(450000),
+              paidAt: r0.subtract(const Duration(minutes: 30)),
+              receivedAt: r0.subtract(const Duration(minutes: 29)),
+              source: QrUnknownOperationSource.webhook,
+            ),
+            QrUnknownOperation(
+              operationId: 'op-2',
+              receivedAt: r0.subtract(const Duration(minutes: 5)),
+              source: QrUnknownOperationSource.reconciliation,
+            ),
+          ]
+        : const <QrUnknownOperation>[];
     return Success<QrReconciliationReport>(
       QrReconciliationReport(
         period: ReportPeriod(from: r0, to: r0),
         rows: rows,
-        summary: const QrReconciliationSummary(webhook: 1, manual: 1, unmatched: 1),
+        unknownOperations: filter == QrReconciliationFilter.manual ? const <QrUnknownOperation>[] : unknown,
+        summary: QrReconciliationSummary(webhook: 1, manual: 1, unmatched: 1, unknownReference: unknown.length),
       ),
     );
   }
