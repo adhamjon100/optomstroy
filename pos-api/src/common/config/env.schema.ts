@@ -337,7 +337,11 @@ export const envSchema = z.object(envShape).superRefine((env, ctx) => {
   if (env.QR_WEBHOOK_ENABLED && env.QR_WEBHOOK_SECRET === undefined) {
     fail(
       'QR_WEBHOOK_SECRET',
-      'обязательна (QR_WEBHOOK_SECRET_FILE) при QR_WEBHOOK_ENABLED=true — без секрета подписи вебхук не включается',
+      env.QR_WEBHOOK_PUBLIC_KEY !== undefined
+        ? 'обязательна (QR_WEBHOOK_SECRET_FILE) при QR_WEBHOOK_ENABLED=true: задан только QR_WEBHOOK_PUBLIC_KEY_FILE, ' +
+            'а проверка асимметричной подписи банка не реализована — алгоритм банка [НЕ ПОДТВЕРЖДЕНО: Q-382]; ' +
+            'сейчас вебхук проверяется только HMAC-SHA256 с секретом'
+        : 'обязательна (QR_WEBHOOK_SECRET_FILE) при QR_WEBHOOK_ENABLED=true — без секрета подписи вебхук не включается',
     );
   }
   if (env.QR_WEBHOOK_ENABLED && env.QR_WEBHOOK_ALLOWED_IPS === undefined) {

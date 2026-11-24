@@ -293,7 +293,7 @@ describe('payments: QR банка через наш сервер (ADR-123)', () 
       expect(n).toHaveLength(1);
       expect(n[0]).toMatchObject({ kind: 'system', severity: 'warning', payload: { target: null } });
     }
-    // Отчёт сверки (08 §4.18.8): строка unknownOperations при status=unmatched; при manual — пусто.
+    // Отчёт сверки (08 §4.18.8): строка unknownOperations при status=unmatched; при manual список пуст, число — нет.
     const reports = new AdminReportsService(
       t.db,
       t.config,
@@ -314,8 +314,13 @@ describe('payments: QR банка через наш сервер (ADR-123)', () 
       }),
     );
     expect(report.summary.unknownReference).toBe(report.unknownOperations.length);
-    const manualOnly = (await reports.qrReconciliation(period, 'manual')) as { unknownOperations: unknown[] };
+    const manualOnly = (await reports.qrReconciliation(period, 'manual')) as {
+      unknownOperations: unknown[];
+      summary: { unknownReference: number };
+    };
     expect(manualOnly.unknownOperations).toEqual([]);
+    // Число в сводке от фильтра status не зависит (как webhook/manual/unmatched; ревью P-004, 2026-11-24).
+    expect(manualOnly.summary.unknownReference).toBe(report.summary.unknownReference);
   });
 
   // 12: T-PAY-046 (ежедневная сверка QR), T-PAY-020 (сверка: операции банка против платежей)

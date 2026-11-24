@@ -279,6 +279,21 @@ describe('загрузчик env (*_FILE, zod) — RM-C-009', () => {
     expect(text).toContain('ONEC_INBOUND_ALLOWED_IPS');
   });
 
+  it('вебхук QR: только открытый ключ без секрета → отказ в старте с пояснением про Q-382', () => {
+    const text = expectConfigError(() =>
+      loadAppConfig({
+        ...BASE,
+        QR_PROVIDER: 'bank',
+        QR_WEBHOOK_ENABLED: 'true',
+        QR_WEBHOOK_ALLOWED_IPS: '127.0.0.1',
+        QR_WEBHOOK_PUBLIC_KEY: '-----BEGIN PUBLIC KEY-----\nTEST\n-----END PUBLIC KEY-----',
+      }),
+    ).problems.join('\n');
+    expect(text).toContain('QR_WEBHOOK_SECRET');
+    expect(text).toContain('QR_WEBHOOK_PUBLIC_KEY_FILE');
+    expect(text).toContain('Q-382');
+  });
+
   it('resolveEnvWithFiles: читает только известные ключи, отмечает источник «файл»', () => {
     const r = resolveEnvWithFiles(['A', 'B'], { A_FILE: '/x', A: 'direct', B: 'b', C: 'c' }, () => 'from-file\r\n');
     expect(r.values).toEqual({ A: 'from-file', B: 'b' });

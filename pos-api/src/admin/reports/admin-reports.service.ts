@@ -188,32 +188,32 @@ export class AdminReportsService {
     ).rows;
     // Зачисления банка по неизвестному референсу QR (08 §6 «Сопоставление», POS-053; ADR-123): строки
     // `payment_webhook_events` без платежа — от вебхука и от ежедневной сверки; одна операция банка — одна строка.
-    const unknown =
-      status === 'manual'
-        ? []
-        : (
-            await this.db.execute<{
-              operation_id: string | null;
-              reference: string | null;
-              amount: string | null;
-              paid_at: string | null;
-              source: string;
-              received_at: Date | string;
-            }>(sql`
-              SELECT * FROM (
-                SELECT DISTINCT ON (coalesce(e.payload ->> 'operationId', e.provider_event_id))
-                       e.payload ->> 'operationId' AS operation_id, e.payload ->> 'reference' AS reference,
-                       e.payload ->> 'amount' AS amount, e.payload ->> 'paidAt' AS paid_at,
-                       CASE WHEN e.payload ->> 'source' = 'reconciliation' THEN 'reconciliation' ELSE 'webhook' END
-                         AS source,
-                       e.created_at AS received_at
-                  FROM payment_webhook_events e
-                 WHERE e.payment_id IS NULL AND e.signature_valid AND e.processing_error = 'unknown_reference'
-                   AND e.created_at >= ${period.from.toISOString()}::timestamptz
-                   AND e.created_at < ${period.to.toISOString()}::timestamptz
-                 ORDER BY coalesce(e.payload ->> 'operationId', e.provider_event_id), e.created_at
-              ) u ORDER BY u.received_at DESC`)
-          ).rows;
+    // Число (`summary.unknownReference`) — за период без учёта фильтра `status`, как три других счётчика сводки;
+    // от фильтра зависит только список: при `status=manual` он пуст (ревью P-004, 2026-11-24).
+    const unknown = (
+      await this.db.execute<{
+        operation_id: string | null;
+        reference: string | null;
+        amount: string | null;
+        paid_at: string | null;
+        source: string;
+        received_at: Date | string;
+      }>(sql`
+        SELECT * FROM (
+          SELECT DISTINCT ON (coalesce(e.payload ->> 'operationId', e.provider_event_id))
+                 e.payload ->> 'operationId' AS operation_id, e.payload ->> 'reference' AS reference,
+                 e.payload ->> 'amount' AS amount, e.payload ->> 'paidAt' AS paid_at,
+                 CASE WHEN e.payload ->> 'source' = 'reconciliation' THEN 'reconciliation' ELSE 'webhook' END
+                   AS source,
+                 e.created_at AS received_at
+            FROM payment_webhook_events e
+           WHERE e.payment_id IS NULL AND e.signature_valid AND e.processing_error = 'unknown_reference'
+             AND e.created_at >= ${period.from.toISOString()}::timestamptz
+             AND e.created_at < ${period.to.toISOString()}::timestamptz
+           ORDER BY coalesce(e.payload ->> 'operationId', e.provider_event_id), e.created_at
+        ) u ORDER BY u.received_at DESC`)
+    ).rows;
+    const unknownListed = status === 'manual' ? [] : unknown;
     const summary = (
       await this.db.execute<{ webhook: number; manual: number; unmatched: number }>(sql`
         SELECT count(*) FILTER (WHERE p.status IN ('received', 'refunded')
@@ -246,7 +246,7 @@ export class AdminReportsService {
           bankAmount: r.bank_amount === null ? null : money(r.bank_amount),
         };
       }),
-      unknownOperations: unknown.map((u) => ({
+      unknownOperations: unknownListed.map((u) => ({
         operationId: u.operation_id,
         reference: u.reference,
         amount: u.amount !== null && /^\d{1,12}(\.\d{1,2})?$/.test(u.amount) ? money(u.amount) : null,
