@@ -67,6 +67,14 @@ if ($Action -eq 'status' -and -not $DevTest) {
     } catch {
         Write-Host "   ВНИМАНИЕ: $Config не прочитан — права проверяются по путям по умолчанию" -ForegroundColor Yellow
     }
+    try {
+        # учётная запись службы PostgreSQL — из install.json (install.ps1 -PgServiceAccount); нет — NetworkService
+        $ijPath = Join-Path $InstallRoot 'config\install.json'
+        if (Test-Path -LiteralPath $ijPath) {
+            $ijJson = [IO.File]::ReadAllText($ijPath) | ConvertFrom-Json
+            if ($ijJson.pgServiceAccount) { $aclArgs.PgServiceAccount = [string]$ijJson.pgServiceAccount }
+        }
+    } catch { Write-Host '   ВНИМАНИЕ: config\install.json не прочитан — учётная запись PostgreSQL по умолчанию' -ForegroundColor Yellow }
     $acl = Join-Path $PSScriptRoot 'set-backup-acl.ps1'
     & $acl @aclArgs   # exit внутри скрипта завершает только его; код — в $LASTEXITCODE
     if ($LASTEXITCODE -ne 0 -and $code -eq 0) { $code = 1 }

@@ -88,6 +88,8 @@ param(
     [string]$ApacheDir = '',
     [string]$ApacheServiceName = '',
     [string]$ApacheServiceAccount = '',
+    [string]$PgServiceAccount = 'NT AUTHORITY\NetworkService',
+    [switch]$AcceptSharedServiceAccount,
     [string]$CertFile = '',
     [string]$KeyFile = '',
     [ValidateRange(1, 65535)][int]$ApacheListenPort = 443,
@@ -624,6 +626,7 @@ try {
         onecBaseUrl = $OnecBaseUrl; onecHsPath = $OnecHsPath; stand = [bool]$Stand
         deployUser = $DeployUser; apacheDir = $ApacheDir; apacheServiceName = $ApacheServiceName; devTest = [bool]$DevTest
         apacheCertFile = $CertFile; apacheKeyFile = $KeyFile; apacheListenPort = $ApacheListenPort
+        pgServiceAccount = $PgServiceAccount
     }
     Write-OpsJson $L.InstallJson $ij
     Write-OpsLog 'config\install.json: параметры установки (для update/rollback/status/uninstall)' 'OK'
@@ -635,7 +638,8 @@ try {
     $relReal = Get-OpsJunctionTarget $L.Current
     $pgDir = Join-Path $relReal 'postgres'
     if (-not $clusterExists) {
-        $ip = @{ PgBin = $PgBin; InstallRoot = $L.Root; Port = $PgPort; SharedBuffers = $SharedBuffers; BackupConfig = $bkJson }
+        $ip = @{ PgBin = $PgBin; InstallRoot = $L.Root; Port = $PgPort; SharedBuffers = $SharedBuffers; BackupConfig = $bkJson; ServiceAccount = $PgServiceAccount }
+        if ($AcceptSharedServiceAccount) { $ip.AcceptSharedServiceAccount = $true }
         if ($DevTest) { $ip.DevTest = $true; $ip.SharedBuffers = '128MB'; $ip.EffectiveCacheSize = '512MB' }
         $code = Invoke-OpsScript (Join-Path $pgDir 'init-postgres.ps1') $ip
         if ($code -ne 0) { throw "init-postgres.ps1: код $code" }
@@ -737,7 +741,8 @@ try {
             }
         }
         Write-OpsLog 'права NT SERVICE\OptomstroyApi и \OptomstroyWorker выданы (секреты — по файлам)' 'OK'
-        $code = Invoke-OpsScript (Join-Path $L.Current 'backup\set-backup-acl.ps1') @{ InstallRoot = $L.Root; BackupRoot = $L.BackupRoot; WalSpoolDir = $L.WalSpool; MediaDirs = @($L.Media, $L.AuditAnchors) }
+        Grant-OpsJunctionAccess $L.Current   # права служб на саму ссылку current (выданы на InstallRoot выше)
+        $code = Invoke-OpsScript (Join-Path $L.Current 'backup\set-backup-acl.ps1') @{ InstallRoot = $L.Root; BackupRoot = $L.BackupRoot; WalSpoolDir = $L.WalSpool; MediaDirs = @($L.Media, $L.AuditAnchors); PgServiceAccount = $PgServiceAccount }
         if ($code -ne 0) { throw "set-backup-acl.ps1: код $code" }
         if ($ApacheServiceAccount) {
             $as = Resolve-Sid $ApacheServiceAccount

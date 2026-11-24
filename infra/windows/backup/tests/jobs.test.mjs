@@ -297,6 +297,25 @@ test('prune: самые новые 3 дампа не удаляются, даж�
   assert.deepEqual(left, names.slice(0, 3).sort());
 });
 
+test('prune: старый сегмент WAL удаляется вместе с .plain.json без ENOENT (первый прогон на сервере 24.11.2026)', () => {
+  const root = path.join(TMP, 'prune-wal-plain');
+  const base = path.join(root, 'pitr', SYSID, 'base');
+  const wal = path.join(root, 'pitr', SYSID, 'wal');
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.mkdirSync(base, { recursive: true });
+  fs.mkdirSync(wal, { recursive: true });
+  const now = new Date(Date.UTC(2026, 10, 24, 16));
+  const b = `base-${stamp(now)}.tar.gz.optbk`;
+  fs.writeFileSync(path.join(base, b), 'x');
+  fs.writeFileSync(path.join(base, `${b}.json`), JSON.stringify({ startWal: '000000010000000000000008' }));
+  for (const seg of ['000000010000000000000001', '000000010000000000000008']) {
+    for (const s of ['.gz.optbk', '.gz.optbk.plain.json']) fs.writeFileSync(path.join(wal, `${seg}${s}`), 'x');
+  }
+  const removed = prune(cfgFor(root), { now });
+  assert.ok(removed.some((f) => f.endsWith('000000010000000000000001.gz.optbk')), 'сегмент до начала базовой копии удалён');
+  assert.deepEqual(fs.readdirSync(wal).sort(), ['000000010000000000000008.gz.optbk', '000000010000000000000008.gz.optbk.plain.json']);
+});
+
 // ---------- ежедневный прогон с поддельными программами PostgreSQL ----------
 const FAKE_SRC = `using System; using System.IO;
 class P { static int Main(string[] a) {

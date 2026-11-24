@@ -317,7 +317,23 @@ function Set-OpsJunction([string]$Link, [string]$Target) {
     if ($LASTEXITCODE -ne 0) { throw "mklink /J $Link -> ${Target}: $out" }
     $now = Get-OpsJunctionTarget $Link
     if ($now -ne [System.IO.Path]::GetFullPath($Target)) { throw "ссылка $Link указывает на $now, ожидалось $Target" }
+    Grant-OpsJunctionAccess $Link
     Write-OpsLog "current -> $Target" 'OK'
+}
+
+# Ссылка current (junction) не наследует права «только эта папка», выданные на InstallRoot учётным записям
+# служб (NT SERVICE\Optomstroy*) и posdeploy. Без права на саму ссылку node.exe получает EPERM на stat(current)
+# и службы не стартуют. Явные (не унаследованные) записи InstallRoot копируются на ссылку как RX (/L — сама ссылка).
+function Grant-OpsJunctionAccess([string]$Link) {
+    if (-not (Test-Path -LiteralPath $Link)) { return }
+    $root = Split-Path -Parent $Link
+    try { $acl = Get-Acl -LiteralPath $root } catch { Write-OpsLog "права ${root} не прочитаны: $($_.Exception.Message)" 'WARN'; return }
+    foreach ($a in @($acl.Access | Where-Object { -not $_.IsInherited -and $_.AccessControlType -eq 'Allow' })) {
+        try { $sid = $a.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { continue }
+        if ($sid -in @('S-1-5-18', 'S-1-5-32-544')) { continue }   # SYSTEM и Administrators наследуются и так
+        $o = & icacls.exe $Link /L /grant "*${sid}:(RX)" 2>&1
+        if ($LASTEXITCODE -ne 0) { Write-OpsLog "icacls $Link /L ($sid): $o" 'WARN' }
+    }
 }
 
 # ---------- релиз ----------

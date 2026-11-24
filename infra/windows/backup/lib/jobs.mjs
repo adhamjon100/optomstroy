@@ -581,6 +581,9 @@ export function prune(c, { now = new Date() } = {}) {
       if (n.endsWith('.gz.optbk.plain.json')) {
         // отпечаток без архива: обрыв wal-ship между отпечатком и публикацией (сегмент остался в спуле)
         const f = path.join(walDir, n);
+        // Сегмент, удалённый выше в этом же проходе (rmWithSidecars), уже унёс свой .plain.json: список listDir снят
+        // до удаления, поэтому сначала проверка, что отпечаток ещё есть (иначе ENOENT и «прогон с ошибками»).
+        if (!fs.existsSync(f)) continue;
         if (!fs.existsSync(f.slice(0, -'.plain.json'.length)) && now - fs.statSync(f).mtime > day) rmQuiet(f), removed.push(f);
         continue;
       }

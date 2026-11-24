@@ -287,5 +287,9 @@ function Grant-PgArchiveAccess {
     Invoke-PgIcacls @($releases, '/grant', "*${Sid}:(OI)(CI)RX")           # node.exe и pos-backup.mjs любого релиза
     Invoke-PgIcacls @($BackupConfig, '/grant', "*${Sid}:(R)")              # backup.json (секретов не содержит)
     Invoke-PgIcacls @($spool, '/grant', "*${Sid}:(OI)(CI)M")               # запись сегментов WAL
+    # Сама ссылка current (junction): у виртуальной учётной записи NT SERVICE\OptomstroyPostgres без этого права
+    # node.exe получает EPERM на stat(current) — archive_command падает. /L — права самой ссылки, не цели.
+    $cur = Join-Path $InstallRoot 'current'
+    if (Test-Path -LiteralPath $cur) { Invoke-PgIcacls @($cur, '/L', '/grant', "*${Sid}:(RX)") }
     return @{ Releases = $releases; Spool = $spool }
 }
