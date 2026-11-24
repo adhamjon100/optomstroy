@@ -10509,7 +10509,8 @@ components:
             unknownReference:
               type: integer
               minimum: 0
-              description: Число строк unknownOperations. С 1.5.0.
+              description: |
+                Число зачислений по неизвестному референсу QR за период (операций банка). От фильтра status не зависит, как webhook, manual и unmatched; при status=manual список unknownOperations пуст, а число остаётся. С 1.5.0.
     AdminReportsQrReconciliationRow:
       type: object
       required:

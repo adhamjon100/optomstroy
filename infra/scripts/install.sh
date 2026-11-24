@@ -273,7 +273,7 @@ if [ -n "$cur_api_tag" ] && [ -n "$TAG" ] && [ "$TAG" != "$cur_api_tag" ]; then
 fi
 if [ -z "$cur_api_tag" ]; then
   if [ -z "$TAG" ]; then
-    TAG="$(release_tag_from_src "$SRC_DIR")"
+    TAG="$(default_release_tag "$SRC_DIR" "$CONTOUR" "$(env_get "$ENV_FILE" ONEC_MODE)")"
     [ -n "$TAG" ] || die "не удалось определить тег релиза (нет git) — укажите --tag <версия>"
     if src_is_dirty "$SRC_DIR"; then
       die "в каталоге релиза есть незакоммиченные изменения — соберите из чистого тега или укажите --tag явно"
@@ -400,7 +400,7 @@ if [ -n "$LOAD_DIR" ]; then
     docker load -i "$tarball" >/dev/null
   done
 fi
-ensure_app_images "$SRC_DIR" "$(env_get "$ENV_FILE" API_TAG)" "$(env_get "$ENV_FILE" BACKUP_TAG)"
+ensure_app_images "$SRC_DIR" "$(env_get "$ENV_FILE" API_TAG)" "$(env_get "$ENV_FILE" BACKUP_TAG)" "$(env_get "$ENV_FILE" ONEC_MODE)"
 ensure_pulled "$(compose_image "$PROD_DIR/compose.prod.yml" postgres)"
 if [ "$CONTOUR" = prod ]; then
   ensure_pulled "$(compose_image "$PROD_DIR/compose.edge.yml" caddy)"

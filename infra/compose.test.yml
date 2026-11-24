@@ -123,9 +123,11 @@ services:
       <<: [ *app-env, *secret-env ]
       WORKERS_ENABLED: "true"
       # 16 §4.4, EQ-AUTH-08: тот же HMAC OTP, что у api — текст задания sms.send и возврат квоты номера (INT-01).
-      # Ключ подписи JWT и pepper PIN worker'у не передаются (минимум прав, 16 §4.4 прим. 6).
       OTP_HMAC_SECRET_FILE: /run/secrets/otp_pepper
-    secrets: [ database_url, jwt_public.json, otp_pepper ]
+      # pepper PIN — тоже: CryptoModule глобальный (ADR-115), без PIN_PEPPER при APP_ENV=staging worker завершается
+      # (SecretConfigError; проверено 2026-11-24). Ключ подписи JWT worker'у не передаётся (16 §4.4 прим. 6).
+      PIN_PEPPER_FILE: /run/secrets/pin_pepper
+    secrets: [ database_url, jwt_public.json, otp_pepper, pin_pepper ]
     networks: [ edge, backend ]
     depends_on:
       postgres: { condition: service_healthy }

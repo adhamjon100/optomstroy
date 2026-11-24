@@ -96,7 +96,7 @@ services:
       <<: [ *prod-env, *secret-env ]
       JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private.pem         # подпись токенов (kid = JWT_KEY_ID) — только api
       OTP_HMAC_SECRET_FILE: /run/secrets/otp_pepper              # HMAC OTP — api и worker (одно значение; EQ-AUTH-08)
-      PIN_PEPPER_FILE: /run/secrets/pin_pepper                   # Argon2id PIN (D-48) — только api
+      PIN_PEPPER_FILE: /run/secrets/pin_pepper                   # Argon2id PIN (D-48) — api и worker (см. worker)
       WORKERS_ENABLED: "false"                                   # D-45: только HTTP; задачи pg-boss исполняет worker
     secrets: [ database_url, jwt_private.pem, jwt_public.json, otp_pepper, pin_pepper, smspro_login, smspro_password ]
     volumes: [ "media:/data/media" ]
@@ -121,8 +121,12 @@ services:
       <<: [ *prod-env, *secret-env ]
       WORKERS_ENABLED: "true"                                    # D-45: тот же код в роли воркера (pg-boss, без Redis)
       OTP_HMAC_SECRET_FILE: /run/secrets/otp_pepper              # текст задания sms.send и возврат квоты номера
-      # Ключ подписи JWT и pepper PIN worker'у не передаются (минимум прав, 16 §4.4 прим. 6).
-    secrets: [ database_url, jwt_public.json, otp_pepper, smspro_login, smspro_password ]
+      # pepper PIN нужен и worker: CryptoModule глобальный (ADR-115, хэш аварийного кода планшета), worker поднимает
+      # тот же AppModule, и без PIN_PEPPER при APP_ENV=prod/staging процесс завершается (SecretConfigError «PIN_PEPPER
+      # (PIN_PEPPER_FILE) не задан»; проверено 2026-11-24, как и на Windows — infra/windows/scripts/install.ps1).
+      # Ключ подписи JWT worker'у по-прежнему не передаётся (минимум прав, 16 §4.4 прим. 6).
+      PIN_PEPPER_FILE: /run/secrets/pin_pepper
+    secrets: [ database_url, jwt_public.json, otp_pepper, pin_pepper, smspro_login, smspro_password ]
     volumes: [ "media:/data/media" ]
     networks: [ edge, backend ]
     healthcheck:

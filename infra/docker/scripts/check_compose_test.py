@@ -12,7 +12,7 @@
 caddy — только edge; api/worker/backup — обе сети; api/worker/migrate/backup — non-root (`user`), read_only,
 cap_drop ALL; каждая ссылка `*_FILE=/run/secrets/<x>` смонтирована сервису; секреты объявлены и только файлами;
 в environment нет значений, похожих на секреты; depends_on ссылается на существующие сервисы; postgres — UTF-8
-LC_CTYPE (16 §4.4); OTP_HMAC_SECRET_FILE у api и worker, JWT_PRIVATE_KEY_FILE/PIN_PEPPER_FILE — не у worker (EQ-AUTH-08);
+LC_CTYPE (16 §4.4); OTP_HMAC_SECRET_FILE и PIN_PEPPER_FILE у api и worker, JWT_PRIVATE_KEY_FILE — не у worker (EQ-AUTH-08, ADR-115);
 сервисы с ONEC_MODE=fixtures собираются стадией `test-fixtures` (FQ-INT-08). В YAML-режиме дополнительно — образ api
 (infra/docker/api/Dockerfile + .dockerignore; 16 §4.4 прим. (1)–(2), FQ-INT-09): runtime копирует `pos-api/assets`,
 стадия `test-fixtures` — `contracts/onec/fixtures`, последняя стадия (по умолчанию, прод) фикстур не копирует, белый
@@ -168,9 +168,14 @@ def check(cfg: dict, base_dir: Path | None) -> list[str]:
         if env.get("OTP_HMAC_SECRET_FILE") != "/run/secrets/otp_pepper":
             errors.append(f"{svc_name}: нужен OTP_HMAC_SECRET_FILE=/run/secrets/otp_pepper (16 §4.4, EQ-AUTH-08)")
     worker_env = env_map((services.get("worker") or {}).get("environment"))
-    for key in ("JWT_PRIVATE_KEY_FILE", "PIN_PEPPER_FILE"):
-        if key in worker_env:
-            errors.append(f"worker: {key} не передаётся (минимум прав, 16 §4.4 прим. 6)")
+    if "JWT_PRIVATE_KEY_FILE" in worker_env:
+        errors.append("worker: JWT_PRIVATE_KEY_FILE не передаётся (минимум прав, 16 §4.4 прим. 6)")
+    # pepper PIN — у api и worker: CryptoModule глобальный (ADR-115), без PIN_PEPPER при APP_ENV=staging worker
+    # завершается (SecretConfigError; проверено 2026-11-24).
+    for svc_name in ("api", "worker"):
+        env = env_map((services.get(svc_name) or {}).get("environment"))
+        if env.get("PIN_PEPPER_FILE") != "/run/secrets/pin_pepper":
+            errors.append(f"{svc_name}: нужен PIN_PEPPER_FILE=/run/secrets/pin_pepper (CryptoModule, ADR-115)")
     if "healthcheck" not in postgres:
         errors.append("postgres: нужен healthcheck (pg_isready) — от него зависят migrate/api/worker")
     for dependent in ("api", "worker"):

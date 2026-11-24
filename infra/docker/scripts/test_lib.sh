@@ -649,6 +649,46 @@ fi
   grep -qE 'OData|HTTP-сервиса 1С' "$TMP/warn1c.log" 2>/dev/null && echo "FAIL validate_env: предупреждение 1С при полном наборе"
   for s in $ONEC_HS_SECRETS $ONEC_ODATA_SECRETS; do rm -f "$SECRETS_DIR/$s"; done
   warn() { :; }
+  # ONEC_MODE=fixtures (P4-KI-09, 2026-11-24): рабочий контур — отказ; тестовая копия — допустимо, образ стадии
+  # test-fixtures; чужой образ без метки фикстур — отказ.
+  env_set "$TMP/env6" ONEC_BASE_URL ""
+  env_set "$TMP/env6" ONEC_MODE fixtures
+  msg="$( ( validate_env "$TMP/env6" ) 2>&1 )" && echo "FAIL validate_env: ONEC_MODE=fixtures принят в рабочем контуре"
+  case "$msg" in *OPS-027*) ;; *) echo "FAIL validate_env: в отказе fixtures нет OPS-027: $msg" ;; esac
+  expect "api_image_target fixtures" "$(api_image_target fixtures)" "test-fixtures"
+  expect "api_image_target extension" "$(api_image_target extension)" "release"
+  expect "api_image_target пусто" "$(api_image_target)" "release"
+  CONTOUR=test; contour_init test
+  cp "$ROOT/infra/env/prod.env.example" "$TMP/envf"
+  for kv in API_TAG=t1-fixtures BACKUP_TAG=t1 PUBLIC_BASE_URL=https://api-test.example.kg MIN_APP_VERSION=android=1.0.0 \
+            JWT_KEY_ID=k1 BACKUP_AGE_RECIPIENT=age1test CADDY_SITE_ADDRESS=api.example.kg APP_ENV=staging \
+            BACKUP_PITR=off ONEC_MODE=fixtures SMS_PROVIDER=fake; do
+    env_set "$TMP/envf" "${kv%%=*}" "${kv#*=}"
+  done
+  msg="$( ( validate_env "$TMP/envf" ) 2>&1 )" || echo "FAIL validate_env: ONEC_MODE=fixtures отклонён в тестовой копии: $msg"
+  image_exists() { return 0; }
+  docker() { case "$*" in "image inspect"*) echo "${STUB_LABEL:-}" ;; *) echo "DOCKER $*" >> "$TMP/dockerf.log" ;; esac; }
+  STUB_LABEL=""
+  ( ensure_app_images "" t1 t1 fixtures ) >/dev/null 2>&1 && echo "FAIL ensure_app_images: fixtures с образом без метки принят"
+  STUB_LABEL=true
+  ( ensure_app_images "" t1 t1 fixtures ) >/dev/null 2>&1 || echo "FAIL ensure_app_images: fixtures с образом с меткой отклонён"
+  STUB_LABEL=""
+  ( ensure_app_images "" t1 t1 extension ) >/dev/null 2>&1 || echo "FAIL ensure_app_images: release-образ отклонён при extension"
+  STUB_LABEL=true
+  ( ensure_app_images "" t1 t1 extension ) >/dev/null 2>&1 && echo "FAIL ensure_app_images: образ test-fixtures принят рабочим контуром (extension)"
+  ( ensure_app_images "" t1 t1 odata_only ) >/dev/null 2>&1 && echo "FAIL ensure_app_images: образ test-fixtures принят рабочим контуром (odata_only)"
+  STUB_LABEL=""
+  unset -f docker image_exists
+  # Тег по умолчанию: тестовой копии с фикстурами — свой суффикс, чтобы не занять тег рабочего контура (FQ-INT-08).
+  release_tag_from_src() { echo "1.5.0-abc1234"; }
+  expect "default_release_tag test+fixtures" "$(default_release_tag x test fixtures)" "1.5.0-abc1234-fixtures"
+  expect "default_release_tag test+extension" "$(default_release_tag x test extension)" "1.5.0-abc1234"
+  expect "default_release_tag prod" "$(default_release_tag x prod extension)" "1.5.0-abc1234"
+  release_tag_from_src() { :; }
+  expect "default_release_tag без git" "$(default_release_tag x test fixtures)" ""
+  grep -q '^LABEL org.optomstroy.onec-fixtures="true"$' "$ROOT/infra/docker/api/Dockerfile" \
+    || echo "FAIL infra/docker/api/Dockerfile: нет метки фикстур в стадии test-fixtures"
+  CONTOUR=prod; contour_init prod
   echo "END"; true
 ) > "$TMP/pitrl.out" 2>&1 || true
 

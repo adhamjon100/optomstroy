@@ -379,8 +379,9 @@ scripts\uninstall.ps1 -DevTest -InstallRoot .tmp\wn-install\root -KeepData:$fals
 - Хост служб — свой `OptomstroySvc.exe` вместо WinSW; учётные записи — виртуальные `NT SERVICE\Optomstroy*` вместо
   локальных `svc-optomstroy-*` (паролей нет).
 - Резервное копирование — служба `OptomstroyBackup` и свой формат OPTBK1 вместо `age` и Планировщика.
-- `pin_pepper` выдаётся и фоновым задачам (в плане и в `compose.prod.yml` — только API): `dist\worker.js` без
-  `PIN_PEPPER` при `APP_ENV=prod/staging` завершается (глобальный CryptoModule, ADR-115) — проверено.
+- `pin_pepper` выдаётся и фоновым задачам (в плане — только API): `dist\worker.js` без `PIN_PEPPER` при
+  `APP_ENV=prod/staging` завершается (глобальный CryptoModule, ADR-115) — проверено. С 2026-11-24 так же и в
+  `compose.prod.yml`/`compose.test.yml` (Linux-комплект).
 - Адрес и секреты HTTP-сервиса 1С обязательны уже при установке: в режиме `extension` API без них не запускается.
 - Роли и база создаются после распаковки пакета (`apply-roles.ps1` использует `node.exe` и модуль `pg` из релиза).
 - Перед обновлением, кроме зашифрованного дампа, делается копия базы в PostgreSQL — для автоматического отката.

@@ -843,7 +843,8 @@ update.sh не удаляет образы прежних версий (нужн
 | Каталоги | `/opt/optomstroy/prod`, `/srv/optomstroy/prod` | `/opt/optomstroy/test`, `/srv/optomstroy/test` |
 | `APP_ENV` | `prod` | `staging` (закреплён в `compose.staging.yml`) |
 | SMS | SMSPro — отправляет только `worker` (api → `sms_outbox` → `worker` → SMSPro; `OTP_HMAC_SECRET_FILE` у `api` и `worker` — один файл `secrets/otp_pepper`; ADR-124) | не отправляются (`SMS_PROVIDER=fake`); вход — номера `AUTH_OTP_TEST_PHONES` с кодом `AUTH_OTP_TEST_CODE` (09 §5.8; шесть случайных цифр — код демо `246810` при `staging` pos-api не принимает) |
-| 1С | рабочая база | только тестовая копия базы 1С (своя `ONEC_BASE_URL` и секреты) или не подключена; рабочая — никогда (install.sh/update.sh сверяют адрес) |
+| 1С | рабочая база | только тестовая копия базы 1С (своя `ONEC_BASE_URL` и секреты) или не подключена; рабочая — никогда (install.sh/update.sh сверяют адрес). Без 1С можно `ONEC_MODE=fixtures` (фикстуры 1С, как на стенде ADR-125): тогда install.sh/update.sh собирают образ стадии `test-fixtures` (`/contracts/onec/fixtures` в образе) и требуют для тестовой копии свой `API_TAG` (по умолчанию `<версия>-<sha>-fixtures`) — прод-образ того же тега без фикстур не подходит, а образ с меткой фикстур рабочий контур отклоняет (FQ-INT-08); в рабочем контуре `fixtures` — отказ (OPS-027) |
+| `pin_pepper` | у `api` и `worker` | так же (CryptoModule общий: без него `worker` при `staging`/`prod` не стартует) |
 | Память | профиль по объёму сервера | `postgres` 512M (shared_buffers 128MB), `api` 512M, `worker` 512M |
 | Копии | §4, вне сервера; непрерывная копия WAL (`BACKUP_PITR=on`, §4.8) | только локальные, 7 суток, в 05:45; без непрерывной копии (`BACKUP_PITR=off`) |
 

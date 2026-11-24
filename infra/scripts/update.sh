@@ -241,7 +241,7 @@ TEST_TEMPLATE="$SRC_DIR/infra/env/test.env.example"
 OLD_API="$(env_get "$ENV_FILE" API_TAG)"
 OLD_BACKUP="$(env_get "$ENV_FILE" BACKUP_TAG)"
 if [ -z "$TAG" ]; then
-  TAG="$(release_tag_from_src "$SRC_DIR")"
+  TAG="$(default_release_tag "$SRC_DIR" "$CONTOUR" "$(env_get "$ENV_FILE" ONEC_MODE)")"
   [ -n "$TAG" ] || die "не удалось определить тег релиза (нет git) — укажите --tag"
   if src_is_dirty "$SRC_DIR"; then
     die "в каталоге релиза есть незакоммиченные изменения — обновляйтесь с чистого тега или укажите --tag явно"
@@ -284,7 +284,7 @@ if [ -n "$LOAD_DIR" ]; then
     docker load -i "$tarball" >/dev/null
   done
 fi
-ensure_app_images "$SRC_DIR" "$TAG" "$BACKUP_TAG_NEW"
+ensure_app_images "$SRC_DIR" "$TAG" "$BACKUP_TAG_NEW" "$(env_get "$ENV_FILE" ONEC_MODE)"
 # Образы caddy и postgres нового комплекта — до остановки worker: без сети и без образа обновление не начинается.
 ensure_pulled "$(compose_image "$SRC_DIR/infra/compose.prod.yml" postgres)"
 if [ "$CONTOUR" = prod ]; then

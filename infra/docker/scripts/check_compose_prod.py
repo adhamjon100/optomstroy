@@ -456,10 +456,15 @@ def check_config(cfg: dict, ctx: dict, profile: str) -> list[str]:
                 if env.get(key, "") != "":
                     errors.append(f"{svc_name}: {key} в тестовой копии — пусто (SMS_PROVIDER=fake; SMSPro рабочего контура не копируется, 16 §11)")
     worker = services.get("worker") or {}
-    for key in ("JWT_PRIVATE_KEY_FILE", "PIN_PEPPER_FILE"):
-        if key in env_map(worker.get("environment")):
-            errors.append(f"worker: {key} не передаётся (минимум прав, 16 §4.4 прим. 6)")
-    for sname in ("jwt_private.pem", "pin_pepper", "db_migrator_password", "pg_password", "db_backup_password"):
+    if "JWT_PRIVATE_KEY_FILE" in env_map(worker.get("environment")):
+        errors.append("worker: JWT_PRIVATE_KEY_FILE не передаётся (минимум прав, 16 §4.4 прим. 6)")
+    # pepper PIN нужен и worker: CryptoModule глобальный (ADR-115), без PIN_PEPPER при APP_ENV=prod/staging worker
+    # завершается (SecretConfigError; проверено 2026-11-24). Секрет и указатель — оба или ни одного.
+    for svc_name in ("api", "worker"):
+        svc = services.get(svc_name) or {}
+        if env_map(svc.get("environment")).get("PIN_PEPPER_FILE") != "/run/secrets/pin_pepper" or "pin_pepper" not in as_set(svc.get("secrets")):
+            errors.append(f"{svc_name}: нужен PIN_PEPPER_FILE=/run/secrets/pin_pepper и секрет pin_pepper (CryptoModule, ADR-115)")
+    for sname in ("jwt_private.pem", "db_migrator_password", "pg_password", "db_backup_password"):
         if sname in as_set(worker.get("secrets")):
             errors.append(f"worker: секрет {sname} не монтируется (минимум прав)")
     for sname in ("db_migrator_password", "pg_password", "db_backup_password"):

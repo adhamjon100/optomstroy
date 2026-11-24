@@ -66,6 +66,9 @@ CMD ["node", "dist/main.js"]
 FROM runtime AS test-fixtures
 # COPY выполняется от root независимо от USER; пользователь процесса (10001) наследуется от runtime.
 COPY --chown=root:root contracts/onec/fixtures /contracts/onec/fixtures
+# Метка для infra/scripts/lib.sh (ensure_app_images): тестовая копия на сервере с ONEC_MODE=fixtures не возьмёт
+# прод-образ (стадия release) того же тега, а соберёт эту стадию (P4-KI-09, 2026-11-24).
+LABEL org.optomstroy.onec-fixtures="true"
 
 # ---------- 5. Прод-образ (стадия по умолчанию: `docker build` без --target) = runtime без фикстур ----------
 FROM runtime AS release

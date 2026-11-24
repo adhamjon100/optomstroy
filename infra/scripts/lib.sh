@@ -1052,18 +1052,44 @@ ensure_pulled() {
     || die "нет образа $1 и нет доступа к реестру — загрузите его (docker load, архив --load-images) и повторите"
 }
 
-# ensure_app_images <src> <api_tag> <backup_tag>: образ есть локально → пропуск; иначе сборка из исходников
-# релиза (infra/docker/api/Dockerfile — стадия release, без фикстур 1С; infra/docker/backup).
+# ensure_app_images <src> <api_tag> <backup_tag> [onec_mode]: образ есть локально → пропуск; иначе сборка из
+# исходников релиза (infra/docker/api/Dockerfile; infra/docker/backup). Стадия api — release (без фикстур 1С), а при
+# onec_mode=fixtures (только тестовая копия, validate_env) — test-fixtures: FakeOnecGateway читает
+# /contracts/onec/fixtures при старте, без каталога api и worker не запускаются (P4-KI-09). Образ с фикстурами несёт
+# метку org.optomstroy.onec-fixtures=true. Метка проверяется в обе стороны: уже имеющийся образ без метки при fixtures —
+# отказ (прод-тег не годится); образ с меткой при release — тоже отказ, иначе рабочий контур на том же Docker-хосте
+# молча взял бы образ тестовой копии с фикстурами (FQ-INT-08: прод-образ фикстур не содержит).
+API_FIXTURES_LABEL="org.optomstroy.onec-fixtures"
+api_image_target() {
+  if [ "${1:-}" = fixtures ]; then echo test-fixtures; else echo release; fi
+}
+# default_release_tag <src> <contour> <onec_mode> → тег по умолчанию (release_tag_from_src); у тестовой копии с
+# ONEC_MODE=fixtures — с суффиксом -fixtures, чтобы её образ не занимал тег рабочего контура. Пусто, если не определить.
+default_release_tag() {
+  local tag
+  tag="$(release_tag_from_src "$1")"
+  [ -n "$tag" ] || return 0
+  if [ "${2:-}" = test ] && [ "${3:-}" = fixtures ]; then echo "$tag-fixtures"; else echo "$tag"; fi
+}
 ensure_app_images() {
-  local src="$1" api_tag="$2" backup_tag="$3"
+  local src="$1" api_tag="$2" backup_tag="$3" target label
+  target="$(api_image_target "${4:-}")"
   if image_exists "optomstroy/api:$api_tag"; then
+    label="$(docker image inspect -f "{{ index .Config.Labels \"$API_FIXTURES_LABEL\" }}" "optomstroy/api:$api_tag" 2>/dev/null || true)"
+    if [ "$target" = test-fixtures ]; then
+      [ "$label" = true ] \
+        || die "ONEC_MODE=fixtures, а образ optomstroy/api:$api_tag собран без фикстур 1С (стадия release) — задайте тестовой копии отдельный API_TAG (например <версия>-fixtures) и повторите"
+    else
+      [ "$label" != true ] \
+        || die "образ optomstroy/api:$api_tag собран стадией test-fixtures (фикстуры 1С) — рабочему контуру нужен свой API_TAG"
+    fi
     log "образ optomstroy/api:$api_tag уже есть — сборка пропущена"
   else
     [ -n "$src" ] && [ -f "$src/infra/docker/api/Dockerfile" ] \
       || die "образа optomstroy/api:$api_tag нет, а исходники релиза не найдены (--src или docker load)"
     check_buildx
-    log "сборка optomstroy/api:$api_tag (стадия release; несколько минут)"
-    DOCKER_BUILDKIT=1 docker build --pull --target release -f "$src/infra/docker/api/Dockerfile" \
+    log "сборка optomstroy/api:$api_tag (стадия $target; несколько минут)"
+    DOCKER_BUILDKIT=1 docker build --pull --target "$target" -f "$src/infra/docker/api/Dockerfile" \
       -t "optomstroy/api:$api_tag" "$src"
   fi
   if image_exists "optomstroy/backup:$backup_tag"; then
@@ -1175,7 +1201,11 @@ validate_env() {
   case "$(env_get "$f" PUBLIC_BASE_URL)" in https://*) ;; *) die "PUBLIC_BASE_URL: нужен https://…" ;; esac
   case "$(env_get "$f" ONEC_MODE)" in
     extension|odata_only) ;;
-    *) die "ONEC_MODE: на сервере extension или odata_only (fixtures — только CI-контур с образом test-fixtures, OPS-027)" ;;
+    # Тестовая копия без 1С (стенд P-004, ADR-125 п. 4; 05 ONEC-023): фикстуры — только в контуре test и только с
+    # образом стадии test-fixtures (ensure_app_images); в рабочем контуре — отказ (OPS-027).
+    fixtures) [ "$CONTOUR" = test ] \
+                || die "ONEC_MODE=fixtures запрещён в рабочем контуре (OPS-027); только тестовая копия (--contour test)" ;;
+    *) die "ONEC_MODE: extension, odata_only или (только тестовая копия) fixtures" ;;
   esac
   for k in OPENAPI_PUBLIC SMSPRO_TEST_FLAG; do
     [ "$CONTOUR" = test ] || [ "$(env_get "$f" "$k")" != "true" ] || die "$k=true запрещено в рабочем контуре (OPS-027)"

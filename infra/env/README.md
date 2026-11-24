@@ -46,7 +46,7 @@ Flutter (`pos-app`) получает конфигурацию только че�
 | `PGPASSWORD_FILE` | `db_backup_password` | backup (роль `pos_backup`: `pg_read_all_data` и REPLICATION для базовой копии PITR, RUNBOOK §4.8); postgres — только initdb |
 | `JWT_PRIVATE_KEY_FILE` / `JWT_PUBLIC_KEY_FILE` | `jwt_private.pem` / `jwt_public.json` | api |
 | `OTP_HMAC_SECRET_FILE` | `otp_pepper` | api, worker (одно значение: текст задания `sms.send` и возврат квоты номера — 16 §4.4, EQ-AUTH-08) |
-| `PIN_PEPPER_FILE` | `pin_pepper` | api |
+| `PIN_PEPPER_FILE` | `pin_pepper` | api, worker (CryptoModule глобальный, ADR-115: без него worker при `APP_ENV=prod/staging` не стартует; проверено 2026-11-24) |
 | `SMSPRO_LOGIN_FILE`, `SMSPRO_PASSWORD_FILE` | `smspro_login`, `smspro_password` | api, worker |
 | `ONEC_HS_USER_FILE`, `ONEC_HS_PASSWORD_FILE`, `ONEC_HS_TOKEN_FILE` | `onec_hs_*` (три файла — целиком или ничего) | api, worker |
 | `ONEC_USER_FILE`, `ONEC_PASSWORD_FILE` | `onec_user`, `onec_password` (пара; режим `extension` — полная загрузка, срезы цен и остатков, список фото; `odata_only` — всё чтение) | api, worker |

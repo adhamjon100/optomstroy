@@ -306,7 +306,7 @@
 - Заказчику: `docs/customer/STATUS_GOTOVNOSTI.md` (раздел о P-004) и Word-копия, `docs/customer/Voprosy_zakazchiku.md` (вопросы 126–132 = Q-381…Q-387) и Word-копия.
 
 **Что проверяется**
-- pos-app: `flutter analyze` — 0; полный `flutter test` — зелёный, кроме `reports_dtos_contract_test.dart` (P4-KI-02: DTO отчёта сверки не знает полей OpenAPI 1.5.0).
+- pos-app: `flutter analyze` — 0; полный `flutter test` — зелёный, кроме `reports_dtos_contract_test.dart` (P4-KI-02: DTO отчёта сверки не знает полей OpenAPI 1.5.0). После доработки 2026-11-24 (ниже) — зелёный полностью (+3565).
 - pos-api: `npm run lint`, `npm run test:all` — зелёные по отчётам пакетов (после правок ревью наборы перезапущены по частям).
 - Контракты и репозиторий: `build_openapi.py --check`, redocly, `check_*`, `check_secrets.py` — 0 находок, `check_repo_layout.py --tree` — 0 ошибок, `trace_test_ids.py --summary` (этапы D, E, F, G) — «без теста и причины» 0.
 - `onec-extension/check`: тест «O01, O02, O15» падает и до P-004 (P4-KI-01), к P-004 не относится.
@@ -320,5 +320,24 @@
 **Осталось**
 - D — стенд: ждёт администратора заказчика (SSH, установка `install.ps1 -DevTest -Stand`, сертификат) и «да» пользователя; проверки T-DEPLOY-030.
 - E — сборки APK и пакета Windows с адресом стенда: после стенда и сертификата.
-- P4-KI-02 (DTO отчёта сверки в pos-app), P4-KI-09 (фикстуры 1С в Docker-образе), P4-KI-10 (`pin_pepper` у worker в compose) — отдельными задачами.
+- P4-KI-02 (DTO отчёта сверки в pos-app) закрыт доработкой 2026-11-24; P4-KI-09 и P4-KI-10 закрыты по ревью (ниже).
+
+**Исправления по ревью P-004 (2026-11-24)**
+- Linux-комплект: `ensure_app_images` сверяет метку `org.optomstroy.onec-fixtures` в обе стороны — образ стадии `test-fixtures` рабочий контур отклоняет (FQ-INT-08); тег по умолчанию тестовой копии с `ONEC_MODE=fixtures` — `<версия>-<sha>-fixtures` (`install.sh`, `update.sh`); новые случаи в `infra/docker/scripts/test_lib.sh`. P4-KI-09 и P4-KI-10 — «закрыт» (сборка Docker и запуск compose не проверены: на машине нет Docker).
+- 16 §4.4 и `docs/ci.md`: `worker` получает `PIN_PEPPER_FILE` и секрет `pin_pepper` (как в compose и проверках).
+- Отчёт сверки QR: `summary.unknownReference` — число за период без учёта фильтра `status` (pos-api; описание OpenAPI 1.5.0 уточнено без смены версии — версия не выпущена; 08 §4.18.8; 02 UI-48-017, AC-UI-48-019); строка карточки «Неизвестный референс» при «Вручную» остаётся, пропадает только блок UI-48-018.
+- SCR-48: тест 320×640 при масштабе текста 1,0/1,3/1,5 для QR с неизвестным референсом; он нашёл переполнение строк «подпись — значение» карточек «Продажи» и «Долги» (было и до P-004) — значение теперь не шире 60 % строки и уменьшается (`scaleDown`); эталоны SCR-48 не изменились.
+- Эталоны `phone_profile_sheet_cashier_390` обновлены только из-за тестового ФИО фейкового `GET /me` — косметика (known_issues, журнал 1.16).
 - Письмо программисту 1С (контракт 1.3.0, Q-383, Q-387) — после «да» пользователя.
+
+**Доработка P-004 (2026-11-24, сведение итогов)**
+- SCR-48 (pos-app): карточка «QR-сверка» — строка «Неизвестный референс» (UI-48-017), под таблицей QR — блок «Зачисления по неизвестному референсу» (UI-48-018: референс, сумма, время оплаты, источник), AC-UI-48-019; 8 ключей `reports_qr_unknown_*` через 02 §7 → `build_arb.py` → `contracts/l10n` → `sync_contracts.py` (`ky`/`en` — «TODO перевод», Q-007); эталоны `reports_scr48_qr_unknown_{compact,expanded}`. P4-KI-02 закрыт.
+- Шапка телефона: инициалы у аватара брались из профиля входа, а лист — из свежего `GET /me` (эталон «АА» против «НР»). Теперь шапка берёт ФИО из последнего `GET /me` того же пользователя (`profileMeNameProvider`), до ответа — из сессии. P4-KI-18 закрыт; тест — `phone_header_test.dart` (T-UI-119).
+- Комментарий ARB `error_qr_unavailable` выровнен с ADR-123 (`scripts/build_arb.py` `KERNEL_OVERRIDES`, `contracts/l10n/NOTES.md` §3.1); текст 03 §16.5 ещё не выровнен (P4-KI-19).
+- pos-api: RL-WEBHOOK уже был реализован в 573decd (600 в минуту с IP, 429 с `Retry-After`, T-PAY-044) — пункт «не реализован» в передаче устарел. При одном `QR_WEBHOOK_PUBLIC_KEY_FILE` без секрета отказ в старте теперь называет Q-382 (`env.schema.ts`, T-PAY-043 (6)). Уведомление о неизвестном референсе остаётся `kind=system`, `target=null`: нужно новое значение `payload.target` — решение владельца (P4-KI-07).
+- Linux-комплект: тестовая копия с `ONEC_MODE=fixtures` собирает стадию `test-fixtures` (метка `org.optomstroy.onec-fixtures`), в `pos-api/Dockerfile` — стадии `test-fixtures` и `release`; `worker` получает `pin_pepper` (проверено запуском: без него при `staging` — `SecretConfigError`).
+- Веб-демо оставлено на `QR_PROVIDER=onec`: перевод на песочницу банка убрал бы функции демо (ADR-112) — причины и нужные доработки в `demo/web/README.md` (P4-KI-16).
+- Лист администратору `docs/customer/WINDOWS_SERVER_INSTALL.md` 1.1 — раздел 8а «Тестовый стенд на этом сервере» (SSH, имя, сертификат, `install.ps1 -Stand`).
+- Документы: 06 — 1.10 (очередь `payments.qr_reconcile`), 11 — 1.8 (SEC-135 сверено с кодом), 14 — 1.28 (Q-290 частично закрыт), 16 — 1.22 дополнена; 12 и 17 — журналы «Доработка P-004» (новых T-ID нет); `docs/known_issues.md` — новые P4-KI-17…P4-KI-19; `docs/customer/STATUS_GOTOVNOSTI.md` и Word-копия обновлены (заказчику не отправлялись).
+- Проверки: pos-app `flutter analyze` — 0, полный `flutter test` +3565 — зелёный; pos-api `npm run lint` — 0, `test:all` — 2114 тестов, код 0; `build_arb.py --check`, `check_arb_keys.py`, `sync_contracts.py --check`, `build_openapi.py --check` — 0; `check_compose_prod.py`, `check_compose_test.py` — OK; `test_lib.sh` — 59 проверок, 0 отказов; `trace_test_ids.py --summary` (D, E, F, G, K) — «без теста и причины» 0; `check_secrets.py` — 0; `check_repo_layout.py --tree` — 0 ошибок. После правок ревью полные прогоны pos-app и pos-api не повторялись — перезапущены затронутые наборы.
+- Осталось: сборка Docker и запуск compose (нет Docker); стенд D и сборки E — ждут администратора заказчика и «да» пользователя; P4-KI-17 (сегменты `AppTabs` на 360 lp); порядок SCR-41 на medium+ — подтверждение владельца (P4-KI-14); переводы `ky`/`en` — Q-007.

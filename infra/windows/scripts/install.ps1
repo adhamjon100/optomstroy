@@ -517,7 +517,7 @@ try {
     foreach ($k in $tpl.Keys) { $workerPairs[$k] = $tpl[$k] }
     $workerPairs['WORKERS_ENABLED'] = 'true'
     foreach ($k in $common.Keys) { $workerPairs[$k] = $common[$k] }
-    # Отличие от compose.prod.yml (там pin_pepper только у api): CryptoModule глобальный (ADR-115, хэш аварийного кода
+    # Как в compose.prod.yml (с 2026-11-24 pin_pepper и у worker): CryptoModule глобальный (ADR-115, хэш аварийного кода
     # планшета), и dist\worker.js без PIN_PEPPER при APP_ENV=prod/staging завершается (SecretConfigError, проверено).
     $workerPairs['PIN_PEPPER_FILE'] = (& $sec 'pin_pepper')
     if (& $hasSecret 'healthchecks_url') { $workerPairs['HEALTHCHECKS_PING_URL_FILE'] = (& $sec 'healthchecks_url') }
