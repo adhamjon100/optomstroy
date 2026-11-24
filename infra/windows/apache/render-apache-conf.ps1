@@ -50,6 +50,7 @@ param(
     [string]$LogDir = 'logs',
     [string]$RotateLogs = 'bin/rotatelogs.exe',
     [Parameter(Mandatory = $true)][string]$OutFile,
+    [string]$WebDir = '',
     [string]$TemplatePath = ''
 )
 
@@ -125,6 +126,67 @@ $map = [ordered]@{
 }
 
 $text = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $TemplatePath).ProviderPath, (New-Object System.Text.UTF8Encoding($false)))
+# Блок «всё прочее — 404» между метками. Без -WebDir — остаётся (метки убираются); с -WebDir (только тестовый
+# стенд, ADR-125: веб-таргет вне R1, D-39) — заменяется раздачей веб-сборки pos-app (flutter build web):
+# файл есть — отдаётся, иначе index.html (маршруты одностраничного приложения). /api/*, /health*, /images/* — как прежде.
+$mBegin = '    #@@ONLY_API_BEGIN@@'; $mEnd = '    #@@ONLY_API_END@@'
+$text = $text -replace "`r`n", "`n"
+$iB = $text.IndexOf($mBegin); $iE = $text.IndexOf($mEnd)
+if ($iB -lt 0 -or $iE -lt $iB) { Stop-Render 'в шаблоне нет меток @@ONLY_API_BEGIN@@/@@ONLY_API_END@@' }
+$afterEnd = $iE + $mEnd.Length + 1
+if ($WebDir) {
+    $web = ConvertTo-ApachePath $WebDir 'WebDir'
+    $webBlock = @"
+    # Веб-клиент pos-app (только тестовый стенд, -WebDir; веб-таргет вне R1, D-39): статические файлы из $web,
+    # неизвестный путь — index.html. Файлы основной конфигурации (сайта 1С) через этот хост не отдаются.
+    DocumentRoot "$web"
+    <Directory "$web">
+        Options None
+        AllowOverride None
+        Require all granted
+        AddType application/wasm .wasm
+        AddType application/json .json
+    </Directory>
+    # Сжатие без mod_deflate (в общей конфигурации он может быть не загружен, а его загрузка затронула бы 1С):
+    # рядом с файлом лежит заранее сжатый <файл>.gz (сжимается при выкладке веб-сборки) — отдаётся он, если клиент принимает gzip.
+    RewriteCond %{HTTP:Accept-Encoding} gzip
+    RewriteCond "$web%{REQUEST_URI}.gz" -f
+    RewriteRule "^(.+\.(js|wasm|json|otf|ttf|css))$" "`$1.gz" [L]
+    <FilesMatch "\.js\.gz$">
+        ForceType text/javascript
+    </FilesMatch>
+    <FilesMatch "\.wasm\.gz$">
+        ForceType application/wasm
+    </FilesMatch>
+    <FilesMatch "\.json\.gz$">
+        ForceType application/json
+    </FilesMatch>
+    <FilesMatch "\.(otf|ttf)\.gz$">
+        ForceType font/otf
+    </FilesMatch>
+    <FilesMatch "\.css\.gz$">
+        ForceType text/css
+    </FilesMatch>
+    <FilesMatch "\.gz$">
+        Header set Content-Encoding gzip
+        Header append Vary Accept-Encoding
+    </FilesMatch>
+    # Маршруты приложения (нет такого файла) — index.html. Правилом mod_rewrite, а не FallbackResource: mod_dir
+    # может быть не загружен (пробный запуск enable-apache-site.ps1 включает только нужные модули).
+    RewriteCond %{REQUEST_URI} !^/(api/|health|images/)
+    RewriteCond "$web%{REQUEST_URI}" !-f
+    RewriteRule "^" "/index.html" [L]
+    <LocationMatch "^/(index\.html|flutter_service_worker\.js|flutter_bootstrap\.js|version\.json|manifest\.json)?$">
+        Header set Cache-Control "no-cache"
+    </LocationMatch>
+
+"@
+    $text = $text.Substring(0, $iB) + ($webBlock -replace "`r`n", "`n") + $text.Substring($afterEnd)
+    if (-not (Test-Path -LiteralPath (Join-Path $WebDir 'index.html') -PathType Leaf)) { Write-Warning "нет $WebDir\index.html — веб-клиент не выложен" }
+} else {
+    $block = $text.Substring($iB, $afterEnd - $iB).Replace("$mBegin`n", '').Replace("$mEnd`n", '')
+    $text = $text.Substring(0, $iB) + $block + $text.Substring($afterEnd)
+}
 foreach ($k in $map.Keys) { $text = $text.Replace($k, $map[$k]) }
 $left = [regex]::Matches($text, '@@[A-Z_]+@@')
 if ($left.Count -gt 0) { Stop-Render ("в шаблоне остались незаполненные метки: " + (($left | ForEach-Object { $_.Value } | Sort-Object -Unique) -join ', ')) }

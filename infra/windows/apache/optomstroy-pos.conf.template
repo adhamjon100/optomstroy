@@ -95,12 +95,14 @@
     # Фото: только GET/HEAD и только контент-адресуемые имена; иное под /images/ — 404.
     RewriteCond %{REQUEST_METHOD} !^(GET|HEAD)$
     RewriteRule "^/images/" - [R=404,L]
+    #@@ONLY_API_BEGIN@@
     # Всё, что не /api/…, не /health[/…] и не фото, — 404 (веб-таргет вне R1, D-39). Поэтому DocumentRoot
     # здесь не задаётся: файлы из корня основной конфигурации (сайта 1С) через этот хост не отдаются никогда.
     RewriteCond %{REQUEST_URI} !^/api/
     RewriteCond %{REQUEST_URI} !^/health(/.*)?$
     RewriteCond %{REQUEST_URI} !^/images/[0-9a-f]{64}/(thumb|card|full)(\.webp)?$
     RewriteRule "^" - [R=404,L]
+    #@@ONLY_API_END@@
 
     # Фото отдаёт Apache напрямую из папки, куда их пишет OptomstroyWorker (MEDIA_DIR\images\<sha>\<size>.webp).
     # Найденному файлу — неизменяемый кэш (D-30); на отсутствующий — 404 без Cache-Control.
