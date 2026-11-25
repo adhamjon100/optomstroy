@@ -32,10 +32,19 @@ const RETRY_REFUSAL: Readonly<Partial<Record<OutboxStatus, string>>> = {
 const RETRYABLE: readonly OutboxStatus[] = ['failed', 'dead'];
 
 /**
+ * `pending`, запаркованный «ждёт оформления в 1С» (`NO_WRITE_CHANNEL`: ОС_API — нечем заполнить поле заказа, хвост
+ * до включения записи), тоже повторяется вручную: причину устранили (задан клиент по умолчанию, склад привязан) или
+ * решили отправить старый заказ — строка уходит в 1С на ближайшем тике, возраст отсчитывается от повтора.
+ */
+function isParkedPending(row: { status: OutboxStatus; last_error_code: string | null }): boolean {
+  return row.status === 'pending' && row.last_error_code === 'NO_WRITE_CHANNEL';
+}
+
+/**
  * Очередь «в 1С» (08 §4.17.3; ядро §22.1, §22.10, §19.4; R0 §18.2 п. 11; 05 SYNC-046): `sync.outbox.manage` —
  * `admin` и `senior_seller`, **все** элементы (фильтра «свой магазин» нет), **без step-up** (это повтор отправки,
- * а не запуск синхронизации). Ручной повтор — только `failed`/`dead` → `pending` (`attempts=0`,
- * `next_attempt_at=now`); внешний ключ для 1С прежний (`externalId`), дубль в 1С невозможен.
+ * а не запуск синхронизации). Ручной повтор — `failed`/`dead` и запаркованный `pending` (`NO_WRITE_CHANNEL`) →
+ * `pending` (`attempts=0`, `next_attempt_at=now`); внешний ключ для 1С прежний (`externalId`), дубль в 1С невозможен.
  */
 @Injectable()
 export class SyncOutboxService {
@@ -103,9 +112,10 @@ export class SyncOutboxService {
       );
       const before = cur.rows[0];
       if (!before) throw new ProblemException('NOT_FOUND', { detail: 'Элемент очереди «в 1С» не найден.' });
-      if (!RETRYABLE.includes(before.status)) {
+      const parked = isParkedPending(before);
+      if (!RETRYABLE.includes(before.status) && !parked) {
         throw new ProblemException('ORDER_STATE_INVALID', {
-          detail: 'Повтор доступен только для элементов в статусе «ошибка» или «не доставлен».',
+          detail: 'Повтор доступен только для элементов в статусе «ошибка», «не доставлен» или «ждёт оформления в 1С».',
           resource: 'outbox_item',
           reason: RETRY_REFUSAL[before.status] ?? 'invalid_transition',
           currentStatus: before.status,
@@ -118,7 +128,12 @@ export class SyncOutboxService {
          WHERE id = ${id}`);
       // Заказ: технический повтор отклонённого заказа (10 ORD-027) — переход заказа и восстановленная корзина в
       // той же транзакции; отказ модуля orders (409) откатывает повтор (ревью F-orders-1c-1).
-      if (before.aggregate_type === 'order' && (before.operation === 'create' || before.operation === 'cancel')) {
+      // Запаркованный заказ ещё `submitting` (в 1С не отправлялся) — шагов заказа нет.
+      if (
+        !parked &&
+        before.aggregate_type === 'order' &&
+        (before.operation === 'create' || before.operation === 'cancel')
+      ) {
         await this.orderRetryStep(tx, {
           orderId: before.aggregate_id,
           operation: before.operation,

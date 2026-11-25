@@ -224,6 +224,14 @@ export const envShape = {
   ONEC_OSAPI_PRICE_TYPES: uuidList(),
   ONEC_OSAPI_WAREHOUSES: uuidList(),
   ONEC_OSAPI_POLL_SECONDS: int(300, 60, 3600).refine((v) => v % 60 === 0, 'ожидается число секунд, кратное 60'),
+  // Запись заказов в 1С через ОС_API (решение владельца 25.11.2026): только `order/create`, только черновиком
+  // (`POST /orders` с `post:false`, `reserve:false`); только при ONEC_MODE=os_api. Клиент заказа без ссылки 1С и без
+  // единственного совпадения по телефону — `ONEC_OSAPI_DEFAULT_CUSTOMER` (UUID контрагента «розничный покупатель»).
+  ONEC_OSAPI_WRITE_ORDERS: bool(false),
+  ONEC_OSAPI_DEFAULT_CUSTOMER: z
+    .string()
+    .optional()
+    .refine((v) => v === undefined || v.trim() === '' || UUID_TEXT_RE.test(v.trim()), 'ожидается UUID'),
 
   // --- Синхронизация ---
   SYNC_STOCK_CRON: cron('*/10 * * * *'),
@@ -419,6 +427,10 @@ export const envSchema = z.object(envShape).superRefine((env, ctx) => {
         'http:// при ONEC_MODE=os_api допустим только для адреса этого сервера (localhost/127.0.0.1)',
       );
     }
+  }
+  // Запись заказов черновиком через ОС_API (решение владельца 25.11.2026) — только в режиме os_api.
+  if (env.ONEC_OSAPI_WRITE_ORDERS && env.ONEC_MODE !== 'os_api') {
+    fail('ONEC_OSAPI_WRITE_ORDERS', 'true допустимо только при ONEC_MODE=os_api (запись заказов черновиком в ОС_API)');
   }
   if (env.QR_PROVIDER === 'onec' && env.ONEC_INBOUND_ENABLED) {
     fail('QR_PROVIDER', 'onec несовместим с ONEC_INBOUND_ENABLED=true (вариант C-2, 05 ONEC-065)');

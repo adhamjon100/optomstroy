@@ -422,6 +422,52 @@ describe('RM-E-002: планировщик и управление синхро�
       }
     });
 
+    // Ревью 25.11.2026 (ОС_API): запаркованный «ждёт оформления в 1С» pending повторяется вручную.
+    it('запаркованный pending (NO_WRITE_CHANNEL) → 202: next_attempt_at=now, attempts=0, аудит; шагов заказа нет; обычный pending — 409', async () => {
+      const id = await t.outbox('pending');
+      await t.q(
+        `UPDATE onec_outbox SET next_attempt_at = NULL, last_error_code = 'NO_WRITE_CHANNEL',
+                last_error = 'клиент заказа не определён (тест)' WHERE id = $1`,
+        [id],
+      );
+      const res = await t.req('post', `/sync/outbox/${id}/retry`, actors.admin, { idem: true });
+      expect(res.status, JSON.stringify(res.body)).toBe(202);
+      expect(res.body).toMatchObject({ id, status: 'pending', attempts: 0 });
+      expect(Math.abs(Date.parse(res.body.nextAttemptAt) - Date.now())).toBeLessThan(60_000);
+      const audit = await t.q<{ before: Record<string, unknown> }>(
+        `SELECT before FROM audit_logs WHERE action = 'outbox.retried' AND entity_id = $1`,
+        [id],
+      );
+      expect(audit).toEqual([{ before: { status: 'pending', attempts: 0, lastErrorCode: 'NO_WRITE_CHANNEL' } }]);
+      // Диспетчер берёт строку на ближайшем тике.
+      const delivered: string[] = [];
+      const delivery: OutboxDeliveryPort = {
+        configured: true,
+        deliver: (row) => {
+          if (row.id === id) delivered.push(row.id);
+          return Promise.resolve(
+            row.id === id
+              ? { kind: 'sent' as const, onecRef: '0b8f4a3e-6c1d-4f6a-9d3e-1a2b3c4d5e70', onecNumber: 'ОС-000001' }
+              : { kind: 'transient' as const, message: 'не этот тест' },
+          );
+        },
+      };
+      await new OutboxDispatcher(
+        t.pool,
+        delivery,
+        { send: (name, data, options) => t.runtime.boss.send(name, data, options) },
+        schedulerConfigFromEnv(testConfig()).outbox,
+        'sync-test-dispatcher-parked',
+        silent,
+      ).tick();
+      expect(delivered).toEqual([id]);
+      // pending без парковки (ждёт очередной попытки) — по-прежнему 409 invalid_transition.
+      const plain = await t.outbox('pending');
+      const r409 = await t.req('post', `/sync/outbox/${plain}/retry`, actors.admin, { idem: true });
+      expect(r409.status).toBe(409);
+      expect(r409.body.reason).toBe('invalid_transition');
+    });
+
     // 12: T-SYNC-036 (seller/cashier/owner → 403)
     it('права: seller, cashier, owner → 403; нет элемента → 404; без Idempotency-Key → 400; GET /sync/outbox — failed,dead по умолчанию', async () => {
       const id = await t.outbox('dead');

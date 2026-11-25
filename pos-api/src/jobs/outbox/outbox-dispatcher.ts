@@ -109,6 +109,10 @@ interface ClaimedRow {
   created_at: Date;
   dep_customer?: { ref: string | null; contractorRef: string | null; agreementRef: string | null } | null;
   dep_order?: { ref: string | null; customerRef: string | null } | null;
+  customer_phone?: string | null;
+  delivery_date?: string | null;
+  last_error_code?: string | null;
+  age_ms?: number | string | null;
 }
 
 /**
@@ -127,6 +131,19 @@ export function outboxPayloadIntact(payload: unknown, storedHash: Buffer | null 
   const actual = outboxPayloadHash((payload ?? {}) as Readonly<Record<string, unknown>>);
   return actual.equals(Buffer.from(storedHash));
 }
+
+/**
+ * Возраст строки outbox для `OUTBOX_MAX_AGE_HOURS` (10 ORD-031; 16 §4.3), мс: от создания задачи; после ручного
+ * повтора — от момента последнего повтора (аудит `outbox.retried`, `POST /sync/outbox/{id}/retry`); после выхода из
+ * парковки `NO_WRITE_CHANNEL` — от момента выхода (`sync_errors.resolved_at` записи парковки): время, пока заказ
+ * ждал оформления в 1С, — не время повторов 1С. Алиас строки — `o`.
+ */
+const OUTBOX_AGE_MS_SQL = `(extract(epoch FROM now() - GREATEST(o.created_at,
+     COALESCE((SELECT max(a.occurred_at) FROM audit_logs a
+                WHERE a.entity_type = 'onec_outbox' AND a.entity_id = o.id
+                  AND a.action = 'outbox.retried' AND a.result = 'ok'), o.created_at),
+     COALESCE((SELECT max(se.resolved_at) FROM sync_errors se
+                WHERE se.outbox_id = o.id AND se.error_code = 'NO_WRITE_CHANNEL'), o.created_at))) * 1000)::float8`;
 
 const HASH_MISMATCH_MESSAGE =
   'payload_hash не совпадает с телом: payload изменён после постановки в outbox — в 1С не отправлено (DATA-228)';
@@ -269,8 +286,14 @@ export class OutboxDispatcher {
       `WITH picked AS (
          SELECT o.id FROM onec_outbox o
           WHERE o.status = 'pending' AND o.next_attempt_at <= now()
+            -- Маршруты канала (OutboxDeliveryPort.routes): чужие строки не захватываются и попыток не тратят.
+            AND ($4::text[] IS NULL OR (o.aggregate_type::text || '/' || o.operation) = ANY ($4::text[]))
             AND (o.depends_on_outbox_id IS NULL
-                 OR EXISTS (SELECT 1 FROM onec_outbox d WHERE d.id = o.depends_on_outbox_id AND d.status IN ('sent','confirmed')))
+                 OR EXISTS (SELECT 1 FROM onec_outbox d WHERE d.id = o.depends_on_outbox_id
+                               AND (d.status IN ('sent','confirmed')
+                                    -- основание, которое канал не доставляет никогда, отправку не держит
+                                    OR ($4::text[] IS NOT NULL
+                                        AND (d.aggregate_type::text || '/' || d.operation) <> ALL ($4::text[])))))
           ORDER BY o.priority, o.created_at
           LIMIT $2 FOR UPDATE SKIP LOCKED)
        UPDATE onec_outbox o SET status = 'sending', lease_until = now() + make_interval(secs => $3::double precision),
@@ -289,8 +312,26 @@ export class OutboxDispatcher {
                                            'customerRef', c.onec_ref::text)
                     FROM onec_outbox d LEFT JOIN orders ord ON ord.id = d.aggregate_id
                          LEFT JOIN customers c ON c.id = ord.customer_id
-                   WHERE d.id = o.depends_on_outbox_id AND d.aggregate_type = 'order') AS dep_order`,
-      [this.workerId, this.cfg.batchSize, this.cfg.leaseMs / 1000],
+                   WHERE d.id = o.depends_on_outbox_id AND d.aggregate_type = 'order') AS dep_order,
+                 -- Телефон клиента заказа — только каналу, который ищет покупателя 1С по телефону (ОС_API).
+                 CASE WHEN $5::boolean AND o.aggregate_type = 'order' THEN
+                   (SELECT cc.value_norm FROM orders ord JOIN customer_contacts cc ON cc.customer_id = ord.customer_id
+                     WHERE ord.id = o.aggregate_id AND cc.kind = 'phone' AND cc.deleted_at IS NULL
+                       AND cc.value_norm IS NOT NULL
+                     ORDER BY cc.is_primary DESC, cc.created_at LIMIT 1) END AS customer_phone,
+                 CASE WHEN $5::boolean AND o.aggregate_type = 'order' THEN
+                   (SELECT to_char(ord.delivery_date, 'YYYY-MM-DD') FROM orders ord WHERE ord.id = o.aggregate_id)
+                 END AS delivery_date,
+                 o.last_error_code,
+                 -- Возраст (как у OUTBOX_MAX_AGE_HOURS в apply) — только каналу с маршрутами (ОС_API: хвост заказов).
+                 CASE WHEN $4::text[] IS NOT NULL THEN ${OUTBOX_AGE_MS_SQL} END AS age_ms`,
+      [
+        this.workerId,
+        this.cfg.batchSize,
+        this.cfg.leaseMs / 1000,
+        this.delivery.routes ? [...this.delivery.routes] : null,
+        this.delivery.needsOrderCustomerPhone === true,
+      ],
     );
     return r.rows.map(toRow);
   }
@@ -304,15 +345,16 @@ export class OutboxDispatcher {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const cur = await client.query<{ status: string; locked_by: string | null; attempts: number; age_ms: number }>(
-        // Возраст для OUTBOX_MAX_AGE_HOURS (10 ORD-031; 16 §4.3): от создания задачи, после ручного повтора — от
-        // момента последнего повтора (аудит `outbox.retried`, тот же момент, что `POST /sync/outbox/{id}/retry`).
-        `SELECT o.status, o.locked_by, o.attempts,
-                (extract(epoch FROM now() - GREATEST(o.created_at, COALESCE(
-                   (SELECT max(a.occurred_at) FROM audit_logs a
-                     WHERE a.entity_type = 'onec_outbox' AND a.entity_id = o.id
-                       AND a.action = 'outbox.retried' AND a.result = 'ok'),
-                   o.created_at))) * 1000)::float8 AS age_ms
+      const cur = await client.query<{
+        status: string;
+        locked_by: string | null;
+        attempts: number;
+        age_ms: number;
+        last_error_code: string | null;
+        last_error: string | null;
+      }>(
+        // Возраст для OUTBOX_MAX_AGE_HOURS (10 ORD-031; 16 §4.3) — `OUTBOX_AGE_MS_SQL`.
+        `SELECT o.status, o.locked_by, o.attempts, o.last_error_code, o.last_error, ${OUTBOX_AGE_MS_SQL} AS age_ms
            FROM onec_outbox o WHERE o.id = $1 FOR UPDATE OF o`,
         [row.id],
       );
@@ -334,8 +376,19 @@ export class OutboxDispatcher {
         }
       }
       const attempts = c.attempts;
+      // Выход из парковки NO_WRITE_CHANNEL (причину устранили — строка ушла в 1С или получила ответ): открытые
+      // предупреждения парковки закрываются, отсчёт возраста для OUTBOX_MAX_AGE_HOURS начинается заново.
+      const unparked = c.last_error_code === 'NO_WRITE_CHANNEL' && outcome.kind !== 'parked';
+      if (unparked) {
+        await client.query(
+          `UPDATE sync_errors SET resolved_at = now(), updated_at = now(),
+                  resolution = 'Парковка снята: заказ снова передаётся в 1С'
+            WHERE outbox_id = $1 AND error_code = 'NO_WRITE_CHANNEL' AND resolved_at IS NULL`,
+          [row.id],
+        );
+      }
       const tx = { executeSql: (text: string, values?: unknown[]) => client.query(text, values) };
-      let kind: keyof Omit<TickResult, 'claimed'>;
+      let kind: keyof Omit<TickResult, 'claimed'> | undefined;
       let dead: { code: SyncErrorCode; message: string; reason: string } | undefined;
       switch (outcome.kind) {
         case 'sent': {
@@ -375,6 +428,40 @@ export class OutboxDispatcher {
           kind = 'failed';
           break;
         }
+        case 'parked': {
+          // «Ждёт оформления в 1С» (05 SYNC-066, `manualOrders`): без dead; попытка не засчитывается. С
+          // `recheckAfterMs` — повторная проверка позже (причину могли устранить), иначе — до ручного повтора.
+          const message = outcome.message.slice(0, 2000);
+          const recheckSec =
+            outcome.recheckAfterMs !== undefined && outcome.recheckAfterMs > 0 ? outcome.recheckAfterMs / 1000 : null;
+          await client.query(
+            `UPDATE onec_outbox SET status = 'pending', attempts = GREATEST(attempts - 1, 0),
+                    next_attempt_at = CASE WHEN $3::double precision IS NULL THEN NULL
+                                           ELSE now() + make_interval(secs => $3::double precision) END,
+                    lease_until = NULL, locked_by = NULL, last_error_code = 'NO_WRITE_CHANNEL', last_error = $2,
+                    updated_at = now()
+              WHERE id = $1`,
+            [row.id, message, recheckSec],
+          );
+          // Повторная проверка с той же причиной — без новой записи sync_errors (не засорять журнал каждый час).
+          const samePark = c.last_error_code === 'NO_WRITE_CHANNEL' && c.last_error === message;
+          if (!samePark) {
+            await writeSyncError(client, {
+              entity: OUTBOX_ERROR_ENTITY[row.aggregateType],
+              outboxId: row.id,
+              errorCode: 'NO_WRITE_CHANNEL',
+              message: outcome.message,
+              severity: 'warning',
+              payload: { aggregateType: row.aggregateType, operation: row.operation, attempts },
+            });
+            this.log.warn(
+              { outboxId: row.id, aggregateType: row.aggregateType, operation: row.operation, recheckSec },
+              'outbox.parked: в 1С не отправлено — ждёт оформления в 1С (NO_WRITE_CHANNEL)',
+            );
+          }
+          kind = undefined;
+          break;
+        }
         case 'hash_mismatch': {
           // 07 DATA-228: изменение payload после постановки → dead + sync_errors (HASH_MISMATCH); ручной повтор
           // (`requeue` с новым телом) пересчитывает хеш.
@@ -390,7 +477,9 @@ export class OutboxDispatcher {
           break;
         }
         case 'transient': {
-          const reason = outboxDeadReason(attempts, c.age_ms, this.cfg);
+          // Строка только что вышла из парковки: возраст отсчитывается от выхода (OUTBOX_AGE_MS_SQL) — сейчас 0.
+          const ageMs = unparked ? 0 : c.age_ms;
+          const reason = outboxDeadReason(attempts, ageMs, this.cfg);
           if (reason) {
             await this.markDead(client, row, 'ONEC_UNAVAILABLE', outcome.message, { attempts, reason });
             dead = { code: 'ONEC_UNAVAILABLE', message: outcome.message, reason };
@@ -517,6 +606,10 @@ function toRow(r: ClaimedRow): OutboxRow & { readonly payloadIntact: boolean } {
     createdAt: r.created_at,
     ...(r.dep_customer ? { dependencyCustomer: r.dep_customer } : {}),
     ...(r.dep_order ? { dependencyOrder: r.dep_order } : {}),
+    ...(r.customer_phone ? { customerPhone: r.customer_phone } : {}),
+    ...(r.delivery_date ? { deliveryDate: r.delivery_date } : {}),
+    ...(r.last_error_code !== undefined ? { lastErrorCode: r.last_error_code } : {}),
+    ...(r.age_ms !== undefined && r.age_ms !== null ? { ageMs: Number(r.age_ms) } : {}),
     payloadIntact: outboxPayloadIntact(r.payload, r.payload_hash),
   };
 }

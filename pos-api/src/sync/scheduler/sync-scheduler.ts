@@ -82,7 +82,9 @@ export class SyncScheduler {
   /** Требуемый набор расписаний для текущего `ONEC_MODE` и настроек. */
   async desired(): Promise<DesiredSchedule[]> {
     const out: DesiredSchedule[] = [];
-    for (const entity of scheduledEntities(this.cfg.onecMode, SYNC_ENTITY_VALUES)) {
+    for (const entity of scheduledEntities(this.cfg.onecMode, SYNC_ENTITY_VALUES, {
+      osApiWriteOrders: this.cfg.osApiWriteOrders === true,
+    })) {
       const r = await this.resolver.resolve(entity);
       const data: SyncJobPayload = { entity, mode: 'incremental', trigger: 'schedule' };
       out.push({

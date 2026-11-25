@@ -27,6 +27,7 @@ export type SmsRuntimeConfig = Pick<
   | 'SMSPRO_PASSWORD'
   | 'SMSPRO_SENDER'
   | 'SMSPRO_TEST_FLAG'
+  | 'SMS_STAGING_ALLOWED_PHONES'
   | 'SMSPRO_TIMEOUT_MS'
   | 'SMSPRO_RETRY_MAX'
   | 'SMSPRO_CB_OPEN_MINUTES'
@@ -116,6 +117,9 @@ export class SmsRuntime {
       config: {
         sender: c.SMSPRO_SENDER ?? '',
         testFlag: c.SMSPRO_TEST_FLAG,
+        // Номера вне SMS_STAGING_ALLOWED_PHONES на стенде — с <test>1</test> (как у прямой отправки кода).
+        appEnv: c.APP_ENV,
+        stagingAllowedPhones: c.SMS_STAGING_ALLOWED_PHONES ?? null,
         retryMax: c.SMSPRO_RETRY_MAX,
         dlrMode: c.SMSPRO_DLR_MODE,
       },

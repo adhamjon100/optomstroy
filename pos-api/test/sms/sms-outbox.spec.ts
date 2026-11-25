@@ -168,6 +168,34 @@ describe('notifications/sms: sms_outbox, воркер отправки, DLR, б�
     );
   });
 
+  it('T-SMS-022, 09 §5.8 (ревью 25.11.2026): воркер на staging — <test>1</test> номерам вне SMS_STAGING_ALLOWED_PHONES, списку — настоящая SMS', async () => {
+    const allowed = phone();
+    const other = phone();
+    const r = runtime({ SMS_STAGING_ALLOWED_PHONES: ` ${allowed} , +996700000001` });
+    const a = await enqueue(r, allowed);
+    const b = await enqueue(r, other);
+    mock.enqueue('message', messageReply(0), messageReply(0));
+    await r.processor.process(a.job);
+    await r.processor.process(b.job);
+    const sent = mock.to('message');
+    expect(sent).toHaveLength(2);
+    expect(sent[0].body).not.toContain('<test>');
+    expect(sent[1].body).toContain('<test>1</test>');
+    // SMSPRO_TEST_FLAG=true — тег всем; не staging — список не действует (тег только по SMSPRO_TEST_FLAG).
+    mock.reset();
+    const flagged = runtime({ SMS_STAGING_ALLOWED_PHONES: allowed, SMSPRO_TEST_FLAG: true });
+    const c = await enqueue(flagged, allowed);
+    mock.enqueue('message', messageReply(0));
+    await flagged.processor.process(c.job);
+    expect(mock.to('message')[0].body).toContain('<test>1</test>');
+    mock.reset();
+    const prod = runtime({ APP_ENV: 'prod', SMS_STAGING_ALLOWED_PHONES: allowed });
+    const e = await enqueue(prod, other);
+    mock.enqueue('message', messageReply(0));
+    await prod.processor.process(e.job);
+    expect(mock.to('message')[0].body).not.toContain('<test>');
+  });
+
   it('AC-AUTH-028: status 9, 9, 0 → три запроса с одним id, паузы 5 и 10 с, ACCEPTED (attempt=3), DLR-опросы поставлены', async () => {
     const q = await enqueue(rt);
     mock.enqueue('message', messageReply(9), messageReply(9), messageReply(0));

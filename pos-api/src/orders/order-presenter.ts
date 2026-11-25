@@ -151,6 +151,8 @@ export interface PresentContext {
   readonly history?: readonly HistoryRow[];
   readonly include?: ReadonlySet<'items' | 'payments' | 'history' | 'documents'>;
   readonly warnings?: readonly { readonly code: string; readonly message: string }[];
+  /** ОС_API с записью заказов черновиком (`ONEC_OSAPI_WRITE_ORDERS`): отмена — только в POS (`decideOrderCancel`). */
+  readonly onecDraftOnly?: boolean;
 }
 
 /** Действия, доступные по статусу и правам (08 §4.8.3; клиент — для кнопок, сервер проверяет заново). */
@@ -169,6 +171,7 @@ export function allowedActions(o: OrderRow, c: PresentContext): OrderAllowedActi
       cancelAlreadyRequested: o.cancel_requested_at !== null,
       canCancelOwn: c.permissions.has('order.cancel.own'),
       canRequestAny: c.permissions.has('order.cancel.request.any'),
+      onecDraftOnly: c.onecDraftOnly === true,
     });
     out.push('cancel');
   } catch {

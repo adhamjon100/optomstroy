@@ -8,11 +8,25 @@ import { FakeOnecGateway } from '../../src/integrations/onec/fake-onec.gateway.j
 import { onecAdapters } from '../../src/integrations/onec/onec-adapters.js';
 import { OnecError } from '../../src/integrations/onec/onec-error.js';
 import { createOnecGateway } from '../../src/integrations/onec/onec-gateway.factory.js';
-import { ONEC_OPERATIONS, type OnecGateway } from '../../src/integrations/onec/onec-gateway.js';
+import { ONEC_OPERATIONS, type OnecGateway, type OnecJsonObject } from '../../src/integrations/onec/onec-gateway.js';
+import type { OutboxRow } from '../../src/jobs/outbox/outbox-delivery.port.js';
+import { normalizeOnecStatus, parseOnecOrderDocument } from '../../src/orders/order-projection.js';
+import { classifyOnecResult } from '../../src/sales-domain/outbox/outbox-status.js';
+import { OnecOutboxDelivery } from '../../src/sync/outbox/onec-outbox.delivery.js';
 import { OnecTransportError } from '../../src/integrations/onec/onec-http-transport.js';
 import { OnecODataGateway } from '../../src/integrations/onec/onec-odata.gateway.js';
 import { OnecOsApiClient } from '../../src/integrations/onec/onec-osapi.client.js';
-import { OnecOsApiGateway, osApiVersion } from '../../src/integrations/onec/onec-osapi.gateway.js';
+import {
+  OSAPI_MANUAL_CODE,
+  OSAPI_MANUAL_RECHECK_MS,
+  OnecOsApiGateway,
+  type OnecOsApiGatewayOptions,
+  isOsApiOrderNotFound,
+  osApiLinePricing,
+  osApiLocalDateTime,
+  osApiShipmentDate,
+  osApiVersion,
+} from '../../src/integrations/onec/onec-osapi.gateway.js';
 import {
   OSAPI_UNREPRESENTABLE,
   OsApiCatalogIndex,
@@ -21,7 +35,16 @@ import {
   osApiMoney,
   osApiQty,
 } from '../../src/integrations/onec/onec-osapi.mapping.js';
-import { OSAPI_FIXTURE, OSAPI_REFS, OSAPI_ROOT, osApiTestClient, osu, standardOsApi } from '../support/osapi-fake.js';
+import {
+  type FakeOsApiTransport,
+  OSAPI_FIXTURE,
+  OSAPI_REFS,
+  OSAPI_ROOT,
+  osApiOrdersStore,
+  osApiTestClient,
+  osu,
+  standardOsApi,
+} from '../support/osapi-fake.js';
 import { createPaymentProvider } from '../../src/integrations/payments/payment-provider.factory.js';
 import { isApiVersionCompatible } from '../../src/sync/alerts/onec-api-compat.js';
 import type {
@@ -467,7 +490,7 @@ describe('ADR-126: OnecOsApiGateway — ping, фото, отказ записи'
     expect(g.mode).toBe('os_api');
   });
 
-  it('все методы порта, кроме getHealth/getImage, — 501 без запроса в 1С (запись выключена)', async () => {
+  it('все методы порта, кроме getHealth/getImage/getOrderStatus*, — 501 без запроса в 1С (запись заказов выключена)', async () => {
     const t = standard();
     const g = new OnecOsApiGateway(client(t));
     const calls: [string, () => Promise<unknown>][] = [
@@ -475,8 +498,6 @@ describe('ADR-126: OnecOsApiGateway — ping, фото, отказ записи'
       ['ackChanges', () => g.ackChanges(1)],
       ['reregisterChanges', () => g.reregisterChanges()],
       ['createOrder', () => g.createOrder({ externalId: U('99000000', 1) })],
-      ['getOrderStatus', () => g.getOrderStatus(U('99000000', 1))],
-      ['getOrderStatusBatch', () => g.getOrderStatusBatch([U('99000000', 1)])],
       ['cancelOrder', () => g.cancelOrder(U('99000000', 1), {})],
       ['createPayment', () => g.createPayment({})],
       [
@@ -507,7 +528,7 @@ describe('ADR-126: OnecOsApiGateway — ping, фото, отказ записи'
     ];
     expect(calls.map((c) => c[0]).sort()).toEqual(
       Object.keys(ONEC_OPERATIONS)
-        .filter((k) => k !== 'getHealth' && k !== 'getImage')
+        .filter((k) => !['getHealth', 'getImage', 'getOrderStatus', 'getOrderStatusBatch'].includes(k))
         .sort(),
     );
     for (const [op, call] of calls) {
@@ -691,7 +712,8 @@ describe('ADR-126: расписание и outbox при os_api; прежние 
     expect(osApiPollCron(3600)).toBe('0 * * * *');
     const os = schedulerConfigFromEnv(loadAppConfig({ ...OSAPI_ENV, ONEC_OSAPI_POLL_SECONDS: '600' }));
     expect(os.cron).toMatchObject({ stock: '*/10 * * * *', prices: '*/10 * * * *', master: '*/10 * * * *' });
-    expect(os.cron.orderStatus).toBe('*/5 * * * *');
+    // order_status в os_api без записи заказов не планируется; его cron — как у перечитки каталога.
+    expect(os.cron.orderStatus).toBe('*/10 * * * *');
     const ext = schedulerConfigFromEnv(loadAppConfig({ ...extension, ONEC_OSAPI_POLL_SECONDS: '600' }));
     expect(ext.cron).toMatchObject({ stock: '*/10 * * * *', prices: '*/15 * * * *', master: '*/30 * * * *' });
   });
@@ -745,4 +767,734 @@ it('ADR-126: типы элементов OsApiCatalogSource — из ONEC_TYPE',
       'InformationRegister_ШтрихкодыНоменклатуры',
     ].sort(),
   );
+});
+
+// ---------- Запись заказов черновиком через ОС_API (решение владельца 25.11.2026) ----------
+
+const ORD = U('99000000', 10);
+const CUST_1C = U('99100000', 1);
+const CUST_RETAIL = U('99100000', 9);
+const PHONE = '996700123456';
+
+/** Тело `OrderCreateRequest` POS (как onec-order-payload.ts) с `externalId`. */
+function orderPayload(over: Record<string, unknown> = {}): OnecJsonObject {
+  return {
+    externalId: ORD,
+    createdAt: '2026-11-25T12:00:00+06:00',
+    createdByUserCode: U('99200000', 1),
+    customer: { ref: null, contractorRef: null, agreementRef: null },
+    warehouseRef: WH1,
+    organizationRef: null,
+    priceListRef: PT1,
+    paymentMethod: 'cash',
+    paymentTerms: 'prepayment',
+    delivery: {
+      method: 'pickup',
+      address: null,
+      receiverName: null,
+      receiverPhone: null,
+      desiredFrom: '2026-11-26T10:00:00+06:00',
+      desiredTo: null,
+      courierComment: null,
+    },
+    discountPercent: '0.00',
+    comment: `POS ${ORD} · П-000123`,
+    lines: [
+      // Товар без характеристики, базовая единица; скидка клиента 10 % (сумма 900 из 2 × 500).
+      {
+        lineNumber: 1,
+        productRef: CEM,
+        variantRef: null,
+        packagingRef: null,
+        quantity: '2.000',
+        packQuantity: null,
+        price: '500.00',
+        discountPercent: '0.00',
+        amount: '900.00',
+        supplyOption: 'КОбеспечению',
+      },
+      // Характеристика и упаковка КАТЕГОРИИ: производные ссылки POS → ссылки 1С; количество — в упаковках.
+      {
+        lineNumber: 2,
+        productRef: PNT,
+        variantRef: osApiDerivedRef('characteristic', CH_R, PNT),
+        packagingRef: osApiDerivedRef('unit', UN_BOX, PNT),
+        quantity: '36.000',
+        packQuantity: '3.000',
+        price: '1200.00',
+        discountPercent: '0.00',
+        amount: '3600.00',
+        supplyOption: 'КОбеспечению',
+      },
+    ],
+    totals: { subtotal: '4600.00', discount: '100.00', total: '4500.00', currency: 'KGS' },
+    clientChecks: { pricesSnapshotAt: null, stockSnapshotAt: null },
+    ...over,
+  };
+}
+
+function writeGateway(t: FakeOsApiTransport, opts: Partial<OnecOsApiGatewayOptions> = {}): OnecOsApiGateway {
+  return new OnecOsApiGateway(client(t), undefined, { writeOrders: true, ...opts });
+}
+
+function outboxRow(over: Partial<OutboxRow> = {}): OutboxRow {
+  return {
+    id: U('99300000', 1),
+    aggregateType: 'order',
+    aggregateId: ORD,
+    externalId: ORD,
+    operation: 'create',
+    payload: orderPayload(),
+    attempts: 1,
+    createdAt: new Date('2026-11-25T06:00:00Z'),
+    ...over,
+  };
+}
+
+describe('Решение 25.11.2026: заказ POS → 1С черновиком (POST /orders, post:false, reserve:false)', () => {
+  const linked = { customer: { ref: null, contractorRef: CUST_1C, agreementRef: null } };
+
+  it('тело — ровно поля СоздатьЗаказ; post/reserve = false; ответ 201 → ссылка, номер, «Не согласован», сумма', async () => {
+    const store = osApiOrdersStore();
+    const t = standard().on('POST /orders', store.reply);
+    const r = await writeGateway(t).createOrder(orderPayload(linked));
+    const posts = t.posts();
+    expect(posts).toHaveLength(1);
+    expect(posts[0].path).toBe('/orders');
+    expect(posts[0].body).toEqual({
+      id: ORD,
+      customerId: CUST_1C,
+      warehouseId: WH1,
+      priceTypeId: PT1,
+      shipmentDate: '2026-11-26T10:00:00',
+      comment: `POS ${ORD} · П-000123`,
+      post: false,
+      reserve: false,
+      lines: [
+        { itemId: CEM, characteristicId: null, unitId: null, quantity: 2, price: 500, discountPercent: 10 },
+        { itemId: PNT, characteristicId: CH_R, unitId: UN_BOX, quantity: 3, price: 1200, discountPercent: 0 },
+      ],
+    });
+    const req = t.requests.find((x) => x.method === 'POST');
+    expect(req?.headers['Content-Type']).toBe('application/json; charset=utf-8');
+    expect(req?.headers.Authorization).toMatch(/^Basic /);
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({
+      ref: ORD,
+      number: 'ОС-000001',
+      date: '2026-11-25T12:00:00+06:00',
+      status: 'Не согласован',
+      total: '4500.00',
+      osApi: { created: true, posted: false, customerId: CUST_1C, warehouseId: WH1 },
+    });
+    expect(parseOnecOrderDocument(r.body)).toMatchObject({
+      ref: ORD,
+      number: 'ОС-000001',
+      status: 'Не согласован',
+      total: '4500.00',
+      hasShipment: false,
+    });
+    expect(normalizeOnecStatus('Не согласован')).toBe('not_approved');
+    expect(t.requests.filter((x) => x.method === 'POST').map((x) => x.url)).toEqual([`${ROOT}/orders`]);
+  });
+
+  it('повтор того же заказа — 200 created:false, тот же документ (идемпотентность по UUID заказа); канал → sent', async () => {
+    const store = osApiOrdersStore();
+    const t = standard().on('POST /orders', store.reply);
+    const g = writeGateway(t);
+    const first = await g.createOrder(orderPayload(linked));
+    const again = await g.createOrder(orderPayload(linked));
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ ref: ORD, number: first.body.number, osApi: { created: false } });
+    expect(store.orders.size).toBe(1);
+    const d = new OnecOutboxDelivery(g, { timeoutMs: 5000, routes: ['order/create'], orderCustomerPhone: true });
+    expect(await d.deliver(outboxRow({ payload: orderPayload(linked) }))).toMatchObject({
+      kind: 'sent',
+      onecRef: ORD,
+      onecNumber: 'ОС-000001',
+      onecStatus: 'Не согласован',
+    });
+    expect(store.orders.size).toBe(1);
+    for (const p of t.posts()) expect(p.body).toMatchObject({ id: ORD, post: false, reserve: false });
+  });
+
+  it('без ONEC_OSAPI_WRITE_ORDERS — 501 без запроса в 1С', async () => {
+    const t = standard();
+    const e = (await new OnecOsApiGateway(client(t))
+      .createOrder(orderPayload(linked))
+      .catch((x: unknown) => x)) as OnecError;
+    expect(e).toBeInstanceOf(OnecError);
+    expect(e.status).toBe(501);
+    expect(t.requests).toHaveLength(0);
+  });
+
+  it('клиент: ссылка 1С → без поиска; иначе единственный действующий покупатель по телефону; иначе ONEC_OSAPI_DEFAULT_CUSTOMER', async () => {
+    const t = standard()
+      .on('POST /orders', osApiOrdersStore().reply)
+      .on(`/customers?phone=${PHONE}`, {
+        body: {
+          items: [
+            { id: CUST_1C, name: 'Иванов', inactive: false },
+            { id: U('99100000', 2), inactive: true },
+          ],
+        },
+      })
+      .on('/customers?phone=996555000111', { body: { items: [{ id: U('99100000', 3) }, { id: U('99100000', 4) }] } });
+    const g = writeGateway(t, { defaultCustomer: CUST_RETAIL });
+    await g.createOrder(orderPayload(linked));
+    expect(t.paths().some((p) => p.startsWith('/customers'))).toBe(false);
+
+    const byPhone = { customer: { ref: null, contractorRef: null, agreementRef: null, phone: `+${PHONE}` } };
+    await g.createOrder(orderPayload({ ...byPhone, externalId: U('99000000', 11) }));
+    const ambiguous = { customer: { ref: null, contractorRef: null, agreementRef: null, phone: '996555000111' } };
+    await g.createOrder(orderPayload({ ...ambiguous, externalId: U('99000000', 12) }));
+    const bodies = t.posts().map((p) => p.body as { customerId: string; comment: string });
+    expect(bodies.map((b) => b.customerId)).toEqual([CUST_1C, CUST_1C, CUST_RETAIL]);
+    expect(bodies[2].comment).toContain('клиент POS без карточки в 1С');
+    expect(t.paths()).toContain(`/customers?phone=${PHONE}`);
+  });
+
+  it('клиент не определён (нет ссылки, совпадения и ONEC_OSAPI_DEFAULT_CUSTOMER) → OSAPI_MANUAL, клиент не создаётся, канал паркует', async () => {
+    const t = standard()
+      .on('POST /orders', osApiOrdersStore().reply)
+      .on(`/customers?phone=${PHONE}`, { body: { items: [] } });
+    const g = writeGateway(t);
+    const payload = orderPayload();
+    const e = (await g.createOrder(payload).catch((x: unknown) => x)) as OnecError;
+    expect(e.code).toBe(OSAPI_MANUAL_CODE);
+    const d = new OnecOutboxDelivery(g, { timeoutMs: 5000, routes: ['order/create'], orderCustomerPhone: true });
+    const res = await d.deliver(outboxRow({ payload, customerPhone: PHONE }));
+    expect(res.kind).toBe('parked');
+    expect((res as { message: string }).message).toContain('клиента в 1С не создаём');
+    // Телефон клиента POS канал передал только для поиска (GET); ни одного POST (ни /orders, ни /customers).
+    expect(t.paths()).toContain(`/customers?phone=${PHONE}`);
+    expect(t.posts()).toHaveLength(0);
+  });
+
+  it('склад: ссылка склада POS, иначе единственный из ONEC_OSAPI_WAREHOUSES, иначе OSAPI_MANUAL; товар без ссылки — OSAPI_MANUAL', async () => {
+    const t = standard().on('POST /orders', osApiOrdersStore().reply);
+    await writeGateway(t, { warehouses: [WH2] }).createOrder(orderPayload({ ...linked, warehouseRef: null }));
+    expect((t.posts()[0].body as { warehouseId: string }).warehouseId).toBe(WH2);
+    const noWh = (await writeGateway(t, { warehouses: [WH1, WH2] })
+      .createOrder(orderPayload({ ...linked, warehouseRef: null, externalId: U('99000000', 13) }))
+      .catch((x: unknown) => x)) as OnecError;
+    expect(noWh.code).toBe(OSAPI_MANUAL_CODE);
+    const noItem = (await writeGateway(t)
+      .createOrder(
+        orderPayload({
+          ...linked,
+          externalId: U('99000000', 14),
+          lines: [{ productRef: null, variantRef: null, packagingRef: null, quantity: '1.000', price: '1.00' }],
+        }),
+      )
+      .catch((x: unknown) => x)) as OnecError;
+    expect(noItem.code).toBe(OSAPI_MANUAL_CODE);
+    // Упаковка POS без ссылки 1С (количество в упаковках, цена за упаковку) — не угадываем единицу.
+    const noPack = (await writeGateway(t)
+      .createOrder(
+        orderPayload({
+          ...linked,
+          externalId: U('99000000', 15),
+          lines: [{ productRef: CEM, packagingRef: null, quantity: '50.000', packQuantity: '1.000', price: '450.00' }],
+        }),
+      )
+      .catch((x: unknown) => x)) as OnecError;
+    expect(noPack.code).toBe(OSAPI_MANUAL_CODE);
+    expect(t.posts()).toHaveLength(1);
+  });
+
+  it('422 от 1С → rejected (failed, без повторов) с сообщениями 1С; 500 и сеть → transient; 400 → rejected', async () => {
+    const t = standard().on('POST /orders', [
+      {
+        status: 422,
+        body: {
+          error: {
+            code: 'not_saved',
+            message: 'Заказ не записан',
+            details: [{ field: 'Организация', message: 'Не заполнено поле «Организация»' }],
+          },
+        },
+      },
+      { status: 500, body: { error: { code: 'internal_error', message: 'сбой' } } },
+      new OnecTransportError('timeout'),
+      { status: 400, body: { error: { code: 'bad_request', message: 'Неизвестный customerId' } } },
+    ]);
+    const d = new OnecOutboxDelivery(writeGateway(t), { timeoutMs: 5000, routes: ['order/create'] });
+    const row = outboxRow({ payload: orderPayload(linked) });
+    const r422 = await d.deliver(row);
+    expect(r422.kind).toBe('rejected');
+    expect(JSON.stringify((r422 as { response: unknown }).response)).toContain('Не заполнено поле «Организация»');
+    expect(classifyOnecResult({ ok: false, status: 422, code: 'POS_E_VALIDATION' })).toBe('rejected');
+    expect((await d.deliver(row)).kind).toBe('transient');
+    expect((await d.deliver(row)).kind).toBe('transient');
+    expect((await d.deliver(row)).kind).toBe('rejected');
+    // POST внутри клиента не повторяется (повторяет outbox по графику): 4 вызова — 4 запроса.
+    expect(t.posts()).toHaveLength(4);
+  });
+
+  it('прочие маршруты outbox (отмена, клиент, оплата, возврат) не отправляются: parked без запроса в 1С', async () => {
+    const t = standard();
+    const g = writeGateway(t);
+    const d = new OnecOutboxDelivery(g, { timeoutMs: 5000, routes: ['order/create'] });
+    for (const [aggregateType, operation] of [
+      ['order', 'cancel'],
+      ['customer', 'create'],
+      ['payment', 'create'],
+      ['return_request', 'create'],
+    ] as const) {
+      const r = await d.deliver(outboxRow({ aggregateType, operation, payload: { name: 'x', phone: PHONE } }));
+      expect(r.kind).toBe('parked');
+    }
+    // И сам шлюз: отмена/клиент/оплата — 501 без запроса даже с ONEC_OSAPI_WRITE_ORDERS.
+    for (const call of [() => g.cancelOrder(ORD, {}), () => g.createCustomer({}), () => g.createPayment({})]) {
+      expect(((await call().catch((x: unknown) => x)) as OnecError).status).toBe(501);
+    }
+    expect(t.requests).toHaveLength(0);
+  });
+
+  it('getOrderStatus = GET /orders/{id}: номер, «Согласован» после проведения, чек = отгрузка; пакет — 404 → notFound', async () => {
+    const other = U('99000000', 20);
+    const missing = U('99000000', 21);
+    const t = standard()
+      .on(`/orders/${ORD}`, {
+        body: {
+          id: ORD,
+          number: 'ОС-000007',
+          date: '2026-11-25T12:00:00',
+          posted: true,
+          isCompleted: true,
+          total: 4500,
+          shipments: [],
+          receipts: [{ id: U('99400000', 1), number: '7', posted: true, total: 4500 }],
+        },
+      })
+      .on(`/orders/${other}`, { body: { id: other, number: 'ОС-000008', posted: false, total: 10.5 } })
+      .on(`/orders/${missing}`, { status: 404, body: { error: { code: 'not_found', message: 'Заказ не найден' } } });
+    const g = new OnecOsApiGateway(client(t));
+    const one = await g.getOrderStatus(ORD);
+    // «Закрыт» не выводится никогда (завершён без накладной ≠ отмена в POS).
+    expect(parseOnecOrderDocument(one.body)).toMatchObject({
+      ref: ORD,
+      number: 'ОС-000007',
+      status: 'Согласован',
+      total: '4500.00',
+      hasShipment: true,
+    });
+    const batch = await g.getOrderStatusBatch([ORD, missing, other]);
+    expect((batch.body.items as OnecJsonObject[]).map((x) => [x.externalId, x.number, x.status])).toEqual([
+      [ORD, 'ОС-000007', 'Согласован'],
+      [other, 'ОС-000008', 'Не согласован'],
+    ]);
+    expect(batch.body.notFound).toEqual([missing]);
+    expect(t.requests.every((r) => r.method === 'GET')).toBe(true);
+  });
+
+  it('пакет статусов: сбой после первого ответа — частичный результат; на первом — ошибка', async () => {
+    const second = U('99000000', 22);
+    const t = standard()
+      .on(`/orders/${ORD}`, { body: { id: ORD, number: '1', posted: false, total: 1 } })
+      .on(`/orders/${second}`, new OnecTransportError('timeout'));
+    const g = new OnecOsApiGateway(client(t));
+    const part = await g.getOrderStatusBatch([ORD, second]);
+    expect((part.body.items as OnecJsonObject[]).map((x) => x.externalId)).toEqual([ORD]);
+    expect(part.body.notFound).toEqual([]);
+    await expect(g.getOrderStatusBatch([second])).rejects.toBeInstanceOf(OnecError);
+  });
+
+  it('ONEC_OSAPI_WRITE_ORDERS — только при ONEC_MODE=os_api (иначе отказ в старте); DEFAULT_CUSTOMER — UUID; фабрика передаёт настройки', async () => {
+    const c = loadAppConfig({
+      ...OSAPI_ENV,
+      ONEC_OSAPI_WRITE_ORDERS: 'true',
+      ONEC_OSAPI_DEFAULT_CUSTOMER: CUST_RETAIL,
+    });
+    expect(c.ONEC_OSAPI_WRITE_ORDERS).toBe(true);
+    expect(loadAppConfig(OSAPI_ENV).ONEC_OSAPI_WRITE_ORDERS).toBe(false);
+    for (const mode of ['extension', 'odata_only', 'fixtures']) {
+      const msg = expectConfigError(() =>
+        loadAppConfig({
+          ...OSAPI_ENV,
+          ONEC_MODE: mode,
+          ONEC_HS_PATH: 'ut/hs',
+          ONEC_HS_USER: 'h',
+          ONEC_HS_TOKEN: 't',
+          ONEC_OSAPI_WRITE_ORDERS: 'true',
+        }),
+      );
+      expect(msg).toContain('ONEC_OSAPI_WRITE_ORDERS: true допустимо только при ONEC_MODE=os_api');
+    }
+    expect(expectConfigError(() => loadAppConfig({ ...OSAPI_ENV, ONEC_OSAPI_DEFAULT_CUSTOMER: 'розница' }))).toContain(
+      'ONEC_OSAPI_DEFAULT_CUSTOMER',
+    );
+    // Фабрика: флаг и клиент по умолчанию доходят до шлюза (заказ без клиента 1С — на клиента по умолчанию).
+    const t = standard().on('POST /orders', osApiOrdersStore().reply);
+    const g = createOnecGateway(c, onecAdapters(c, t));
+    await g.createOrder(orderPayload());
+    expect((t.posts()[0].body as { customerId: string }).customerId).toBe(CUST_RETAIL);
+  });
+
+  it('wiring: os_api + ONEC_OSAPI_WRITE_ORDERS — канал только order/create с телефоном клиента; без флага — канала нет', () => {
+    const pool = {} as pg.Pool;
+    const log = pino({ level: 'silent' });
+    const gw = writeGateway(standard());
+    const on = createOrdersWorkerWiring({
+      config: loadAppConfig({ ...OSAPI_ENV, ONEC_OSAPI_WRITE_ORDERS: 'true' }),
+      pool,
+      log,
+      gateway: gw,
+      notifications: null,
+    }).outboxDelivery;
+    expect(on?.configured).toBe(true);
+    expect(on?.routes).toEqual(['order/create']);
+    expect(on?.needsOrderCustomerPhone).toBe(true);
+    const off = createOrdersWorkerWiring({
+      config: loadAppConfig(OSAPI_ENV),
+      pool,
+      log,
+      gateway: gw,
+      notifications: null,
+    });
+    expect(off.outboxDelivery).toBeUndefined();
+    // Прежний режим extension: канал на все маршруты, телефон клиента не читается.
+    const ext = createOrdersWorkerWiring({
+      config: loadAppConfig({
+        ...OSAPI_ENV,
+        ONEC_MODE: 'extension',
+        ONEC_HS_PATH: 'ut/hs',
+        ONEC_HS_USER: 'h',
+        ONEC_HS_TOKEN: 't',
+      }),
+      pool,
+      log,
+      gateway: new FakeOnecGateway(),
+      notifications: null,
+    }).outboxDelivery;
+    expect(ext?.routes).toBeUndefined();
+    expect(ext?.needsOrderCustomerPhone).toBe(false);
+  });
+});
+
+describe('Ревью 25.11.2026: запись заказов черновиком — восстановимость и точность', () => {
+  const linked = { customer: { ref: null, contractorRef: CUST_1C, agreementRef: null } };
+  const notFound = { status: 404, body: { error: { code: 'not_found', message: 'Заказ не найден' } } };
+
+  /** `GET /orders/{id}` по содержимому хранилища `POST /orders` (Module.bsl `ДанныеЗаказа`). */
+  function withOrderReads(
+    t: FakeOsApiTransport,
+    store: ReturnType<typeof osApiOrdersStore>,
+    ids: string[],
+  ): FakeOsApiTransport {
+    for (const id of ids) {
+      t.on(`/orders/${id}`, () => {
+        const o = store.orders.get(id);
+        return o ? { body: o } : notFound;
+      });
+    }
+    return t;
+  }
+
+  it('повтор после неизвестного результата: сначала GET /orders/{id}; документ есть — sent без сборки тела и без POST', async () => {
+    const store = osApiOrdersStore();
+    const t = withOrderReads(standard().on('POST /orders', store.reply), store, [ORD]).on(`/customers?phone=${PHONE}`, {
+      body: { items: [] },
+    });
+    const g = writeGateway(t);
+    // Попытка 1 записала черновик (ответ потерян — для outbox результат неизвестен).
+    await g.createOrder(orderPayload(linked));
+    expect(t.posts()).toHaveLength(1);
+    // Попытка 2: клиент больше не определяется (нет ссылки, по телефону пусто, клиента по умолчанию нет), но тело
+    // не собирается: черновик найден, строка → sent, а не parked с сиротой в 1С.
+    const d = new OnecOutboxDelivery(g, { timeoutMs: 5000, routes: ['order/create'], orderCustomerPhone: true });
+    const res = await d.deliver(outboxRow({ payload: orderPayload(), attempts: 2, customerPhone: PHONE }));
+    expect(res).toMatchObject({ kind: 'sent', onecRef: ORD, onecNumber: 'ОС-000001', onecStatus: 'Не согласован' });
+    expect(t.posts()).toHaveLength(1);
+    expect(t.paths()).toContain(`/orders/${ORD}`);
+    expect(t.paths().some((p) => p.startsWith('/customers'))).toBe(false);
+  });
+
+  it('повтор: «Заказ не найден» — тело собирается и POST; иной 404 («Метод не найден») — transient без POST', async () => {
+    const store = osApiOrdersStore();
+    const fresh = U('99000000', 30);
+    const t = withOrderReads(standard().on('POST /orders', store.reply), store, [fresh]);
+    const d = new OnecOutboxDelivery(writeGateway(t), { timeoutMs: 5000, routes: ['order/create'] });
+    const sent = await d.deliver(
+      outboxRow({ externalId: fresh, aggregateId: fresh, payload: orderPayload(linked), attempts: 3 }),
+    );
+    expect(sent).toMatchObject({ kind: 'sent', onecRef: fresh });
+    expect(t.posts().map((p) => (p.body as { id: string }).id)).toEqual([fresh]);
+    // Публикация отвечает 404 «Метод не найден» (маршрута в фейке нет): это недоступность, а не отсутствие заказа.
+    const lost = U('99000000', 31);
+    const r = await d.deliver(
+      outboxRow({ externalId: lost, aggregateId: lost, payload: orderPayload(linked), attempts: 2 }),
+    );
+    expect(r.kind).toBe('transient');
+    expect(t.posts()).toHaveLength(1);
+    // Первая попытка GET не делает.
+    const first = U('99000000', 32);
+    await d.deliver(outboxRow({ externalId: first, aggregateId: first, payload: orderPayload(linked), attempts: 1 }));
+    expect(t.paths()).not.toContain(`/orders/${first}`);
+    expect(t.posts()).toHaveLength(2);
+  });
+
+  it('OSAPI_MANUAL → parked с повторной проверкой через час (OSAPI_MANUAL_RECHECK_MS), попытки не тратятся', async () => {
+    const t = standard().on(`/customers?phone=${PHONE}`, { body: { items: [] } });
+    const d = new OnecOutboxDelivery(writeGateway(t), { timeoutMs: 5000, routes: ['order/create'] });
+    const r = await d.deliver(outboxRow({ payload: orderPayload(), customerPhone: PHONE }));
+    expect(r).toMatchObject({ kind: 'parked', recheckAfterMs: OSAPI_MANUAL_RECHECK_MS });
+    expect(OSAPI_MANUAL_RECHECK_MS).toBe(3_600_000);
+    // Маршрут, который канал не пишет, — парковка без повторной проверки (до ручного повтора).
+    const other = await d.deliver(outboxRow({ operation: 'cancel', payload: {} }));
+    expect(other.kind).toBe('parked');
+    expect((other as { recheckAfterMs?: number }).recheckAfterMs).toBeUndefined();
+  });
+
+  it('хвост до включения записи: первая попытка без ошибок старше OUTBOX_MAX_AGE_HOURS — parked без запроса в 1С', async () => {
+    const store = osApiOrdersStore();
+    const t = standard().on('POST /orders', store.reply);
+    const day = 24 * 3_600_000;
+    const d = new OnecOutboxDelivery(writeGateway(t), {
+      timeoutMs: 5000,
+      routes: ['order/create'],
+      parkStaleAfterMs: day,
+    });
+    const stale = await d.deliver(
+      outboxRow({ payload: orderPayload(linked), ageMs: day + 60_000, lastErrorCode: null }),
+    );
+    expect(stale.kind).toBe('parked');
+    expect((stale as { message: string }).message).toContain('«Повторить»');
+    expect((stale as { recheckAfterMs?: number }).recheckAfterMs).toBeUndefined();
+    expect(t.requests).toHaveLength(0);
+    // После ручного повтора (строка была запаркована) или свежий заказ — уходит.
+    const afterRetry = await d.deliver(
+      outboxRow({ payload: orderPayload(linked), ageMs: day + 60_000, lastErrorCode: 'NO_WRITE_CHANNEL' }),
+    );
+    expect(afterRetry.kind).toBe('sent');
+    const fresh = U('99000000', 33);
+    const freshRes = await d.deliver(
+      outboxRow({ externalId: fresh, aggregateId: fresh, payload: orderPayload(linked), ageMs: 3_600_000 }),
+    );
+    expect(freshRes.kind).toBe('sent');
+    // Повторная попытка (attempts > 1) хвостом не считается.
+    const retried = U('99000000', 34);
+    t.on(`/orders/${retried}`, notFound);
+    const retriedRes = await d.deliver(
+      outboxRow({
+        externalId: retried,
+        aggregateId: retried,
+        payload: orderPayload(linked),
+        ageMs: day * 3,
+        attempts: 2,
+        lastErrorCode: 'ONEC_UNAVAILABLE',
+      }),
+    );
+    expect(retriedRes.kind).toBe('sent');
+  });
+
+  it('производные ссылки: только /characteristics и /units (без /items), своя выгрузка с таймаутом 120 с без сигнала доставки', async () => {
+    const t = standard().on('POST /orders', osApiOrdersStore().reply);
+    const g = writeGateway(t);
+    await g.createOrder(orderPayload(linked), { signal: AbortSignal.timeout(30_000), requestId: 'r-1' });
+    const loads = t.requests.filter((r) => /\/(characteristics|units)$/.test(r.url));
+    expect(loads.map((r) => r.url.slice(ROOT.length)).sort()).toEqual(['/characteristics', '/units']);
+    for (const r of loads) {
+      expect(r.timeoutMs).toBe(120_000);
+      expect(r.signal).toBeUndefined();
+    }
+    expect(t.paths().some((p) => p.startsWith('/items'))).toBe(false);
+    // POST — под сигналом доставки.
+    expect(t.requests.find((r) => r.method === 'POST')?.signal).toBeDefined();
+  });
+
+  it('производные ссылки: товар, заведённый после выгрузки, — из кеша; промах по новой характеристике — одна перечитка без ожидания TTL', async () => {
+    const t = standard().on('POST /orders', osApiOrdersStore().reply);
+    const g = writeGateway(t);
+    await g.createOrder(orderPayload(linked));
+    const loads = (): number => t.paths().filter((p) => p === '/characteristics').length;
+    expect(loads()).toBe(1);
+    const line = (variantRef: string, productRef: string = PNT): Record<string, OnecJsonObject[string]> => ({
+      lineNumber: 1,
+      productRef,
+      variantRef,
+      packagingRef: null,
+      quantity: '1.000',
+      packQuantity: null,
+      price: '100.00',
+      amount: '100.00',
+    });
+    // Новый товар категории (в /items его ещё нет): производная ссылка той же характеристики — без запросов.
+    const NEW_ITEM = U('c1000000', 77);
+    await g.createOrder(
+      orderPayload({
+        ...linked,
+        externalId: U('99000000', 40),
+        lines: [line(osApiDerivedRef('characteristic', CH_R, NEW_ITEM), NEW_ITEM)],
+      }),
+    );
+    expect(loads()).toBe(1);
+    expect((t.posts()[1].body as { lines: { characteristicId: string }[] }).lines[0].characteristicId).toBe(CH_R);
+    // Новая характеристика категории появилась в 1С после выгрузки: промах → перечитка → найдена.
+    const CH_NEW = osu('f1000000', 7);
+    const fixture = OSAPI_FIXTURE('characteristics.json') as { items: Record<string, unknown>[] };
+    t.on('/characteristics', {
+      body: {
+        items: [
+          ...fixture.items,
+          { id: CH_NEW, ownerId: osu('d1000000', 1), ownerType: 'category', name: 'Зелёная', deleted: false },
+        ],
+      },
+    });
+    await g.createOrder(
+      orderPayload({
+        ...linked,
+        externalId: U('99000000', 41),
+        lines: [line(osApiDerivedRef('characteristic', CH_NEW, PNT))],
+      }),
+    );
+    expect(loads()).toBe(2);
+    expect((t.posts()[2].body as { lines: { characteristicId: string }[] }).lines[0].characteristicId).toBe(CH_NEW);
+    // Ссылки нет и после перечитки — OSAPI_MANUAL (канал паркует с повторной проверкой).
+    const e = (await g
+      .createOrder(
+        orderPayload({
+          ...linked,
+          externalId: U('99000000', 42),
+          lines: [line(osApiDerivedRef('characteristic', osu('f1000000', 8), PNT))],
+        }),
+      )
+      .catch((x: unknown) => x)) as OnecError;
+    expect(e.code).toBe(OSAPI_MANUAL_CODE);
+    expect(loads()).toBe(3);
+    expect(t.paths().some((p) => p.startsWith('/items'))).toBe(false);
+  });
+
+  it('цена и скидка строки: процент, дающий ровно сумму POS; ступенчатая скидка — цена со скидкой; иначе ближайший процент', () => {
+    expect(osApiLinePricing(500, 2, 900)).toEqual({ price: 500, discountPercent: 10 });
+    expect(osApiLinePricing(1200, 3, 3600)).toEqual({ price: 1200, discountPercent: 0 });
+    expect(osApiLinePricing(1200, 3, null)).toEqual({ price: 1200, discountPercent: 0 });
+    // 3 % клиента и 2,5 % вручную: 8750 → 8275,31. Процент с 2 знаками даёт 8275,75 или 8274,87 — расхождение;
+    // цена со скидкой 8275,31 × 1 — ровно сумма POS.
+    expect(osApiLinePricing(8750, 1, 8275.31)).toEqual({ price: 8275.31, discountPercent: 0 });
+    // Ни процент, ни цена с 2 знаками точно не выражают сумму — ближайший процент (1С вернёт свою сумму).
+    expect(osApiLinePricing(100, 3, 285.01)).toEqual({ price: 100, discountPercent: 5 });
+  });
+
+  it('ступенчатая скидка доходит до POST /orders так, что 1С посчитает ровно сумму POS', async () => {
+    const store = osApiOrdersStore();
+    const t = standard().on('POST /orders', store.reply);
+    await writeGateway(t).createOrder(
+      orderPayload({
+        ...linked,
+        lines: [
+          {
+            lineNumber: 1,
+            productRef: CEM,
+            variantRef: null,
+            packagingRef: null,
+            quantity: '1.000',
+            packQuantity: null,
+            price: '8750.00',
+            amount: '8275.31',
+          },
+        ],
+      }),
+    );
+    expect((t.posts()[0].body as { lines: unknown[] }).lines[0]).toMatchObject({
+      price: 8275.31,
+      discountPercent: 0,
+      quantity: 1,
+    });
+    expect(store.orders.get(ORD)?.total).toBe(8275.31);
+  });
+
+  it('shipmentDate: начало интервала, иначе конец, иначе дата доставки 00:00; другая зона — в +06:00', () => {
+    expect(osApiShipmentDate({ desiredFrom: '2026-11-26T10:00:00+06:00' })).toBe('2026-11-26T10:00:00');
+    expect(osApiShipmentDate({ desiredFrom: null, desiredTo: '2026-11-26T04:00:00Z' })).toBe('2026-11-26T10:00:00');
+    expect(osApiShipmentDate({ desiredFrom: null, desiredTo: null, desiredDate: '2026-11-28' })).toBe(
+      '2026-11-28T00:00:00',
+    );
+    expect(osApiShipmentDate({ desiredDate: 'завтра' })).toBeNull();
+    expect(osApiShipmentDate({})).toBeNull();
+    expect(osApiLocalDateTime('2026-11-25T20:30:00.000Z')).toBe('2026-11-26T02:30:00');
+    expect(osApiLocalDateTime('2026-11-25T12:00:00')).toBe('2026-11-25T12:00:00');
+    expect(osApiLocalDateTime('2026-11-25T12:00:00+05:00')).toBe('2026-11-25T13:00:00');
+  });
+
+  it('дата доставки без интервала: канал добавляет delivery.desiredDate из заказа → shipmentDate черновика', async () => {
+    const t = standard().on('POST /orders', osApiOrdersStore().reply);
+    const d = new OnecOutboxDelivery(writeGateway(t), {
+      timeoutMs: 5000,
+      routes: ['order/create'],
+      orderCustomerPhone: true,
+    });
+    const payload = orderPayload({
+      ...linked,
+      delivery: { method: 'delivery', desiredFrom: null, desiredTo: null },
+    });
+    expect((await d.deliver(outboxRow({ payload, deliveryDate: '2026-11-28' }))).kind).toBe('sent');
+    expect((t.posts()[0].body as { shipmentDate?: string }).shipmentDate).toBe('2026-11-28T00:00:00');
+    // Сохранённый payload не меняется.
+    expect((payload.delivery as Record<string, unknown>).desiredDate).toBeUndefined();
+  });
+
+  it('notFound пакета статусов — только «Заказ не найден»; «Метод не найден» на первом — ошибка; сбой /ping — ошибка без запросов заказов', async () => {
+    const nf = (message: string, details?: Record<string, unknown>): OnecError =>
+      new OnecError('getOrderStatus', 404, 'POS_E_NOT_FOUND', message, details);
+    expect(isOsApiOrderNotFound(nf('Заказ не найден', { osApiCode: 'not_found' }))).toBe(true);
+    expect(isOsApiOrderNotFound(nf('Метод не найден: orders/x', { osApiCode: 'not_found' }))).toBe(false);
+    expect(isOsApiOrderNotFound(nf('Заказ не найден'))).toBe(false);
+    const known = U('99000000', 50);
+    const missing = U('99000000', 51);
+    const unrouted = U('99000000', 52);
+    const t = standard()
+      .on(`/orders/${known}`, { body: { id: known, number: '1', posted: false, total: 1 } })
+      .on(`/orders/${missing}`, notFound);
+    const g = new OnecOsApiGateway(client(t));
+    // «Метод не найден» на первом заказе — недоступность 1С (а не notFound для всего пакета).
+    await expect(g.getOrderStatusBatch([unrouted, known, missing])).rejects.toBeInstanceOf(OnecError);
+    // В середине — частичный результат: непрочитанные не попадают в notFound.
+    const part = await g.getOrderStatusBatch([known, unrouted, missing]);
+    expect((part.body.items as OnecJsonObject[]).map((x) => x.externalId)).toEqual([known]);
+    expect(part.body.notFound).toEqual([]);
+    expect((await g.getOrderStatusBatch([missing, known])).body.notFound).toEqual([missing]);
+    // /ping недоступен — ни одного GET /orders.
+    const down = standard().on('/ping', new OnecTransportError('network'));
+    await expect(new OnecOsApiGateway(client(down)).getOrderStatusBatch([known])).rejects.toBeInstanceOf(OnecError);
+    expect(down.paths().some((p) => p.startsWith('/orders'))).toBe(false);
+  });
+
+  it('расписание: order_status в os_api — только с ONEC_OSAPI_WRITE_ORDERS, cron как у перечитки каталога; wiring — ограниченный опрос', () => {
+    expect(scheduledEntities('os_api', SYNC_ENTITY_VALUES, { osApiWriteOrders: true })).toContain('order_status');
+    expect(scheduledEntities('os_api', SYNC_ENTITY_VALUES, { osApiWriteOrders: false })).not.toContain('order_status');
+    const on = schedulerConfigFromEnv(
+      loadAppConfig({ ...OSAPI_ENV, ONEC_OSAPI_WRITE_ORDERS: 'true', ONEC_OSAPI_POLL_SECONDS: '600' }),
+    );
+    expect(on.osApiWriteOrders).toBe(true);
+    expect(on.cron.orderStatus).toBe('*/10 * * * *');
+    expect(schedulerConfigFromEnv(loadAppConfig(OSAPI_ENV)).osApiWriteOrders).toBe(false);
+    const w = createOrdersWorkerWiring({
+      config: loadAppConfig({ ...OSAPI_ENV, ONEC_OSAPI_WRITE_ORDERS: 'true' }),
+      pool: {} as pg.Pool,
+      log: pino({ level: 'silent' }),
+      gateway: writeGateway(standard()),
+      notifications: null,
+    });
+    expect(w.handlers.order_status).toBeDefined();
+    const h = w.handlers.order_status as unknown as { d: Record<string, unknown> };
+    expect(h.d).toMatchObject({ maxOrders: 200, batchSize: 50, recentDays: 30 });
+  });
+
+  it('wiring: хвост старше OUTBOX_MAX_AGE_HOURS паркуется каналом без запроса в 1С', async () => {
+    const t = standard();
+    const w = createOrdersWorkerWiring({
+      config: loadAppConfig({ ...OSAPI_ENV, ONEC_OSAPI_WRITE_ORDERS: 'true', OUTBOX_MAX_AGE_HOURS: '24' }),
+      pool: {} as pg.Pool,
+      log: pino({ level: 'silent' }),
+      gateway: writeGateway(t),
+      notifications: null,
+    });
+    const r = await w.outboxDelivery?.deliver(
+      outboxRow({ payload: orderPayload(linked), ageMs: 25 * 3_600_000, lastErrorCode: null }),
+    );
+    expect(r?.kind).toBe('parked');
+    expect(t.requests).toHaveLength(0);
+  });
 });

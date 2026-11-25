@@ -25,7 +25,12 @@ import type { SyncEntityHandler } from '../sync/sync-handler.js';
 export interface OrdersWorkerWiringOptions {
   readonly config: Pick<
     AppConfig,
-    'ONEC_MODE' | 'ONEC_ODATA_WRITE_ENABLED' | 'ONEC_TIMEOUT_MS' | 'ONEC_SYNC_CHECK_TIMEOUT_MS'
+    | 'ONEC_MODE'
+    | 'ONEC_ODATA_WRITE_ENABLED'
+    | 'ONEC_TIMEOUT_MS'
+    | 'ONEC_SYNC_CHECK_TIMEOUT_MS'
+    | 'ONEC_OSAPI_WRITE_ORDERS'
+    | 'OUTBOX_MAX_AGE_HOURS'
   >;
   readonly pool: pg.Pool;
   readonly log: Logger;
@@ -77,6 +82,8 @@ export function orderStatusChangedJob(
  * статуса в момент `sent`), сверщик `outbox.reconcile-aggregates`, уведомление о `dead` и синхронизация статусов
  * `order_status` (расписание этапа E). Фаза 0 без канала записи (`odata_only` без `ONEC_ODATA_WRITE_ENABLED`) и
  * `os_api` (ОС_API, только чтение — ADR-126) — канал не подключается (строки остаются `pending`, 05 SYNC-066).
+ * `os_api` с `ONEC_OSAPI_WRITE_ORDERS=true` (решение владельца 25.11.2026) — канал только для `order/create`
+ * (заказ черновиком); отмены, оплаты, клиенты и возвраты не захватываются и остаются `pending`.
  */
 export function createOrdersWorkerWiring(o: OrdersWorkerWiringOptions): OrdersWorkerWiring {
   const log = o.log.child({ component: 'orders' });
@@ -92,11 +99,28 @@ export function createOrdersWorkerWiring(o: OrdersWorkerWiringOptions): OrdersWo
   });
   const blocked = new OrderDependencyNotifier({ db, notifications, log });
   // ADR-126: `os_api` — только чтение 1С; канал записи не подключается, элементы outbox (заказы, оплаты, клиенты)
-  // паркуются `NO_WRITE_CHANNEL` («ждут оформления в 1С», sync-status manualOrders) — без повторов, `dead` и 501.
+  // остаются `pending` («ждут оформления в 1С») — без повторов, `dead` и 501. Исключение — `ONEC_OSAPI_WRITE_ORDERS`
+  // (решение владельца 25.11.2026): канал только для `order/create`, заказ пишется в 1С черновиком; нечем заполнить
+  // обязательное поле (клиент, склад, товар 1С) — заказ паркуется `NO_WRITE_CHANNEL`. Клиент ищется по телефону.
+  const osApiOrders = o.config.ONEC_MODE === 'os_api' && o.config.ONEC_OSAPI_WRITE_ORDERS === true;
   const writeChannel =
-    o.config.ONEC_MODE === 'os_api' ? false : o.config.ONEC_MODE !== 'odata_only' || o.config.ONEC_ODATA_WRITE_ENABLED;
+    o.config.ONEC_MODE === 'os_api'
+      ? osApiOrders
+      : o.config.ONEC_MODE !== 'odata_only' || o.config.ONEC_ODATA_WRITE_ENABLED;
   const outboxDelivery =
-    o.gateway && writeChannel ? new OnecOutboxDelivery(o.gateway, { timeoutMs: o.config.ONEC_TIMEOUT_MS }) : undefined;
+    o.gateway && writeChannel
+      ? new OnecOutboxDelivery(o.gateway, {
+          timeoutMs: o.config.ONEC_TIMEOUT_MS,
+          ...(osApiOrders
+            ? {
+                routes: ['order/create'] as const,
+                orderCustomerPhone: true,
+                // Хвост заказов до включения записи (или после простоя) сам в 1С не уходит — ждёт ручного повтора.
+                parkStaleAfterMs: o.config.OUTBOX_MAX_AGE_HOURS * 3_600_000,
+              }
+            : {}),
+        })
+      : undefined;
   const statusSync = o.gateway
     ? new OrderStatusSyncHandler({
         db,
@@ -105,6 +129,10 @@ export function createOrdersWorkerWiring(o: OrdersWorkerWiringOptions): OrdersWo
         payments: o.payments ?? null,
         log,
         timeoutMs: o.config.ONEC_TIMEOUT_MS,
+        // ОС_API: пакетного метода нет — `GET /orders/{id}` по одному (`ДанныеЗаказа`: несколько запросов 1С на
+        // заказ). Не больше 200 заказов за прогон, пакеты по 50, только заказы последних 30 дней; порядок
+        // `onec_last_sync_at NULLS FIRST` обходит открытые заказы по кругу.
+        ...(o.config.ONEC_MODE === 'os_api' ? { maxOrders: 200, batchSize: 50, recentDays: 30 } : {}),
       })
     : undefined;
 

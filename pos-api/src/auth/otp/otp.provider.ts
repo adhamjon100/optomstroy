@@ -11,6 +11,7 @@ import {
   type SmsGateway,
   type SmsTemplateKey,
 } from '../../integrations/sms/sms-gateway.js';
+import { smsTestFlag } from '../../integrations/sms/sms-test-flag.js';
 import { OtpChallengesRepository } from './otp-challenges.repository.js';
 import { OtpCircuitBreaker } from './otp-circuit-breaker.js';
 import { SmsOutboxRepository } from './sms-outbox.repository.js';
@@ -199,13 +200,15 @@ export class SmsOtpProvider implements OtpProvider, OnApplicationShutdown {
    * `<test>1</test>` (09 §5.8): `SMSPRO_TEST_FLAG=true` или staging-номер вне `SMS_STAGING_ALLOWED_PHONES`.
    */
   private testFlag(phoneE164: string): boolean {
-    if (this.config.SMSPRO_TEST_FLAG) return true;
-    if (this.config.APP_ENV !== 'staging' || this.gateway.provider !== 'smspro') return false;
-    const allowed = (this.config.SMS_STAGING_ALLOWED_PHONES ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s !== '');
-    return !allowed.includes(phoneE164);
+    return smsTestFlag(
+      {
+        testFlag: this.config.SMSPRO_TEST_FLAG,
+        appEnv: this.config.APP_ENV,
+        provider: this.gateway.provider,
+        stagingAllowedPhones: this.config.SMS_STAGING_ALLOWED_PHONES,
+      },
+      phoneE164,
+    );
   }
 }
 

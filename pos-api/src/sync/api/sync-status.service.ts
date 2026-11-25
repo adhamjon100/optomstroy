@@ -195,14 +195,15 @@ export class SyncStatusService {
   }
 
   /**
-   * Заказы фазы 0, ждущие ручного оформления в 1С (05 SYNC-066/067): элемент outbox `order/create`, запаркованный
-   * без канала записи (`pending`, `next_attempt_at IS NULL`, `NO_WRITE_CHANNEL`).
+   * Заказы, ждущие ручного оформления в 1С (05 SYNC-066/067): элемент outbox `order/create`, запаркованный
+   * (`pending`, `NO_WRITE_CHANNEL`) — без канала записи (`next_attempt_at IS NULL`) или ОС_API с повторной
+   * проверкой через час (`next_attempt_at` задан).
    */
   private async manualOrders(): Promise<{ count: number; oldestAt: Date | null }> {
     const r = await this.pool.query<{ count: number; oldest: Date | null }>(
       `SELECT count(*)::int AS count, min(created_at) AS oldest FROM onec_outbox
         WHERE aggregate_type = 'order' AND operation = 'create' AND status = 'pending'
-          AND next_attempt_at IS NULL AND last_error_code = 'NO_WRITE_CHANNEL'`,
+          AND last_error_code = 'NO_WRITE_CHANNEL'`,
     );
     return { count: r.rows[0]?.count ?? 0, oldestAt: r.rows[0]?.oldest ?? null };
   }

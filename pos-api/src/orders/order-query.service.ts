@@ -226,6 +226,7 @@ export class OrderQueryService {
           payments: await this.views.paymentsOf(o.id),
           documents: await this.views.documentsOf(o, viewer.actor),
           createOutbox: null,
+          onecDraftOnly: this.views.onecDraftOnly,
         }),
       );
     }

@@ -41,6 +41,11 @@ export interface OnecResult<T> {
 export interface OnecCallOptions {
   readonly requestId?: string;
   readonly signal?: AbortSignal;
+  /**
+   * Номер попытки записи (outbox `attempts`, с 1). ОС_API: на повторе `createOrder` сначала читает заказ
+   * `GET /orders/{id}` — прошлая попытка могла создать черновик при неизвестном результате.
+   */
+  readonly attempt?: number;
 }
 
 // ---------- сервис ----------

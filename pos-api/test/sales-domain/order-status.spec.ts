@@ -49,9 +49,9 @@ const EXPECTED: Record<string, StatusChangeSource[]> = {
   'awaiting_payment>pending_approval': ['pos_system'],
   'awaiting_payment>approved': ['pos_system', 'onec_sync', 'onec_response'],
   'awaiting_payment>awaiting_shipment': ['pos_system', 'onec_sync'],
-  'awaiting_payment>cancelled': ['onec_response', 'onec_sync'],
+  'awaiting_payment>cancelled': ['onec_response', 'onec_sync', 'pos_user'],
   'pending_approval>approved': ['onec_sync', 'onec_response'],
-  'pending_approval>cancelled': ['onec_response', 'onec_sync'],
+  'pending_approval>cancelled': ['onec_response', 'onec_sync', 'pos_user'],
   'approved>awaiting_shipment': ['onec_sync', 'onec_response', 'pos_system', 'pos_user'],
   'awaiting_shipment>pending_approval': ['onec_sync'],
   'awaiting_shipment>shipped': ['onec_sync'],
@@ -369,5 +369,84 @@ describe('decideOrderCancel (ORD-050…ORD-053, 07 §6.3, ядро §22.9)', () 
     } catch (e) {
       expect((e as SalesDomainError).extensions.reason).toBe('cancel_already_requested');
     }
+  });
+
+  describe('ОС_API с записью заказов черновиком (onecDraftOnly, ревью 25.11.2026): отмена сразу в POS', () => {
+    const draft = (p: Partial<OrderCancelInput>) => ci({ onecDraftOnly: true, ...p });
+    const reason = (fn: () => unknown): unknown => {
+      try {
+        fn();
+      } catch (e) {
+        return (e as SalesDomainError).extensions.reason;
+      }
+      return expect.unreachable();
+    };
+
+    it('черновик записан в 1С (pending_approval, create sent) → cancel_now, create не трогается, уведомление «пометьте в 1С»', () => {
+      expect(
+        decideOrderCancel(
+          draft({ status: 'pending_approval', hasOnecRef: true, createOutbox: { status: 'sent', attempts: 1 } }),
+        ),
+      ).toEqual({
+        kind: 'cancel_now',
+        outbox: 'keep_create',
+        via: 'own',
+        requiresStepUp: false,
+        refundIntentRequired: false,
+        onecManualCancel: true,
+      });
+      // Без этого режима — прежний запрос отмены в outbox (в ОС_API он не доставлялся бы никогда).
+      expect(
+        decideOrderCancel(
+          ci({ status: 'pending_approval', hasOnecRef: true, createOutbox: { status: 'sent', attempts: 1 } }),
+        ).kind,
+      ).toBe('request');
+    });
+
+    it('create pending с попыткой (результат неизвестен) → create отзывается, cancel в outbox не ставится, уведомление', () => {
+      expect(decideOrderCancel(draft({ createOutbox: { status: 'pending', attempts: 2 } }))).toMatchObject({
+        kind: 'cancel_now',
+        outbox: 'cancel_create',
+        onecManualCancel: true,
+      });
+      // Ни одной попытки — в 1С ничего нет, уведомлять не о чем.
+      expect(decideOrderCancel(draft({ createOutbox: { status: 'pending', attempts: 0 } }))).toMatchObject({
+        kind: 'cancel_now',
+        outbox: 'cancel_create',
+        onecManualCancel: false,
+      });
+    });
+
+    it('полученные платежи — refundIntent обязателен; чужой заказ — step-up; запрос отмены до включения режима не мешает', () => {
+      expect(
+        decideOrderCancel(
+          draft({
+            status: 'awaiting_payment',
+            hasOnecRef: true,
+            hasReceivedPayments: true,
+            isOwn: false,
+            canRequestAny: true,
+            cancelAlreadyRequested: true,
+            createOutbox: { status: 'confirmed', attempts: 1 },
+          }),
+        ),
+      ).toMatchObject({ kind: 'cancel_now', via: 'any', requiresStepUp: true, refundIntentRequired: true });
+    });
+
+    it('проведён в 1С (approved/awaiting_shipment) — not_cancellable; create sending — in_progress', () => {
+      for (const status of ['approved', 'awaiting_shipment'] as OrderStatus[]) {
+        expect(reason(() => decideOrderCancel(draft({ status, hasOnecRef: true, canRequestAny: true })))).toBe(
+          'not_cancellable',
+        );
+      }
+      expect(reason(() => decideOrderCancel(draft({ createOutbox: { status: 'sending', attempts: 1 } })))).toBe(
+        'in_progress',
+      );
+    });
+
+    it('переход pending_approval/awaiting_payment → cancelled разрешён источнику pos_user', () => {
+      expect(isOrderTransitionAllowed('pending_approval', 'cancelled', 'pos_user')).toBe(true);
+      expect(isOrderTransitionAllowed('awaiting_payment', 'cancelled', 'pos_user')).toBe(true);
+    });
   });
 });

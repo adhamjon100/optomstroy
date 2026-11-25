@@ -4,10 +4,10 @@ import type { OnecCallOptions } from './onec-gateway.js';
 import { type OnecHttpResponse, type OnecHttpTransport, OnecTransportError } from './onec-http-transport.js';
 
 /**
- * Клиент существующего HTTP-сервиса 1С «ОС_API» (расширение шлюза, корень `/hs/os/api/v1`; ADR-126) — ТОЛЬКО
- * ЧТЕНИЕ: метода записи в клиенте нет вовсе (`POST` не отправляется никогда). Решение владельца 24.11.2026:
- * интеграция на стенде начинается с чтения каталога, цен, остатков, проверки связи и фото; запись в 1С через
- * ОС_API — отдельным согласием.
+ * Клиент существующего HTTP-сервиса 1С «ОС_API» (расширение шлюза, корень `/hs/os/api/v1`; ADR-126) — чтение
+ * (`GET`) и РОВНО ОДИН метод записи: `createOrder` → `POST /orders` (решение владельца 25.11.2026: заказ POS
+ * пишется в 1С только черновиком; признаки `post:false`/`reserve:false` ставит `OnecOsApiGateway`). Других `POST`
+ * (клиенты, бонусы, упаковки) у клиента нет вовсе.
  *
  * Форма ответов — по исходнику расширения 0.2.9 (`HTTPServices/ОС_API/Ext/Module.bsl`): поля ниже ровно те, что
  * отдаёт модуль, лишних не выдумываем. Ссылки — голые UUID (`Ид()`: пустая ссылка → `null`), деньги и количества —
@@ -150,6 +150,83 @@ export interface OsApiItemFile {
   readonly changedAt?: string | null;
 }
 
+/** Заказ на продажу `GET /orders/{id}` и ответ `POST /orders` (`ШапкаЗаказа` + `ДанныеЗаказа`, Module.bsl). */
+export interface OsApiOrder {
+  readonly id: string | null;
+  readonly number?: string | null;
+  /** Дата 1С без зоны (локальная). */
+  readonly date?: string | null;
+  readonly posted?: boolean;
+  readonly customerId?: string | null;
+  readonly customerName?: string | null;
+  readonly contractId?: string | null;
+  readonly organizationId?: string | null;
+  readonly departmentId?: string | null;
+  readonly warehouseId?: string | null;
+  readonly priceTypeId?: string | null;
+  readonly stateId?: string | null;
+  readonly stateName?: string | null;
+  readonly isCompleted?: boolean;
+  readonly completion?: string | null;
+  readonly total?: number | string;
+  readonly currency?: string | null;
+  readonly paid?: number | string;
+  readonly notShippedQuantity?: number | string;
+  readonly shipmentDate?: string | null;
+  readonly comment?: string | null;
+  readonly changedAt?: string | null;
+  readonly shipments?: readonly OsApiOrderDocument[];
+  readonly receipts?: readonly OsApiOrderDocument[];
+  /** Только в ответе `POST /orders`: `true` — создан (201), `false` — повтор по тому же `id` (200). */
+  readonly created?: boolean;
+}
+
+/** Отгрузка (расходная накладная) или чек ККМ заказа (`ДокументыПоЗаказу`, Module.bsl). */
+export interface OsApiOrderDocument {
+  readonly id: string | null;
+  readonly number?: string | null;
+  readonly date?: string | null;
+  readonly posted?: boolean;
+  readonly total?: number | string;
+}
+
+/** Строка тела `POST /orders` (Module.bsl `СоздатьЗаказ`): количество и цена — в единице `unitId`. */
+export interface OsApiOrderLine {
+  readonly itemId: string;
+  readonly characteristicId: string | null;
+  /** Упаковка `/units`; `null` — базовая единица товара (`Товар.ЕдиницаИзмерения`). */
+  readonly unitId: string | null;
+  readonly quantity: number;
+  readonly price: number;
+  readonly discountPercent: number;
+}
+
+/**
+ * Тело `POST /orders` — ровно поля, которые читает `СоздатьЗаказ` (Module.bsl). `post`/`reserve` — литералы `false`:
+ * заказ только записывается (не проводится и не резервирует остаток); иное значение тип не допускает.
+ */
+export interface OsApiOrderCreateBody {
+  /** UUID заказа POS — ключ идемпотентности (повтор → 200, `created=false`). */
+  readonly id: string;
+  readonly customerId: string;
+  readonly warehouseId: string;
+  readonly priceTypeId?: string;
+  readonly shipmentDate?: string;
+  readonly comment?: string;
+  readonly post: false;
+  readonly reserve: false;
+  readonly lines: readonly OsApiOrderLine[];
+}
+
+/** Покупатель `GET /customers?phone=` (Module.bsl `КлиентПоТелефону`). */
+export interface OsApiCustomer {
+  readonly id: string | null;
+  readonly name?: string;
+  readonly kind?: string | null;
+  readonly inn?: string;
+  readonly inactive?: boolean;
+}
+
 export interface OsApiList<T> {
   readonly items: readonly T[];
 }
@@ -273,6 +350,28 @@ export class OnecOsApiClient {
     return this.list('getImage', '/item-files', undefined, opts);
   }
 
+  /** Заказ на продажу по ссылке (`GET /orders/{id}`; `id` заказа POS = ссылка документа 1С). */
+  order(orderRef: string, opts?: OnecCallOptions): Promise<OsApiOrder> {
+    const id = this.uuidParam('getOrderStatus', orderRef);
+    return this.json('getOrderStatus', `/orders/${id}`, undefined, opts, 'light');
+  }
+
+  /** Покупатели 1С по телефону (`GET /customers?phone=`, сравнение по последним 9 цифрам — Module.bsl). */
+  async customersByPhone(phone: string, opts?: OnecCallOptions): Promise<OsApiList<OsApiCustomer>> {
+    const b = await this.json<OsApiList<OsApiCustomer>>('findCustomersByPhone', '/customers', { phone }, opts, 'light');
+    if (!Array.isArray(b.items)) throw invalid('findCustomersByPhone', 'нет массива items');
+    return b;
+  }
+
+  /**
+   * ЕДИНСТВЕННАЯ запись: `POST /orders` (Module.bsl `СоздатьЗаказ`). 201 — создан, 200 — повтор того же `id`
+   * (идемпотентно). Внутреннего повтора нет: повторяет outbox по своему графику (тот же `id` — безопасно).
+   */
+  async createOrder(body: OsApiOrderCreateBody, opts?: OnecCallOptions): Promise<{ status: number; body: OsApiOrder }> {
+    const res = await this.send('createOrder', 'POST', '/orders', undefined, this.timeoutMs, opts, false, body);
+    return { status: res.status, body: parseObject('createOrder', res) as unknown as OsApiOrder };
+  }
+
   /** Двоичные данные фото `GET /files/{item|characteristic}/{id}`. */
   async file(kind: 'item' | 'characteristic', fileRef: string, opts?: OnecCallOptions): Promise<OsApiBinary> {
     const id = this.uuidParam('getImage', fileRef);
@@ -301,21 +400,11 @@ export class OnecOsApiClient {
   ): Promise<T> {
     const full = weight === 'full';
     const res = await this.get(op, path, query, full ? this.fullLoadTimeoutMs : this.timeoutMs, opts, full);
-    let body: unknown;
-    try {
-      body = JSON.parse(stripBom(res.body.toString('utf8')));
-    } catch {
-      throw invalid(op, 'ответ 1С — не JSON');
-    }
-    if (typeof body !== 'object' || body === null || Array.isArray(body)) throw invalid(op, 'ответ 1С — не объект');
-    return body as T;
+    return parseObject(op, res) as T;
   }
 
-  /**
-   * Только `GET`: ОС_API в этом режиме не пишет в 1С (ADR-126). `fullLoad` — полная выгрузка: истёкший таймаут
-   * повторяется не больше одного раза.
-   */
-  private async get(
+  /** `GET`; `fullLoad` — полная выгрузка: истёкший таймаут повторяется не больше одного раза. */
+  private get(
     op: OnecErrorOperation,
     path: string,
     query: Readonly<Record<string, string>> | undefined,
@@ -323,25 +412,45 @@ export class OnecOsApiClient {
     opts: OnecCallOptions | undefined,
     fullLoad: boolean,
   ): Promise<OnecHttpResponse> {
+    return this.send(op, 'GET', path, query, timeoutMs, opts, fullLoad);
+  }
+
+  /**
+   * Запрос к ОС_API. `POST` — только `createOrder` (тело JSON UTF-8, Module.bsl `ТелоJSON`), без внутреннего
+   * повтора; `GET` — с повтором временных ошибок.
+   */
+  private async send(
+    op: OnecErrorOperation,
+    method: 'GET' | 'POST',
+    path: string,
+    query: Readonly<Record<string, string>> | undefined,
+    timeoutMs: number,
+    opts: OnecCallOptions | undefined,
+    fullLoad: boolean,
+    json?: OsApiOrderCreateBody,
+  ): Promise<OnecHttpResponse> {
     const requestId = opts?.requestId ?? newId();
     const qs = Object.entries(query ?? {})
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join('&');
     const url = `${this.root}${path}${qs ? `?${qs}` : ''}`;
-    const headers = {
+    const headers: Record<string, string> = {
       Accept: op === 'getImage' && path.startsWith('/files/') ? 'image/*, application/json' : 'application/json',
       Authorization: this.authHeader,
       'X-Request-Id': requestId,
     };
-    const maxAttempts = Math.max(1, this.retry.maxAttempts);
+    const body = method === 'POST' ? Buffer.from(JSON.stringify(json ?? {}), 'utf8') : undefined;
+    if (body) headers['Content-Type'] = 'application/json; charset=utf-8';
+    const maxAttempts = method === 'POST' ? 1 : Math.max(1, this.retry.maxAttempts);
     let timeouts = 0;
     for (let attempt = 1; ; attempt++) {
       try {
         const res = await this.transport
           .request({
-            method: 'GET',
+            method,
             url,
             headers,
+            ...(body ? { body } : {}),
             timeoutMs,
             ...(opts?.signal ? { signal: opts.signal } : {}),
           })
@@ -378,22 +487,51 @@ function stripBom(s: string): string {
   return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
 }
 
+/** Тело ответа ОС_API — JSON-объект (иначе `INVALID_RESPONSE`). */
+function parseObject(op: OnecErrorOperation, res: OnecHttpResponse): Record<string, unknown> {
+  let body: unknown;
+  try {
+    body = JSON.parse(stripBom(res.body.toString('utf8')));
+  } catch {
+    throw invalid(op, 'ответ 1С — не JSON');
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw invalid(op, 'ответ 1С — не объект');
+  return body as Record<string, unknown>;
+}
+
 function invalid(op: OnecErrorOperation, message: string): OnecError {
   return new OnecError(op, 200, 'INVALID_RESPONSE', message);
 }
 
-/** Ошибка ОС_API — `{"error":{"code","message"}}` (Module.bsl:2863-2868); код — по HTTP-статусу. */
+/**
+ * Ошибка ОС_API — `{"error":{"code","message"[,"details"]}}` (Module.bsl `ОтветОшибка`; 422 `ОтветОшибкаЗаписи` —
+ * сообщения 1С в `details`); код — по HTTP-статусу.
+ */
 function toOnecError(op: OnecErrorOperation, res: OnecHttpResponse, requestId: string): OnecError {
   let message = `HTTP ${res.status}`;
   let details: unknown;
   try {
     const parsed = JSON.parse(stripBom(res.body.toString('utf8'))) as unknown;
-    const err = (parsed as { error?: { code?: unknown; message?: unknown } } | null)?.error;
+    const err = (parsed as { error?: { code?: unknown; message?: unknown; details?: unknown } } | null)?.error;
     if (err && typeof err.message === 'string') message = err.message.slice(0, 300);
-    if (err && typeof err.code === 'string') details = { osApiCode: err.code };
+    if (err && typeof err.code === 'string') {
+      details = Array.isArray(err.details)
+        ? { osApiCode: err.code, messages: osApiMessages(err.details) }
+        : { osApiCode: err.code };
+    }
   } catch {
     // тело не JSON (страница веб-сервера) — только статус
   }
   const code = STATUS_CODE[res.status] ?? (res.status >= 500 ? 'POS_E_INTERNAL' : 'POS_E_BAD_REQUEST');
   return new OnecError(op, res.status, code, message, details, res.headers['x-request-id'] ?? requestId);
+}
+
+/** Сообщения 1С из `details` ответа 422 (`field`, `message`): не больше 20, по 300 символов. */
+function osApiMessages(list: readonly unknown[]): { field: string | null; message: string }[] {
+  return list.slice(0, 20).flatMap((x) => {
+    const r = (typeof x === 'object' && x !== null ? x : {}) as { field?: unknown; message?: unknown };
+    return typeof r.message === 'string'
+      ? [{ field: typeof r.field === 'string' && r.field !== '' ? r.field : null, message: r.message.slice(0, 300) }]
+      : [];
+  });
 }

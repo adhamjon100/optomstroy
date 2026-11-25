@@ -109,9 +109,19 @@ export const ORDER_TRANSITIONS: readonly OrderTransition[] = [
   T('awaiting_payment', 'pending_approval', ['pos_system'], 'оплата закрыта (paid_at), «Не согласован» (P9)'),
   T('awaiting_payment', 'approved', ['pos_system', 'onec_sync', 'onec_response'], 'оплата закрыта, «К выполнению»'),
   T('awaiting_payment', 'awaiting_shipment', ['pos_system', 'onec_sync'], 'диаграмма 10 §2.2 (см. FQ-BASE-03)'),
-  T('awaiting_payment', 'cancelled', ['onec_response', 'onec_sync'], 'отмена подтверждена 1С (ORD-050, ORD-051)'),
+  T(
+    'awaiting_payment',
+    'cancelled',
+    ['onec_response', 'onec_sync', 'pos_user'],
+    'отмена подтверждена 1С (ORD-050, ORD-051); pos_user — ОС_API, в 1С только непроведённый черновик (ADR-126)',
+  ),
   T('pending_approval', 'approved', ['onec_sync', 'onec_response'], '1С «К выполнению» (P10)'),
-  T('pending_approval', 'cancelled', ['onec_response', 'onec_sync'], 'отмена подтверждена 1С (ORD-050)'),
+  T(
+    'pending_approval',
+    'cancelled',
+    ['onec_response', 'onec_sync', 'pos_user'],
+    'отмена подтверждена 1С (ORD-050); pos_user — ОС_API, в 1С только непроведённый черновик (ADR-126)',
+  ),
   T('approved', 'awaiting_shipment', ['onec_sync', 'onec_response', 'pos_system', 'pos_user'], 'P10, та же транзакция'),
   T('awaiting_shipment', 'pending_approval', ['onec_sync'], '1С вернула «Не согласован» (10 §2.2 правило 7)'),
   T('awaiting_shipment', 'shipped', ['onec_sync'], 'реализация проведена (P7)'),
@@ -252,6 +262,12 @@ export interface OrderCancelInput {
   readonly cancelAlreadyRequested: boolean;
   readonly canCancelOwn: boolean;
   readonly canRequestAny: boolean;
+  /**
+   * ОС_API с записью заказов (`ONEC_MODE=os_api`, `ONEC_OSAPI_WRITE_ORDERS=true`, решение владельца 25.11.2026): в 1С
+   * заказ только непроведённый черновик (без резерва), отмену POS в 1С не пишет. Отмена — сразу в POS; черновик в 1С
+   * помечают на удаление вручную (`onecManualCancel`).
+   */
+  readonly onecDraftOnly?: boolean;
 }
 
 export type OrderCancelOutboxAction =
@@ -267,10 +283,15 @@ export type OrderCancelOutboxAction =
 export type OrderCancelDecision =
   | {
       readonly kind: 'cancel_now';
-      readonly outbox: 'cancel_create' | 'cancel_create_and_enqueue_cancel';
+      /** `keep_create` — outbox `create` не трогается (уже `sent`/`confirmed`; ОС_API). */
+      readonly outbox: 'cancel_create' | 'cancel_create_and_enqueue_cancel' | 'keep_create';
       /** Право, по которому выполняется (`order.cancel.request.any` требует step-up). */
       readonly via: 'own' | 'any';
       readonly requiresStepUp: boolean;
+      /** При полученных платежах обязателен `refundIntent` (ORD-051; ОС_API). */
+      readonly refundIntentRequired?: boolean;
+      /** ОС_API: черновик в 1С мог быть создан — администратору нужно пометить его на удаление в 1С вручную. */
+      readonly onecManualCancel?: boolean;
     }
   | {
       readonly kind: 'request';
@@ -301,7 +322,9 @@ export function decideOrderCancel(i: OrderCancelInput): OrderCancelDecision {
   if (!REQUEST_CANCEL_STATUSES.has(i.status)) {
     throw orderStateInvalid(i.status, 'not_cancellable', 'Заказ в этом статусе отменить нельзя.');
   }
-  if (i.cancelAlreadyRequested) {
+  // ОС_API с записью черновиком: запрос отмены в 1С не доставляется никогда (канал — только `order/create`), поэтому
+  // заказ с запросом, поставленным до включения режима, отменяется сразу (иначе он завис бы с запросом навсегда).
+  if (i.cancelAlreadyRequested && i.onecDraftOnly !== true) {
     throw orderStateInvalid(i.status, 'cancel_already_requested', 'Запрос отмены уже отправлен.');
   }
   const ownAllowed = i.isOwn && i.canCancelOwn && OWN_CANCEL_STATUSES.has(i.status) && !i.hasReceivedPayments;
@@ -310,6 +333,8 @@ export function decideOrderCancel(i: OrderCancelInput): OrderCancelDecision {
   else if (i.canRequestAny) via = 'any';
   else throw new SalesDomainError('FORBIDDEN', 'Недостаточно прав для отмены этого заказа.');
   const requiresStepUp = via === 'any';
+
+  if (i.onecDraftOnly === true) return decideDraftOnlyCancel(i, via, requiresStepUp);
 
   if (i.status === 'submitting' && !i.hasOnecRef) {
     const ob = i.createOutbox;
@@ -354,5 +379,43 @@ export function decideOrderCancel(i: OrderCancelInput): OrderCancelDecision {
     via,
     requiresStepUp,
     refundIntentRequired: i.hasReceivedPayments,
+  };
+}
+
+/**
+ * Отмена в режиме ОС_API с записью заказов (`onecDraftOnly`): в 1С заказ — непроведённый черновик без резерва, а
+ * запись отмены в 1С не поддержана (ADR-126; outbox `order/cancel` не доставлялся бы никогда). Поэтому:
+ * - `submitting`/`awaiting_payment`/`pending_approval` — отмена сразу в POS (`cancel_now`); outbox `create`
+ *   `pending`/`dead` отзывается, `sent`/`confirmed` — остаётся; если черновик мог появиться в 1С (есть ссылка,
+ *   была попытка, `create` доставлен) — `onecManualCancel` (уведомление: пометить черновик в 1С на удаление);
+ * - `create` в `sending` (передача идёт сейчас) — `in_progress`, повторить позже;
+ * - `approved`/`awaiting_shipment` — заказ проведён в 1С сотрудником: отменить можно только в 1С (`not_cancellable`);
+ * - запрос отмены, поставленный раньше (`cancelAlreadyRequested`), не мешает: строка `order/cancel` в `pending`
+ *   отзывается (order-cancel.service), заказ отменяется сразу.
+ * Полученные платежи — `refundIntent` обязателен (ORD-051), неполученные аннулируются.
+ */
+function decideDraftOnlyCancel(i: OrderCancelInput, via: 'own' | 'any', requiresStepUp: boolean): OrderCancelDecision {
+  if (i.status === 'approved' || i.status === 'awaiting_shipment') {
+    throw orderStateInvalid(
+      i.status,
+      'not_cancellable',
+      'Заказ проведён в 1С: отмените его в 1С. POS не записывает отмену в 1С (ADR-126).',
+    );
+  }
+  const ob = i.createOutbox;
+  if (ob?.status === 'sending') {
+    throw orderStateInvalid(i.status, 'in_progress', 'Заказ сейчас передаётся в 1С — повторите отмену через минуту.');
+  }
+  if (ob?.status === 'failed' || ob?.status === 'cancelled') {
+    throw orderStateInvalid(i.status, 'not_cancellable', 'Задача 1С заказа уже закрыта.');
+  }
+  const delivered = ob?.status === 'sent' || ob?.status === 'confirmed';
+  return {
+    kind: 'cancel_now',
+    outbox: ob && !delivered ? 'cancel_create' : 'keep_create',
+    via,
+    requiresStepUp,
+    refundIntentRequired: i.hasReceivedPayments,
+    onecManualCancel: i.hasOnecRef || delivered || (ob?.attempts ?? 0) > 0,
   };
 }

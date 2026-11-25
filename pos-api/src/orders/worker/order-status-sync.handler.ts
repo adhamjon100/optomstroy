@@ -29,6 +29,11 @@ export interface OrderStatusSyncDeps {
   readonly batchSize?: number;
   /** Предел заказов за прогон. */
   readonly maxOrders?: number;
+  /**
+   * Только заказы, созданные за столько дней (ОС_API: `GET /orders/{id}` по одному — тяжёлый запрос 1С; старые
+   * открытые заказы не опрашиваются). Не задан — без ограничения.
+   */
+  readonly recentDays?: number;
 }
 
 /** Документ не найден спустя это время после `sent` → `onec_sync_state=missing` (07 §8.2, 05 SYNC-045). */
@@ -51,9 +56,11 @@ export class OrderStatusSyncHandler implements SyncEntityHandler {
   }
 
   async run(ctx: SyncRunContext): Promise<SyncHandlerResult> {
+    const recentDays = this.d.recentDays ?? null;
     const open = await this.d.db.execute<{ id: string }>(sql`
       SELECT o.id FROM orders o
        WHERE o.status NOT IN ('draft','submit_failed','closed','cancelled')
+         AND (${recentDays}::int IS NULL OR o.created_at > now() - make_interval(days => ${recentDays}::int))
          AND (o.onec_ref IS NOT NULL OR EXISTS (
                SELECT 1 FROM onec_outbox x WHERE x.aggregate_type = 'order' AND x.aggregate_id = o.id
                   AND x.operation = 'create' AND x.status IN ('sent','confirmed')))

@@ -25,6 +25,8 @@ export interface SchedulerConfig {
   /** Часовой пояс расписаний cron (06 §7.5: время Asia/Bishkek). */
   readonly timezone: string;
   readonly onecMode: AppConfig['ONEC_MODE'];
+  /** `ONEC_OSAPI_WRITE_ORDERS` (только `os_api`): планировать `order_status` — статусы записанных черновиков. */
+  readonly osApiWriteOrders?: boolean;
   /** Канонические cron по умолчанию (env `SYNC_*_CRON`, 16 §4.3). */
   readonly cron: {
     readonly stock: string;
@@ -83,19 +85,21 @@ export function schedulerConfigFromEnv(
     | 'OUTBOX_MAX_ATTEMPTS'
     | 'OUTBOX_MAX_AGE_HOURS'
   > &
-    Partial<Pick<AppConfig, 'ONEC_OSAPI_POLL_SECONDS'>>,
+    Partial<Pick<AppConfig, 'ONEC_OSAPI_POLL_SECONDS' | 'ONEC_OSAPI_WRITE_ORDERS'>>,
   overrides: SchedulerConfigOverrides = {},
 ): SchedulerConfig {
   const osApiCron = env.ONEC_MODE === 'os_api' ? osApiPollCron(env.ONEC_OSAPI_POLL_SECONDS ?? 300) : undefined;
   const base: SchedulerConfig = {
     timezone: env.TZ && env.TZ.trim() !== '' ? env.TZ : 'Asia/Bishkek',
     onecMode: env.ONEC_MODE,
+    osApiWriteOrders: env.ONEC_MODE === 'os_api' && env.ONEC_OSAPI_WRITE_ORDERS === true,
     // ADR-126: в `os_api` каталог, цены и остатки перечитываются целиком каждые `ONEC_OSAPI_POLL_SECONDS`
     // (по умолчанию 300 с, как у шлюза); переопределение по сущности — `app_settings.sync_interval.<entity>`.
     cron: {
       stock: osApiCron ?? env.SYNC_STOCK_CRON,
       prices: osApiCron ?? env.SYNC_PRICES_CRON,
-      orderStatus: env.SYNC_ORDER_STATUS_CRON,
+      // `os_api`: статусы черновиков — не чаще перечитки каталога (`GET /orders/{id}` по заказу — тяжёлый запрос 1С).
+      orderStatus: osApiCron ?? env.SYNC_ORDER_STATUS_CRON,
       master: osApiCron ?? env.SYNC_MASTER_CRON,
       images: env.SYNC_IMAGES_CRON,
       reconcile: env.SYNC_RECONCILE_CRON,

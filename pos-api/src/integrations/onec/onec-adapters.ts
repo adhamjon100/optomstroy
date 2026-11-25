@@ -1,5 +1,5 @@
 import { type AppConfig, ConfigError } from '../../common/config/app-config.js';
-import { isLoopbackUrl } from '../../common/config/env.schema.js';
+import { isLoopbackUrl, parseUuidList } from '../../common/config/env.schema.js';
 import type { OnecGatewayAdapters } from './onec-gateway.factory.js';
 import { OnecExtensionGateway } from './onec-extension.gateway.js';
 import { NodeOnecTransport, type OnecHttpTransport } from './onec-http-transport.js';
@@ -25,6 +25,9 @@ export type OnecAdaptersConfig = Pick<
   | 'ONEC_SYNC_PAGE_SIZE'
   | 'ONEC_MAX_CONCURRENCY'
   | 'ONEC_OSAPI_PATH'
+  | 'ONEC_OSAPI_WRITE_ORDERS'
+  | 'ONEC_OSAPI_DEFAULT_CUSTOMER'
+  | 'ONEC_OSAPI_WAREHOUSES'
 >;
 
 /** Транспорт 1С по конфигурации: `ONEC_CA_CERT_FILE`, `ONEC_MAX_CONCURRENCY`; `http://` — только `APP_ENV=dev`. */
@@ -121,6 +124,12 @@ export function onecAdapters(c: OnecAdaptersConfig, transport?: OnecHttpTranspor
       }
       return new OnecODataGateway(createOnecODataClient(c, t()));
     },
-    osApi: () => new OnecOsApiGateway(createOnecOsApiClient(c, transport)),
+    osApi: () =>
+      new OnecOsApiGateway(createOnecOsApiClient(c, transport), undefined, {
+        // Запись заказа черновиком — только при ONEC_OSAPI_WRITE_ORDERS=true (решение владельца 25.11.2026).
+        writeOrders: c.ONEC_OSAPI_WRITE_ORDERS === true,
+        defaultCustomer: c.ONEC_OSAPI_DEFAULT_CUSTOMER?.trim() || null,
+        warehouses: parseUuidList(c.ONEC_OSAPI_WAREHOUSES),
+      }),
   };
 }

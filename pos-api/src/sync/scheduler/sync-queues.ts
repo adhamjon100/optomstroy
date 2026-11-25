@@ -88,8 +88,10 @@ export const EXTENSION_PLAN_ENTITIES: readonly SyncEntity[] = SYNC_ENTITY_VALUES
 
 /**
  * Сущности режима `os_api` (ADR-126, ОС_API — только чтение): каталог, цены, остатки (полная перечитка по
- * расписанию `ONEC_OSAPI_POLL_SECONDS`) и фото. Клиентов, долгов, скидок, статусов заказов и документов ОС_API в
- * этом режиме не читает — их задания не ставятся (иначе каждые 5–30 минут прогон с отказом 501 и тревогой).
+ * расписанию `ONEC_OSAPI_POLL_SECONDS`) и фото. Клиентов, долгов, скидок и документов ОС_API в этом режиме не
+ * читает — их задания не ставятся (иначе каждые 5–30 минут прогон с отказом 501 и тревогой). Статусы заказов
+ * (`order_status`, `GET /orders/{id}`) — только при записи заказов (`ONEC_OSAPI_WRITE_ORDERS=true`), см.
+ * `scheduledEntities`.
  */
 export const OSAPI_POLLED_ENTITIES: readonly SyncEntity[] = [
   'units',
@@ -104,10 +106,22 @@ export const OSAPI_POLLED_ENTITIES: readonly SyncEntity[] = [
   'images',
 ];
 
-/** Сущности, которые планируются по расписанию инкрементом в данном режиме 1С. */
-export function scheduledEntities(mode: SchedulerConfig['onecMode'], all: readonly SyncEntity[]): SyncEntity[] {
+/**
+ * Сущности, которые планируются по расписанию инкрементом в данном режиме 1С. `os_api` с записью заказов
+ * (`osApiWriteOrders`, решение владельца 25.11.2026) — плюс `order_status`: черновики, записанные POS, читаются
+ * `GET /orders/{id}` (проведение в 1С, отгрузки, чеки ККМ).
+ */
+export function scheduledEntities(
+  mode: SchedulerConfig['onecMode'],
+  all: readonly SyncEntity[],
+  opts: { readonly osApiWriteOrders?: boolean } = {},
+): SyncEntity[] {
   if (mode === 'extension') return all.filter((e) => EXTENSION_POLLED_ENTITIES.includes(e));
-  if (mode === 'os_api') return all.filter((e) => OSAPI_POLLED_ENTITIES.includes(e));
+  if (mode === 'os_api') {
+    return all.filter(
+      (e) => OSAPI_POLLED_ENTITIES.includes(e) || (e === 'order_status' && opts.osApiWriteOrders === true),
+    );
+  }
   return [...all];
 }
 

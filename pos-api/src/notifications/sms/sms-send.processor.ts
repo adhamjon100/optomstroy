@@ -11,6 +11,7 @@ import {
   type SmsTemplateKey,
 } from '../../integrations/sms/sms-gateway.js';
 import { SMS_METRICS, type SmsTelemetry } from '../../integrations/sms/sms-telemetry.js';
+import { smsTestFlag } from '../../integrations/sms/sms-test-flag.js';
 import { maskPhone } from '../../common/logging/redaction.js';
 import { NOOP_SMS_DELIVERY_LISTENER, type SmsDeliveryListener } from './sms-delivery.listener.js';
 import type { SmsJobPublisher } from './sms-job-publisher.js';
@@ -37,7 +38,15 @@ const MAX_LOOP = 24;
 
 export interface SmsSendProcessorConfig {
   readonly sender: string;
+  /** `SMSPRO_TEST_FLAG`: `<test>1</test>` всем номерам. */
   readonly testFlag: boolean;
+  /**
+   * `APP_ENV`: на `staging` с провайдером `smspro` номера вне `stagingAllowedPhones` уходят с `<test>1</test>`
+   * (`smsTestFlag`, 09 §5.8) — то же правило, что у прямой отправки кода. Не задан — только `testFlag`.
+   */
+  readonly appEnv?: string;
+  /** `SMS_STAGING_ALLOWED_PHONES` (E.164 через запятую). */
+  readonly stagingAllowedPhones?: string | null;
   /** `SMSPRO_RETRY_MAX` — транспортные повторы (таймаут, сеть, невалидный XML). */
   readonly retryMax: number;
   readonly dlrMode: 'poll' | 'push';
@@ -128,7 +137,15 @@ export class SmsSendProcessor {
         sender: this.d.config.sender,
         text,
         phone,
-        test: this.d.config.testFlag,
+        test: smsTestFlag(
+          {
+            testFlag: this.d.config.testFlag,
+            appEnv: this.d.config.appEnv ?? '',
+            provider: this.d.gateway.provider,
+            stagingAllowedPhones: this.d.config.stagingAllowedPhones,
+          },
+          phone,
+        ),
         purpose,
         smsOutboxId: row.id,
         attempt,

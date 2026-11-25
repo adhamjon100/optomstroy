@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { AuthenticatedPrincipal } from '../common/auth/principal.js';
+import { APP_CONFIG, type AppConfig } from '../common/config/app-config.js';
 import { DRIZZLE, type Database } from '../common/db/database.module.js';
 import {
   DOCUMENTS_PORT,
@@ -43,7 +44,13 @@ export class OrderViewService {
     @Inject(PAYMENTS_PORT) private readonly payments: PaymentsPort,
     @Inject(DOCUMENTS_PORT) private readonly documents: DocumentsPort,
     private readonly catalog: PermissionCatalog,
+    @Inject(APP_CONFIG) private readonly config: Pick<AppConfig, 'ONEC_MODE' | 'ONEC_OSAPI_WRITE_ORDERS'>,
   ) {}
+
+  /** ОС_API с записью заказов черновиком: отмена — только в POS (кнопка «Отменить» по `decideOrderCancel`). */
+  get onecDraftOnly(): boolean {
+    return this.config.ONEC_MODE === 'os_api' && this.config.ONEC_OSAPI_WRITE_ORDERS === true;
+  }
 
   async viewer(
     principal: AuthenticatedPrincipal,
@@ -121,6 +128,7 @@ export class OrderViewService {
       createOutbox,
       items,
       history,
+      onecDraftOnly: this.onecDraftOnly,
       ...(opts.include ? { include: opts.include } : {}),
       ...(opts.warnings ? { warnings: opts.warnings } : {}),
     });

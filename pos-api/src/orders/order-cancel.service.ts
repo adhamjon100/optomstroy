@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { StepUpTokenVerifier } from '../auth/step-up/step-up-token.verifier.js';
 import { applyAuditGucs, auditContextFromRequest } from '../common/audit/audit-context.js';
+import { APP_CONFIG, type AppConfig } from '../common/config/app-config.js';
 import { AuditService } from '../common/audit/audit.service.js';
 import type { AuthenticatedPrincipal } from '../common/auth/principal.js';
 import { DRIZZLE, type Database } from '../common/db/database.module.js';
@@ -35,7 +36,8 @@ import { idempotencyExecutor } from './sql-executor.js';
  * (outbox `create` в `pending`/`dead` → `cancelled`), неполученные платежи → `voided`, состав → корзина (ORD-027);
  * у заявки с планшета (`created_via='kiosk'`) состав не возвращается, уведомление — ролям `cashier` и `senior_seller`
  * (10 KIOSK-030; 08 §4.8.4); (б) запрос отмены — outbox `cancel` (`POST /pos/v1/orders/{uuid}/cancel`), статус меняет
- * только 1С.
+ * только 1С. ОС_API с записью заказов (`ONEC_OSAPI_WRITE_ORDERS=true`): в 1С только непроведённый черновик, отмена
+ * в 1С не пишется — отмена сразу в POS, администратору — уведомление пометить черновик в 1С на удаление вручную.
  * `order.cancel.own` — без step-up; `order.cancel.request.any` — со step-up. Платёж `manual_confirm` → `409
  * PAYMENT_STATE_INVALID` (`open_payment_exists`). Транзакция `order_cancelled` — только при фактической отмене.
  */
@@ -43,18 +45,22 @@ import { idempotencyExecutor } from './sql-executor.js';
 export class OrderCancelService {
   private readonly logger = new Logger('orders.cancel');
   private readonly projector: OrderProjector;
+  /** ОС_API с записью заказов черновиком: отмена — только в POS (`decideOrderCancel.onecDraftOnly`). */
+  private readonly onecDraftOnly: boolean;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     @Inject(PAYMENTS_PORT) private readonly payments: PaymentsPort,
     @Inject(ONEC_OUTBOX_WRITER) private readonly outbox: OnecOutboxWriter,
     @Inject(CART_READER) private readonly cart: CartReader,
-    @Inject(NOTIFICATIONS_PORT) notifications: NotificationsPort,
+    @Inject(NOTIFICATIONS_PORT) private readonly notifications: NotificationsPort,
     private readonly audit: AuditService,
     private readonly idempotency: IdempotencyService,
     private readonly stepUp: StepUpTokenVerifier,
     private readonly views: OrderViewService,
+    @Inject(APP_CONFIG) config: Pick<AppConfig, 'ONEC_MODE' | 'ONEC_OSAPI_WRITE_ORDERS'>,
   ) {
+    this.onecDraftOnly = config.ONEC_MODE === 'os_api' && config.ONEC_OSAPI_WRITE_ORDERS === true;
     this.projector = new OrderProjector(notifications, (msg, data) => this.logger.warn(data ?? {}, msg));
   }
 
@@ -93,6 +99,7 @@ export class OrderCancelService {
         cancelAlreadyRequested: o.cancel_requested_at !== null,
         canCancelOwn: permissions.has('order.cancel.own'),
         canRequestAny: permissions.has('order.cancel.request.any'),
+        onecDraftOnly: this.onecDraftOnly,
       });
       return { o, decision, hasReceived };
     };
@@ -108,7 +115,7 @@ export class OrderCancelService {
       stepUpMethod = (await this.stepUp.verify(stepUpToken, principal, { operation: 'order.cancel.request.any' }))
         .method;
     }
-    const refundRequired = first.decision.kind === 'request' ? first.decision.refundIntentRequired : false;
+    const refundRequired = first.decision.refundIntentRequired ?? false;
     if (refundRequired && !body.refundIntent) {
       throw validationFailed([
         { field: 'refundIntent', rule: 'required', message: 'Укажите, что делать с полученными деньгами.' },
@@ -137,6 +144,7 @@ export class OrderCancelService {
           cancelAlreadyRequested: o.cancel_requested_at !== null,
           canCancelOwn: permissions.has('order.cancel.own'),
           canRequestAny: permissions.has('order.cancel.request.any'),
+          onecDraftOnly: this.onecDraftOnly,
         });
         if (decision.requiresStepUp && stepUpMethod === null) {
           throw StepUpTokenVerifier.required('order.cancel.request.any');
@@ -151,7 +159,16 @@ export class OrderCancelService {
 
         if (decision.kind === 'cancel_now') {
           cancelledNow = true;
-          if (createOutbox) await this.outbox.cancel(tx, createOutbox.outboxId);
+          if (createOutbox && decision.outbox !== 'keep_create') await this.outbox.cancel(tx, createOutbox.outboxId);
+          if (this.onecDraftOnly) {
+            // ОС_API: запрос отмены, поставленный раньше, в 1С не уйдёт никогда (канал — только order/create) — отозвать.
+            const prevCancel = await this.outbox.lock(tx, {
+              aggregateType: 'order',
+              aggregateId: o.id,
+              operation: 'cancel',
+            });
+            if (prevCancel?.status === 'pending') await this.outbox.cancel(tx, prevCancel.outboxId);
+          }
           if (decision.outbox === 'cancel_create_and_enqueue_cancel') {
             // Была попытка с неизвестным результатом: защитная отмена в 1С (ядро §22.9, ORD-050).
             await this.outbox.enqueue(tx, {
@@ -194,6 +211,10 @@ export class OrderCancelService {
           });
           // Автору — `order_status`; заявка с планшета — роли `cashier` и `senior_seller` (notifyOwner, KIOSK-030).
           if (o.created_by_user_id !== actor.userId) await this.projector.notifyOwner(tx, o, 'cancelled');
+          // ОС_API: черновик в 1С мог быть создан, а отмену POS в 1С не пишет — администратору пометить его вручную.
+          if (decision.onecManualCancel) {
+            await this.notifyManualOnecCancel(tx, o, body.refundIntent ?? null);
+          }
           await this.audit.write(
             auditCtx,
             {
@@ -269,6 +290,34 @@ export class OrderCancelService {
     await this.outbox.kickAfterCommit().catch(() => undefined);
     this.logger.log({ event: cancelledNow ? 'order.cancelled' : 'order.cancel_requested', orderId });
     return this.views.presentById(viewer, orderId);
+  }
+
+  /** Уведомление администраторам: пометить черновик заказа в 1С на удаление (ОС_API, в 1С отмена не пишется). */
+  private async notifyManualOnecCancel(
+    tx: Parameters<NotificationsPort['notifyRole']>[0],
+    o: { id: string; public_number: string; onec_number: string | null; onec_ref: string | null },
+    refundIntent: string | null,
+  ): Promise<void> {
+    const doc = o.onec_number ? `№ ${o.onec_number}` : `с комментарием «POS ${o.id}»`;
+    try {
+      await this.notifications.notifyRole(tx, 'admin', {
+        kind: 'sync_error',
+        severity: 'warning',
+        title: `Заказ ${o.public_number} отменён в POS: пометьте черновик в 1С`,
+        body:
+          `Заказ ${o.public_number} отменён в POS. В 1С может быть его черновик «Заказ покупателя» ${doc}: ` +
+          'пометьте его на удаление вручную — POS отмену в 1С не записывает (ADR-126).' +
+          (refundIntent ? ` Полученные деньги: ${refundIntent}.` : ''),
+        payload: { orderId: o.id, onecRef: o.onec_ref, onecNumber: o.onec_number },
+        dedupeKey: `order_onec_manual_cancel:${o.id}`,
+      });
+    } catch (e) {
+      if (e instanceof PortNotBoundError) {
+        this.logger.warn({ orderId: o.id }, 'orders.cancel.notifications_port_not_bound');
+        return;
+      }
+      throw e;
+    }
   }
 
   private async voidOpenPayments(
