@@ -256,7 +256,7 @@ cd C:\Users\admin\setup\pkg\scripts
 мы проверяем стенд под `posdeploy` (`status.ps1`, журналы, `/health`).
 
 **1С через ОС_API шлюза на стенде** (ADR-126; только чтение — каталог, цены, остатки, проверка связи, фото; записи в 1С
-нет). **Включать — только после письменного ответа на 14 Q-388 (`uk_main_fr` — тестовая база) и «да» пользователя
+нет; запись заказов черновиком — только на «живом» стенде ниже, ADR-126, дополнение 2026-11-25). **Включать — только после письменного ответа на 14 Q-388 (`uk_main_fr` — тестовая база) и «да» пользователя
 (16 §3.6, ADR-126 п. 9); до этого стенд остаётся на фикстурах.** (1) `import-onec-credentials.ps1` [Администратор] — читает `ONEC_API_USER`/`ONEC_API_PASSWORD` шлюза из
 переменных среды в реестре (HKLM, HKCU, загруженные HKU\<SID>; разные значения — отказ, `-Source`), пишет
 `secrets\onec_user`, `secrets\onec_password` (без наследования: Administrators/SYSTEM — полный доступ, OptomstroyApi и
@@ -269,7 +269,11 @@ OptomstroyWorker — чтение), значения не выводит; чуж
 `ONEC_MODE=os_api` в `api.env`/`worker.env` отклоняется до остановки служб: сначала `-StandOnecOsApi fixtures` (или
 `ONEC_MODE=fixtures` вручную), затем откат (known_issues P4-KI-26).
 
-**Настоящая SMS на стенде** (ADR-124 п. 5) — только (1) после того, как заказчик **сам** положит
+**Настоящая SMS на стенде вручную** (ADR-124 п. 5; путь без шлюза — если логин SMSPro у заказчика не в переменных
+среды шлюза). Для стенда на ОС_API рядом со шлюзом то же самое делает «живой» стенд ниже (`-StandLive`; ADR-124,
+уточнение 2026-11-25): секреты переносит `import-onec-credentials.ps1 -SmsPro`, значения в `api.env`/`worker.env` пишет
+install.ps1 и повторный запуск их не откатывает; вместо «да» на каждую отправку — список `-StandSmsPhones` (14 Q-400).
+Ручную правку ниже с `-StandLive` не смешивать. Ручной путь — только (1) после того, как заказчик **сам** положит
 `secrets\smspro_login` и `secrets\smspro_password` (в репозиторий, чат и журналы — ничего; Q-385), и (2) после
 письменного «да» пользователя на конкретную отправку (число SMS и номер; Q-235). Порядок: повторный запуск
 install.ps1 с теми же параметрами (дописывает `SMSPRO_LOGIN_FILE`/`SMSPRO_PASSWORD_FILE` и права служб на файлы), затем
@@ -278,6 +282,29 @@ install.ps1 с теми же параметрами (дописывает `SMSPR
 сначала `SMSPRO_TEST_FLAG=true` (проверка канала без SMS, `docs/integration/smspro_connect.md` §4), потом
 `SMSPRO_TEST_FLAG=false` и `SMS_STAGING_ALLOWED_PHONES=<разрешённые номера>` — остальным уходит `<test>1</test>` (§5);
 перезапуск `OptomstroyApi` и `OptomstroyWorker`.
+
+**«Живой» стенд** (`-StandLive`; решение владельца 2026-11-25: настоящий продукт, без демо). Только вместе с `-Stand` и
+ОС_API (`-StandOnecOsApi <адрес>` или `onecOsApiBaseUrl` в `install.json`). (1) `import-onec-credentials.ps1 -SmsPro`
+[Администратор] — кроме `ONEC_API_*` переносит `SMSPRO_LOGIN`/`SMSPRO_PASSWORD` шлюза в `secrets\smspro_login`,
+`secrets\smspro_password` (права — как у `onec_*`), `SMSPRO_SENDER` — в `config\smspro-sender.txt` (не секрет; не задана
+у шлюза — `OptStroy.KG`, как у шлюза); значения не выводит; `SMSPRO_TEST` у шлюза — предупреждение (только имя).
+(2) `install.ps1 -Stand -StandLive -StandSmsPhones +996…,+996…` — в `api.env` и `worker.env`: `SMS_PROVIDER=smspro`,
+`SMSPRO_LOGIN_FILE`/`SMSPRO_PASSWORD_FILE`, `SMSPRO_SENDER`, `SMSPRO_TEST_FLAG=false`, `AUTH_OTP_TEST_MODE=false`,
+`AUTH_OTP_TEST_CODE=`/`AUTH_OTP_TEST_PHONES=` (пусто: строки остаются, чтобы обновление не вернуло тестовые значения
+профиля), `QR_PROVIDER=none`, `BANK_QR_ADAPTER=`, `ONEC_OSAPI_WRITE_ORDERS=true` (заказы — в 1С черновиками, `post:false`),
+`SMS_STAGING_ALLOWED_PHONES`; `APP_ENV=staging` остаётся. **При `APP_ENV=staging` SMSPro отправляет настоящую SMS только
+номерам `SMS_STAGING_ALLOWED_PHONES` (`-StandSmsPhones`, заменяет список)**, остальным — `<test>1</test>` (SMS не
+приходит). Режим — в `install.json` (`standLive`), повторный запуск его не выключает; обратно — `-StandLive:$false` (из
+консоли PowerShell; профиль стенда, новый тестовый код). Отказы: без `-Stand`, без ОС_API, с `-TestPhones`, без
+`secrets\smspro_*` или `config\smspro-sender.txt` (подсказка — `import-onec-credentials.ps1`).
+
+**Чистая база стенда** (`-ResetStandData -ConfirmResetDb <база>`, только с `-Stand`, только на установленном стенде):
+службы стоп → зашифрованная копия `pos-backup dump-only` (как перед обновлением; без копии база не удаляется) →
+`pg-tool drop-db` → фото (`data\media\images`) и отметки аудита (`data\audit-anchors`) прежней базы — в
+`state\stand-reset-<время>` → база заново (`apply-roles.ps1`, `migrate --seed`: только строки по умолчанию —
+`app_settings`, вид цены «Розничная», клиент «Розничный покупатель», лимиты скидок ролей; сотрудников, товаров и
+телефонов seed не добавляет) → запуск служб. Затем первый администратор: `scripts\first-admin.ps1 -Phone +996… -Name "…"`
+(на «живом» стенде номер должен быть в `-StandSmsPhones`).
 
 ## 8. Резервное копирование
 

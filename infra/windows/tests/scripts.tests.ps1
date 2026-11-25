@@ -15,6 +15,9 @@
      7b. Стенд с 1С через ОС_API шлюза (ADR-126): адрес публикации, api.env (os_api), повторный запуск, отказ без
          -Stand, install.ps1 -WhatIf, import-onec-credentials.ps1 (тестовый ключ HKCU\Software\OptomstroyTests,
          значения не на экране и не в журнале); откат при os_api на версию без режима — отказ (rollback.ps1).
+     7c. «Живой» стенд (-StandLive): значения api.env/worker.env, обновление их не откатывает, -StandLive:$false; отказы
+         (без -Stand, без ОС_API, с -TestPhones, без secrets\smspro_*); импорт SMSPRO_* шлюза (-DevTest, значения не на
+         экране и не в журнале); -ResetStandData — только -Stand и с -ConfirmResetDb, порядок копия → удаление → база.
   8. Статические проверки прав: data\audit-anchors пишет только OptomstroyWorker; sc sdset posdeploy — только Api и
      Worker; update.ps1 возвращает базу из копии, если migrate запускался; uninstall.ps1 не удаляет программу после ошибок.
   Временные данные — .tmp\wn-scripts (удаляются).
@@ -360,6 +363,184 @@ try {
     } finally { Remove-Item -LiteralPath $regBase -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath 'HKCU:\Software\OptomstroyTests' -Force -ErrorAction SilentlyContinue }
     $impText = [IO.File]::ReadAllText((Join-Path $win 'scripts\import-onec-credentials.ps1'))
     Report ($impText.Contains('"*$($script:OpsSidAdministrators):(F)" "*$($script:OpsSidSystem):(F)" "*${sidApi}:(R)" "*${sidWorker}:(R)"') -and $impText.Contains("'/inheritance:r'")) 'import-onec-credentials.ps1: права — Administrators/SYSTEM (полный), OptomstroyApi/Worker (чтение), без наследования'
+
+    Write-Host '== 7c. «Живой» стенд (install.ps1 -StandLive), SMSPro шлюза, чистая база (-ResetStandData)'
+    # Значения api.env/worker.env: «живой» стенд поверх существующего файла стенда на ОС_API.
+    $liveEnv = Join-Path $tmp 'live-api.env'
+    $stL = Get-OpsEnvTemplatePairs $fakeRel 'test' -Stand
+    $stL['AUTH_OTP_TEST_CODE'] = '135790'
+    foreach ($k in $oa.Keys) { $stL[$k] = $oa[$k] }
+    foreach ($k in @($stL.Keys | Where-Object { [string]$stL[$_] -eq '' })) { $stL.Remove($k) }
+    $null = Write-OpsEnvFile $liveEnv 'тест' $stL
+    $lp = Get-OpsStandLiveEnvPairs 'OptStroy.KG' '+996555000001'
+    foreach ($k in $lp.Keys) { $null = Set-OpsEnvValue $liveEnv $k ([string]$lp[$k]) }
+    $lr = Read-OpsEnvTemplate $liveEnv
+    Report ($lr['SMS_PROVIDER'] -eq 'smspro' -and $lr['SMSPRO_SENDER'] -eq 'OptStroy.KG' -and $lr['SMSPRO_TEST_FLAG'] -eq 'false' -and $lr['QR_PROVIDER'] -eq 'none' -and $lr['ONEC_OSAPI_WRITE_ORDERS'] -eq 'true' -and $lr['SMS_STAGING_ALLOWED_PHONES'] -eq '+996555000001') '«живой» стенд: SMS_PROVIDER=smspro, SMSPRO_SENDER, SMSPRO_TEST_FLAG=false, QR_PROVIDER=none, ONEC_OSAPI_WRITE_ORDERS=true, SMS_STAGING_ALLOWED_PHONES'
+    Report ($lr['AUTH_OTP_TEST_MODE'] -eq 'false' -and $lr['AUTH_OTP_TEST_CODE'] -eq '' -and $lr['AUTH_OTP_TEST_PHONES'] -eq '' -and $lr['BANK_QR_ADAPTER'] -eq '' -and $lr['QR_WEBHOOK_ENABLED'] -eq 'false') '«живой» стенд: тестовый вход выключен, AUTH_OTP_TEST_CODE/PHONES и BANK_QR_ADAPTER пусты («не задано»)'
+    Report ($lr['APP_ENV'] -eq 'staging' -and $lr['ONEC_MODE'] -eq 'os_api') '«живой» стенд: APP_ENV=staging и ONEC_MODE=os_api не меняются'
+    Report (-not ([IO.File]::ReadAllText($liveEnv)).Contains('135790')) 'прежний тестовый код из файла удалён'
+    # Как update.ps1 / повторный install.ps1: дописываются только отсутствующие имена — тестовые значения не возвращаются.
+    $upd = New-Object System.Collections.Specialized.OrderedDictionary
+    $haveL = Read-OpsEnvTemplate $liveEnv
+    foreach ($k in $stL.Keys) { if ([string]$stL[$k] -ne '' -and -not $haveL.Contains($k)) { $upd[$k] = $stL[$k] } }
+    $null = Write-OpsEnvFile $liveEnv '' $upd
+    $lr2 = Read-OpsEnvTemplate $liveEnv
+    Report ($lr2['AUTH_OTP_TEST_MODE'] -eq 'false' -and $lr2['AUTH_OTP_TEST_PHONES'] -eq '' -and $lr2['BANK_QR_ADAPTER'] -eq '' -and $lr2['SMS_PROVIDER'] -eq 'smspro') 'обновление (дописать новые имена профиля) не возвращает AUTH_OTP_TEST_*, песочницу QR и SMS fake'
+    $rp = Get-OpsStandProfileRestorePairs $stL
+    $rp['AUTH_OTP_TEST_CODE'] = '246813'
+    foreach ($k in $rp.Keys) { $null = Set-OpsEnvValue $liveEnv $k ([string]$rp[$k]) }
+    $lr3 = Read-OpsEnvTemplate $liveEnv
+    Report ($lr3['SMS_PROVIDER'] -eq 'fake' -and $lr3['AUTH_OTP_TEST_MODE'] -eq 'true' -and $lr3['AUTH_OTP_TEST_PHONES'] -eq $stL['AUTH_OTP_TEST_PHONES'] -and $lr3['QR_PROVIDER'] -eq 'bank' -and $lr3['BANK_QR_ADAPTER'] -eq 'sandbox' -and $lr3['ONEC_OSAPI_WRITE_ORDERS'] -eq 'false' -and $lr3['SMS_STAGING_ALLOWED_PHONES'] -eq '' -and $lr3['AUTH_OTP_TEST_CODE'] -eq '246813') '-StandLive:$false: обратно профиль стенда (SMS fake, тестовые номера и код, песочница QR, запись в 1С выключена)'
+    Report ((ConvertTo-OpsPhoneList ' +996555000001, +996555000002,+996555000001' 'x') -eq '+996555000001,+996555000002') 'список номеров -StandSmsPhones: пробелы и повторы убираются'
+    Report ((Select-OpsStandRestorePhones '+996555123456' '+996555000009' '+996700000001') -eq '+996555123456') '-StandLive:$false: номера тестового входа — сначала -TestPhones'
+    Report ((Select-OpsStandRestorePhones '' '+996555000009' '+996700000001') -eq '+996555000009') '-StandLive:$false: без -TestPhones — номера, запомненные до «живого» стенда'
+    Report ((Select-OpsStandRestorePhones '' '' '+996700000001') -eq '+996700000001') '-StandLive:$false: ничего не запомнено — номера профиля пакета'
+    foreach ($bad in @('996555000001', '+99655500000', '+7 9001234567', ',')) {
+        $threw = $false; try { $null = ConvertTo-OpsPhoneList $bad 'x' } catch { $threw = $true }
+        Report $threw "номер «$bad» — отказ"
+    }
+    $inst5 = [IO.File]::ReadAllText((Join-Path $win 'scripts\install.ps1'))
+    Report ($inst5.Contains('standTestPhonesBeforeLive = ') -and $inst5.Contains('Select-OpsStandRestorePhones $TestPhones $phonesBeforeLive')) 'install.ps1: номера тестового входа до «живого» стенда запоминаются в install.json и возвращаются при -StandLive:$false'
+    Report ($inst5.Contains("foreach (`$f in @('api.env', 'worker.env')) {") -and $inst5.Contains('Set-OpsEnvValue $fp $k ([string]$setPairs[$k])')) 'install.ps1: значения «живого» стенда — в api.env и worker.env (новых и существующих)'
+    Report ($inst5.Contains("@('SMSPRO_LOGIN_FILE', 'smspro_login'), @('SMSPRO_PASSWORD_FILE', 'smspro_password')")) 'install.ps1: SMSPRO_LOGIN_FILE / SMSPRO_PASSWORD_FILE — пути secrets\smspro_login и smspro_password'
+    Report ($inst5.Contains('standLive = [bool]($Stand -and $liveMode)') -and $inst5.Contains("`$installJson.PSObject.Properties['standLive']")) 'install.ps1: режим запоминается в install.json (standLive) и берётся оттуда'
+    Report ($inst5.Contains("ONEC_MODE=fixtures, SMS_PROVIDER=fake, QR_PROVIDER=bank (ADR-125); шаблон пакета изменён")) 'install.ps1: шаблон стенда по-прежнему проверяется (fixtures/fake/bank), «живые» значения — поверх'
+    $iDump = $inst5.IndexOf("'dump-only', '--config'"); $iDrop = $inst5.IndexOf("'drop-db')"); $iStop = $inst5.IndexOf("Stop-OpsAppServices `$L @('OptomstroyWorker', 'OptomstroyApi', 'OptomstroyBackup')"); $iRoles = $inst5.IndexOf("apply-roles.ps1') @{")
+    Report ($iStop -gt 0 -and $iDump -gt $iStop -and $iDrop -gt $iDump -and $iRoles -gt $iDrop) 'install.ps1 -ResetStandData: службы стоп → копия dump-only → drop-db → apply-roles (база заново) → migrate --seed'
+    $fa = [IO.File]::ReadAllText((Join-Path $win 'scripts\first-admin.ps1'))
+    Report ($fa.Contains('SMS_STAGING_ALLOWED_PHONES') -and $fa.Contains("Properties['standLive']")) 'first-admin.ps1: на «живом» стенде номер проверяется по SMS_STAGING_ALLOWED_PHONES'
+    $pgT = Invoke-Node @((Join-Path $win 'postgres\pg-tool.mjs'), 'drop-db', '--modules', (Join-Path $repo 'pos-api'), '--secrets', (Join-Path $tmp 'no-secrets'))
+    Report ($pgT.Code -eq 2) "pg-tool drop-db без секретов и подтверждения — код 2 (неверные аргументы), не 0 ($($pgT.Code))"
+    $pgTxt = [IO.File]::ReadAllText((Join-Path $win 'postgres\pg-tool.mjs'))
+    Report ($pgTxt.Contains('if (confirm !== s.db) throw new UsageError') -and $pgTxt.Contains('DROP DATABASE "${s.db}" WITH (FORCE)')) 'pg-tool drop-db: только с --confirm <имя базы из database_url>'
+
+    # Отказы до журнала и папок (InstallRoot не создаётся).
+    $runEarly = {
+        param([string[]]$Extra, [string]$Root)
+        $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        $oldEnc = [Console]::OutputEncoding; [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+        try {
+            $a = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $win 'scripts\install.ps1'), '-Zip', (Join-Path $tmp 'none.zip'), '-DevTest', '-InstallRoot', $Root) + $Extra
+            $o = @(& powershell.exe @a 2>&1 | ForEach-Object { "$_" })
+            return @{ Code = $LASTEXITCODE; Out = ($o -join "`n") }
+        } finally { $ErrorActionPreference = $old; [Console]::OutputEncoding = $oldEnc }
+    }
+    $erRoot = Join-Path $tmp 'early'
+    $e1 = & $runEarly @('-StandLive') $erRoot
+    Report ($e1.Code -ne 0 -and $e1.Out.Contains('-StandLive: только вместе с -Stand') -and -not (Test-Path -LiteralPath $erRoot)) "-StandLive без -Stand — отказ (код $($e1.Code)), ничего не создано"
+    $e2 = & $runEarly @('-Stand', '-StandLive', '-TestPhones', '+996700000001') $erRoot
+    Report ($e2.Code -ne 0 -and $e2.Out.Contains('-StandLive и -TestPhones несовместимы') -and -not (Test-Path -LiteralPath $erRoot)) '-StandLive с -TestPhones — отказ'
+    $e3 = & $runEarly @('-ResetStandData', '-ConfirmResetDb', 'optomstroy') $erRoot
+    Report ($e3.Code -ne 0 -and $e3.Out.Contains('-ResetStandData: только вместе с -Stand') -and -not (Test-Path -LiteralPath $erRoot)) '-ResetStandData без -Stand (рабочий контур) — отказ'
+    $e4 = & $runEarly @('-Stand', '-ResetStandData') $erRoot
+    Report ($e4.Code -ne 0 -and $e4.Out.Contains('-ConfirmResetDb optomstroy') -and -not (Test-Path -LiteralPath $erRoot)) '-ResetStandData без -ConfirmResetDb <имя базы> — отказ'
+    $e5 = & $runEarly @('-Stand', '-ResetStandData', '-ConfirmResetDb', 'other') $erRoot
+    Report ($e5.Code -ne 0 -and $e5.Out.Contains('-ConfirmResetDb optomstroy')) '-ConfirmResetDb с другим именем базы — отказ'
+
+    # install.ps1 -DevTest -Stand -WhatIf: проверки шага 1 «живого» стенда и очистки.
+    if (Test-Path -LiteralPath (Join-Path $pgBinT 'postgres.exe')) {
+        Remove-Item -LiteralPath (Join-Path $wiRoot 'config\install.json') -Force -ErrorAction SilentlyContinue
+        $v0 = & $runWi @('-ResetStandData', '-ConfirmResetDb', 'optomstroy')
+        Report ($v0.Code -ne 0 -and $v0.Out.Contains('-ResetStandData: установки ещё нет')) '-ResetStandData без установки — отказ (очищать нечего)'
+        $v1 = & $runWi @('-StandLive')
+        Report ($v1.Code -ne 0 -and $v1.Out.Contains('-StandLive: только со стендом на ОС_API')) '-StandLive на фикстурах (без ОС_API) — отказ'
+        $v2 = & $runWi @('-StandLive', '-StandOnecOsApi', 'http://localhost/uk_main_fr')
+        Report ($v2.Code -ne 0 -and $v2.Out.Contains('-StandLive: нет secrets\smspro_login') -and $v2.Out.Contains('import-onec-credentials.ps1')) '-StandLive без secrets\smspro_* — отказ с указанием на import-onec-credentials.ps1'
+        New-Item -ItemType Directory -Force -Path (Join-Path $wiRoot 'secrets') | Out-Null
+        foreach ($s in 'smspro_login', 'smspro_password') { [IO.File]::WriteAllText((Join-Path $wiRoot "secrets\$s"), 'devtest-' + [Guid]::NewGuid().ToString('N')) }
+        $v3 = & $runWi @('-StandLive', '-StandOnecOsApi', 'http://localhost/uk_main_fr')
+        Report ($v3.Code -ne 0 -and $v3.Out.Contains('нет имени отправителя SMS')) '-StandLive без config\smspro-sender.txt — отказ'
+        [IO.File]::WriteAllText((Join-Path $wiRoot 'config\smspro-sender.txt'), 'OptStroy.KG')
+        $v4 = & $runWi @('-StandLive', '-StandOnecOsApi', 'http://localhost/uk_main_fr', '-StandSmsPhones', '+996555000001')
+        Report ($v4.Code -eq 0 -and $v4.Out.Contains('стенд «живой»: SMS — SMSPro (отправитель OptStroy.KG)')) "-StandLive с ОС_API и секретами SMSPro — план без ошибок (код $($v4.Code))$(if ($v4.Code -ne 0) { ': ' + $v4.Out })"
+        $v5 = & $runWi @('-StandOnecOsApi', 'http://localhost/uk_main_fr', '-StandSmsPhones', '+996555000001')
+        Report ($v5.Code -ne 0 -and $v5.Out.Contains('-StandSmsPhones: только для «живого» стенда')) '-StandSmsPhones без -StandLive — отказ'
+        [IO.File]::WriteAllText((Join-Path $wiRoot 'config\install.json'), ([ordered]@{ contour = 'test'; apiPort = $ports[0]; pgPort = $ports[1]; dbName = 'optomstroy'; stand = $true; publicBaseUrl = 'https://api-test.devtest.invalid'; onecOsApiBaseUrl = 'http://localhost/uk_main_fr'; standLive = $true } | ConvertTo-Json))
+        $v6 = & $runWi @()
+        Report ($v6.Code -eq 0 -and $v6.Out.Contains('«живой» режим из install.json')) 'повторный запуск без -StandLive: «живой» режим из install.json (не откатывается)'
+        $v7 = & $runWi @('-TestPhones', '+996700000001')
+        Report ($v7.Code -ne 0 -and $v7.Out.Contains('-TestPhones: стенд «живой»')) '-TestPhones на «живом» стенде (из install.json) — отказ'
+        $v8 = & $runWi @('-StandOnecOsApi', 'fixtures')
+        Report ($v8.Code -ne 0 -and $v8.Out.Contains('-StandLive: только со стендом на ОС_API')) '«живой» стенд и -StandOnecOsApi fixtures — отказ (сначала -StandLive:$false)'
+        # -StandLive:$false — как набирает администратор в консоли PowerShell (powershell.exe -File такой записи
+        # переключателя не принимает) — через -Command.
+        $runWiCmd = {
+            param([string[]]$Extra)
+            $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            $oldTemp = $env:TEMP; $env:TEMP = $wiTemp
+            $oldEnc = [Console]::OutputEncoding; [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+            try {
+                $q = { param($s) if ($s -like '-*') { $s } else { "'" + $s.Replace("'", "''") + "'" } }
+                $parts = @('-Zip', (Join-Path $tmp 'none.zip'), '-DevTest', '-Stand', '-WhatIf', '-InstallRoot', $wiRoot, '-BackupRoot', (Join-Path $tmp 'wi\bk'), '-PgBin', $pgBinT, '-ApiPort', [string]$ports[0], '-PgPort', [string]$ports[1]) + $Extra
+                $cmdText = "& '" + (Join-Path $win 'scripts\install.ps1') + "' " + (@($parts | ForEach-Object { & $q $_ }) -join ' ') + '; exit $LASTEXITCODE'
+                $o = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $cmdText 2>&1 | ForEach-Object { "$_" })
+                return @{ Code = $LASTEXITCODE; Out = ($o -join "`n") }
+            } finally { $ErrorActionPreference = $old; $env:TEMP = $oldTemp; [Console]::OutputEncoding = $oldEnc }
+        }
+        $v9 = & $runWiCmd @('-StandLive:$false')
+        Report ($v9.Code -eq 0 -and $v9.Out.Contains('-StandLive:$false — обратно на профиль стенда')) "-StandLive:`$false — обратно на профиль стенда (код $($v9.Code))"
+        Remove-Item -LiteralPath (Join-Path $wiRoot 'secrets\smspro_password') -Force
+        $v10 = & $runWi @()
+        Report ($v10.Code -ne 0 -and $v10.Out.Contains('-StandLive: нет secrets\smspro_password')) '«живой» стенд из install.json без secrets\smspro_password — отказ'
+        $v11 = & $runWiCmd @('-StandLive:$false', '-ResetStandData', '-ConfirmResetDb', 'optomstroy')
+        Report ($v11.Code -eq 0 -and $v11.Out.Contains('ВНИМАНИЕ: -ResetStandData')) "-ResetStandData -ConfirmResetDb optomstroy на установленном стенде — в плане (код $($v11.Code))$(if ($v11.Code -ne 0) { ': ' + $v11.Out })"
+        # -StandLive:$false на стенде, который «живым» не был: профиль не переписывается (свои -TestPhones целы).
+        [IO.File]::WriteAllText((Join-Path $wiRoot 'config\install.json'), ([ordered]@{ contour = 'test'; apiPort = $ports[0]; pgPort = $ports[1]; dbName = 'optomstroy'; stand = $true; publicBaseUrl = 'https://api-test.devtest.invalid'; onecOsApiBaseUrl = 'http://localhost/uk_main_fr'; standLive = $false } | ConvertTo-Json))
+        $v12 = & $runWiCmd @('-StandLive:$false')
+        Report ($v12.Code -eq 0 -and $v12.Out.Contains('стенд и так не «живой»') -and -not $v12.Out.Contains('обратно на профиль стенда')) "-StandLive:`$false на не «живом» стенде — профиль не переписывается (код $($v12.Code))"
+        # Переход на «живой» стенд при существующей установке без -ResetStandData — предупреждение о хвосте заказов.
+        foreach ($s in 'smspro_login', 'smspro_password') { [IO.File]::WriteAllText((Join-Path $wiRoot "secrets\$s"), 'devtest-' + [Guid]::NewGuid().ToString('N')) }
+        $v13 = & $runWi @('-StandLive', '-StandSmsPhones', '+996555000001')
+        Report ($v13.Code -eq 0 -and $v13.Out.Contains('заказы, накопленные до включения записи в 1С')) "-StandLive на установленном стенде без -ResetStandData — предупреждение о хвосте заказов (код $($v13.Code))$(if ($v13.Code -ne 0) { ': ' + $v13.Out })"
+    }
+
+    # Импорт SMSPro шлюза (тестовый ключ реестра; значения не на экране и не в журнале).
+    $regBase2 = 'HKCU:\Software\OptomstroyTests\' + [Guid]::NewGuid().ToString('N')
+    $smsLogin = 'sl_' + [Guid]::NewGuid().ToString('N').Substring(0, 10)
+    $smsPass = 'S' + [Guid]::NewGuid().ToString('N')   # check-secrets: allow — случайное тестовое значение
+    try {
+        foreach ($n in 'A', 'B') { New-Item -Path "$regBase2\$n" -Force | Out-Null; New-ItemProperty -Path "$regBase2\$n" -Name 'ONEC_API_USER' -Value $credUser -Force | Out-Null; New-ItemProperty -Path "$regBase2\$n" -Name 'ONEC_API_PASSWORD' -Value $credPass -Force | Out-Null }
+        foreach ($kv in @(@('SMSPRO_LOGIN', $smsLogin), @('SMSPRO_PASSWORD', $smsPass), @('SMSPRO_SENDER', 'Test.Sender'), @('SMSPRO_TEST', '1'))) { New-ItemProperty -Path "$regBase2\A" -Name $kv[0] -Value $kv[1] -Force | Out-Null }
+        $imp2 = Join-Path $tmp 'imp2'
+        New-Item -ItemType Directory -Force -Path (Join-Path $imp2 'secrets'), (Join-Path $imp2 'config') | Out-Null
+        [IO.File]::WriteAllText((Join-Path $imp2 'config\install.json'), '{ "contour": "test", "stand": true }')
+        $runImp2 = {
+            param([string[]]$Extra)
+            $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            $oldEnc = [Console]::OutputEncoding; [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+            try {
+                $a = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $win 'scripts\import-onec-credentials.ps1'), '-InstallRoot', $imp2, '-DevTest') + $Extra
+                $o = @(& powershell.exe @a 2>&1 | ForEach-Object { "$_" })
+                return @{ Code = $LASTEXITCODE; Out = ($o -join "`n") }
+            } finally { $ErrorActionPreference = $old; [Console]::OutputEncoding = $oldEnc }
+        }
+        $s1 = & $runImp2 @('-SourceRegistryPath', "$regBase2\A", '-SmsPro')
+        $sl = Join-Path $imp2 'secrets\smspro_login'; $sp = Join-Path $imp2 'secrets\smspro_password'; $ss = Join-Path $imp2 'config\smspro-sender.txt'
+        Report ($s1.Code -eq 0 -and (Test-Path $sl) -and [IO.File]::ReadAllText($sl) -ceq $smsLogin -and [IO.File]::ReadAllText($sp) -ceq $smsPass -and [IO.File]::ReadAllText($ss) -ceq 'Test.Sender') "import: secrets\smspro_login, smspro_password и config\smspro-sender.txt записаны (код $($s1.Code))$(if ($s1.Code -ne 0) { ': ' + $s1.Out })"
+        Report ((Test-Path (Join-Path $imp2 'secrets\onec_user')) -and (Test-Path (Join-Path $imp2 'secrets\onec_password'))) 'import: ONEC_API_* переносятся как раньше (совместимость)'
+        $bs = [IO.File]::ReadAllBytes($sp)
+        Report ($bs.Length -gt 0 -and $bs[0] -ne 0xEF -and $bs[$bs.Length - 1] -ne 10) 'secrets\smspro_password — UTF-8 без BOM и без перевода строки'
+        $logs2 = (@(Get-ChildItem -LiteralPath (Join-Path $imp2 'logs') -Filter 'import-onec-credentials-*.log') | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
+        Report (-not $s1.Out.Contains($smsPass) -and -not $s1.Out.Contains($smsLogin) -and -not $logs2.Contains($smsPass) -and -not $logs2.Contains($smsLogin) -and -not $logs2.Contains($credPass) -and $logs2.Length -gt 0) 'логин и пароль SMSPro не попали ни на экран, ни в журнал'
+        Report ($s1.Out.Contains('у шлюза задана SMSPRO_TEST') -and $s1.Out.Contains('DevTest: права NTFS secrets\smspro_password не меняются')) 'SMSPRO_TEST шлюза — предупреждение (только имя); DevTest — права NTFS не меняются (на сервере — как у onec_*)'
+        $s2 = & $runImp2 @('-SourceRegistryPath', "$regBase2\B")
+        Report ($s2.Code -eq 0 -and $s2.Out.Contains('SMSPRO_LOGIN / SMSPRO_PASSWORD шлюза не найдены')) 'без SMSPRO_* у шлюза и без -SmsPro — предупреждение, 1С переносится'
+        $s3 = & $runImp2 @('-SourceRegistryPath', "$regBase2\B", '-SmsPro')
+        Report ($s3.Code -ne 0 -and $s3.Out.Contains('SMSPRO_LOGIN и SMSPRO_PASSWORD шлюза не найдены')) '-SmsPro без SMSPRO_* у шлюза — отказ'
+        Remove-ItemProperty -Path "$regBase2\A" -Name 'SMSPRO_SENDER'
+        Remove-Item -LiteralPath $ss -Force
+        $s4 = & $runImp2 @('-SourceRegistryPath', "$regBase2\A")
+        Report ($s4.Code -eq 0 -and [IO.File]::ReadAllText($ss) -ceq 'OptStroy.KG') 'SMSPRO_SENDER не задана — отправитель по умолчанию шлюза OptStroy.KG'
+        # Сбой необязательной части SMSPro без -SmsPro (имя отправителя с пробелом) не срывает перенос 1С.
+        foreach ($f in 'onec_user', 'onec_password', 'smspro_login', 'smspro_password') { Remove-Item -LiteralPath (Join-Path $imp2 "secrets\$f") -Force -ErrorAction SilentlyContinue }
+        Remove-Item -LiteralPath $ss -Force -ErrorAction SilentlyContinue
+        New-ItemProperty -Path "$regBase2\A" -Name 'SMSPRO_SENDER' -Value 'Optom Stroy' -Force | Out-Null
+        $s5 = & $runImp2 @('-SourceRegistryPath', "$regBase2\A")
+        Report ($s5.Code -eq 0 -and (Test-Path (Join-Path $imp2 'secrets\onec_user')) -and (Test-Path (Join-Path $imp2 'secrets\onec_password')) -and -not (Test-Path $sl) -and -not (Test-Path $ss) -and $s5.Out.Contains('SMSPro шлюза пропущен')) "без -SmsPro: недопустимое имя отправителя — предупреждение, onec_* записаны, smspro_* и smspro-sender.txt — нет (код $($s5.Code))$(if ($s5.Code -ne 0) { ': ' + $s5.Out })"
+        Report (-not $s5.Out.Contains($smsPass) -and -not $s5.Out.Contains($smsLogin)) 'пропуск SMSPro: значения SMSPro не на экране'
+        $s6 = & $runImp2 @('-SourceRegistryPath', "$regBase2\A", '-SmsPro')
+        Report ($s6.Code -ne 0 -and $s6.Out.Contains('SMSPRO_SENDER шлюза: имя отправителя без пробелов')) '-SmsPro: недопустимое имя отправителя — отказ'
+    } finally { Remove-Item -LiteralPath $regBase2 -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath 'HKCU:\Software\OptomstroyTests' -Force -ErrorAction SilentlyContinue }
 
     Write-Host '== 8. Статические проверки прав и отката'
     $inst = [IO.File]::ReadAllText((Join-Path $win 'scripts\install.ps1'))

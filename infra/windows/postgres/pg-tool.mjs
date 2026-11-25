@@ -8,7 +8,9 @@
 //   gate    — стоп-проверка lower('ЁЯ') = 'ёя', параметров базы и наличия расширений (код 3 — провал);
 //   verify  — проверка прав ролей после установки (и после migrate): pos_app без DDL, pos_migrate — владелец,
 //             pos_backup читает все таблицы и последовательности (как pg_dump) и подключается в режиме репликации;
-//   archive — архивирование WAL работает (pg_switch_wal → сегмент сохранён archive_command, failed_count не растёт).
+//   archive — архивирование WAL работает (pg_switch_wal → сегмент сохранён archive_command, failed_count не растёт);
+//   db-exists — есть ли база из database_url (JSON {"exists":…});
+//   drop-db — удаление базы тестового стенда (install.ps1 -Stand -ResetStandData), только с --confirm <имя базы>.
 //
 // Пароли берутся только из файлов секретов (--secrets): pg_password (суперпользователь), db_migrator_password,
 // db_backup_password, database_url (pos_app). На сервер уходят не пароли, а верификаторы SCRAM-SHA-256,
@@ -394,12 +396,48 @@ function log(msg) {
   process.stdout.write(`pg-tool: ${msg}\n`);
 }
 
+/**
+ * Есть ли база из database_url (последняя строка вывода — JSON {"exists":true|false}). Для -ResetStandData install.ps1:
+ * копия перед удалением делается, только если база есть (повторный запуск после сбоя — базы уже нет).
+ */
+async function dbExists(pg, s) {
+  const connect = makeClientFactory(pg, s.host, s.port);
+  const admin = await connect(s.superuser, s.suPw, 'postgres');
+  try {
+    const ex = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [s.db]);
+    process.stdout.write(`${JSON.stringify({ exists: ex.rowCount > 0 })}\n`);
+  } finally {
+    await admin.end();
+  }
+}
+
+/**
+ * Удаление базы стенда (install.ps1 -Stand -ResetStandData): только с --confirm <имя базы>; подключения к базе
+ * закрываются (WITH (FORCE)). Роли и кластер не трогаются; базу заново создаёт setup (apply-roles.ps1).
+ */
+async function dropDb(pg, s, confirm) {
+  if (confirm !== s.db) throw new UsageError(`drop-db: подтвердите удаление именем базы: --confirm ${s.db}`);
+  const connect = makeClientFactory(pg, s.host, s.port);
+  const admin = await connect(s.superuser, s.suPw, 'postgres');
+  try {
+    const ex = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [s.db]);
+    if (ex.rowCount === 0) {
+      log(`базы ${s.db} нет — удалять нечего`);
+      return;
+    }
+    await admin.query(`DROP DATABASE "${s.db}" WITH (FORCE)`); // имя проверено DB_NAME_RE (settings)
+    log(`база ${s.db} удалена`);
+  } finally {
+    await admin.end();
+  }
+}
+
 async function main() {
   let parsed;
   try {
     parsed = parseArgs(process.argv.slice(2));
-    if (!['setup', 'gate', 'verify', 'archive'].includes(parsed.cmd)) {
-      throw new UsageError('использование: pg-tool.mjs setup|gate|verify|archive --modules <папка api> --secrets <папка> [--port 5433] [--superuser postgres] [--db имя] [--ctype en-US] [--roles-sql путь]');
+    if (!['setup', 'gate', 'verify', 'archive', 'db-exists', 'drop-db'].includes(parsed.cmd)) {
+      throw new UsageError('использование: pg-tool.mjs setup|gate|verify|archive|db-exists|drop-db --modules <папка api> --secrets <папка> [--port 5433] [--superuser postgres] [--db имя] [--ctype en-US] [--roles-sql путь] [--confirm <имя базы> — для drop-db]');
     }
   } catch (e) {
     process.stderr.write(`pg-tool: ${e.message}\n`);
@@ -412,6 +450,8 @@ async function main() {
     if (cmd === 'setup') await setup(pg, s, opts['roles-sql'] ?? join(HERE, 'roles.sql'));
     else if (cmd === 'gate') await gate(pg, s);
     else if (cmd === 'archive') await archiveCheck(pg, s);
+    else if (cmd === 'db-exists') await dbExists(pg, s);
+    else if (cmd === 'drop-db') await dropDb(pg, s, opts.confirm);
     else await verify(pg, s);
     return 0;
   } catch (e) {

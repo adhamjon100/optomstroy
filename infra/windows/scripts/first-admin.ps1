@@ -29,9 +29,21 @@ $null = Initialize-OpsLog $L.Logs 'first-admin'
 # Тестовый контур (SMS_PROVIDER=fake, AUTH_OTP_TEST_MODE=true): входят только номера AUTH_OTP_TEST_PHONES.
 # Запрос кода на другой номер не проходит (в схеме staging нет dev_outbox) и на SMSPRO_CB_OPEN_MINUTES закрывает
 # выдачу кодов всем, в том числе тестовым номерам (503 SMS_PROVIDER_ERROR).
-if ([string]$ij.contour -eq 'test') {
+$envApi = $null
+try { $envApi = Read-OpsEnvTemplate (Join-Path $L.Config 'api.env') } catch { $envApi = $null }
+$isLive = ($null -ne $ij.PSObject.Properties['standLive']) -and [bool]$ij.standLive
+if ($isLive) {
+    # «Живой» стенд (install.ps1 -StandLive): APP_ENV=staging + SMSPro — настоящая SMS только номерам
+    # SMS_STAGING_ALLOWED_PHONES, остальным SMSPro получает <test>1</test> (SMS не приходит).
+    $sp = ''
+    if ($null -ne $envApi -and $envApi.Contains('SMS_STAGING_ALLOWED_PHONES')) { $sp = [string]$envApi['SMS_STAGING_ALLOWED_PHONES'] }
+    $list = @($sp.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($list -notcontains $Phone) {
+        Write-OpsLog "«живой» стенд: номера $Phone нет в SMS_STAGING_ALLOWED_PHONES (config\api.env) — SMS с кодом ему не придёт. Добавьте: install.ps1 с теми же параметрами и -StandSmsPhones '$(@($list + $Phone) -join ',')' (службы перезапустятся сами)" 'WARN'
+    }
+} elseif ([string]$ij.contour -eq 'test') {
     $tp = ''
-    try { $envApi = Read-OpsEnvTemplate (Join-Path $L.Config 'api.env'); if ($envApi.Contains('AUTH_OTP_TEST_PHONES')) { $tp = [string]$envApi['AUTH_OTP_TEST_PHONES'] } } catch { $tp = '' }
+    if ($null -ne $envApi -and $envApi.Contains('AUTH_OTP_TEST_PHONES')) { $tp = [string]$envApi['AUTH_OTP_TEST_PHONES'] }
     $list = @($tp.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     if ($list -notcontains $Phone) {
         Write-OpsLog "тестовый контур: номера $Phone нет в AUTH_OTP_TEST_PHONES (config\api.env) — войти с ним нельзя, а запрос кода на него на SMSPRO_CB_OPEN_MINUTES мин закроет вход всем. Добавьте: install.ps1 с теми же параметрами и -TestPhones '$(@($list + $Phone) -join ',')' (службы перезапустятся сами)" 'WARN'

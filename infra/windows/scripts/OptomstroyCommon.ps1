@@ -654,6 +654,84 @@ function Write-OpsSecretValue([string]$Path, [string]$Value, [switch]$Force) {
     return 'created'
 }
 
+# ---------- «Живой» стенд (install.ps1 -Stand -StandLive; решение владельца 2026-11-25) ----------
+# Настоящие SMS через SMSPro (учётные данные — те же, что у шлюза заказчика: SMSPRO_LOGIN / SMSPRO_PASSWORD /
+# SMSPRO_SENDER в переменных среды Windows), без тестовых номеров и кода, без песочницы QR, заказы — в 1С черновиками
+# (ONEC_OSAPI_WRITE_ORDERS=true, только с ONEC_MODE=os_api). APP_ENV остаётся staging.
+$script:OpsSmsProCredentialFiles = @('smspro_login', 'smspro_password')   # check-secrets: allow — имена файлов, не значения
+# Имя отправителя (не секрет) — config\smspro-sender.txt (кладёт import-onec-credentials.ps1, читает install.ps1).
+$script:OpsSmsProSenderFile = 'smspro-sender.txt'
+# Значение шлюза по умолчанию (README шлюза: SMSPRO_SENDER не задан → OptStroy.KG).
+$script:OpsSmsProGatewayDefaultSender = 'OptStroy.KG'
+
+# Одна несекретная переменная среды шлюза (например SMSPRO_SENDER, SMSPRO_TEST) из источников
+# Get-OpsEnvRegistrySources. Возвращает @{ Value; Sources } или $null (нигде нет); разные значения — отказ (значения
+# в сообщение не попадают).
+function Find-OpsEnvRegistryValue([object[]]$Sources, [string]$Name) {
+    $vals = New-Object System.Collections.ArrayList
+    foreach ($s in $Sources) {
+        $it = $null
+        try { $it = Get-ItemProperty -LiteralPath $s.Path -ErrorAction Stop } catch { continue }
+        if ($null -eq $it.PSObject.Properties[$Name]) { continue }
+        $v = [string]$it.$Name
+        if ($v -eq '') { continue }
+        $same = $null
+        foreach ($x in $vals) { if ($x.Value -ceq $v) { $same = $x } }
+        if ($null -ne $same) { [void]$same.Sources.Add($s.Name) }
+        else {
+            $srcList = New-Object System.Collections.ArrayList
+            [void]$srcList.Add($s.Name)
+            [void]$vals.Add([pscustomobject]@{ Value = $v; Sources = $srcList })
+        }
+    }
+    if ($vals.Count -eq 0) { return $null }
+    if ($vals.Count -gt 1) { throw ("$Name шлюза задана по-разному в нескольких местах: " + (@($vals | ForEach-Object { $_.Sources -join ' = ' }) -join ' | ') + ' — укажите одно место параметром -Source') }
+    return @{ Value = $vals[0].Value; Sources = @($vals[0].Sources) }
+}
+
+# Список номеров КР через запятую (+996 и 9 цифр) — нормализованный (без пробелов) или отказ.
+function ConvertTo-OpsPhoneList([string]$List, [string]$ParamName) {
+    $items = @(([string]$List).Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($items.Count -eq 0) { throw "${ParamName}: пустой список номеров" }
+    foreach ($p in $items) { if ($p -notmatch '^\+996\d{9}$') { throw "${ParamName}: номер $p — нужен вид +996XXXXXXXXX" } }
+    return (@($items | Select-Object -Unique) -join ',')
+}
+
+# Значения «живого» стенда для config\api.env и worker.env. Пустое значение = «не задано» (строка ИМЯ= остаётся в
+# файле, чтобы install.ps1 и update.ps1 не дописали имя заново из профиля стенда с тестовым значением).
+# SMS_STAGING_ALLOWED_PHONES — только если задан список (-StandSmsPhones): при APP_ENV=staging SMSPro отправляет
+# настоящую SMS только номерам из этого списка, остальным — <test>1</test> (09 §5.8; одно правило smsTestFlag для
+# прямой отправки кода и для очереди sms.send воркера — sms-test-flag.ts).
+function Get-OpsStandLiveEnvPairs([string]$Sender, [string]$SmsPhones = '') {
+    $p = [ordered]@{
+        SMS_PROVIDER = 'smspro'; SMSPRO_SENDER = $Sender; SMSPRO_TEST_FLAG = 'false'
+        AUTH_OTP_TEST_MODE = 'false'; AUTH_OTP_TEST_CODE = ''; AUTH_OTP_TEST_PHONES = ''
+        QR_PROVIDER = 'none'; BANK_QR_ADAPTER = ''; QR_WEBHOOK_ENABLED = 'false'
+        ONEC_OSAPI_WRITE_ORDERS = 'true'
+    }
+    if ($SmsPhones) { $p['SMS_STAGING_ALLOWED_PHONES'] = $SmsPhones }
+    return $p
+}
+
+# Обратно на профиль стенда (-StandLive:$false): значения stand.env.example (SMS fake, тестовые номера, песочница QR),
+# запись заказов в 1С выключена, список настоящих SMS очищен. AUTH_OTP_TEST_CODE задаёт install.ps1 (случайный).
+function Get-OpsStandProfileRestorePairs($StandTpl) {
+    $p = [ordered]@{}
+    foreach ($k in @('SMS_PROVIDER', 'SMSPRO_TEST_FLAG', 'AUTH_OTP_TEST_MODE', 'AUTH_OTP_TEST_PHONES', 'QR_PROVIDER', 'BANK_QR_ADAPTER', 'QR_WEBHOOK_ENABLED')) {
+        $p[$k] = [string]$StandTpl[$k]
+    }
+    $p['ONEC_OSAPI_WRITE_ORDERS'] = 'false'
+    $p['SMS_STAGING_ALLOWED_PHONES'] = ''
+    return $p
+}
+
+# Номера тестового входа при -StandLive:$false: явно заданные (-TestPhones) > запомненные до перехода на «живой»
+# стенд (install.json standTestPhonesBeforeLive) > номера профиля пакета.
+function Select-OpsStandRestorePhones([string]$TestPhones, [string]$SavedBeforeLive, [string]$TemplatePhones) {
+    foreach ($v in @($TestPhones, $SavedBeforeLive, $TemplatePhones)) { if ($v -and $v.Trim()) { return $v.Trim() } }
+    return ''
+}
+
 function Get-OpsCpuRatePercent([double]$Cpus) {
     $logical = 0
     try { $logical = [int](Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors } catch { $logical = [Environment]::ProcessorCount }

@@ -72,6 +72,20 @@
   .\import-onec-credentials.ps1
   .\install.ps1 -Stand -StandOnecOsApi http://localhost/uk_main_fr <остальные параметры установки стенда>
 .EXAMPLE
+  # «Живой» стенд (решение владельца 2026-11-25; только со стендом на ОС_API): настоящие SMS через SMSPro
+  # (SMS_PROVIDER=smspro, secrets\smspro_login и smspro_password, отправитель — config\smspro-sender.txt; всё кладёт
+  # import-onec-credentials.ps1 из SMSPRO_LOGIN/SMSPRO_PASSWORD/SMSPRO_SENDER шлюза), без тестовых номеров и кода
+  # (AUTH_OTP_TEST_* очищаются), без песочницы QR (QR_PROVIDER=none), заказы — в 1С черновиками
+  # (ONEC_OSAPI_WRITE_ORDERS=true). APP_ENV остаётся staging: настоящая SMS уходит только номерам -StandSmsPhones
+  # (SMS_STAGING_ALLOWED_PHONES), остальным — <test>1</test>. Режим запоминается в install.json (standLive);
+  # обратно — -StandLive:$false. -TestPhones с «живым» стендом — отказ.
+  .\install.ps1 -Stand -StandLive -StandSmsPhones +996555000001,+996555000002 <остальные параметры установки стенда>
+.EXAMPLE
+  # Стенд с чистой базой (данные стенда удаляются!): службы стоп, зашифрованная копия (dump-only), DROP DATABASE,
+  # фото и отметки аудита — в state\stand-reset-<время>, база заново (roles, migrate --seed: только строки по
+  # умолчанию), службы запускаются. Затем первый администратор — scripts\first-admin.ps1. Только с -Stand.
+  .\install.ps1 -Stand -ResetStandData -ConfirmResetDb optomstroy <остальные параметры установки стенда>
+.EXAMPLE
   # ПК разработчика:
   .\install.ps1 -DevTest -Zip .tmp\wn-release\Optomstroy-Server-X-win-x64.zip -InstallRoot .tmp\wn-install\root `
       -BackupRoot .tmp\wn-install\backups -PgBin pos-api\node_modules\@embedded-postgres\windows-x64\native\bin -ApiPort 3330 -PgPort 55450
@@ -115,6 +129,10 @@ param(
     [switch]$NonInteractive,
     [switch]$Stand,
     [string]$StandOnecOsApi = '',
+    [switch]$StandLive,
+    [string]$StandSmsPhones = '',
+    [switch]$ResetStandData,
+    [string]$ConfirmResetDb = '',
     [switch]$DevTest
 )
 
@@ -128,6 +146,15 @@ if ($Stand) {
 }
 # 1С через ОС_API шлюза на стенде (ADR-126): только вместе с -Stand; рабочий контур — HTTP-сервис расширения (extension).
 if ($StandOnecOsApi -and -not $Stand) { throw '-StandOnecOsApi: только вместе с -Stand (1С через ОС_API шлюза — режим тестового стенда, ADR-126; рабочий контур — -OnecBaseUrl/-OnecHsPath)' }
+# «Живой» стенд (решение владельца 2026-11-25): настоящие SMS (SMSPro), без тестовых номеров и кода, без песочницы QR,
+# заказы — в 1С черновиками. Только стенд с ОС_API; проверка режима 1С и секретов SMSPro — на шаге 1.
+if ($PSBoundParameters.ContainsKey('StandLive') -and -not $Stand) { throw '-StandLive: только вместе с -Stand («живой» тестовый стенд; рабочий контур — без -Stand)' }
+if ($StandLive -and $TestPhones) { throw '-StandLive и -TestPhones несовместимы: на «живом» стенде вход только по настоящей SMS, тестовых номеров и кода нет' }
+if ($StandSmsPhones -and -not $Stand) { throw '-StandSmsPhones: только вместе с -Stand -StandLive' }
+# Чистая база стенда (-ResetStandData): только стенд и только с явным подтверждением именем базы.
+if ($ResetStandData -and -not $Stand) { throw '-ResetStandData: только вместе с -Stand (очистка базы — только на тестовом стенде; рабочий контур так не очищается никогда)' }
+if ($ResetStandData -and $ConfirmResetDb -cne $DbName) { throw "-ResetStandData: все данные базы стенда будут удалены — подтвердите именем базы: -ConfirmResetDb $DbName" }
+if ($ConfirmResetDb -and -not $ResetStandData) { throw '-ConfirmResetDb: только вместе с -ResetStandData' }
 
 if ($DevTest -and -not $PSBoundParameters.ContainsKey('InstallRoot')) { throw '-DevTest: укажите -InstallRoot (тестовая папка), путь по умолчанию D:\Optomstroy в проверочном прогоне не используется' }
 if ($DevTest -and -not $PSBoundParameters.ContainsKey('Contour')) { $Contour = 'test' }
@@ -329,7 +356,63 @@ try {
         } else {
             Write-OpsLog '1С: фикстуры (ONEC_MODE=fixtures, тестовый стенд ADR-125) — адрес и секреты 1С не нужны'
         }
-    } else {
+    }
+    # «Живой» стенд: заданный явно (-StandLive / -StandLive:$false) > запомненный в install.json (standLive).
+    $liveMode = $false
+    $liveModeOff = $false
+    $standSender = ''
+    $wasLive = $Stand -and $null -ne $installJson -and $installJson.PSObject.Properties['standLive'] -and [bool]$installJson.standLive
+    # Номера тестового входа до перехода на «живой» стенд (install.json standTestPhonesBeforeLive): при -StandLive:$false
+    # возвращаются они, а не номера профиля пакета.
+    $phonesBeforeLive = ''
+    if ($wasLive -and $installJson.PSObject.Properties['standTestPhonesBeforeLive'] -and $installJson.standTestPhonesBeforeLive) {
+        $phonesBeforeLive = [string]$installJson.standTestPhonesBeforeLive
+    }
+    if ($PSBoundParameters.ContainsKey('StandLive')) {
+        $liveMode = [bool]$StandLive
+        # -StandLive:$false переписывает профиль, только если стенд был «живым»; иначе свои значения (-TestPhones
+        # прошлых запусков) не трогаются.
+        $liveModeOff = (-not $liveMode) -and $wasLive
+        if ((-not $liveMode) -and $Stand -and -not $wasLive) {
+            Write-OpsLog 'стенд: -StandLive:$false — стенд и так не «живой» (standLive в install.json не задан): профиль в config\*.env не переписывается'
+        }
+    } elseif ($Stand -and $null -ne $installJson -and $installJson.PSObject.Properties['standLive'] -and [bool]$installJson.standLive) {
+        $liveMode = $true
+        Write-OpsLog 'стенд: «живой» режим из install.json (прошлый запуск с -StandLive; выключить — -StandLive:$false)'
+    }
+    if ($StandSmsPhones -and -not $liveMode) { throw '-StandSmsPhones: только для «живого» стенда (-StandLive): со SMS_PROVIDER=fake список не действует' }
+    if ($StandSmsPhones) { $StandSmsPhones = ConvertTo-OpsPhoneList $StandSmsPhones '-StandSmsPhones' }
+    if ($liveMode) {
+        if ($TestPhones) { throw '-TestPhones: стенд «живой» (standLive в install.json) — тестовых номеров нет; обратно на тестовый вход — -StandLive:$false' }
+        if (-not $osApiUrl) { throw '-StandLive: только со стендом на ОС_API (-StandOnecOsApi <адрес публикации 1С> или режим ОС_API из install.json) — заказы пишутся в 1С черновиками через ОС_API; на фикстурах «живого» стенда нет' }
+        foreach ($s in $script:OpsSmsProCredentialFiles) {
+            $f = Join-Path $L.Secrets $s
+            if (-not ((Test-Path -LiteralPath $f) -and (Get-Item -LiteralPath $f).Length -gt 0)) {
+                throw "-StandLive: нет secrets\$s — сначала import-onec-credentials.ps1 (переносит SMSPRO_LOGIN/SMSPRO_PASSWORD/SMSPRO_SENDER шлюза, значения не выводит) или положите secrets\smspro_login и secrets\smspro_password сами"
+            }
+        }
+        $senderFile = Join-Path $L.Config $script:OpsSmsProSenderFile
+        if (Test-Path -LiteralPath $senderFile) { $standSender = ([System.IO.File]::ReadAllText($senderFile, [System.Text.Encoding]::UTF8)).Trim([char]0xFEFF, ' ', "`r", "`n", "`t") }
+        if (-not $standSender) { throw "-StandLive: нет имени отправителя SMS (config\$($script:OpsSmsProSenderFile)) — сначала import-onec-credentials.ps1 (берёт SMSPRO_SENDER шлюза)" }
+        if ($standSender -match '[\s#"''=]') { throw "-StandLive: имя отправителя в config\$($script:OpsSmsProSenderFile) — без пробелов, кавычек, # и =" }
+        Write-OpsLog "стенд «живой»: SMS — SMSPro (отправитель $standSender), без тестовых номеров и кода; QR — нет (QR_PROVIDER=none); заказы — в 1С черновиками (ONEC_OSAPI_WRITE_ORDERS=true); APP_ENV=staging" 'WARN'
+        if (-not $wasLive) {
+            # Переход на «живой» стенд: запомнить номера тестового входа (api.env), чтобы -StandLive:$false их вернул.
+            $apiEnvPrev = Join-Path $L.Config 'api.env'
+            if (Test-Path -LiteralPath $apiEnvPrev) { $ae = Read-OpsEnvTemplate $apiEnvPrev; if ($ae.Contains('AUTH_OTP_TEST_PHONES')) { $phonesBeforeLive = [string]$ae['AUTH_OTP_TEST_PHONES'] } }
+            if ($null -ne $installJson -and -not $ResetStandData) {
+                # Хвост заказов: order/create, ждавшие отправки дольше OUTBOX_MAX_AGE_HOURS, сами в 1С не уйдут.
+                Write-OpsLog 'стенд «живой» без -ResetStandData: заказы, накопленные до включения записи в 1С и ждущие дольше OUTBOX_MAX_AGE_HOURS (24 ч), в 1С сами не уйдут — они паркуются «ждёт оформления в 1С»; отправить — «Повторить» в очереди «в 1С», не нужны — отмените заказ (или установите с -ResetStandData -ConfirmResetDb)' 'WARN'
+            }
+        }
+    } elseif ($liveModeOff -and $Stand) {
+        Write-OpsLog 'стенд: -StandLive:$false — обратно на профиль стенда (SMS fake, тестовые номера, песочница QR, без записи заказов в 1С)'
+    }
+    if ($ResetStandData) {
+        if ($null -eq $installJson) { throw '-ResetStandData: установки ещё нет (нет config\install.json) — очищать нечего; первая установка и так создаёт пустую базу' }
+        Write-OpsLog "ВНИМАНИЕ: -ResetStandData — база $DbName стенда будет удалена и создана заново (перед этим — зашифрованная копия pos-backup dump-only); фото и отметки аудита — в state\stand-reset-<время>" 'WARN'
+    }
+    if (-not $Stand) {
     if (-not $OnecBaseUrl -and $null -ne $installJson -and $installJson.PSObject.Properties['onecBaseUrl']) { $OnecBaseUrl = [string]$installJson.onecBaseUrl }
     if (-not $OnecHsPath -and $null -ne $installJson -and $installJson.PSObject.Properties['onecHsPath']) { $OnecHsPath = [string]$installJson.onecHsPath }
     if ($DevTest) {
@@ -535,8 +618,11 @@ try {
         $tpl['ONEC_BASE_URL'] = $OnecBaseUrl
         $tpl['ONEC_HS_PATH'] = $OnecHsPath
     } elseif ($tpl['ONEC_MODE'] -ne 'fixtures' -or $tpl['SMS_PROVIDER'] -ne 'fake' -or $tpl['QR_PROVIDER'] -ne 'bank') {
+        # Проверяется сам шаблон пакета (до режимов ОС_API и «живого» стенда, которые кладутся поверх него ниже).
         throw 'stand.env.example: профиль стенда — ONEC_MODE=fixtures, SMS_PROVIDER=fake, QR_PROVIDER=bank (ADR-125); шаблон пакета изменён'
     }
+    $standTpl = $null
+    if ($Stand) { $standTpl = [ordered]@{}; foreach ($k in $tpl.Keys) { $standTpl[$k] = $tpl[$k] } }   # профиль стенда как в пакете (для -StandLive:$false)
     $osApiPairs = $null
     if ($Stand -and $osApiUrl) {
         # Стенд с ОС_API шлюза (ADR-126): поверх профиля (ONEC_MODE=fixtures) — режим чтения из 1С. Виды цен, склады и
@@ -545,7 +631,21 @@ try {
         $osApiPairs = Get-OpsOsApiEnvPairs $osApiUrl
         foreach ($k in $osApiPairs.Keys) { $tpl[$k] = $osApiPairs[$k] }
     }
-    if ($Contour -eq 'test') {
+    $livePairs = $null
+    if ($Stand -and $liveMode) {
+        # «Живой» стенд поверх профиля: SMSPro, без тестового входа, без QR, заказы в 1С (Get-OpsStandLiveEnvPairs).
+        $livePairs = Get-OpsStandLiveEnvPairs $standSender $StandSmsPhones
+        foreach ($k in $livePairs.Keys) { $tpl[$k] = $livePairs[$k] }
+        $smsList = $StandSmsPhones
+        $apiEnvPath = Join-Path $L.Config 'api.env'
+        if (-not $smsList -and (Test-Path -LiteralPath $apiEnvPath)) { $ae = Read-OpsEnvTemplate $apiEnvPath; if ($ae.Contains('SMS_STAGING_ALLOWED_PHONES')) { $smsList = [string]$ae['SMS_STAGING_ALLOWED_PHONES'] } }
+        if (-not $smsList) {
+            Write-OpsLog 'стенд «живой» без -StandSmsPhones: при APP_ENV=staging SMSPro отправляет настоящую SMS только номерам из SMS_STAGING_ALLOWED_PHONES, остальным — <test>1</test> (SMS не уходит, войти нельзя). Задайте -StandSmsPhones +996…,+996… (номер первого администратора — тоже)' 'WARN'
+        }
+        if ($AdminPhone -and @(([string]$smsList).Split(',') | ForEach-Object { $_.Trim() }) -notcontains $AdminPhone) {
+            Write-OpsLog "стенд «живой»: номера первого администратора $AdminPhone нет в SMS_STAGING_ALLOWED_PHONES (-StandSmsPhones) — SMS ему не придёт" 'WARN'
+        }
+    } elseif ($Contour -eq 'test') {
         if ($TestPhones) { $tpl['AUTH_OTP_TEST_PHONES'] = $TestPhones }
         # Шесть случайных цифр; общеизвестный код демо 246810 при APP_ENV=staging API не принимает (ADR-124).
         while (-not $tpl['AUTH_OTP_TEST_CODE'] -or $tpl['AUTH_OTP_TEST_CODE'] -eq '246810') { $tpl['AUTH_OTP_TEST_CODE'] = '{0:D6}' -f (Get-Random -Minimum 0 -Maximum 1000000) }
@@ -612,6 +712,35 @@ try {
             foreach ($k in @('ONEC_MODE', 'ONEC_BASE_URL')) {
                 if (Set-OpsEnvValue $fp $k ([string]$osApiPairs[$k])) { Write-OpsLog "config\${f}: $k = $($osApiPairs[$k])" 'OK' }
             }
+        }
+    }
+    # «Живой» стенд в api.env и worker.env (новых и существующих): тестовые имена не удаляются, а очищаются (ИМЯ=,
+    # «не задано») — иначе повторный install.ps1 или update.ps1 дописал бы их из профиля стенда (AUTH_OTP_TEST_MODE=true,
+    # BANK_QR_ADAPTER=sandbox), и API не запустился бы (env.schema.ts: тестовый код запрещён при SMS_PROVIDER=smspro).
+    # -StandLive:$false — обратно на значения профиля стенда (тестовый код — прежний, если он ещё есть, иначе новый).
+    if ($Stand -and ($null -ne $livePairs -or $liveModeOff)) {
+        $setPairs = $livePairs
+        if ($liveModeOff) {
+            $setPairs = Get-OpsStandProfileRestorePairs $standTpl
+            # Номера тестового входа: -TestPhones > запомненные до «живого» стенда > профиль пакета.
+            $setPairs['AUTH_OTP_TEST_PHONES'] = Select-OpsStandRestorePhones $TestPhones $phonesBeforeLive ([string]$setPairs['AUTH_OTP_TEST_PHONES'])
+            $otpCode = ''
+            $apiEnvPath = Join-Path $L.Config 'api.env'
+            if (Test-Path -LiteralPath $apiEnvPath) { $ae = Read-OpsEnvTemplate $apiEnvPath; if ($ae.Contains('AUTH_OTP_TEST_CODE')) { $otpCode = [string]$ae['AUTH_OTP_TEST_CODE'] } }
+            while (-not $otpCode -or $otpCode -eq '246810') { $otpCode = '{0:D6}' -f (Get-Random -Minimum 0 -Maximum 1000000) }
+            $setPairs['AUTH_OTP_TEST_CODE'] = $otpCode
+        } else {
+            $setPairs = [ordered]@{}
+            foreach ($k in $livePairs.Keys) { $setPairs[$k] = $livePairs[$k] }
+            foreach ($p in @(@('SMSPRO_LOGIN_FILE', 'smspro_login'), @('SMSPRO_PASSWORD_FILE', 'smspro_password'))) { $setPairs[$p[0]] = (& $sec $p[1]) }
+        }
+        foreach ($f in @('api.env', 'worker.env')) {
+            $fp = Join-Path $L.Config $f
+            $changed = @()
+            foreach ($k in $setPairs.Keys) { if (Set-OpsEnvValue $fp $k ([string]$setPairs[$k])) { $changed += $k } }
+            # Значения не печатаются: тестовый код и пути — только имена.
+            if ($changed.Count -gt 0) { Write-OpsLog ("config\{0}: {1} — {2}" -f $f, $(if ($liveModeOff) { 'профиль стенда' } else { '«живой» стенд' }), ($changed -join ', ')) 'OK' }
+            else { Write-OpsLog "config\${f}: $(if ($liveModeOff) { 'профиль стенда' } else { '«живой» стенд' }) — без изменений" }
         }
     }
 
@@ -701,7 +830,8 @@ try {
     $ij = [ordered]@{
         contour = $Contour; appEnv = $appEnv; publicBaseUrl = $PublicBaseUrl; serverName = $serverName; minAppVersion = $MinAppVersion
         apiPort = $ApiPort; pgPort = $PgPort; dbName = $DbName; pgBin = $PgBin; backupRoot = $L.BackupRoot; jwtKeyId = $jwtKid
-        onecBaseUrl = $OnecBaseUrl; onecHsPath = $OnecHsPath; stand = [bool]$Stand; onecOsApiBaseUrl = $osApiUrl
+        onecBaseUrl = $OnecBaseUrl; onecHsPath = $OnecHsPath; stand = [bool]$Stand; onecOsApiBaseUrl = $osApiUrl; standLive = [bool]($Stand -and $liveMode)
+        standTestPhonesBeforeLive = $(if ($Stand -and $liveMode -and $phonesBeforeLive) { $phonesBeforeLive } else { $null })
         deployUser = $DeployUser; apacheDir = $ApacheDir; apacheServiceName = $ApacheServiceName; devTest = [bool]$DevTest
         apacheCertFile = $CertFile; apacheKeyFile = $KeyFile; apacheListenPort = $ApacheListenPort
         pgServiceAccount = $PgServiceAccount
@@ -742,6 +872,41 @@ try {
 
     # =========================================================================================================
     Start-Step 'Роли, база, стоп-проверка локали, архивирование WAL'
+    if ($ResetStandData) {
+        # Чистая база стенда (-Stand -ResetStandData -ConfirmResetDb <база>): службы стоп → зашифрованная копия
+        # (pos-backup dump-only, как перед обновлением) → DROP DATABASE → фото и отметки аудита прежней базы — в
+        # state\stand-reset-<время>. Базу заново создаёт apply-roles.ps1 (ниже), migrate --seed кладёт только строки по
+        # умолчанию (seeds/0001_defaults.sql), службы запускает шаг 11. Повтор после сбоя безопасен (базы нет — без копии).
+        Stop-OpsAppServices $L @('OptomstroyWorker', 'OptomstroyApi', 'OptomstroyBackup') -DevTest:$DevTest
+        $pgToolArgs = @((Join-Path $pgDir 'pg-tool.mjs'), '--modules', (Join-Path $relReal 'api'), '--secrets', $L.Secrets, '--port', [string]$PgPort, '--db', $DbName)
+        $ex = Invoke-OpsProcess -FilePath $nodeCur -ArgumentList (@($pgToolArgs[0], 'db-exists') + $pgToolArgs[1..($pgToolArgs.Count - 1)]) -CleanEnvironment -QuietStdout
+        $exJ = ConvertFrom-OpsJsonLine $ex.Out
+        if ($ex.Code -ne 0 -or $null -eq $exJ) { throw "pg-tool db-exists: код $($ex.Code)" }
+        if ($exJ.exists) {
+            $bkCfg = Read-OpsJson (Join-Path $L.Config 'backup.json')
+            if ($DevTest -and -not (Test-Path -LiteralPath (Join-Path ([string]$bkCfg.pgBin) 'pg_dump.exe'))) {
+                Write-OpsLog "DevTest: в $($bkCfg.pgBin) нет pg_dump.exe — копия перед очисткой ПРОПУЩЕНА (на сервере это стоп)" 'WARN'
+            } else {
+                $d = Invoke-OpsProcess -FilePath $nodeCur -ArgumentList @((Join-Path $L.Current 'backup\pos-backup.mjs'), 'dump-only', '--config', (Join-Path $L.Config 'backup.json')) -CleanEnvironment -TimeoutSec 7200
+                $dj = ConvertFrom-OpsJsonLine $d.Out
+                if ($d.Code -ne 0 -or $null -eq $dj -or -not $dj.PSObject.Properties['dump']) { throw "копия базы перед очисткой не создана (pos-backup dump-only, код $($d.Code)) — база не удалялась; службы запустит повторный install.ps1 без -ResetStandData" }
+                Write-OpsLog ("копия прежней базы: {0} ({1:N1} МБ) — восстановление: backup\restore.ps1 -DumpFile <файл> (держатель ключа)" -f $dj.dump, ([double]$dj.size / 1MB)) 'OK'
+                [void]$summary.Add("копия базы стенда до очистки: $($dj.dump)")
+            }
+            $dr = Invoke-OpsProcess -FilePath $nodeCur -ArgumentList (@($pgToolArgs[0], 'drop-db') + $pgToolArgs[1..($pgToolArgs.Count - 1)] + @('--confirm', $DbName)) -CleanEnvironment
+            if ($dr.Code -ne 0) { throw "pg-tool drop-db: код $($dr.Code)" }
+        } else { Write-OpsLog "базы $DbName нет (повторный запуск после очистки) — копия и удаление не нужны" }
+        $resetDir = Join-Path $L.State ('stand-reset-{0}' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+        foreach ($src in @(@((Join-Path $L.Media 'images'), 'media-images'), @($L.AuditAnchors, 'audit-anchors'))) {
+            $items = @(Get-ChildItem -LiteralPath $src[0] -Force -ErrorAction SilentlyContinue)
+            if ($items.Count -eq 0) { continue }
+            $dst = Join-Path $resetDir $src[1]
+            New-Item -ItemType Directory -Force -Path $dst | Out-Null
+            foreach ($it in $items) { Move-Item -LiteralPath $it.FullName -Destination $dst }
+            Write-OpsLog "$($src[0]): $($items.Count) шт. перенесено в $dst (данные прежней базы)" 'OK'
+        }
+        Write-OpsLog "база $DbName стенда будет создана заново (apply-roles.ps1, migrate --seed); первый администратор — scripts\first-admin.ps1" 'OK'
+    }
     $code = Invoke-OpsScript (Join-Path $pgDir 'apply-roles.ps1') @{ InstallRoot = $L.Root; Port = $PgPort }
     if ($code -ne 0) { throw "apply-roles.ps1: код $code" }
 
