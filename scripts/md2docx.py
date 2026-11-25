@@ -32,6 +32,10 @@
       [--date ГГГГ-ММ-ДД]
   python -I -X utf8 scripts/md2docx.py --verify <in.md> <out.docx> [--title-page] [--title-note "<строка>"]
 
+Выпуск 2026-11-25 — стенд как продукт, без демо (с --date 2026-11-25):
+  docs/customer/STATUS_GOTOVNOSTI.md    -> docs/customer/Optomstroy_Status_gotovnosti.docx
+      "Оптомстрой POS · что готово и что дальше · 25.11.2026"
+
 Выпуск 2026-11-24 — P-004: телефон, QR от банка через наш сервер, SMS, тестовый сервер (оба — с --date 2026-11-24;
 у --verify — те же --title-page и --title-note):
   docs/customer/STATUS_GOTOVNOSTI.md    -> docs/customer/Optomstroy_Status_gotovnosti.docx
