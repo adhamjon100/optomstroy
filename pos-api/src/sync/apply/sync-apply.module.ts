@@ -7,6 +7,8 @@ import { buildPinoOptions } from '../../common/logging/logger.config.js';
 import { FakeOnecGateway } from '../../integrations/onec/fake-onec.gateway.js';
 import { createOnecODataClient, createOnecTransport } from '../../integrations/onec/onec-adapters.js';
 import { ONEC_GATEWAY, type OnecGateway } from '../../integrations/onec/onec-gateway.js';
+import { OnecOsApiGateway } from '../../integrations/onec/onec-osapi.gateway.js';
+import { parseUuidList } from '../../common/config/env.schema.js';
 import { OnecGatewayModule } from '../../integrations/onec/onec.module.js';
 import type { ApplyRunTracker, ChangeItemHandler } from './apply.types.js';
 import { CatalogApplier } from './catalog-applier.js';
@@ -14,6 +16,7 @@ import { CatalogFullLoadService } from './catalog-full-load.service.js';
 import { type CatalogFullSource, SyntheticCatalogSource } from './catalog-source.js';
 import { ODataCatalogSource } from './odata-catalog.source.js';
 import { OnecChangesService } from './onec-changes.service.js';
+import { OsApiCatalogSource } from './osapi-catalog.source.js';
 import { createRunTracker } from './run-tracker.js';
 
 /** DI-токен `ApplyRunTracker` (по умолчанию — `RegistryRunTracker` над `SyncRunRegistry`). */
@@ -27,11 +30,25 @@ export const SYNC_APPLY_LOGGER = 'SyncApplyLogger' as const;
 
 /**
  * Источник полной загрузки по `ONEC_MODE`: `fixtures` — синтетический каталог фейка (если включён режим
- * каталога), `odata_only`/`extension` — OData `pos_integration` (срезы цен/остатков в фазе 1 тоже читаются через
+ * каталога), `os_api` — выгрузки ОС_API (`OsApiCatalogSource`, ADR-126), `odata_only`/`extension` — OData `pos_integration` (срезы цен/остатков в фазе 1 тоже читаются через
  * OData, 05 SYNC-014/015), если заданы `ONEC_BASE_URL` и `ONEC_USER_FILE`; иначе `null` (полная загрузка недоступна).
  */
-export function createCatalogFullSource(config: AppConfig, gateway: OnecGateway): CatalogFullSource | null {
+export function createCatalogFullSource(
+  config: AppConfig,
+  gateway: OnecGateway,
+  log?: Pick<Logger, 'warn'>,
+): CatalogFullSource | null {
   if (gateway instanceof FakeOnecGateway) return gateway.catalog ? new SyntheticCatalogSource(gateway) : null;
+  // ADR-126: ОС_API — свой источник поверх клиента шлюза (полные выгрузки), OData в этом режиме не читается.
+  if (gateway instanceof OnecOsApiGateway) {
+    return new OsApiCatalogSource(gateway.client, {
+      priceTypes: parseUuidList(config.ONEC_OSAPI_PRICE_TYPES),
+      warehouses: parseUuidList(config.ONEC_OSAPI_WAREHOUSES),
+      pageSize: config.ONEC_SYNC_PAGE_SIZE,
+      ...(log ? { log } : {}),
+    });
+  }
+  if (config.ONEC_MODE === 'os_api') return null;
   if (config.ONEC_BASE_URL && config.ONEC_USER !== undefined) {
     return new ODataCatalogSource(createOnecODataClient(config, createOnecTransport(config)));
   }
@@ -60,8 +77,8 @@ export function createCatalogFullSource(config: AppConfig, gateway: OnecGateway)
     { provide: SYNC_APPLY_CHANGE_HANDLERS, useValue: [] as ChangeItemHandler[] },
     {
       provide: CATALOG_FULL_SOURCE,
-      inject: [APP_CONFIG, ONEC_GATEWAY],
-      useFactory: (c: AppConfig, g: OnecGateway) => createCatalogFullSource(c, g),
+      inject: [APP_CONFIG, ONEC_GATEWAY, SYNC_APPLY_LOGGER],
+      useFactory: (c: AppConfig, g: OnecGateway, log: Logger) => createCatalogFullSource(c, g, log),
     },
     {
       provide: OnecChangesService,

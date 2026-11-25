@@ -23,6 +23,12 @@ export const ONEC_ERROR_CODES = [
 const TRANSIENT = new Set(['POS_E_LOCKED', 'POS_E_INTERNAL', 'POS_E_MAINTENANCE', 'POS_E_QR_UNAVAILABLE']);
 
 /**
+ * Операция, в которой возникла ошибка: метод порта `OnecGateway` либо чтение HTTP-сервиса ОС_API вне порта
+ * (`osapi:/items` и т. п. — полная выгрузка каталога, ADR-126).
+ */
+export type OnecErrorOperation = OnecOperationId | `osapi:${string}`;
+
+/**
  * Ответ 1С не-2xx (или сбой транспорта — `status = 0`, `code = 'TRANSPORT'`). `message` — текст 1С для журнала
  * (05 §6.5: без ПДн); при логировании проходит redaction (common/logging/redaction.ts).
  */
@@ -30,7 +36,7 @@ export class OnecError extends Error {
   override readonly name = 'OnecError';
 
   constructor(
-    readonly operation: OnecOperationId,
+    readonly operation: OnecErrorOperation,
     readonly status: number,
     readonly code: string,
     message: string,

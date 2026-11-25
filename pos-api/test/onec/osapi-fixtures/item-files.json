@@ -1,0 +1,33 @@
+{
+  "items": [
+    {
+      "id": "a3000000-0000-4000-8000-000000000001",
+      "kind": "item",
+      "itemId": "c1000000-0000-4000-8000-000000000010",
+      "characteristicId": null,
+      "contentType": "image/jpeg",
+      "size": 1024,
+      "isMain": true,
+      "changedAt": "2026-11-19T03:00:00"
+    },
+    {
+      "id": "a3000000-0000-4000-8000-000000000002",
+      "kind": "characteristic",
+      "itemId": "c1000000-0000-4000-8000-000000000012",
+      "characteristicId": "f1000000-0000-4000-8000-000000000001",
+      "contentType": "image/png",
+      "size": 2048,
+      "isMain": false,
+      "changedAt": "2026-11-19T04:00:00"
+    },
+    {
+      "id": "a3000000-0000-4000-8000-000000000003",
+      "kind": "characteristic",
+      "itemId": null,
+      "characteristicId": "f1000000-0000-4000-8000-000000000002",
+      "contentType": "image/png",
+      "size": 512,
+      "isMain": false
+    }
+  ]
+}

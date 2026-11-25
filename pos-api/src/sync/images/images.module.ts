@@ -7,6 +7,7 @@ import { buildPinoOptions } from '../../common/logging/logger.config.js';
 import { createOnecODataClient, createOnecTransport } from '../../integrations/onec/onec-adapters.js';
 import { ONEC_GATEWAY, type OnecGateway } from '../../integrations/onec/onec-gateway.js';
 import { OnecGatewayModule } from '../../integrations/onec/onec.module.js';
+import { OnecOsApiGateway } from '../../integrations/onec/onec-osapi.gateway.js';
 import type { ApplyRunTracker } from '../apply/apply.types.js';
 import { createRunTracker } from '../apply/run-tracker.js';
 import { ImageDirectoryImporter } from './image-directory-import.js';
@@ -20,6 +21,7 @@ import {
 import { ImageStore } from './image-store.js';
 import { ImageSyncHandler } from './image-sync.handler.js';
 import { ImageSyncService } from './image-sync.service.js';
+import { OsApiImageListSource } from './osapi-image-list.source.js';
 
 /** DI-токены модуля фото (RM-E-003). */
 export const IMAGE_STORE = 'ImageStore' as const;
@@ -28,13 +30,23 @@ export const IMAGE_LIST_SOURCE = 'ImageListSource' as const;
 export const IMAGES_RUN_TRACKER = 'ImagesRunTracker' as const;
 export const IMAGES_LOGGER = 'ImagesLogger' as const;
 
-/** Источник байтов по `ONEC_MODE`: HS расширения / фейк; `odata_only` — нет (фото — разовой выгрузкой, SYNC-036). */
+/** Источник байтов по `ONEC_MODE`: HS расширения / ОС_API / фейк; `odata_only` — нет (фото — разовой выгрузкой, SYNC-036). */
 export function createImageBytesSource(gateway: OnecGateway): ImageBytesSource | null {
   return gateway.mode === 'odata_only' ? null : new GatewayImageSource(gateway);
 }
 
-/** Полный список файлов (OData `Catalog_НоменклатураПрисоединенныеФайлы`) — если заданы `ONEC_BASE_URL` и `ONEC_USER_FILE`. */
-export function createImageListSource(config: AppConfig): ImageListSource | null {
+/**
+ * Полный список файлов: `os_api` — `GET /item-files` ОС_API через клиент шлюза (ADR-126); иначе OData
+ * `Catalog_НоменклатураПрисоединенныеФайлы` — если заданы `ONEC_BASE_URL` и `ONEC_USER_FILE`.
+ */
+export function createImageListSource(
+  config: AppConfig,
+  gateway?: OnecGateway,
+  log?: Pick<Logger, 'warn'>,
+): ImageListSource | null {
+  if (config.ONEC_MODE === 'os_api') {
+    return gateway instanceof OnecOsApiGateway ? new OsApiImageListSource(gateway.client, log) : null;
+  }
   if (config.ONEC_MODE === 'fixtures' || !config.ONEC_BASE_URL || config.ONEC_USER === undefined) return null;
   return new ODataImageListSource(createOnecODataClient(config, createOnecTransport(config)));
 }
@@ -50,7 +62,11 @@ export function createImageListSource(config: AppConfig): ImageListSource | null
   providers: [
     { provide: IMAGE_STORE, inject: [APP_CONFIG], useFactory: (c: AppConfig) => new ImageStore(c.MEDIA_DIR) },
     { provide: IMAGE_BYTES_SOURCE, inject: [ONEC_GATEWAY], useFactory: createImageBytesSource },
-    { provide: IMAGE_LIST_SOURCE, inject: [APP_CONFIG], useFactory: createImageListSource },
+    {
+      provide: IMAGE_LIST_SOURCE,
+      inject: [APP_CONFIG, ONEC_GATEWAY, IMAGES_LOGGER],
+      useFactory: (c: AppConfig, g: OnecGateway, log: Logger) => createImageListSource(c, g, log),
+    },
     {
       provide: IMAGES_RUN_TRACKER,
       inject: [PG_POOL],

@@ -50,6 +50,33 @@ function isIpOrCidr(v: string): boolean {
   return n >= 0 && n <= (family === 4 ? 32 : 128);
 }
 
+/** Адрес этого же сервера (`localhost`, `127.0.0.1`…, `::1`): трафик не выходит за пределы машины (ADR-126). */
+export function isLoopbackUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    const h = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    return h === 'localhost' || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h);
+  } catch {
+    return false;
+  }
+}
+
+const UUID_TEXT_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/** Список UUID через запятую (`ONEC_OSAPI_PRICE_TYPES`, `ONEC_OSAPI_WAREHOUSES`): пусто → `[]`, нижний регистр. */
+export function parseUuidList(v: string | undefined): string[] {
+  return (v ?? '')
+    .split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter((x) => x !== '');
+}
+
+const uuidList = () =>
+  z
+    .string()
+    .optional()
+    .refine((v) => parseUuidList(v).every((x) => UUID_TEXT_RE.test(x)), 'ожидается список UUID через запятую');
+
 export const APP_ENVS = ['dev', 'staging', 'prod'] as const;
 /**
  * Общеизвестный тестовый код OTP демо (ADR-109, ADR-113; `docs/customer/WEB_DEMO_INSTRUCTION.md`): только `APP_ENV=dev`
@@ -170,7 +197,8 @@ export const envShape = {
   REGISTRATION_SECOND_OTP: bool(false),
 
   // --- 1С ---
-  ONEC_MODE: z.enum(['extension', 'odata_only', 'fixtures']).default('fixtures'),
+  // `os_api` — существующий HTTP-сервис 1С «ОС_API» (расширение шлюза), только чтение (ADR-126).
+  ONEC_MODE: z.enum(['extension', 'odata_only', 'fixtures', 'os_api']).default('fixtures'),
   ONEC_BASE_URL: z.url().optional(),
   ONEC_ODATA_PATH: str('odata/standard.odata'),
   ONEC_HS_PATH: optStr(),
@@ -190,6 +218,12 @@ export const envShape = {
   ONEC_INBOUND_ENABLED: bool(false),
   ONEC_INBOUND_ALLOWED_IPS: optStr(),
   MANUAL_ORDER_SLA_MIN: int(60, 1),
+  // ОС_API (ADR-126, только при ONEC_MODE=os_api): путь сервиса от корня публикации `ONEC_BASE_URL`, виды цен и
+  // склады остатков (UUID через запятую; пусто — все не удалённые виды цен / все склады), период перечитки, с.
+  ONEC_OSAPI_PATH: str('hs/os/api/v1'),
+  ONEC_OSAPI_PRICE_TYPES: uuidList(),
+  ONEC_OSAPI_WAREHOUSES: uuidList(),
+  ONEC_OSAPI_POLL_SECONDS: int(300, 60, 3600).refine((v) => v % 60 === 0, 'ожидается число секунд, кратное 60'),
 
   // --- Синхронизация ---
   SYNC_STOCK_CRON: cron('*/10 * * * *'),
@@ -358,6 +392,33 @@ export const envSchema = z.object(envShape).superRefine((env, ctx) => {
   }
   if (env.QR_PROVIDER === 'onec' && env.ONEC_MODE === 'odata_only') {
     fail('QR_PROVIDER', 'onec требует ONEC_MODE=extension (или fixtures на тестовом контуре)');
+  }
+  // ADR-126: ОС_API — только чтение; вход — Basic пользователя публикации (ONEC_USER_FILE/ONEC_PASSWORD_FILE).
+  if (env.ONEC_MODE === 'os_api') {
+    if (env.ONEC_BASE_URL === undefined)
+      fail(
+        'ONEC_BASE_URL',
+        'обязательна при ONEC_MODE=os_api — корень публикации 1С (например http://localhost/<база>)',
+      );
+    if (env.ONEC_USER === undefined) fail('ONEC_USER', 'обязательна (ONEC_USER_FILE) при ONEC_MODE=os_api');
+    if (env.ONEC_PASSWORD === undefined) fail('ONEC_PASSWORD', 'обязательна (ONEC_PASSWORD_FILE) при ONEC_MODE=os_api');
+    if (env.QR_PROVIDER === 'onec') {
+      fail(
+        'QR_PROVIDER',
+        'onec недопустим при ONEC_MODE=os_api: QR-оплаты через 1С в ОС_API нет (ADR-126) — bank или none',
+      );
+    }
+    if (
+      env.ONEC_BASE_URL !== undefined &&
+      env.ONEC_BASE_URL.startsWith('http://') &&
+      env.APP_ENV !== 'dev' &&
+      !isLoopbackUrl(env.ONEC_BASE_URL)
+    ) {
+      fail(
+        'ONEC_BASE_URL',
+        'http:// при ONEC_MODE=os_api допустим только для адреса этого сервера (localhost/127.0.0.1)',
+      );
+    }
   }
   if (env.QR_PROVIDER === 'onec' && env.ONEC_INBOUND_ENABLED) {
     fail('QR_PROVIDER', 'onec несовместим с ONEC_INBOUND_ENABLED=true (вариант C-2, 05 ONEC-065)');

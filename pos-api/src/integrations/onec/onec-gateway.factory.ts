@@ -4,10 +4,14 @@ import type { OnecGateway } from './onec-gateway.js';
 
 export type OnecGatewayConfig = Pick<AppConfig, 'APP_ENV' | 'ONEC_MODE' | 'ONEC_ODATA_WRITE_ENABLED'>;
 
-/** Боевые реализации порта (RM-E-001): `onecAdapters(config)` из onec-adapters.ts — `OnecExtensionGateway`, `OnecODataGateway`. */
+/**
+ * Боевые реализации порта (RM-E-001): `onecAdapters(config)` из onec-adapters.ts — `OnecExtensionGateway`,
+ * `OnecODataGateway`, `OnecOsApiGateway` (ОС_API, только чтение; ADR-126).
+ */
 export interface OnecGatewayAdapters {
   readonly extension?: () => OnecGateway;
   readonly odataOnly?: () => OnecGateway;
+  readonly osApi?: () => OnecGateway;
   readonly fixtures?: FakeOnecGatewayOptions;
 }
 
@@ -35,5 +39,8 @@ export function createOnecGateway(config: OnecGatewayConfig, adapters: OnecGatew
     case 'odata_only':
       if (adapters.odataOnly) return adapters.odataOnly();
       throw new ConfigError(['ONEC_MODE: odata_only — адаптер OnecODataGateway ещё не подключён (RM-E-001)']);
+    case 'os_api':
+      if (adapters.osApi) return adapters.osApi();
+      throw new ConfigError(['ONEC_MODE: os_api — адаптер OnecOsApiGateway не подключён (ADR-126)']);
   }
 }

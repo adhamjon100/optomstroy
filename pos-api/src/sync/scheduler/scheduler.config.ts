@@ -1,4 +1,5 @@
 import type { AppConfig } from '../../common/config/app-config.js';
+import { osApiPollCron } from './sync-queues.js';
 
 /**
  * Параметры планировщика и worker'а (RM-C-007). Значения по умолчанию — из канонических env (16 §4.3) и
@@ -81,17 +82,21 @@ export function schedulerConfigFromEnv(
     | 'SYNC_COUNT_CHECK_CRON'
     | 'OUTBOX_MAX_ATTEMPTS'
     | 'OUTBOX_MAX_AGE_HOURS'
-  >,
+  > &
+    Partial<Pick<AppConfig, 'ONEC_OSAPI_POLL_SECONDS'>>,
   overrides: SchedulerConfigOverrides = {},
 ): SchedulerConfig {
+  const osApiCron = env.ONEC_MODE === 'os_api' ? osApiPollCron(env.ONEC_OSAPI_POLL_SECONDS ?? 300) : undefined;
   const base: SchedulerConfig = {
     timezone: env.TZ && env.TZ.trim() !== '' ? env.TZ : 'Asia/Bishkek',
     onecMode: env.ONEC_MODE,
+    // ADR-126: в `os_api` каталог, цены и остатки перечитываются целиком каждые `ONEC_OSAPI_POLL_SECONDS`
+    // (по умолчанию 300 с, как у шлюза); переопределение по сущности — `app_settings.sync_interval.<entity>`.
     cron: {
-      stock: env.SYNC_STOCK_CRON,
-      prices: env.SYNC_PRICES_CRON,
+      stock: osApiCron ?? env.SYNC_STOCK_CRON,
+      prices: osApiCron ?? env.SYNC_PRICES_CRON,
       orderStatus: env.SYNC_ORDER_STATUS_CRON,
-      master: env.SYNC_MASTER_CRON,
+      master: osApiCron ?? env.SYNC_MASTER_CRON,
       images: env.SYNC_IMAGES_CRON,
       reconcile: env.SYNC_RECONCILE_CRON,
       countCheck: env.SYNC_COUNT_CHECK_CRON,

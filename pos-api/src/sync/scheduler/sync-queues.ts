@@ -86,9 +86,38 @@ export const EXTENSION_PLAN_ENTITIES: readonly SyncEntity[] = SYNC_ENTITY_VALUES
   (e) => !EXTENSION_POLLED_ENTITIES.includes(e),
 );
 
+/**
+ * Сущности режима `os_api` (ADR-126, ОС_API — только чтение): каталог, цены, остатки (полная перечитка по
+ * расписанию `ONEC_OSAPI_POLL_SECONDS`) и фото. Клиентов, долгов, скидок, статусов заказов и документов ОС_API в
+ * этом режиме не читает — их задания не ставятся (иначе каждые 5–30 минут прогон с отказом 501 и тревогой).
+ */
+export const OSAPI_POLLED_ENTITIES: readonly SyncEntity[] = [
+  'units',
+  'categories',
+  'products',
+  'variants',
+  'attributes',
+  'barcodes',
+  'warehouses',
+  'prices',
+  'stock',
+  'images',
+];
+
 /** Сущности, которые планируются по расписанию инкрементом в данном режиме 1С. */
 export function scheduledEntities(mode: SchedulerConfig['onecMode'], all: readonly SyncEntity[]): SyncEntity[] {
-  return mode === 'extension' ? all.filter((e) => EXTENSION_POLLED_ENTITIES.includes(e)) : [...all];
+  if (mode === 'extension') return all.filter((e) => EXTENSION_POLLED_ENTITIES.includes(e));
+  if (mode === 'os_api') return all.filter((e) => OSAPI_POLLED_ENTITIES.includes(e));
+  return [...all];
+}
+
+/**
+ * cron периода перечитки ОС_API (`ONEC_OSAPI_POLL_SECONDS`, кратно 60, 60…3600): `*\/N * * * *` по минутам,
+ * 3600 — раз в час (`0 * * * *`).
+ */
+export function osApiPollCron(seconds: number): string {
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  return minutes >= 60 ? '0 * * * *' : `*/${minutes} * * * *`;
 }
 
 /** Очереди job синхронизации сущностей (обрабатываются `SyncJobProcessor`). */

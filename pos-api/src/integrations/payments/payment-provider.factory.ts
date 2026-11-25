@@ -39,7 +39,7 @@ export function createBankQrApi(config: BankQrApiConfig, now?: () => Date): Bank
 
 /**
  * Выбор `PaymentProvider` по `QR_PROVIDER` (ARCH-063, 16 §4.3, DEPLOY-051). Отказ в старте (`ConfigError`):
- * `onec` при `ONEC_MODE=odata_only` или `ONEC_INBOUND_ENABLED=true` (AC-ARCH-063 п. 3; тот же запрет — env.schema.ts);
+ * `onec` при `ONEC_MODE=odata_only|os_api` или `ONEC_INBOUND_ENABLED=true` (AC-ARCH-063 п. 3; тот же запрет — env.schema.ts);
  * `bank` без клиента банка (`BANK_QR_ADAPTER`) или с песочницей при `APP_ENV=prod` (ADR-123).
  */
 export function createPaymentProvider(config: PaymentProviderConfig, deps: PaymentProviderDeps = {}): PaymentProvider {
@@ -50,6 +50,9 @@ export function createPaymentProvider(config: PaymentProviderConfig, deps: Payme
       const problems: string[] = [];
       if (config.ONEC_MODE === 'odata_only') {
         problems.push('QR_PROVIDER: onec требует ONEC_MODE=extension (или fixtures на тестовом контуре)');
+      }
+      if (config.ONEC_MODE === 'os_api') {
+        problems.push('QR_PROVIDER: onec недопустим при ONEC_MODE=os_api — QR-оплаты через 1С в ОС_API нет (ADR-126)');
       }
       if (config.ONEC_INBOUND_ENABLED) {
         problems.push('QR_PROVIDER: onec несовместим с ONEC_INBOUND_ENABLED=true (05 ONEC-065)');

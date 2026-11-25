@@ -75,8 +75,8 @@ export function orderStatusChangedJob(
  * Сборка обработчиков заказов для `pos-worker` (RM-F-002; 06 §7.5; 07 §8.2; ядро §22.1, §23 п. 2) без Nest:
  * канал записи outbox → 1С (`OnecOutboxDelivery`), события результата `orders.onec-confirmed|failed` (проекция
  * статуса в момент `sent`), сверщик `outbox.reconcile-aggregates`, уведомление о `dead` и синхронизация статусов
- * `order_status` (расписание этапа E). Фаза 0 без канала записи (`odata_only` без `ONEC_ODATA_WRITE_ENABLED`) —
- * канал не подключается (строки остаются `pending`, 05 SYNC-066).
+ * `order_status` (расписание этапа E). Фаза 0 без канала записи (`odata_only` без `ONEC_ODATA_WRITE_ENABLED`) и
+ * `os_api` (ОС_API, только чтение — ADR-126) — канал не подключается (строки остаются `pending`, 05 SYNC-066).
  */
 export function createOrdersWorkerWiring(o: OrdersWorkerWiringOptions): OrdersWorkerWiring {
   const log = o.log.child({ component: 'orders' });
@@ -91,7 +91,10 @@ export function createOrdersWorkerWiring(o: OrdersWorkerWiringOptions): OrdersWo
     log,
   });
   const blocked = new OrderDependencyNotifier({ db, notifications, log });
-  const writeChannel = o.config.ONEC_MODE !== 'odata_only' || o.config.ONEC_ODATA_WRITE_ENABLED;
+  // ADR-126: `os_api` — только чтение 1С; канал записи не подключается, элементы outbox (заказы, оплаты, клиенты)
+  // паркуются `NO_WRITE_CHANNEL` («ждут оформления в 1С», sync-status manualOrders) — без повторов, `dead` и 501.
+  const writeChannel =
+    o.config.ONEC_MODE === 'os_api' ? false : o.config.ONEC_MODE !== 'odata_only' || o.config.ONEC_ODATA_WRITE_ENABLED;
   const outboxDelivery =
     o.gateway && writeChannel ? new OnecOutboxDelivery(o.gateway, { timeoutMs: o.config.ONEC_TIMEOUT_MS }) : undefined;
   const statusSync = o.gateway

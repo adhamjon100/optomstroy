@@ -124,7 +124,12 @@ export function createSyncWorkerWiring(o: SyncWorkerWiringOptions): SyncWorkerWi
       );
     }
   }
-  const source = o.source !== undefined ? o.source : gateway ? createCatalogFullSource(o.config, gateway) : null;
+  const source =
+    o.source !== undefined
+      ? o.source
+      : gateway
+        ? createCatalogFullSource(o.config, gateway, log.child({ component: 'sync.apply' }))
+        : null;
   const alerts = new SyncAlertService(o.pool, log.child({ component: 'sync.alerts' }), {
     unreachableMinutes: o.config.SYNC_ALERT_UNREACHABLE_MIN,
     ...o.alerts,
@@ -178,8 +183,9 @@ export function createSyncWorkerWiring(o: SyncWorkerWiringOptions): SyncWorkerWi
   const images = o.images !== undefined ? o.images : gw ? createImagesHandler(o, gw, tracker, log) : null;
   if (images) handlers.images = images;
   // RM-G-001: `sync.customers` / `sync.sales_history` по расписанию — цикл плана обмена (как справочники каталога в
-  // режиме расширения; ядро §22.8). В `odata_only` загрузчика клиентов нет — заглушка worker'а.
-  if (plan && o.config.ONEC_MODE !== 'odata_only') {
+  // режиме расширения; ядро §22.8). В `odata_only` и `os_api` (ленты нет, ADR-126) загрузчика клиентов нет —
+  // заглушка worker'а.
+  if (plan && o.config.ONEC_MODE !== 'odata_only' && o.config.ONEC_MODE !== 'os_api') {
     handlers.customers ??= plan;
     handlers.sales_history ??= plan;
   }
@@ -259,5 +265,8 @@ function createImagesHandler(
     log.child({ component: 'sync.images' }),
     { concurrency: Math.min(2, o.config.ONEC_MAX_CONCURRENCY) },
   );
-  return new ImageSyncHandler(service, createImageListSource(o.config));
+  return new ImageSyncHandler(
+    service,
+    createImageListSource(o.config, gateway, log.child({ component: 'sync.images' })),
+  );
 }

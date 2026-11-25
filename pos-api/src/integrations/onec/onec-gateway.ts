@@ -11,8 +11,11 @@
  * Ошибка 1С (не-2xx) — исключение `OnecError` (onec-error.ts) с кодом `POS_E_*` (05 §6.5).
  */
 
-/** Значения `ONEC_MODE` (16 §4.3; R0 §16 п. 3). */
-export type OnecMode = 'extension' | 'odata_only' | 'fixtures';
+/**
+ * Значения `ONEC_MODE` (16 §4.3; R0 §16 п. 3). `os_api` — существующий HTTP-сервис 1С «ОС_API» (расширение шлюза),
+ * только чтение каталога/цен/остатков/фото (ADR-126); контракт `/pos/v1` при этом не отменяется.
+ */
+export type OnecMode = 'extension' | 'odata_only' | 'fixtures' | 'os_api';
 
 /** DI-токен порта. Строковый литерал — чтобы `payments/**` мог сослаться на него без импорта значения (ARCH-063 п. 4). */
 export const ONEC_GATEWAY = 'OnecGateway' as const;

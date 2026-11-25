@@ -1,0 +1,40 @@
+{
+  "items": [
+    {
+      "id": "f1000000-0000-4000-8000-000000000001",
+      "ownerId": "c1000000-0000-4000-8000-000000000012",
+      "ownerType": "item",
+      "name": "Белая",
+      "sku": "W",
+      "inactive": false,
+      "deleted": false
+    },
+    {
+      "id": "f1000000-0000-4000-8000-000000000002",
+      "ownerId": "d1000000-0000-4000-8000-000000000001",
+      "ownerType": "category",
+      "name": "Красная",
+      "sku": "",
+      "inactive": false,
+      "deleted": false
+    },
+    {
+      "id": "f1000000-0000-4000-8000-000000000003",
+      "ownerId": "d9000000-0000-4000-8000-000000000001",
+      "ownerType": "other",
+      "name": "Чужая",
+      "sku": "",
+      "inactive": false,
+      "deleted": false
+    },
+    {
+      "id": "f1000000-0000-4000-8000-000000000004",
+      "ownerId": "c1000000-0000-4000-8000-000000000012",
+      "ownerType": "item",
+      "name": "Синяя (удалена)",
+      "sku": "",
+      "inactive": false,
+      "deleted": true
+    }
+  ]
+}

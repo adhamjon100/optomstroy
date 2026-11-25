@@ -76,8 +76,11 @@ export async function runReregister(argv: readonly string[], deps: ReregisterDep
   const reason = values.reason?.slice(0, 200) ?? null;
   const base = { requestId, onecMode: deps.config.ONEC_MODE, reason };
   const action = values.confirm === true ? 'reregister' : 'check';
-  if (deps.config.ONEC_MODE === 'odata_only') {
-    const msg = 'ONEC_MODE=odata_only: метода /changes/reregister нет (фаза 0) — перерегистрация не выполняется';
+  if (deps.config.ONEC_MODE === 'odata_only' || deps.config.ONEC_MODE === 'os_api') {
+    const msg =
+      deps.config.ONEC_MODE === 'os_api'
+        ? 'ONEC_MODE=os_api: плана обмена в ОС_API нет (ADR-126) — перерегистрация не выполняется'
+        : 'ONEC_MODE=odata_only: метода /changes/reregister нет (фаза 0) — перерегистрация не выполняется';
     deps.journal({ ...base, at: now().toISOString(), action, result: 'refused', error: msg });
     deps.err(`[onec-reregister] ОТКАЗ: ${msg}`);
     return 2;
