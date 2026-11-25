@@ -125,7 +125,7 @@ D:\OptomstroyBackups\             (-BackupRoot): dumps\ (и dumps\secrets\ — �
 | `smspro_login`, `smspro_password` | SMSPro | рабочий контур; на тестовом стенде (`-Stand`) — только когда заказчик сам решит включить настоящие SMS (Q-385), раздел 7.1 |
 | `onec_hs_user`, `onec_hs_token` | пользователь `pos_hs` HTTP-сервиса 1С и ключ `X-POS-Client-Key` | всегда (без них API не запускается) |
 | `onec_hs_password` | пароль `pos_hs` | если задан в 1С |
-| `onec_user`, `onec_password` | OData 1С только чтение (`pos_integration`) — полная загрузка, срезы цен и остатков | кладутся файлом, если используются |
+| `onec_user`, `onec_password` | OData 1С только чтение (`pos_integration`) — полная загрузка, срезы цен и остатков; на стенде с `-StandOnecOsApi` — пользователь ОС_API шлюза (Basic) | кладутся файлом, если используются; на стенде — `import-onec-credentials.ps1` (раздел 7.1) |
 | `onec_ca.pem` | корневой сертификат веб-сервера 1С (если сертификат не публичный) | кладётся файлом |
 | `healthchecks_url` | ping-URL внешнего мониторинга | кладётся файлом, если есть |
 
@@ -236,7 +236,7 @@ install.ps1). Секретов в профиле нет.
 | Что | Значение на стенде | Почему |
 |---|---|---|
 | Адрес | `https://api-test.37.114.51.144.sslip.io` (по умолчанию из профиля; другое — `-PublicBaseUrl`) | временное имя до домена заказчика; постоянное — `api-test.optomstroy.kg` `[ПРЕДЛОЖЕНИЕ]`; сертификат для имени — у Apache заказчика (Q-384), без него приложения видят ошибку имени |
-| 1С | `ONEC_MODE=fixtures` — ответы 1С из фикстур (`<релиз>\contracts\onec\fixtures`, кладёт build-release.ps1); `-OnecBaseUrl`, `-OnecHsPath` и секреты `onec_hs_*` не задаются и не спрашиваются | API 1С ещё нет; рабочая 1С к стенду не подключается никогда |
+| 1С | `ONEC_MODE=fixtures` — ответы 1С из фикстур (`<релиз>\contracts\onec\fixtures`, кладёт build-release.ps1); `-OnecBaseUrl`, `-OnecHsPath` и секреты `onec_hs_*` не задаются и не спрашиваются | по умолчанию; вместо фикстур — ОС_API шлюза, только чтение (`-StandOnecOsApi`, ADR-126, ниже) |
 | QR | `QR_PROVIDER=bank`, `BANK_QR_ADAPTER=sandbox`, `QR_WEBHOOK_ENABLED=false` — песочница банка внутри `OptomstroyApi`, статус — опросом | ADR-123; банк — `[НЕ ПОДТВЕРЖДЕНО: Q-381]` |
 | SMS | `SMS_PROVIDER=fake`, `SMSPRO_TEST_FLAG=true`, учётных данных SMSPro нет — **SMS не отправляются, денег не тратят** | ADR-124 |
 | Вход | `AUTH_OTP_TEST_MODE=true`, номера `+996700000001…+996700000005` (вымышленные; `-TestPhones` заменяет список), код — `AUTH_OTP_TEST_CODE` в `config\api.env` (шесть случайных цифр, создаёт install.ps1; код демо `246810` API при `staging` не принимает) | 09 §5.8; первый администратор — номер из списка (`-AdminPhone +996700000001`) |
@@ -254,6 +254,20 @@ cd C:\Users\admin\setup\pkg\scripts
 вручную). update.ps1 дописывает новые имена и из `stand.env.example`. Рабочий контур этим не разрешается (ADR-125
 п. 8: нужны Q-379 и Q-371). Любая команда, меняющая сервер, — только после явного «да» пользователя (16 §6.3);
 мы проверяем стенд под `posdeploy` (`status.ps1`, журналы, `/health`).
+
+**1С через ОС_API шлюза на стенде** (ADR-126; только чтение — каталог, цены, остатки, проверка связи, фото; записи в 1С
+нет). **Включать — только после письменного ответа на 14 Q-388 (`uk_main_fr` — тестовая база) и «да» пользователя
+(16 §3.6, ADR-126 п. 9); до этого стенд остаётся на фикстурах.** (1) `import-onec-credentials.ps1` [Администратор] — читает `ONEC_API_USER`/`ONEC_API_PASSWORD` шлюза из
+переменных среды в реестре (HKLM, HKCU, загруженные HKU\<SID>; разные значения — отказ, `-Source`), пишет
+`secrets\onec_user`, `secrets\onec_password` (без наследования: Administrators/SYSTEM — полный доступ, OptomstroyApi и
+OptomstroyWorker — чтение), значения не выводит; чужой отличающийся файл — только `-Force`. (2) `install.ps1 -Stand
+-StandOnecOsApi http://localhost/uk_main_fr` (корень публикации без `hs/...`; `http://` — только localhost/127.x/::1):
+`ONEC_MODE=os_api`, `ONEC_BASE_URL`, `ONEC_OSAPI_PATH=hs/os/api/v1` в `api.env` и `worker.env`, адрес — в
+`install.json` (`onecOsApiBaseUrl`; повторный запуск без параметра режим не откатывает; `-StandOnecOsApi fixtures` —
+обратно). Без `secrets\onec_user`/`onec_password` — стоп на шаге 1. Без `-Stand` — отказ. Инструкция заказчику —
+`docs/customer/WINDOWS_SERVER_INSTALL.md`, раздел 8а.1. Откат (`rollback.ps1`) на версию без `os_api` при
+`ONEC_MODE=os_api` в `api.env`/`worker.env` отклоняется до остановки служб: сначала `-StandOnecOsApi fixtures` (или
+`ONEC_MODE=fixtures` вручную), затем откат (known_issues P4-KI-26).
 
 **Настоящая SMS на стенде** (ADR-124 п. 5) — только (1) после того, как заказчик **сам** положит
 `secrets\smspro_login` и `secrets\smspro_password` (в репозиторий, чат и журналы — ничего; Q-385), и (2) после

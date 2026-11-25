@@ -528,6 +528,132 @@ function Set-OpsEnvValue([string]$Path, [string]$Key, [string]$Value) {
     return $changed
 }
 
+# ---------- 1С через ОС_API шлюза на тестовом стенде (ADR-126; install.ps1 -StandOnecOsApi) ----------
+# Только чтение из 1С (каталог, цены, остатки, проверка связи, фото): ONEC_MODE=os_api. Вход в публикацию 1С — Basic,
+# пользователь шлюза (ONEC_API_USER / ONEC_API_PASSWORD шлюза → secrets\onec_user, secrets\onec_password).
+$script:OpsOsApiDefaultPath = 'hs/os/api/v1'
+$script:OpsOnecCredentialFiles = @('onec_user', 'onec_password')   # check-secrets: allow — имена файлов, не значения
+
+# Адрес для ONEC_BASE_URL — корень публикации 1С (например http://localhost/uk_main_fr), без hs/...: путь сервиса
+# (ONEC_OSAPI_PATH, по умолчанию hs/os/api/v1) добавляется отдельно. http:// — только для этого же сервера
+# (localhost, 127.x.x.x, [::1]; как isLoopbackUrl в env.schema.ts): публикация 1С шлюза наружу не открыта, пароль Basic по сети без TLS не уходит.
+# Возвращает адрес без «/» в конце или бросает исключение с понятной причиной.
+function ConvertTo-OpsOsApiBaseUrl([string]$Url) {
+    $u = ([string]$Url).Trim()
+    if ($u -notmatch '^(?i)(https?)://([^\s/?#@]+)(/[^\s?#]*)?$') {
+        throw "-StandOnecOsApi: нужен адрес публикации 1С вида http://localhost/<имя публикации> (без логина, пароля и параметров в адресе): $Url"
+    }
+    $scheme = $Matches[1].ToLowerInvariant()
+    $path = [string]$Matches[3]
+    $uri = $null
+    if (-not [Uri]::TryCreate($u, [UriKind]::Absolute, [ref]$uri)) { throw "-StandOnecOsApi: адрес не разбирается: $Url" }
+    $h = $uri.DnsSafeHost.ToLowerInvariant()
+    if ($scheme -eq 'http' -and -not ($h -eq 'localhost' -or $h -eq '::1' -or $h -match '^127(\.\d{1,3}){3}$')) {
+        throw "-StandOnecOsApi: http:// — только для публикации на этом же сервере (localhost, 127.0.0.1); для другого адреса — https://: $Url"
+    }
+    $path = $path.TrimEnd('/')
+    if (-not $path) { throw "-StandOnecOsApi: укажите имя публикации 1С после адреса сервера, например http://localhost/uk_main_fr: $Url" }
+    if ($path -match '(?i)(^|/)hs(/|$)') {
+        throw "-StandOnecOsApi: нужен корень публикации без hs/... (путь сервиса $($script:OpsOsApiDefaultPath) добавляется сам, ONEC_OSAPI_PATH): $Url"
+    }
+    return ('{0}://{1}{2}' -f $scheme, $uri.Authority, $path)
+}
+
+# Несекретные настройки режима os_api для config\api.env и worker.env (поверх профиля стенда).
+function Get-OpsOsApiEnvPairs([string]$BaseUrl) {
+    return [ordered]@{ ONEC_MODE = 'os_api'; ONEC_BASE_URL = $BaseUrl; ONEC_OSAPI_PATH = $script:OpsOsApiDefaultPath }
+}
+
+# Файлы config\api.env / config\worker.env, где сейчас ONEC_MODE=os_api (для отката, rollback.ps1).
+function Get-OpsOsApiEnvFiles($L) {
+    $hit = @()
+    foreach ($f in @('api.env', 'worker.env')) {
+        $fp = Join-Path $L.Config $f
+        if (-not (Test-Path -LiteralPath $fp)) { continue }
+        foreach ($raw in [System.IO.File]::ReadAllLines($fp)) {
+            if ($raw -match '^\s*ONEC_MODE\s*=\s*["'']?os_api["'']?\s*(#.*)?$') { $hit += $f; break }
+        }
+    }
+    return ,$hit
+}
+
+# Знает ли релиз ONEC_MODE=os_api (ADR-126): схема настроек API релиза (dist\common\config\env.schema.js) содержит
+# 'os_api'; без dist (неполная папка) — признак по скриптам релиза (import-onec-credentials.ps1 появился с ADR-126).
+function Test-OpsReleaseSupportsOsApi([string]$ReleaseDir) {
+    $schema = Join-Path $ReleaseDir 'api\dist\common\config\env.schema.js'
+    if (Test-Path -LiteralPath $schema) {
+        return ([System.IO.File]::ReadAllText($schema, [System.Text.Encoding]::UTF8)).Contains("'os_api'")
+    }
+    return (Test-Path -LiteralPath (Join-Path $ReleaseDir 'scripts\import-onec-credentials.ps1'))
+}
+
+# Где шлюз берёт ONEC_API_USER / ONEC_API_PASSWORD: переменные среды Windows в реестре — системные (HKLM),
+# текущего пользователя (HKCU) и всех загруженных профилей (HKU\<SID>, в том числе учётных записей служб).
+function Get-OpsEnvRegistrySources {
+    $list = New-Object System.Collections.ArrayList
+    [void]$list.Add([pscustomobject]@{ Name = 'HKLM (переменные среды системы)'; Path = 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' })
+    [void]$list.Add([pscustomobject]@{ Name = "HKCU (пользователь $env:USERDOMAIN\$env:USERNAME)"; Path = 'Registry::HKEY_CURRENT_USER\Environment' })
+    foreach ($k in @(Get-ChildItem -LiteralPath 'Registry::HKEY_USERS' -ErrorAction SilentlyContinue)) {
+        $sid = [string]$k.PSChildName
+        if ($sid -like '*_Classes' -or $sid -eq '.DEFAULT') { continue }
+        $acct = $sid
+        try { $acct = (New-Object Security.Principal.SecurityIdentifier($sid)).Translate([Security.Principal.NTAccount]).Value } catch { }
+        [void]$list.Add([pscustomobject]@{ Name = "HKU\$sid ($acct)"; Path = "Registry::HKEY_USERS\$sid\Environment" })
+    }
+    return $list.ToArray()
+}
+
+# Учётные данные шлюза из источников (Get-OpsEnvRegistrySources). Значения не печатаются; в сообщениях — только
+# имена источников. Одинаковые значения в нескольких местах (HKCU и HKU\<свой SID>) — одна пара; разные — отказ.
+# Возвращает @{ User; Password; Sources = @(имена) }.
+function Find-OpsOnecApiCredentials([object[]]$Sources, [string]$UserVar = 'ONEC_API_USER', [string]$PasswordVar = 'ONEC_API_PASSWORD') {   # check-secrets: allow — имя переменной, не значение
+    $pairs = New-Object System.Collections.ArrayList
+    $partial = New-Object System.Collections.ArrayList
+    foreach ($s in $Sources) {
+        $it = $null
+        try { $it = Get-ItemProperty -LiteralPath $s.Path -ErrorAction Stop } catch { continue }
+        $u = ''; $p = ''
+        if ($null -ne $it.PSObject.Properties[$UserVar]) { $u = [string]$it.$UserVar }
+        if ($null -ne $it.PSObject.Properties[$PasswordVar]) { $p = [string]$it.$PasswordVar }
+        if (-not $u -and -not $p) { continue }
+        if (-not $u -or -not $p) { [void]$partial.Add($s.Name); continue }
+        $same = $null
+        foreach ($x in $pairs) { if ($x.User -ceq $u -and $x.Password -ceq $p) { $same = $x } }
+        if ($null -ne $same) { [void]$same.Sources.Add($s.Name) }
+        else {
+            $srcList = New-Object System.Collections.ArrayList
+            [void]$srcList.Add($s.Name)
+            [void]$pairs.Add([pscustomobject]@{ User = $u; Password = $p; Sources = $srcList })
+        }
+    }
+    if ($pairs.Count -eq 0) {
+        $why = "$UserVar и $PasswordVar шлюза не найдены в переменных среды (" + (@($Sources | ForEach-Object { $_.Name }) -join '; ') + ')'
+        if ($partial.Count -gt 0) { $why += "; задана только одна из двух переменных: " + ($partial -join '; ') }
+        throw $why
+    }
+    if ($pairs.Count -gt 1) {
+        throw ("$UserVar / $PasswordVar шлюза заданы по-разному в нескольких местах: " + (@($pairs | ForEach-Object { $_.Sources -join ' = ' }) -join ' | ') + ' — укажите одно место параметром -Source')
+    }
+    return @{ User = $pairs[0].User; Password = $pairs[0].Password; Sources = @($pairs[0].Sources) }
+}
+
+# Запись значения секрета в файл (UTF-8 без BOM, без перевода строки). Значение не печатается.
+# Возвращает 'created', 'unchanged' или 'replaced'; другой существующий файл без -Force — отказ.
+function Write-OpsSecretValue([string]$Path, [string]$Value, [switch]$Force) {
+    if (-not $Value) { throw "пустое значение для $(Split-Path -Leaf $Path) не записывается" }
+    if ($Value -match '[\r\n]') { throw "значение для $(Split-Path -Leaf $Path) содержит перевод строки — не записывается" }
+    $enc = New-Object System.Text.UTF8Encoding($false)
+    if (Test-Path -LiteralPath $Path) {
+        $old = [System.IO.File]::ReadAllText($Path, $enc)
+        if ($old -ceq $Value -or $old.TrimEnd("`r", "`n") -ceq $Value) { return 'unchanged' }
+        if (-not $Force) { throw "secrets\$(Split-Path -Leaf $Path) уже есть и отличается от значения шлюза — замена только с -Force" }
+        [System.IO.File]::WriteAllText($Path, $Value, $enc)
+        return 'replaced'
+    }
+    [System.IO.File]::WriteAllText($Path, $Value, $enc)
+    return 'created'
+}
+
 function Get-OpsCpuRatePercent([double]$Cpus) {
     $logical = 0
     try { $logical = [int](Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors } catch { $logical = [Environment]::ProcessorCount }

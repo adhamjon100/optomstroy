@@ -20,7 +20,9 @@
         onec_hs_password) вводит человек заказчика (ввод скрыт). Обмен с 1С — онлайн (ONEC_MODE=extension):
         -OnecBaseUrl и -OnecHsPath обязательны, без них API не запускается. Если в BackupRoot уже есть копии базы
         (восстановление на новом сервере), новые pin_pepper/otp_pepper не создаются — сначала secrets из защищённой
-        копии (-AllowNewPeppers — только осознанно).
+        копии (-AllowNewPeppers — только осознанно). Стенд с -StandOnecOsApi (ADR-126): 1С — HTTP-сервис ОС_API
+        шлюза, только чтение (ONEC_MODE=os_api); secrets\onec_user и onec_password не вводятся — их заранее кладёт
+        import-onec-credentials.ps1 (или администратор), без них — стоп на шаге 1.
      6. Файлы настроек: config\api.env, worker.env, migrate.env (из шаблона prod.env.example Linux-комплекта; секреты —
         только путями *_FILE), api.svc.json, worker.svc.json, backup.svc.json, backup.json, backup-public.pem,
         install.json. Существующие файлы не переписываются (в .env дописываются только новые имена).
@@ -62,6 +64,13 @@
   .\install.ps1 -Stand -Zip C:\Users\admin\setup\Optomstroy-Server-0.1.0-abc-win-x64.zip -Sha256 <SHA256 из письма> `
       -PgBin 'C:\Program Files\PostgreSQL\17\bin' -BackupPublicKey C:\Users\admin\setup\backup-public.pem `
       -ApacheDir C:\Apache24 -ApacheServiceName Apache2.4 -AdminPhone +996700000001 -AdminName "Тестовый Администратор"
+.EXAMPLE
+  # Стенд: 1С вместо фикстур — HTTP-сервис ОС_API шлюза, только чтение (каталог, цены, остатки; ADR-126).
+  # Сначала учётные данные шлюза в secrets (значения не выводятся): import-onec-credentials.ps1; затем повторный
+  # запуск установки стенда с адресом публикации 1С (корень публикации, без hs/...). Режим запоминается в
+  # install.json: следующий запуск без -StandOnecOsApi его не выключает; обратно на фикстуры — -StandOnecOsApi fixtures.
+  .\import-onec-credentials.ps1
+  .\install.ps1 -Stand -StandOnecOsApi http://localhost/uk_main_fr <остальные параметры установки стенда>
 .EXAMPLE
   # ПК разработчика:
   .\install.ps1 -DevTest -Zip .tmp\wn-release\Optomstroy-Server-X-win-x64.zip -InstallRoot .tmp\wn-install\root `
@@ -105,6 +114,7 @@ param(
     [switch]$AllowOtherOs,
     [switch]$NonInteractive,
     [switch]$Stand,
+    [string]$StandOnecOsApi = '',
     [switch]$DevTest
 )
 
@@ -116,6 +126,8 @@ if ($Stand) {
     if ($PSBoundParameters.ContainsKey('Contour') -and $Contour -ne 'test') { throw '-Stand: тестовый стенд — только -Contour test (APP_ENV=staging, ADR-125)' }
     $Contour = 'test'
 }
+# 1С через ОС_API шлюза на стенде (ADR-126): только вместе с -Stand; рабочий контур — HTTP-сервис расширения (extension).
+if ($StandOnecOsApi -and -not $Stand) { throw '-StandOnecOsApi: только вместе с -Stand (1С через ОС_API шлюза — режим тестового стенда, ADR-126; рабочий контур — -OnecBaseUrl/-OnecHsPath)' }
 
 if ($DevTest -and -not $PSBoundParameters.ContainsKey('InstallRoot')) { throw '-DevTest: укажите -InstallRoot (тестовая папка), путь по умолчанию D:\Optomstroy в проверочном прогоне не используется' }
 if ($DevTest -and -not $PSBoundParameters.ContainsKey('Contour')) { $Contour = 'test' }
@@ -290,9 +302,33 @@ try {
     # секретов onec_hs_* API не запускается (onec-adapters.ts → ConfigError при старте).
     # Тестовый стенд (-Stand, ADR-125): 1С — фикстуры (ONEC_MODE=fixtures из stand.env.example), адрес и секреты 1С
     # не задаются; рабочая 1С к стенду не подключается никогда.
+    # Стенд с -StandOnecOsApi (ADR-126): 1С — HTTP-сервис ОС_API шлюза, только чтение (ONEC_MODE=os_api, ONEC_BASE_URL =
+    # корень публикации, ONEC_OSAPI_PATH=hs/os/api/v1), вход — secrets\onec_user и onec_password (кладёт
+    # import-onec-credentials.ps1 или администратор; здесь не спрашиваются). Адрес запоминается в install.json
+    # (onecOsApiBaseUrl): повторный запуск без параметра режим не откатывает; -StandOnecOsApi fixtures — обратно.
+    $osApiUrl = ''
+    $osApiOff = $false
     if ($Stand) {
-        if ($OnecBaseUrl -or $OnecHsPath) { throw '-Stand: 1С на стенде — фикстуры (ONEC_MODE=fixtures, ADR-125); -OnecBaseUrl и -OnecHsPath не задаются' }
-        Write-OpsLog '1С: фикстуры (ONEC_MODE=fixtures, тестовый стенд ADR-125) — адрес и секреты 1С не нужны'
+        if ($OnecBaseUrl -or $OnecHsPath) { throw '-Stand: 1С на стенде — фикстуры или ОС_API шлюза (-StandOnecOsApi, ADR-126); -OnecBaseUrl и -OnecHsPath не задаются' }
+        if ($StandOnecOsApi -eq 'fixtures') { $osApiOff = $true }
+        elseif ($StandOnecOsApi) { $osApiUrl = ConvertTo-OpsOsApiBaseUrl $StandOnecOsApi }
+        elseif ($null -ne $installJson -and $installJson.PSObject.Properties['onecOsApiBaseUrl'] -and $installJson.onecOsApiBaseUrl) {
+            $osApiUrl = ConvertTo-OpsOsApiBaseUrl ([string]$installJson.onecOsApiBaseUrl)
+            Write-OpsLog "1С: режим ОС_API из install.json (прошлый запуск с -StandOnecOsApi)"
+        }
+        if ($osApiUrl) {
+            Write-OpsLog "1С: ОС_API шлюза, только чтение — $osApiUrl/$($script:OpsOsApiDefaultPath) (ONEC_MODE=os_api, тестовый стенд ADR-126)"
+            if (-not $DevTest) {
+                foreach ($s in $script:OpsOnecCredentialFiles) {
+                    $f = Join-Path $L.Secrets $s
+                    if (-not ((Test-Path -LiteralPath $f) -and (Get-Item -LiteralPath $f).Length -gt 0)) {
+                        throw "-StandOnecOsApi: нет secrets\$s — сначала import-onec-credentials.ps1 (переносит ONEC_API_USER/ONEC_API_PASSWORD шлюза, значения не выводит) или положите файлы secrets\onec_user и secrets\onec_password сами (WINDOWS_SERVER_INSTALL.md, раздел 8а)"
+                    }
+                }
+            }
+        } else {
+            Write-OpsLog '1С: фикстуры (ONEC_MODE=fixtures, тестовый стенд ADR-125) — адрес и секреты 1С не нужны'
+        }
     } else {
     if (-not $OnecBaseUrl -and $null -ne $installJson -and $installJson.PSObject.Properties['onecBaseUrl']) { $OnecBaseUrl = [string]$installJson.onecBaseUrl }
     if (-not $OnecHsPath -and $null -ne $installJson -and $installJson.PSObject.Properties['onecHsPath']) { $OnecHsPath = [string]$installJson.onecHsPath }
@@ -422,6 +458,26 @@ try {
         }
         $askSecrets.Clear()
     }
+    if ($DevTest -and $osApiUrl) {
+        # Проверочный прогон стенда с ОС_API: тестовые onec_user/onec_password (в тестовой папке; 1С не вызывается).
+        foreach ($s in $script:OpsOnecCredentialFiles) {
+            $f = Join-Path $L.Secrets $s
+            if (-not (Test-Path -LiteralPath $f)) {
+                $v = 'devtest-' + [Guid]::NewGuid().ToString('N')
+                if ($s -eq 'onec_user') { $v = 'api_devtest' }
+                [System.IO.File]::WriteAllText($f, $v, (New-Object System.Text.UTF8Encoding($false)))
+                Write-OpsLog "DevTest: тестовый секрет secrets\$s создан" 'WARN'
+            }
+        }
+    }
+    if ($osApiUrl) {
+        # Вход в ОС_API — Basic пользователя шлюза; файлы кладёт import-onec-credentials.ps1 (проверено на шаге 1).
+        foreach ($s in $script:OpsOnecCredentialFiles) {
+            $f = Join-Path $L.Secrets $s
+            if (-not ((Test-Path -LiteralPath $f) -and (Get-Item -LiteralPath $f).Length -gt 0)) { throw "нет secrets\$s — без него режим ОС_API не запускается (import-onec-credentials.ps1)" }
+        }
+        Write-OpsLog 'секреты 1С для ОС_API: secrets\onec_user, secrets\onec_password есть (значения не выводятся)' 'OK'
+    }
     $onecPwdAsked = Join-Path $L.State 'onec_hs_password.asked'   # check-secrets: allow — путь к файлу-отметке, не значение
     foreach ($item in $askSecrets) {
         $s = $item[0]
@@ -481,6 +537,14 @@ try {
     } elseif ($tpl['ONEC_MODE'] -ne 'fixtures' -or $tpl['SMS_PROVIDER'] -ne 'fake' -or $tpl['QR_PROVIDER'] -ne 'bank') {
         throw 'stand.env.example: профиль стенда — ONEC_MODE=fixtures, SMS_PROVIDER=fake, QR_PROVIDER=bank (ADR-125); шаблон пакета изменён'
     }
+    $osApiPairs = $null
+    if ($Stand -and $osApiUrl) {
+        # Стенд с ОС_API шлюза (ADR-126): поверх профиля (ONEC_MODE=fixtures) — режим чтения из 1С. Виды цен, склады и
+        # период перечитки (ONEC_OSAPI_PRICE_TYPES, ONEC_OSAPI_WAREHOUSES, ONEC_OSAPI_POLL_SECONDS) — по умолчанию
+        # программы; менять — администратор в config\api.env и worker.env.
+        $osApiPairs = Get-OpsOsApiEnvPairs $osApiUrl
+        foreach ($k in $osApiPairs.Keys) { $tpl[$k] = $osApiPairs[$k] }
+    }
     if ($Contour -eq 'test') {
         if ($TestPhones) { $tpl['AUTH_OTP_TEST_PHONES'] = $TestPhones }
         # Шесть случайных цифр; общеизвестный код демо 246810 при APP_ENV=staging API не принимает (ADR-124).
@@ -534,6 +598,20 @@ try {
     if ($Contour -eq 'test' -and $TestPhones) {
         foreach ($f in @('api.env', 'worker.env')) {
             if (Set-OpsEnvValue (Join-Path $L.Config $f) 'AUTH_OTP_TEST_PHONES' $TestPhones) { Write-OpsLog "config\${f}: AUTH_OTP_TEST_PHONES = $TestPhones" 'OK' }
+        }
+    }
+    # Стенд: режим 1С в уже существующих api.env и worker.env (ADR-126). Включённый ОС_API (явно или из install.json)
+    # не откатывается повторным запуском; путь сервиса, если администратор его поменял, не переписывается.
+    if ($Stand -and ($null -ne $osApiPairs -or $osApiOff)) {
+        foreach ($f in @('api.env', 'worker.env')) {
+            $fp = Join-Path $L.Config $f
+            if ($osApiOff) {
+                if (Set-OpsEnvValue $fp 'ONEC_MODE' 'fixtures') { Write-OpsLog "config\${f}: ONEC_MODE = fixtures (-StandOnecOsApi fixtures)" 'OK' }
+                continue
+            }
+            foreach ($k in @('ONEC_MODE', 'ONEC_BASE_URL')) {
+                if (Set-OpsEnvValue $fp $k ([string]$osApiPairs[$k])) { Write-OpsLog "config\${f}: $k = $($osApiPairs[$k])" 'OK' }
+            }
         }
     }
 
@@ -623,7 +701,7 @@ try {
     $ij = [ordered]@{
         contour = $Contour; appEnv = $appEnv; publicBaseUrl = $PublicBaseUrl; serverName = $serverName; minAppVersion = $MinAppVersion
         apiPort = $ApiPort; pgPort = $PgPort; dbName = $DbName; pgBin = $PgBin; backupRoot = $L.BackupRoot; jwtKeyId = $jwtKid
-        onecBaseUrl = $OnecBaseUrl; onecHsPath = $OnecHsPath; stand = [bool]$Stand
+        onecBaseUrl = $OnecBaseUrl; onecHsPath = $OnecHsPath; stand = [bool]$Stand; onecOsApiBaseUrl = $osApiUrl
         deployUser = $DeployUser; apacheDir = $ApacheDir; apacheServiceName = $ApacheServiceName; devTest = [bool]$DevTest
         apacheCertFile = $CertFile; apacheKeyFile = $KeyFile; apacheListenPort = $ApacheListenPort
         pgServiceAccount = $PgServiceAccount

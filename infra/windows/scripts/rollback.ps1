@@ -15,6 +15,9 @@
                           решает разработчик); migrate прежней версии не запускается;
         иначе             восстановление из дампа перед обновлением: backup\restore.ps1 (нужен держатель ключа).
   -DropSnapshot — только удалить сохранённую копию базы (освободить место).
+  Стенд с 1С через ОС_API (ONEC_MODE=os_api в config\api.env или worker.env, ADR-126): откат на версию, которая этого
+  режима не знает, отклоняется до остановки служб — с ним API и фоновые задачи прежней версии не стартуют. Сначала
+  install.ps1 -Stand -StandOnecOsApi fixtures (или ONEC_MODE=fixtures в обоих файлах), затем rollback.ps1.
   -DevTest — установка install.ps1 -DevTest, без прав администратора.
 
 .EXAMPLE
@@ -86,6 +89,13 @@ try {
     $v = Invoke-OpsTool $L $target @('sums-verify', '--dir', $target) -Quiet
     if ($v.Code -ne 0) { throw "файлы $target не совпадают с SHA256SUMS.txt — откат на неё невозможен" }
     Write-OpsLog "файлы $ToVersion совпадают с SHA256SUMS.txt" 'OK'
+    $osApiEnv = Get-OpsOsApiEnvFiles $L
+    if ($osApiEnv.Count -gt 0 -and -not (Test-OpsReleaseSupportsOsApi $target)) {
+        Write-OpsLog ("в config\{0} стоит ONEC_MODE=os_api (1С через ОС_API, ADR-126), а версия {1} этого режима не знает — API и фоновые задачи с ним не стартуют; откат отклонён, службы не останавливались" -f ($osApiEnv -join ', config\'), $ToVersion) 'ERROR'
+        Write-OpsLog 'сначала верните стенд на фикстуры: install.ps1 -Stand -StandOnecOsApi fixtures (с теми же параметрами, что при установке) или ONEC_MODE=fixtures в config\api.env и config\worker.env; затем rollback.ps1' 'ERROR'
+        $result = 'refused'
+        return
+    }
 
     $db = Get-OpsDbState $L $curDir $PgPort $DbName
     $targetMigs = Get-OpsReleaseMigrations $target
